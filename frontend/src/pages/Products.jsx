@@ -245,9 +245,9 @@ export default function Products() {
                   {novaCategoriaAberta ? 'cancelar' : '+ nova categoria / subcategoria'}
                 </button>
                 {novaCategoriaAberta && (
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <input placeholder="Nome" value={novaCategoria.nome} onChange={(e) => setNovaCategoria({ ...novaCategoria, nome: e.target.value })} />
-                    <select value={novaCategoria.parent_id} onChange={(e) => setNovaCategoria({ ...novaCategoria, parent_id: e.target.value })}>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <input style={{ flex: 1, minWidth: '120px' }} placeholder="Nome" value={novaCategoria.nome} onChange={(e) => setNovaCategoria({ ...novaCategoria, nome: e.target.value })} />
+                    <select style={{ flex: 1, minWidth: '140px' }} value={novaCategoria.parent_id} onChange={(e) => setNovaCategoria({ ...novaCategoria, parent_id: e.target.value })}>
                       <option value="">Sem pai</option>
                       {categoriasHierarquia.filter((c) => !c.parent_id).map((c) => <option key={c.id} value={c.id}>Sub de: {c.nome}</option>)}
                     </select>
@@ -262,13 +262,13 @@ export default function Products() {
 
                 <input placeholder="Código de barras / EAN *" value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value })} required />
 
-                <div style={{ display: 'flex', gap: '10px' }}>
+                <div className="form-row">
                   <input type="number" step="0.01" placeholder="Preço de custo *" value={form.preco_custo} onChange={(e) => setForm({ ...form, preco_custo: e.target.value })} required />
                   <input type="number" step="0.01" placeholder="Preço de venda *" value={form.preco_venda} onChange={(e) => setForm({ ...form, preco_venda: e.target.value })} required />
                 </div>
 
                 {fichaNovoProduto.length === 0 && (
-                  <div style={{ display: 'flex', gap: '10px' }}>
+                  <div className="form-row">
                     <input type="number" step="0.001" placeholder="Estoque inicial *" value={form.estoque_inicial} onChange={(e) => setForm({ ...form, estoque_inicial: e.target.value })} />
                     <select value={form.location_id} onChange={(e) => setForm({ ...form, location_id: e.target.value })} required={fichaNovoProduto.length === 0}>
                       <option value="">Local do estoque *</option>

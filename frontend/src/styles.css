@@ -486,3 +486,8 @@ button.pe-mov-type-btn.active { border-color: var(--gold-light); background: rgb
   80% { opacity: 1; }
   100% { opacity: 0; }
 }
+
+/* Linha de campos lado a lado dentro de um form: divide o espaco igualmente
+   e quebra para a proxima linha se nao couber, em vez de estourar o card. */
+.form-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.form-row > input, .form-row > select { flex: 1 1 140px; min-width: 0; }

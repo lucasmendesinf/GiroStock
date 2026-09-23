@@ -437,9 +437,9 @@ button.pe-mov-type-btn.active { border-color: var(--gold-light); background: rgb
 .insumo-card { display: flex; justify-content: space-between; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; }
 .insumo-card .nome { font-size: 14px; font-weight: 700; color: var(--ivory); }
 .insumo-card .saldo { font-size: 12px; color: var(--muted); margin-top: 2px; }
-.insumo-card .acoes { display: flex; gap: 8px; align-items: center; }
-.insumo-card .acoes input { width: 80px; padding: 9px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-alt); color: var(--ivory); font-size: 13px; }
-.insumo-card .acoes button { padding: 9px 14px; border-radius: 8px; border: 1px solid var(--gold-light); background: none; color: var(--gold-light); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.insumo-card .acoes { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.insumo-card .acoes input { width: 80px; min-width: 0; padding: 9px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-alt); color: var(--ivory); font-size: 13px; }
+.insumo-card .acoes button { padding: 9px 14px; border-radius: 8px; border: 1px solid var(--gold-light); background: none; color: var(--gold-light); font-size: 12px; font-weight: 700; white-space: nowrap; flex-shrink: 0; }
 
 .toast-ok { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: rgba(123, 216, 143, 0.12); border: 1px solid var(--ok); border-radius: 10px; color: var(--ok); font-size: 13px; font-weight: 600; width: fit-content; }
 

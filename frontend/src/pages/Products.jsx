@@ -184,6 +184,43 @@ export default function Products() {
     } catch (err) { falhar(err); }
   }
 
+  const [ajusteAberto, setAjusteAberto] = useState({});
+  const [ajusteTipo, setAjusteTipo] = useState({});
+  const [ajusteValor, setAjusteValor] = useState({});
+  const [ajusteMotivo, setAjusteMotivo] = useState({});
+
+  function abrirAjuste(id, tipo, valorInicial) {
+    setAjusteAberto({ ...ajusteAberto, [id]: true });
+    setAjusteTipo({ ...ajusteTipo, [id]: tipo });
+    setAjusteValor({ ...ajusteValor, [id]: valorInicial ?? '' });
+    setAjusteMotivo({ ...ajusteMotivo, [id]: '' });
+  }
+
+  function fecharAjuste(id) {
+    setAjusteAberto({ ...ajusteAberto, [id]: false });
+  }
+
+  async function confirmarAjusteInsumo(id) {
+    const tipo = ajusteTipo[id];
+    const motivo = (ajusteMotivo[id] || '').trim();
+    if (motivo.length < 3) { setErro('Informe o motivo (minimo 3 caracteres).'); return; }
+    try {
+      if (tipo === 'saida') {
+        const quantidade = Number(ajusteValor[id]);
+        if (!(quantidade > 0)) { setErro('Informe uma quantidade valida (maior que zero).'); return; }
+        await api.post(`/ingredients/${id}/stock-exits`, { quantidade, motivo });
+        avisar('Saida de insumo registrada.');
+      } else {
+        const novoSaldo = Number(ajusteValor[id]);
+        if (isNaN(novoSaldo) || novoSaldo < 0) { setErro('Informe um saldo valido (0 ou mais).'); return; }
+        await api.post(`/ingredients/${id}/stock-adjustment`, { novo_saldo: novoSaldo, motivo });
+        avisar('Balanco de estoque registrado.');
+      }
+      fecharAjuste(id);
+      reload();
+    } catch (err) { falhar(err); }
+  }
+
   // ---------- DETALHE DO PRODUTO ----------
   const [detalhe, setDetalhe] = useState(null);
   const [fichaForm, setFichaForm] = useState({ ingredient_id: '', quantidade_por_unidade: '' });
@@ -514,16 +551,58 @@ export default function Products() {
             <div className="pe-main">
               <h2 style={{ fontSize: '18px', marginBottom: '14px' }}>Estoque de insumos</h2>
               {ingredients.map((i) => (
-                <div className="insumo-card" key={i.id}>
-                  <div>
-                    <span className="nome">{i.nome}</span>
-                    <div className="saldo">Saldo atual: {i.estoque_atual} {i.unidade} · custo R$ {Number(i.custo_unitario).toFixed(4)}/{i.unidade}</div>
+                <div className="insumo-card" key={i.id} style={{ flexDirection: 'column', alignItems: 'stretch', gap: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                    <div>
+                      <span className="nome">{i.nome}</span>
+                      <div className="saldo">Saldo atual: {i.estoque_atual} {i.unidade} · custo R$ {Number(i.custo_unitario).toFixed(4)}/{i.unidade}</div>
+                    </div>
+                    <div className="acoes">
+                      <input type="number" step="0.001" placeholder="Qtd" value={quickQty[i.id] || ''} onChange={(e) => setQuickQty({ ...quickQty, [i.id]: e.target.value })} />
+                      <input type="number" step="0.01" placeholder="Custo R$" value={quickCusto[i.id] || ''} onChange={(e) => setQuickCusto({ ...quickCusto, [i.id]: e.target.value })} />
+                      <button onClick={() => lancarEntradaInsumo(i.id)}>+ estoque</button>
+                      <button onClick={() => abrirAjuste(i.id, 'saida', '')} style={{ padding: '9px 14px', borderRadius: '8px', border: '1px solid var(--line)', background: 'none', color: 'var(--ivory)', fontSize: '12px', fontWeight: 700 }}>Saída</button>
+                      <button onClick={() => abrirAjuste(i.id, 'balanco', String(i.estoque_atual))} style={{ padding: '9px 14px', borderRadius: '8px', border: '1px solid var(--line)', background: 'none', color: 'var(--ivory)', fontSize: '12px', fontWeight: 700 }}>Balanço</button>
+                      <button onClick={() => abrirAjuste(i.id, 'balanco', '0')} style={{ padding: '9px 14px', borderRadius: '8px', border: '1px solid var(--err)', background: 'none', color: 'var(--err)', fontSize: '12px', fontWeight: 700 }}>Zerar</button>
+                    </div>
                   </div>
-                  <div className="acoes">
-                    <input type="number" step="0.001" placeholder="Qtd" value={quickQty[i.id] || ''} onChange={(e) => setQuickQty({ ...quickQty, [i.id]: e.target.value })} />
-                    <input type="number" step="0.01" placeholder="Custo R$" value={quickCusto[i.id] || ''} onChange={(e) => setQuickCusto({ ...quickCusto, [i.id]: e.target.value })} />
-                    <button onClick={() => lancarEntradaInsumo(i.id)}>+ estoque</button>
-                  </div>
+
+                  {ajusteAberto[i.id] && (
+                    <div style={{ background: 'var(--panel-alt)', border: '1px solid var(--line)', borderRadius: '10px', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          onClick={() => setAjusteTipo({ ...ajusteTipo, [i.id]: 'saida' })}
+                          style={{ padding: '8px 16px', borderRadius: '999px', border: `1.5px solid ${ajusteTipo[i.id] === 'saida' ? 'var(--gold-light)' : 'var(--line)'}`, background: ajusteTipo[i.id] === 'saida' ? 'rgba(205,164,63,0.14)' : 'none', color: ajusteTipo[i.id] === 'saida' ? 'var(--gold-light)' : 'var(--ivory)', fontSize: '12px', fontWeight: 700 }}
+                        >Saída (baixa manual)</button>
+                        <button
+                          onClick={() => setAjusteTipo({ ...ajusteTipo, [i.id]: 'balanco' })}
+                          style={{ padding: '8px 16px', borderRadius: '999px', border: `1.5px solid ${ajusteTipo[i.id] === 'balanco' ? 'var(--gold-light)' : 'var(--line)'}`, background: ajusteTipo[i.id] === 'balanco' ? 'rgba(205,164,63,0.14)' : 'none', color: ajusteTipo[i.id] === 'balanco' ? 'var(--gold-light)' : 'var(--ivory)', fontSize: '12px', fontWeight: 700 }}
+                        >Balanço (corrigir/zerar)</button>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <input
+                          style={{ width: '120px' }}
+                          type="number" step="0.001"
+                          placeholder={ajusteTipo[i.id] === 'saida' ? 'Quantidade a retirar' : 'Novo saldo'}
+                          value={ajusteValor[i.id] ?? ''}
+                          onChange={(e) => setAjusteValor({ ...ajusteValor, [i.id]: e.target.value })}
+                        />
+                        <input
+                          style={{ flexGrow: 1, minWidth: '160px' }}
+                          placeholder="Motivo * (ex: perda, validade vencida, contagem de estoque...)"
+                          value={ajusteMotivo[i.id] || ''}
+                          onChange={(e) => setAjusteMotivo({ ...ajusteMotivo, [i.id]: e.target.value })}
+                        />
+                        <button onClick={() => confirmarAjusteInsumo(i.id)}>Confirmar</button>
+                        <button type="button" onClick={() => fecharAjuste(i.id)} style={{ background: 'none', border: '1px solid var(--line)', color: 'var(--ivory)', borderRadius: '10px', padding: '12px 18px' }}>Cancelar</button>
+                      </div>
+                      {ajusteTipo[i.id] === 'balanco' && ajusteValor[i.id] !== '' && !isNaN(Number(ajusteValor[i.id])) && (
+                        <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                          Diferença: {(Number(ajusteValor[i.id]) - Number(i.estoque_atual)) >= 0 ? '+' : ''}{(Number(ajusteValor[i.id]) - Number(i.estoque_atual)).toFixed(3)} {i.unidade}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
               {ingredients.length === 0 && <div className="empty-state">Nenhum insumo cadastrado ainda.</div>}

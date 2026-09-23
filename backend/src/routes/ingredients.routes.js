@@ -88,6 +88,106 @@ router.post('/ingredients/:id/stock-entries', requireArea('Estoque'), async (req
   }
 });
 
+router.post('/ingredients/:id/stock-exits', requireArea('Estoque'), async (req, res) => {
+  const { quantidade, motivo } = req.body || {};
+  const qtd = Number(quantidade);
+  if (!(qtd > 0)) return res.status(400).json({ erro: 'quantidade deve ser maior que zero' });
+  if (!motivo || motivo.trim().length < 3) {
+    return res.status(400).json({ erro: 'motivo e obrigatorio (minimo 3 caracteres)' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const atual = await client.query(
+      `SELECT estoque_atual FROM ingredients WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
+      [req.params.id, req.user.tenantId]
+    );
+    if (atual.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ erro: 'insumo nao encontrado' });
+    }
+    const estoqueAtual = Number(atual.rows[0].estoque_atual);
+    if (qtd > estoqueAtual) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ erro: `saldo insuficiente (disponivel: ${estoqueAtual}, solicitado: ${qtd})` });
+    }
+
+    const { rows } = await client.query(
+      `UPDATE ingredients SET estoque_atual = estoque_atual - $1
+       WHERE id = $2 AND tenant_id = $3
+       RETURNING id, nome, unidade, estoque_atual, custo_unitario`,
+      [qtd, req.params.id, req.user.tenantId]
+    );
+
+    await logAudit(client, {
+      tenantId: req.user.tenantId,
+      usuarioId: req.user.id,
+      acao: 'saida_estoque',
+      recurso: 'ingredients',
+      recursoId: req.params.id,
+      detalhes: { quantidade: qtd, motivo: motivo.trim() },
+    });
+    await client.query('COMMIT');
+    res.json(rows[0]);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+});
+
+router.post('/ingredients/:id/stock-adjustment', requireArea('Estoque'), async (req, res) => {
+  const { novo_saldo, motivo } = req.body || {};
+  const novoSaldo = Number(novo_saldo);
+  if (novo_saldo === undefined || novo_saldo === null || novo_saldo === '' || isNaN(novoSaldo) || novoSaldo < 0) {
+    return res.status(400).json({ erro: 'novo_saldo deve ser um numero valido (0 ou mais)' });
+  }
+  if (!motivo || motivo.trim().length < 3) {
+    return res.status(400).json({ erro: 'motivo e obrigatorio (minimo 3 caracteres)' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const atual = await client.query(
+      `SELECT estoque_atual FROM ingredients WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
+      [req.params.id, req.user.tenantId]
+    );
+    if (atual.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ erro: 'insumo nao encontrado' });
+    }
+    const saldoAnterior = Number(atual.rows[0].estoque_atual);
+
+    const { rows } = await client.query(
+      `UPDATE ingredients SET estoque_atual = $1
+       WHERE id = $2 AND tenant_id = $3
+       RETURNING id, nome, unidade, estoque_atual, custo_unitario`,
+      [novoSaldo, req.params.id, req.user.tenantId]
+    );
+
+    await logAudit(client, {
+      tenantId: req.user.tenantId,
+      usuarioId: req.user.id,
+      acao: 'balanco_estoque',
+      recurso: 'ingredients',
+      recursoId: req.params.id,
+      detalhes: { saldo_anterior: saldoAnterior, saldo_novo: novoSaldo, diferenca: novoSaldo - saldoAnterior, motivo: motivo.trim() },
+    });
+    await client.query('COMMIT');
+    res.json(rows[0]);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+});
+
 router.get('/ingredients/:id/consumption-history', requireArea('Estoque'), async (req, res) => {
   const { rows } = await pool.query(
     `SELECT ic.id, ic.quantidade_consumida, ic.criado_em,

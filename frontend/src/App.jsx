@@ -1,6 +1,9 @@
+import { useLocation } from 'react-router-dom';
 import { Routes, Route, Navigate, NavLink } from 'react-router-dom';
+import { useEffect } from 'react';
 import { useAuth } from './context/AuthContext.jsx';
 import ThemeToggle from './components/ThemeToggle.jsx';
+import { requestFullscreen, exitFullscreen } from './utils/fullscreen.js';
 import Login from './pages/Login.jsx';
 import PDV from './pages/PDV.jsx';
 import Products from './pages/Products.jsx';
@@ -16,12 +19,18 @@ function Private({ children }) {
 
 function Layout({ children }) {
   const { user, logout } = useAuth();
+  const location = useLocation();
+
+  useEffect(() => {
+    if (location.pathname !== '/pdv') exitFullscreen();
+  }, [location.pathname]);
+
   return (
     <div className="app-shell">
       <header className="topbar">
         <div className="brand">GiroStock</div>
         <nav>
-          <NavLink to="/pdv">PDV</NavLink>
+          <NavLink to="/pdv" onClick={requestFullscreen}>PDV</NavLink>
           <NavLink to="/produtos">Produtos &amp; Estoque</NavLink>
           <NavLink to="/fornecedores">Fornecedores</NavLink>
           <NavLink to="/usuarios">Usuários</NavLink>

@@ -1,9 +1,33 @@
 import { useEffect, useState, useCallback } from 'react';
 import { api } from '../api/client';
+import { requestFullscreen, isFullscreen as checkIsFullscreen } from '../utils/fullscreen';
 
 const TROCOS_RAPIDOS = [20, 50, 100, 200];
 
 export default function PDV() {
+  const [fullscreenAtivo, setFullscreenAtivo] = useState(checkIsFullscreen());
+  const [mostrarDicaEsc, setMostrarDicaEsc] = useState(false);
+
+  useEffect(() => {
+    requestFullscreen();
+
+    function onFullscreenChange() {
+      const ativo = checkIsFullscreen();
+      setFullscreenAtivo(ativo);
+      if (ativo) {
+        setMostrarDicaEsc(true);
+        setTimeout(() => setMostrarDicaEsc(false), 4000);
+      }
+    }
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+    onFullscreenChange();
+    return () => {
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', onFullscreenChange);
+    };
+  }, []);
+
   const [terminals, setTerminals] = useState([]);
   const [terminalId, setTerminalId] = useState('');
   const [session, setSession] = useState(undefined); // undefined=carregando, null=fechado
@@ -154,45 +178,56 @@ export default function PDV() {
     }
   }
 
-  if (session === undefined) return <p>Carregando...</p>;
+  const dicaEsc = fullscreenAtivo && mostrarDicaEsc && (
+    <div className="fullscreen-hint">Tela cheia ativada — pressione <strong>Esc</strong> para voltar à tela normal</div>
+  );
+
+  if (session === undefined) return (<>{dicaEsc}<p>Carregando...</p></>);
 
   if (session === null) {
     return (
-      <div className="card abertura-caixa">
-        <h2>Abertura de Caixa</h2>
-        <p>Terminal:</p>
-        <select value={terminalId} onChange={(e) => setTerminalId(e.target.value)}>
-          {terminals.map((t) => <option key={t.id} value={t.id}>{t.nome}</option>)}
-        </select>
-        <form onSubmit={abrirCaixa}>
-          <label>
-            Valor inicial
-            <input type="number" min="0" step="0.01" value={valorInicial}
-              onChange={(e) => setValorInicial(e.target.value)} required />
-          </label>
-          {erro && <p className="error">{erro}</p>}
-          <button type="submit">Abrir caixa</button>
-        </form>
-      </div>
+      <>
+        {dicaEsc}
+        <div className="card abertura-caixa">
+          <h2>Abertura de Caixa</h2>
+          <p>Terminal:</p>
+          <select value={terminalId} onChange={(e) => setTerminalId(e.target.value)}>
+            {terminals.map((t) => <option key={t.id} value={t.id}>{t.nome}</option>)}
+          </select>
+          <form onSubmit={abrirCaixa}>
+            <label>
+              Valor inicial
+              <input type="number" min="0" step="0.01" value={valorInicial}
+                onChange={(e) => setValorInicial(e.target.value)} required />
+            </label>
+            {erro && <p className="error">{erro}</p>}
+            <button type="submit">Abrir caixa</button>
+          </form>
+        </div>
+      </>
     );
   }
 
   if (fechamentoResultado) {
     return (
-      <div className="card">
-        <h2>Caixa fechado</h2>
-        <p>Valor esperado: R$ {Number(fechamentoResultado.valor_esperado_fechamento).toFixed(2)}</p>
-        <p>Valor informado: R$ {Number(fechamentoResultado.valor_informado_fechamento).toFixed(2)}</p>
-        <p>Diferenca: R$ {Number(fechamentoResultado.diferenca).toFixed(2)}</p>
-        <button onClick={() => { setFecharAberto(false); setFechamentoResultado(null); loadSession(terminalId); }}>
-          Voltar ao PDV
-        </button>
-      </div>
+      <>
+        {dicaEsc}
+        <div className="card">
+          <h2>Caixa fechado</h2>
+          <p>Valor esperado: R$ {Number(fechamentoResultado.valor_esperado_fechamento).toFixed(2)}</p>
+          <p>Valor informado: R$ {Number(fechamentoResultado.valor_informado_fechamento).toFixed(2)}</p>
+          <p>Diferenca: R$ {Number(fechamentoResultado.diferenca).toFixed(2)}</p>
+          <button onClick={() => { setFecharAberto(false); setFechamentoResultado(null); loadSession(terminalId); }}>
+            Voltar ao PDV
+          </button>
+        </div>
+      </>
     );
   }
 
   return (
     <div className="pdv-screen">
+      {dicaEsc}
       <div className="pdv-header">
         <select value={terminalId} onChange={(e) => setTerminalId(e.target.value)}>
           {terminals.map((t) => <option key={t.id} value={t.id}>{t.nome}</option>)}

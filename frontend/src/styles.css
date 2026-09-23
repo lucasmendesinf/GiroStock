@@ -462,3 +462,27 @@ button.pe-mov-type-btn.active { border-color: var(--gold-light); background: rgb
   .pe-sidebar { width: 100%; min-width: 0; }
   .saldo-row { grid-template-columns: 1fr; gap: 4px; }
 }
+
+.fullscreen-hint {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  padding: 10px 20px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--gold-light);
+  color: var(--ivory);
+  font-size: 13px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  animation: fullscreen-hint-fade 4s ease forwards;
+}
+.fullscreen-hint strong { color: var(--gold-light); }
+
+@keyframes fullscreen-hint-fade {
+  0% { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+  10% { opacity: 1; transform: translateX(-50%) translateY(0); }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
+}

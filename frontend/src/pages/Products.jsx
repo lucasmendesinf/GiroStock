@@ -564,7 +564,10 @@ export default function Products() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
                     <div>
                       <span className="nome">{i.nome}</span>
-                      <div className="saldo">Saldo atual: {i.estoque_atual} {i.unidade} · custo R$ {Number(i.custo_unitario).toFixed(4)}/{i.unidade}</div>
+                      <div className="saldo">
+                        Saldo atual: {i.estoque_atual} {i.unidade} · custo R$ {Number(i.custo_unitario).toFixed(4)}/{i.unidade}
+                        {' · '}<span style={{ color: 'var(--gold-light)', fontWeight: 700 }}>total R$ {(Number(i.estoque_atual) * Number(i.custo_unitario)).toFixed(2)}</span>
+                      </div>
                     </div>
                     <div className="acoes">
                       <input type="number" step="0.001" placeholder="Qtd" value={quickQty[i.id] || ''} onChange={(e) => setQuickQty({ ...quickQty, [i.id]: e.target.value })} />

@@ -412,9 +412,10 @@ tbody tr:hover { background: var(--panel-alt); }
 .product-card-top .preco .venda { font-size: 15px; font-weight: 800; color: var(--gold-light); }
 .product-card-top .preco .custo { font-size: 11px; color: var(--muted); }
 .product-card-badges { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.product-card-footer { display: flex; justify-content: flex-end; }
 .badge-local { font-size: 11px; padding: 4px 10px; border-radius: 999px; background: var(--panel-alt); border: 1px solid var(--line); color: var(--muted); }
 .badge-total { font-size: 11px; padding: 4px 10px; border-radius: 999px; background: rgba(205, 164, 63, 0.15); border: 1px solid var(--gold-light); color: var(--gold-light); font-weight: 700; }
-.pe-detail-btn { font-size: 12px; padding: 6px 14px; border-radius: 999px; border: 1px solid var(--gold-light); background: none; color: var(--gold-light); font-weight: 700; margin-left: auto; }
+.pe-detail-btn { font-size: 12px; padding: 6px 14px; border-radius: 999px; border: 1px solid var(--gold-light); background: none; color: var(--gold-light); font-weight: 700; white-space: nowrap; flex-shrink: 0; }
 
 .pe-mov-types { display: flex; gap: 10px; margin-bottom: 16px; }
 button.pe-mov-type-btn { padding: 10px 20px; border-radius: 999px; border: 1.5px solid var(--line); background: none; color: var(--ivory); font-size: 13px; font-weight: 700; text-transform: none; letter-spacing: normal; }

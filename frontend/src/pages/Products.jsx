@@ -338,6 +338,8 @@ export default function Products() {
                         <span className="badge-total">Total: {p.saldo_total}</span>
                       </>
                     )}
+                  </div>
+                  <div className="product-card-footer">
                     <button className="pe-detail-btn" onClick={() => abrirDetalhe(p.id)}>Ver detalhes • {p.insumo_count} insumos</button>
                   </div>
                 </div>

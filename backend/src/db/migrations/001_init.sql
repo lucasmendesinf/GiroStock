@@ -2,6 +2,7 @@
 -- Schema multi-tenant. Toda tabela relevante carrega tenant_id.
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS citext;
 
 CREATE TABLE tenants (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -41,6 +42,7 @@ CREATE TABLE users (
   ativo BOOLEAN NOT NULL DEFAULT true,
   criado_em TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE EXTENSION IF NOT EXISTS citext;
 CREATE EXTENSION IF NOT EXISTS citext;
 CREATE UNIQUE INDEX uq_users_tenant_email ON users(tenant_id, email);
 CREATE INDEX idx_users_tenant ON users(tenant_id);

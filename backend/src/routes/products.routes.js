@@ -9,18 +9,25 @@ const UNIDADES = ['UN', 'KG', 'L', 'CX'];
 
 router.get('/categories', requireArea('Estoque'), async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT id, nome FROM categories WHERE tenant_id = $1 ORDER BY nome`,
+    `SELECT id, nome, parent_id FROM categories WHERE tenant_id = $1 ORDER BY nome`,
     [req.user.tenantId]
   );
   res.json(rows);
 });
 
 router.post('/categories', requireArea('Estoque'), async (req, res) => {
-  const { nome } = req.body || {};
+  const { nome, parent_id } = req.body || {};
   if (!nome) return res.status(400).json({ erro: 'nome e obrigatorio' });
+  if (parent_id) {
+    const parent = await pool.query(
+      `SELECT 1 FROM categories WHERE id = $1 AND tenant_id = $2`,
+      [parent_id, req.user.tenantId]
+    );
+    if (parent.rows.length === 0) return res.status(400).json({ erro: 'categoria pai nao encontrada' });
+  }
   const { rows } = await pool.query(
-    `INSERT INTO categories (tenant_id, nome) VALUES ($1, $2) RETURNING id, nome`,
-    [req.user.tenantId, nome]
+    `INSERT INTO categories (tenant_id, nome, parent_id) VALUES ($1, $2, $3) RETURNING id, nome, parent_id`,
+    [req.user.tenantId, nome, parent_id || null]
   );
   res.status(201).json(rows[0]);
 });
@@ -29,7 +36,8 @@ router.get('/products', async (req, res) => {
   const { rows } = await pool.query(
     `SELECT p.id, p.codigo_interno, p.nome, p.categoria_id, p.supplier_id, p.barcode,
             p.unidade, p.preco_custo, p.preco_venda, p.ativo,
-            COALESCE(SUM(sb.saldo), 0) AS saldo_total
+            COALESCE(SUM(sb.saldo), 0) AS saldo_total,
+            EXISTS(SELECT 1 FROM product_ingredients pi WHERE pi.product_id = p.id AND pi.tenant_id = p.tenant_id) AS tem_ficha_tecnica
      FROM products p
      LEFT JOIN stock_balances sb ON sb.product_id = p.id AND sb.tenant_id = p.tenant_id
      WHERE p.tenant_id = $1
@@ -88,7 +96,7 @@ router.get('/products/:id', async (req, res) => {
 });
 
 router.post('/products', requireArea('Estoque'), async (req, res) => {
-  const { nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, location_id, estoque_inicial } = req.body || {};
+  const { nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, location_id, estoque_inicial, ficha_tecnica } = req.body || {};
 
   if (!nome || nome.length < 3) {
     return res.status(400).json({ erro: 'nome deve ter no minimo 3 caracteres' });
@@ -105,9 +113,24 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
   if (!(custo > 0)) return res.status(400).json({ erro: 'preco de custo deve ser maior que zero' });
   if (!(venda > 0)) return res.status(400).json({ erro: 'preco de venda deve ser maior que zero' });
   if (!(venda > custo)) return res.status(400).json({ erro: 'preco de venda deve ser maior que o custo' });
-  if (!location_id) return res.status(400).json({ erro: 'local de estoque inicial e obrigatorio' });
+
+  const fichaItems = Array.isArray(ficha_tecnica) ? ficha_tecnica : [];
+  for (const item of fichaItems) {
+    if (!item.ingredient_id || !(Number(item.quantidade_por_unidade) > 0)) {
+      return res.status(400).json({ erro: 'cada insumo da ficha tecnica precisa de ingredient_id e quantidade_por_unidade (>0)' });
+    }
+  }
+
+  // Produtos com ficha tecnica (lanches) nao tem estoque proprio: a disponibilidade
+  // e controlada pelos insumos da receita, entao local/estoque inicial nao se aplicam.
+  const temFicha = fichaItems.length > 0;
+  if (!temFicha && !location_id) {
+    return res.status(400).json({ erro: 'local de estoque inicial e obrigatorio' });
+  }
   const saldoInicial = Number(estoque_inicial ?? 0);
-  if (saldoInicial < 0) return res.status(400).json({ erro: 'estoque inicial nao pode ser negativo' });
+  if (!temFicha && saldoInicial < 0) {
+    return res.status(400).json({ erro: 'estoque inicial nao pode ser negativo' });
+  }
 
   const existingBarcode = await pool.query(
     `SELECT 1 FROM products WHERE tenant_id = $1 AND barcode = $2`,
@@ -135,17 +158,41 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
     );
     const product = rows[0];
 
-    await client.query(
-      `INSERT INTO stock_balances (product_id, location_id, tenant_id, saldo) VALUES ($1, $2, $3, $4)`,
-      [product.id, location_id, req.user.tenantId, saldoInicial]
-    );
-
-    if (saldoInicial > 0) {
+    if (!temFicha) {
       await client.query(
-        `INSERT INTO stock_movements (tenant_id, product_id, tipo, quantidade, location_origem_id, location_destino_id, motivo, usuario_id)
-         VALUES ($1, $2, 'entrada', $3, NULL, $4, 'Estoque inicial no cadastro do produto', $5)`,
-        [req.user.tenantId, product.id, saldoInicial, location_id, req.user.id]
+        `INSERT INTO stock_balances (product_id, location_id, tenant_id, saldo) VALUES ($1, $2, $3, $4)`,
+        [product.id, location_id, req.user.tenantId, saldoInicial]
       );
+
+      if (saldoInicial > 0) {
+        await client.query(
+          `INSERT INTO stock_movements (tenant_id, product_id, tipo, quantidade, location_origem_id, location_destino_id, motivo, usuario_id)
+           VALUES ($1, $2, 'entrada', $3, NULL, $4, 'Estoque inicial no cadastro do produto', $5)`,
+          [req.user.tenantId, product.id, saldoInicial, location_id, req.user.id]
+        );
+      }
+    }
+
+    let ficha = [];
+    if (fichaItems.length > 0) {
+      const ingredientIds = fichaItems.map((i) => i.ingredient_id);
+      const validIngredients = await client.query(
+        `SELECT id FROM ingredients WHERE id = ANY($1::uuid[]) AND tenant_id = $2`,
+        [ingredientIds, req.user.tenantId]
+      );
+      if (validIngredients.rows.length !== new Set(ingredientIds).size) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ erro: 'um ou mais insumos da ficha tecnica nao foram encontrados' });
+      }
+      for (const item of fichaItems) {
+        const inserted = await client.query(
+          `INSERT INTO product_ingredients (tenant_id, product_id, ingredient_id, quantidade_por_unidade)
+           VALUES ($1, $2, $3, $4)
+           RETURNING id, ingredient_id, quantidade_por_unidade`,
+          [req.user.tenantId, product.id, item.ingredient_id, Number(item.quantidade_por_unidade)]
+        );
+        ficha.push(inserted.rows[0]);
+      }
     }
 
     await logAudit(client, {
@@ -158,7 +205,7 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
     });
 
     await client.query('COMMIT');
-    res.status(201).json(product);
+    res.status(201).json({ ...product, ficha_tecnica: ficha });
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

@@ -85,8 +85,17 @@ router.post('/sales', requireArea('Vendas'), async (req, res) => {
       troco = Number((recebido - total).toFixed(2));
     }
 
-    // Verifica saldo de produto no local do terminal
+    // Produtos com ficha tecnica (lanches montados a partir de insumos) nao tem estoque proprio:
+    // a disponibilidade e controlada inteiramente pelos insumos da receita.
+    const produtosComFicha = await client.query(
+      `SELECT DISTINCT product_id FROM product_ingredients WHERE tenant_id = $1 AND product_id = ANY($2::uuid[])`,
+      [req.user.tenantId, productIds]
+    );
+    const temFichaTecnica = new Set(produtosComFicha.rows.map((r) => r.product_id));
+
+    // Verifica saldo de produto no local do terminal (somente para itens sem ficha tecnica)
     for (const item of itemsComPreco) {
+      if (temFichaTecnica.has(item.product_id)) continue;
       const saldo = await client.query(
         `SELECT saldo FROM stock_balances WHERE product_id = $1 AND location_id = $2 AND tenant_id = $3 FOR UPDATE`,
         [item.product_id, locationId, req.user.tenantId]
@@ -148,15 +157,17 @@ router.post('/sales', requireArea('Vendas'), async (req, res) => {
         [req.user.tenantId, saleId, item.product_id, item.quantidade, item.preco_unitario, item.subtotal]
       );
 
-      await client.query(
-        `UPDATE stock_balances SET saldo = saldo - $1 WHERE product_id = $2 AND location_id = $3 AND tenant_id = $4`,
-        [item.quantidade, item.product_id, locationId, req.user.tenantId]
-      );
-      await client.query(
-        `INSERT INTO stock_movements (tenant_id, product_id, tipo, quantidade, location_origem_id, location_destino_id, motivo, usuario_id)
-         VALUES ($1, $2, 'saida', $3, $4, NULL, $5, $6)`,
-        [req.user.tenantId, item.product_id, item.quantidade, locationId, `Venda ${saleId}`, req.user.id]
-      );
+      if (!temFichaTecnica.has(item.product_id)) {
+        await client.query(
+          `UPDATE stock_balances SET saldo = saldo - $1 WHERE product_id = $2 AND location_id = $3 AND tenant_id = $4`,
+          [item.quantidade, item.product_id, locationId, req.user.tenantId]
+        );
+        await client.query(
+          `INSERT INTO stock_movements (tenant_id, product_id, tipo, quantidade, location_origem_id, location_destino_id, motivo, usuario_id)
+           VALUES ($1, $2, 'saida', $3, $4, NULL, $5, $6)`,
+          [req.user.tenantId, item.product_id, item.quantidade, locationId, `Venda ${saleId}`, req.user.id]
+        );
+      }
 
       const ficha = await client.query(
         `SELECT ingredient_id, quantidade_por_unidade FROM product_ingredients WHERE product_id = $1 AND tenant_id = $2`,

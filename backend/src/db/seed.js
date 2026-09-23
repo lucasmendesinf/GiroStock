@@ -44,8 +44,12 @@ async function run() {
     const catBebidas = await client.query(
       `INSERT INTO categories (tenant_id, nome) VALUES ($1, 'Bebidas') RETURNING id`, [tenantId]
     );
+    const catLanchonete = await client.query(
+      `INSERT INTO categories (tenant_id, nome) VALUES ($1, 'Lanchonete') RETURNING id`, [tenantId]
+    );
     const catLanches = await client.query(
-      `INSERT INTO categories (tenant_id, nome) VALUES ($1, 'Lanches') RETURNING id`, [tenantId]
+      `INSERT INTO categories (tenant_id, nome, parent_id) VALUES ($1, 'Lanches', $2) RETURNING id`,
+      [tenantId, catLanchonete.rows[0].id]
     );
 
     const supplier = await client.query(

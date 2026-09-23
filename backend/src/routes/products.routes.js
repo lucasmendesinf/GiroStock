@@ -9,7 +9,10 @@ const UNIDADES = ['UN', 'KG', 'L', 'CX'];
 
 router.get('/categories', requireArea('Estoque'), async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT id, nome, parent_id FROM categories WHERE tenant_id = $1 ORDER BY nome`,
+    `SELECT c.id, c.nome, c.parent_id,
+            (SELECT COUNT(*)::int FROM products p WHERE p.categoria_id = c.id AND p.tenant_id = c.tenant_id) AS produto_count,
+            (SELECT COUNT(*)::int FROM categories sub WHERE sub.parent_id = c.id AND sub.tenant_id = c.tenant_id) AS subcategoria_count
+     FROM categories c WHERE c.tenant_id = $1 ORDER BY c.nome`,
     [req.user.tenantId]
   );
   res.json(rows);
@@ -30,6 +33,33 @@ router.post('/categories', requireArea('Estoque'), async (req, res) => {
     [req.user.tenantId, nome, parent_id || null]
   );
   res.status(201).json(rows[0]);
+});
+
+router.delete('/categories/:id', requireArea('Estoque'), async (req, res) => {
+  const categoria = await pool.query(
+    `SELECT 1 FROM categories WHERE id = $1 AND tenant_id = $2`,
+    [req.params.id, req.user.tenantId]
+  );
+  if (categoria.rows.length === 0) return res.status(404).json({ erro: 'categoria nao encontrada' });
+
+  const produtos = await pool.query(
+    `SELECT COUNT(*)::int AS total FROM products WHERE categoria_id = $1 AND tenant_id = $2`,
+    [req.params.id, req.user.tenantId]
+  );
+  if (produtos.rows[0].total > 0) {
+    return res.status(400).json({ erro: `nao e possivel remover: existem ${produtos.rows[0].total} produto(s) vinculados a esta categoria` });
+  }
+
+  const subcategorias = await pool.query(
+    `SELECT COUNT(*)::int AS total FROM categories WHERE parent_id = $1 AND tenant_id = $2`,
+    [req.params.id, req.user.tenantId]
+  );
+  if (subcategorias.rows[0].total > 0) {
+    return res.status(400).json({ erro: `nao e possivel remover: existem ${subcategorias.rows[0].total} subcategoria(s) vinculadas a esta categoria` });
+  }
+
+  await pool.query(`DELETE FROM categories WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.user.tenantId]);
+  res.status(204).send();
 });
 
 router.get('/products', async (req, res) => {

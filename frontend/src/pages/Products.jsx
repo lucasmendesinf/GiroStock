@@ -85,6 +85,14 @@ export default function Products() {
     } catch (err) { falhar(err); }
   }
 
+  async function removerCategoria(categoria) {
+    try {
+      await api.del(`/categories/${categoria.id}`);
+      avisar('Categoria removida.');
+      reload();
+    } catch (err) { falhar(err); }
+  }
+
   function custoFracionado(ingredientId, quantidade) {
     const ing = ingredients.find((i) => i.id === ingredientId);
     return ing ? Number(ing.custo_unitario) * Number(quantidade) : 0;
@@ -267,14 +275,39 @@ export default function Products() {
                   {novaCategoriaAberta ? 'cancelar' : '+ nova categoria / subcategoria'}
                 </button>
                 {novaCategoriaAberta && (
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    <input style={{ flex: 1, minWidth: '120px' }} placeholder="Nome" value={novaCategoria.nome} onChange={(e) => setNovaCategoria({ ...novaCategoria, nome: e.target.value })} />
-                    <select style={{ flex: 1, minWidth: '140px' }} value={novaCategoria.parent_id} onChange={(e) => setNovaCategoria({ ...novaCategoria, parent_id: e.target.value })}>
-                      <option value="">Sem pai</option>
-                      {categoriasHierarquia.filter((c) => !c.parent_id).map((c) => <option key={c.id} value={c.id}>Sub de: {c.nome}</option>)}
-                    </select>
-                    <button type="button" onClick={criarCategoria}>Criar</button>
-                  </div>
+                  <>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <input style={{ flex: 1, minWidth: '120px' }} placeholder="Nome" value={novaCategoria.nome} onChange={(e) => setNovaCategoria({ ...novaCategoria, nome: e.target.value })} />
+                      <select style={{ flex: 1, minWidth: '140px' }} value={novaCategoria.parent_id} onChange={(e) => setNovaCategoria({ ...novaCategoria, parent_id: e.target.value })}>
+                        <option value="">Sem pai</option>
+                        {categoriasHierarquia.filter((c) => !c.parent_id).map((c) => <option key={c.id} value={c.id}>Sub de: {c.nome}</option>)}
+                      </select>
+                      <button type="button" onClick={criarCategoria}>Criar</button>
+                    </div>
+                    <ul style={{ listStyle: 'none', padding: 0, margin: '4px 0 0' }}>
+                      {categoriasHierarquia.map((c) => {
+                        const podeRemover = c.produto_count === 0 && c.subcategoria_count === 0;
+                        return (
+                          <li key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', fontSize: '12px', borderBottom: '1px solid var(--line)' }}>
+                            <span>{'— '.repeat(c.nivel)}{c.nome}
+                              {(c.produto_count > 0 || c.subcategoria_count > 0) && (
+                                <span style={{ color: 'var(--muted)' }}> ({c.produto_count} produto(s){c.subcategoria_count > 0 ? `, ${c.subcategoria_count} subcategoria(s)` : ''})</span>
+                              )}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => removerCategoria(c)}
+                              disabled={!podeRemover}
+                              title={podeRemover ? 'Remover categoria' : 'Só é possível remover categorias sem produtos ou subcategorias vinculadas'}
+                              style={{ background: 'none', border: 'none', color: podeRemover ? 'var(--err)' : 'var(--muted)', cursor: podeRemover ? 'pointer' : 'not-allowed', fontSize: '11px', opacity: podeRemover ? 1 : 0.5 }}
+                            >
+                              remover
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </>
                 )}
 
                 <select value={form.supplier_id} onChange={(e) => setForm({ ...form, supplier_id: e.target.value })}>

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { api } from '../api/client';
 import { requestFullscreen, isFullscreen as checkIsFullscreen } from '../utils/fullscreen';
 
@@ -37,6 +37,11 @@ export default function PDV() {
   const [barcode, setBarcode] = useState('');
   const [results, setResults] = useState([]);
   const [cart, setCart] = useState([]);
+  const buscaRef = useRef(null);
+
+  function focarBusca() {
+    setTimeout(() => buscaRef.current?.focus(), 0);
+  }
 
   const [pagamentoAberto, setPagamentoAberto] = useState(false);
   const [formaPagamento, setFormaPagamento] = useState(null);
@@ -71,6 +76,10 @@ export default function PDV() {
     if (terminalId) loadSession(terminalId);
   }, [terminalId, loadSession]);
 
+  useEffect(() => {
+    if (session && !pagamentoAberto && !sucesso) focarBusca();
+  }, [session, pagamentoAberto, sucesso]);
+
   async function abrirCaixa(e) {
     e.preventDefault();
     setErro(null);
@@ -88,6 +97,16 @@ export default function PDV() {
     if (q.length < 2) { setResults([]); return; }
     const rows = await api.get(`/products/search?q=${encodeURIComponent(q)}`);
     setResults(rows);
+  }
+
+  async function onBuscaKeyDown(e) {
+    if (e.key !== 'Enter') return;
+    const codigo = query.trim();
+    if (!codigo) return;
+    const rows = await api.get(`/products/search?barcode=${encodeURIComponent(codigo)}`);
+    if (rows.length > 0) {
+      addToCart(rows[0]);
+    }
   }
 
   async function buscarPorCodigoBarras(e) {
@@ -111,6 +130,7 @@ export default function PDV() {
     });
     setResults([]);
     setQuery('');
+    focarBusca();
   }
 
   function changeQty(id, delta) {
@@ -240,7 +260,8 @@ export default function PDV() {
 
       <div className="pdv-body">
         <div className="pdv-busca">
-          <input placeholder="Buscar produto por nome..." value={query} onChange={(e) => buscarPorNome(e.target.value)} />
+          <input ref={buscaRef} placeholder="Buscar por nome ou código de barras" value={query}
+            onChange={(e) => buscarPorNome(e.target.value)} onKeyDown={onBuscaKeyDown} autoFocus />
           <input placeholder="Codigo de barras + Enter" value={barcode}
             onChange={(e) => setBarcode(e.target.value)} onKeyDown={buscarPorCodigoBarras} />
           <ul className="resultados">

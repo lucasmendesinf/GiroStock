@@ -347,20 +347,28 @@ tbody tr:hover { background: var(--panel-alt); }
 }
 
 .theme-toggle {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  box-sizing: border-box;
   width: 50px;
   height: 26px;
+  min-width: 50px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--panel);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
   padding: 2px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   flex-shrink: 0;
+  line-height: 0;
 }
 .theme-toggle-thumb {
+  box-sizing: border-box;
   width: 20px;
   height: 20px;
+  min-width: 20px;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--red), var(--gold));
   color: var(--btn-text);

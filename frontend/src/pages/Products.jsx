@@ -187,12 +187,14 @@ export default function Products() {
   const [ajusteAberto, setAjusteAberto] = useState({});
   const [ajusteTipo, setAjusteTipo] = useState({});
   const [ajusteValor, setAjusteValor] = useState({});
+  const [ajusteCusto, setAjusteCusto] = useState({});
   const [ajusteMotivo, setAjusteMotivo] = useState({});
 
-  function abrirAjuste(id, tipo, valorInicial) {
+  function abrirAjuste(id, tipo, valorInicial, custoInicial) {
     setAjusteAberto({ ...ajusteAberto, [id]: true });
     setAjusteTipo({ ...ajusteTipo, [id]: tipo });
     setAjusteValor({ ...ajusteValor, [id]: valorInicial ?? '' });
+    setAjusteCusto({ ...ajusteCusto, [id]: custoInicial ?? '' });
     setAjusteMotivo({ ...ajusteMotivo, [id]: '' });
   }
 
@@ -213,7 +215,14 @@ export default function Products() {
       } else {
         const novoSaldo = Number(ajusteValor[id]);
         if (isNaN(novoSaldo) || novoSaldo < 0) { setErro('Informe um saldo valido (0 ou mais).'); return; }
-        await api.post(`/ingredients/${id}/stock-adjustment`, { novo_saldo: novoSaldo, motivo });
+        const payload = { novo_saldo: novoSaldo, motivo };
+        const custoInformado = ajusteCusto[id];
+        if (custoInformado !== undefined && custoInformado !== '') {
+          const novoCusto = Number(custoInformado);
+          if (isNaN(novoCusto) || novoCusto < 0) { setErro('Informe um custo por unidade valido (0 ou mais).'); return; }
+          payload.novo_custo_unitario = novoCusto;
+        }
+        await api.post(`/ingredients/${id}/stock-adjustment`, payload);
         avisar('Balanco de estoque registrado.');
       }
       fecharAjuste(id);
@@ -562,8 +571,8 @@ export default function Products() {
                       <input type="number" step="0.01" placeholder="Custo R$" value={quickCusto[i.id] || ''} onChange={(e) => setQuickCusto({ ...quickCusto, [i.id]: e.target.value })} />
                       <button onClick={() => lancarEntradaInsumo(i.id)}>+ estoque</button>
                       <button onClick={() => abrirAjuste(i.id, 'saida', '')} style={{ padding: '9px 14px', borderRadius: '8px', border: '1px solid var(--line)', background: 'none', color: 'var(--ivory)', fontSize: '12px', fontWeight: 700 }}>Saída</button>
-                      <button onClick={() => abrirAjuste(i.id, 'balanco', String(i.estoque_atual))} style={{ padding: '9px 14px', borderRadius: '8px', border: '1px solid var(--line)', background: 'none', color: 'var(--ivory)', fontSize: '12px', fontWeight: 700 }}>Balanço</button>
-                      <button onClick={() => abrirAjuste(i.id, 'balanco', '0')} style={{ padding: '9px 14px', borderRadius: '8px', border: '1px solid var(--err)', background: 'none', color: 'var(--err)', fontSize: '12px', fontWeight: 700 }}>Zerar</button>
+                      <button onClick={() => abrirAjuste(i.id, 'balanco', String(i.estoque_atual), String(i.custo_unitario))} style={{ padding: '9px 14px', borderRadius: '8px', border: '1px solid var(--line)', background: 'none', color: 'var(--ivory)', fontSize: '12px', fontWeight: 700 }}>Balanço</button>
+                      <button onClick={() => abrirAjuste(i.id, 'balanco', '0', String(i.custo_unitario))} style={{ padding: '9px 14px', borderRadius: '8px', border: '1px solid var(--err)', background: 'none', color: 'var(--err)', fontSize: '12px', fontWeight: 700 }}>Zerar</button>
                     </div>
                   </div>
 
@@ -587,6 +596,15 @@ export default function Products() {
                           value={ajusteValor[i.id] ?? ''}
                           onChange={(e) => setAjusteValor({ ...ajusteValor, [i.id]: e.target.value })}
                         />
+                        {ajusteTipo[i.id] === 'balanco' && (
+                          <input
+                            style={{ width: '140px' }}
+                            type="number" step="0.0001"
+                            placeholder="Novo custo/un (R$)"
+                            value={ajusteCusto[i.id] ?? ''}
+                            onChange={(e) => setAjusteCusto({ ...ajusteCusto, [i.id]: e.target.value })}
+                          />
+                        )}
                         <input
                           style={{ flexGrow: 1, minWidth: '160px' }}
                           placeholder="Motivo * (ex: perda, validade vencida, contagem de estoque...)"
@@ -596,9 +614,14 @@ export default function Products() {
                         <button onClick={() => confirmarAjusteInsumo(i.id)}>Confirmar</button>
                         <button type="button" onClick={() => fecharAjuste(i.id)} style={{ background: 'none', border: '1px solid var(--line)', color: 'var(--ivory)', borderRadius: '10px', padding: '12px 18px' }}>Cancelar</button>
                       </div>
-                      {ajusteTipo[i.id] === 'balanco' && ajusteValor[i.id] !== '' && !isNaN(Number(ajusteValor[i.id])) && (
+                      {ajusteTipo[i.id] === 'balanco' && (
                         <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
-                          Diferença: {(Number(ajusteValor[i.id]) - Number(i.estoque_atual)) >= 0 ? '+' : ''}{(Number(ajusteValor[i.id]) - Number(i.estoque_atual)).toFixed(3)} {i.unidade}
+                          {ajusteValor[i.id] !== '' && !isNaN(Number(ajusteValor[i.id])) && (
+                            <>Diferença de saldo: {(Number(ajusteValor[i.id]) - Number(i.estoque_atual)) >= 0 ? '+' : ''}{(Number(ajusteValor[i.id]) - Number(i.estoque_atual)).toFixed(3)} {i.unidade}</>
+                          )}
+                          {ajusteCusto[i.id] !== '' && !isNaN(Number(ajusteCusto[i.id])) && Number(ajusteCusto[i.id]) !== Number(i.custo_unitario) && (
+                            <> · custo por unidade sera sobrescrito para R$ {Number(ajusteCusto[i.id]).toFixed(4)}/{i.unidade}</>
+                          )}
                         </span>
                       )}
                     </div>

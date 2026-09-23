@@ -140,10 +140,15 @@ router.post('/ingredients/:id/stock-exits', requireArea('Estoque'), async (req, 
 });
 
 router.post('/ingredients/:id/stock-adjustment', requireArea('Estoque'), async (req, res) => {
-  const { novo_saldo, motivo } = req.body || {};
+  const { novo_saldo, novo_custo_unitario, motivo } = req.body || {};
   const novoSaldo = Number(novo_saldo);
   if (novo_saldo === undefined || novo_saldo === null || novo_saldo === '' || isNaN(novoSaldo) || novoSaldo < 0) {
     return res.status(400).json({ erro: 'novo_saldo deve ser um numero valido (0 ou mais)' });
+  }
+  const sobrescreverCusto = novo_custo_unitario !== undefined && novo_custo_unitario !== null && novo_custo_unitario !== '';
+  const novoCustoUnitario = sobrescreverCusto ? Number(novo_custo_unitario) : null;
+  if (sobrescreverCusto && (isNaN(novoCustoUnitario) || novoCustoUnitario < 0)) {
+    return res.status(400).json({ erro: 'novo_custo_unitario deve ser um numero valido (0 ou mais)' });
   }
   if (!motivo || motivo.trim().length < 3) {
     return res.status(400).json({ erro: 'motivo e obrigatorio (minimo 3 caracteres)' });
@@ -154,7 +159,7 @@ router.post('/ingredients/:id/stock-adjustment', requireArea('Estoque'), async (
     await client.query('BEGIN');
 
     const atual = await client.query(
-      `SELECT estoque_atual FROM ingredients WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
+      `SELECT estoque_atual, custo_unitario FROM ingredients WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
       [req.params.id, req.user.tenantId]
     );
     if (atual.rows.length === 0) {
@@ -162,12 +167,14 @@ router.post('/ingredients/:id/stock-adjustment', requireArea('Estoque'), async (
       return res.status(404).json({ erro: 'insumo nao encontrado' });
     }
     const saldoAnterior = Number(atual.rows[0].estoque_atual);
+    const custoAnterior = Number(atual.rows[0].custo_unitario);
+    const custoFinal = sobrescreverCusto ? novoCustoUnitario : custoAnterior;
 
     const { rows } = await client.query(
-      `UPDATE ingredients SET estoque_atual = $1
-       WHERE id = $2 AND tenant_id = $3
+      `UPDATE ingredients SET estoque_atual = $1, custo_unitario = $2
+       WHERE id = $3 AND tenant_id = $4
        RETURNING id, nome, unidade, estoque_atual, custo_unitario`,
-      [novoSaldo, req.params.id, req.user.tenantId]
+      [novoSaldo, custoFinal, req.params.id, req.user.tenantId]
     );
 
     await logAudit(client, {
@@ -176,7 +183,10 @@ router.post('/ingredients/:id/stock-adjustment', requireArea('Estoque'), async (
       acao: 'balanco_estoque',
       recurso: 'ingredients',
       recursoId: req.params.id,
-      detalhes: { saldo_anterior: saldoAnterior, saldo_novo: novoSaldo, diferenca: novoSaldo - saldoAnterior, motivo: motivo.trim() },
+      detalhes: {
+        saldo_anterior: saldoAnterior, saldo_novo: novoSaldo, diferenca: novoSaldo - saldoAnterior,
+        custo_anterior: custoAnterior, custo_novo: custoFinal, motivo: motivo.trim(),
+      },
     });
     await client.query('COMMIT');
     res.json(rows[0]);

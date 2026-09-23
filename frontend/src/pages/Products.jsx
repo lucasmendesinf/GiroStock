@@ -261,7 +261,7 @@ export default function Products() {
                 <input placeholder="Nome do produto *" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required />
 
                 <div style={{ display: 'flex', gap: '10px' }}>
-                  <select style={{ flexGrow: 1 }} value={form.categoria_id} onChange={(e) => setForm({ ...form, categoria_id: e.target.value })} required>
+                  <select style={{ flexGrow: 1, minWidth: 0 }} value={form.categoria_id} onChange={(e) => setForm({ ...form, categoria_id: e.target.value })} required>
                     <option value="">Categoria *</option>
                     {categoriasHierarquia.map((c) => (
                       <option key={c.id} value={c.id}>{'— '.repeat(c.nivel)}{c.nome}</option>
@@ -363,7 +363,7 @@ export default function Products() {
                   </div>
                 )}
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  <select style={{ flexGrow: 1 }} value={novoFichaItem.ingredient_id} onChange={(e) => setNovoFichaItem({ ...novoFichaItem, ingredient_id: e.target.value })}>
+                  <select style={{ flexGrow: 1, minWidth: 0, maxWidth: '100%' }} value={novoFichaItem.ingredient_id} onChange={(e) => setNovoFichaItem({ ...novoFichaItem, ingredient_id: e.target.value })}>
                     <option value="">Insumo...</option>
                     {ingredients.map((i) => <option key={i.id} value={i.id}>{i.nome} (saldo: {i.estoque_atual}{i.unidade} · R$ {Number(i.custo_unitario).toFixed(4)}/{i.unidade})</option>)}
                   </select>
@@ -501,7 +501,7 @@ export default function Products() {
                   <select style={{ width: '110px' }} value={insumoForm.unidade} onChange={(e) => setInsumoForm({ ...insumoForm, unidade: e.target.value })}>
                     {UNIDADES_INSUMO.map((u) => <option key={u} value={u}>{u}</option>)}
                   </select>
-                  <input style={{ flexGrow: 1 }} type="number" step="0.001" placeholder="Estoque atual *" value={insumoForm.estoque_atual} onChange={(e) => setInsumoForm({ ...insumoForm, estoque_atual: e.target.value })} />
+                  <input style={{ flexGrow: 1, minWidth: 0 }} type="number" step="0.001" placeholder="Estoque atual *" value={insumoForm.estoque_atual} onChange={(e) => setInsumoForm({ ...insumoForm, estoque_atual: e.target.value })} />
                 </div>
                 <input type="number" step="0.01" placeholder="Custo total desta compra (R$, opcional)" value={insumoForm.custo_total} onChange={(e) => setInsumoForm({ ...insumoForm, custo_total: e.target.value })} />
                 <button type="submit">Cadastrar insumo</button>
@@ -611,7 +611,7 @@ export default function Products() {
                 <div className="empty-state" style={{ border: '1px dashed var(--line)', borderRadius: '10px', background: 'var(--panel-alt)' }}>Nenhum insumo cadastrado para este produto.</div>
               )}
               <form onSubmit={adicionarIngrediente} className="inline-form" style={{ marginTop: '10px' }}>
-                <select style={{ flexGrow: 1 }} value={fichaForm.ingredient_id} onChange={(e) => setFichaForm({ ...fichaForm, ingredient_id: e.target.value })} required>
+                <select style={{ flexGrow: 1, minWidth: 0 }} value={fichaForm.ingredient_id} onChange={(e) => setFichaForm({ ...fichaForm, ingredient_id: e.target.value })} required>
                   <option value="">Insumo (do catálogo) *</option>
                   {ingredients.map((i) => <option key={i.id} value={i.id}>{i.nome} ({i.unidade})</option>)}
                 </select>

@@ -34,14 +34,25 @@ router.post('/categories', requireArea('Estoque'), async (req, res) => {
 
 router.get('/products', async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT p.id, p.codigo_interno, p.nome, p.categoria_id, p.supplier_id, p.barcode,
+    `SELECT p.id, p.codigo_interno, p.nome, p.categoria_id, c.nome AS categoria_nome,
+            p.supplier_id, s.nome AS supplier_nome, p.barcode,
             p.unidade, p.preco_custo, p.preco_venda, p.ativo,
             COALESCE(SUM(sb.saldo), 0) AS saldo_total,
-            EXISTS(SELECT 1 FROM product_ingredients pi WHERE pi.product_id = p.id AND pi.tenant_id = p.tenant_id) AS tem_ficha_tecnica
+            COALESCE(
+              json_agg(
+                json_build_object('location_id', l.id, 'location_nome', l.nome, 'saldo', sb.saldo)
+              ) FILTER (WHERE l.id IS NOT NULL),
+              '[]'
+            ) AS saldos_por_local,
+            EXISTS(SELECT 1 FROM product_ingredients pi WHERE pi.product_id = p.id AND pi.tenant_id = p.tenant_id) AS tem_ficha_tecnica,
+            (SELECT COUNT(*)::int FROM product_ingredients pi WHERE pi.product_id = p.id AND pi.tenant_id = p.tenant_id) AS insumo_count
      FROM products p
+     LEFT JOIN categories c ON c.id = p.categoria_id
+     LEFT JOIN suppliers s ON s.id = p.supplier_id
      LEFT JOIN stock_balances sb ON sb.product_id = p.id AND sb.tenant_id = p.tenant_id
+     LEFT JOIN locations l ON l.id = sb.location_id
      WHERE p.tenant_id = $1
-     GROUP BY p.id
+     GROUP BY p.id, c.nome, s.nome
      ORDER BY p.nome`,
     [req.user.tenantId]
   );

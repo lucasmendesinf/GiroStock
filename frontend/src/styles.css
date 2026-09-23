@@ -380,3 +380,84 @@ tbody tr:hover { background: var(--panel-alt); }
 .theme-toggle[aria-checked="true"] .theme-toggle-thumb { transform: translateX(24px); }
 
 .theme-toggle-corner { position: absolute; top: 28px; right: 28px; }
+
+/* Produtos & Estoque: abas */
+.pe-tabs { display: flex; gap: 10px; margin-bottom: 0; }
+.pe-tab {
+  padding: 12px 22px;
+  border-radius: 12px 12px 0 0;
+  border: 1px solid var(--line);
+  border-bottom: none;
+  background: none;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
+}
+.pe-tab.active { background: var(--gold-light); color: var(--btn-text); }
+.pe-tabpanel { border-top: 1px solid var(--line); padding-top: 20px; }
+
+.pe-layout { display: flex; gap: 20px; align-items: flex-start; }
+.pe-sidebar { width: 380px; min-width: 380px; }
+.pe-main { flex-grow: 1; min-width: 0; }
+
+.pe-list-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.pe-list-header h2 { font-size: 18px; color: var(--ivory); }
+.pe-list-header span { font-size: 12px; color: var(--muted); }
+
+.product-card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.product-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.product-card-top .nome { font-size: 14px; font-weight: 700; color: var(--ivory); }
+.product-card-top .meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.product-card-top .preco { text-align: right; flex-shrink: 0; }
+.product-card-top .preco .venda { font-size: 15px; font-weight: 800; color: var(--gold-light); }
+.product-card-top .preco .custo { font-size: 11px; color: var(--muted); }
+.product-card-badges { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.badge-local { font-size: 11px; padding: 4px 10px; border-radius: 999px; background: var(--panel-alt); border: 1px solid var(--line); color: var(--muted); }
+.badge-total { font-size: 11px; padding: 4px 10px; border-radius: 999px; background: rgba(205, 164, 63, 0.15); border: 1px solid var(--gold-light); color: var(--gold-light); font-weight: 700; }
+.pe-detail-btn { font-size: 12px; padding: 6px 14px; border-radius: 999px; border: 1px solid var(--gold-light); background: none; color: var(--gold-light); font-weight: 700; margin-left: auto; }
+
+.pe-mov-types { display: flex; gap: 10px; margin-bottom: 16px; }
+button.pe-mov-type-btn { padding: 10px 20px; border-radius: 999px; border: 1.5px solid var(--line); background: none; color: var(--ivory); font-size: 13px; font-weight: 700; text-transform: none; letter-spacing: normal; }
+button.pe-mov-type-btn.active { border-color: var(--gold-light); background: rgba(205, 164, 63, 0.14); color: var(--gold-light); }
+
+.saldo-table { display: flex; flex-direction: column; gap: 1px; background: var(--line); border-radius: 12px; overflow: hidden; border: 1px solid var(--line); }
+.saldo-row { display: grid; grid-template-columns: 2fr repeat(var(--n-locations, 4), 1fr) 0.8fr 0.9fr; padding: 12px 16px; font-size: 13px; align-items: center; background: var(--panel); color: var(--ivory); }
+.saldo-row.header { background: var(--panel-alt); padding: 10px 16px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.saldo-row .total { color: var(--gold-light); font-weight: 700; }
+
+.mov-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.mov-card .cabecalho { display: flex; justify-content: space-between; align-items: center; }
+.mov-card .tipo { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; }
+.mov-card .qtd { font-size: 11px; color: var(--muted); }
+.mov-card .produto { font-size: 13px; font-weight: 600; color: var(--ivory); }
+.mov-card .locais { font-size: 12px; color: var(--muted); }
+.mov-card .motivo { font-size: 12px; color: var(--muted); font-style: italic; }
+
+.insumo-card { display: flex; justify-content: space-between; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; }
+.insumo-card .nome { font-size: 14px; font-weight: 700; color: var(--ivory); }
+.insumo-card .saldo { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.insumo-card .acoes { display: flex; gap: 8px; align-items: center; }
+.insumo-card .acoes input { width: 80px; padding: 9px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-alt); color: var(--ivory); font-size: 13px; }
+.insumo-card .acoes button { padding: 9px 14px; border-radius: 8px; border: 1px solid var(--gold-light); background: none; color: var(--gold-light); font-size: 12px; font-weight: 700; white-space: nowrap; }
+
+.toast-ok { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: rgba(123, 216, 143, 0.12); border: 1px solid var(--ok); border-radius: 10px; color: var(--ok); font-size: 13px; font-weight: 600; width: fit-content; }
+
+.detail-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; padding: 16px; background: var(--panel-alt); border-radius: 14px; border: 1px solid var(--line); }
+.detail-grid .label { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; }
+.detail-grid .valor { font-size: 14px; font-weight: 600; color: var(--ivory); }
+.detail-grid .valor.destaque { font-weight: 700; color: var(--gold-light); }
+
+.detail-section { display: flex; flex-direction: column; gap: 12px; padding: 16px; background: var(--panel-alt); border: 1px solid var(--line); border-radius: 14px; }
+.detail-section-title { font-size: 13px; font-weight: 700; color: var(--ivory); }
+
+.consumo-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.consumo-card .titulo { font-size: 13px; font-weight: 700; color: var(--ivory); }
+.consumo-card .insumos { font-size: 12px; color: var(--muted); }
+
+.empty-state { padding: 32px 8px; text-align: center; color: var(--muted); font-size: 13px; line-height: 1.6; }
+
+@media (max-width: 1100px) {
+  .pe-layout { flex-direction: column; }
+  .pe-sidebar { width: 100%; min-width: 0; }
+  .saldo-row { grid-template-columns: 1fr; gap: 4px; }
+}

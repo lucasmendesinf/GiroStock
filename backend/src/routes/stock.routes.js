@@ -107,14 +107,21 @@ router.post('/stock-movements', requireArea('Estoque'), async (req, res) => {
 router.get('/stock-movements', requireArea('Estoque'), async (req, res) => {
   const { product_id } = req.query;
   const params = [req.user.tenantId];
-  let where = 'tenant_id = $1';
+  let where = 'sm.tenant_id = $1';
   if (product_id) {
     params.push(product_id);
-    where += ` AND product_id = $${params.length}`;
+    where += ` AND sm.product_id = $${params.length}`;
   }
   const { rows } = await pool.query(
-    `SELECT id, product_id, tipo, quantidade, location_origem_id, location_destino_id, motivo, usuario_id, criado_em
-     FROM stock_movements WHERE ${where} ORDER BY criado_em DESC LIMIT 200`,
+    `SELECT sm.id, sm.product_id, p.nome AS product_nome, sm.tipo, sm.quantidade,
+            sm.location_origem_id, lo.nome AS location_origem_nome,
+            sm.location_destino_id, ld.nome AS location_destino_nome,
+            sm.motivo, sm.usuario_id, sm.criado_em
+     FROM stock_movements sm
+     JOIN products p ON p.id = sm.product_id
+     LEFT JOIN locations lo ON lo.id = sm.location_origem_id
+     LEFT JOIN locations ld ON ld.id = sm.location_destino_id
+     WHERE ${where} ORDER BY sm.criado_em DESC LIMIT 200`,
     params
   );
   res.json(rows);

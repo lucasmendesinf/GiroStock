@@ -81,4 +81,22 @@ router.get('/ingredients/:id/consumption-history', requireArea('Estoque'), async
   res.json(rows);
 });
 
+router.get('/consumption-feed', requireArea('Estoque'), async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT si.id AS sale_item_id, si.quantidade AS quantidade_vendida, p.nome AS product_nome,
+            MIN(ic.criado_em) AS criado_em,
+            json_agg(json_build_object('nome', i.nome, 'quantidade', ic.quantidade_consumida, 'unidade', i.unidade) ORDER BY i.nome) AS insumos
+     FROM ingredient_consumptions ic
+     JOIN sale_items si ON si.id = ic.sale_item_id
+     JOIN products p ON p.id = si.product_id
+     JOIN ingredients i ON i.id = ic.ingredient_id
+     WHERE ic.tenant_id = $1
+     GROUP BY si.id, si.quantidade, p.nome
+     ORDER BY MIN(ic.criado_em) DESC
+     LIMIT 30`,
+    [req.user.tenantId]
+  );
+  res.json(rows);
+});
+
 module.exports = router;

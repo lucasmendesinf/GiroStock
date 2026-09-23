@@ -4,7 +4,6 @@ import ThemeToggle from './components/ThemeToggle.jsx';
 import Login from './pages/Login.jsx';
 import PDV from './pages/PDV.jsx';
 import Products from './pages/Products.jsx';
-import Ingredients from './pages/Ingredients.jsx';
 import Users from './pages/Users.jsx';
 import Suppliers from './pages/Suppliers.jsx';
 import Reports from './pages/Reports.jsx';
@@ -24,7 +23,6 @@ function Layout({ children }) {
         <nav>
           <NavLink to="/pdv">PDV</NavLink>
           <NavLink to="/produtos">Produtos &amp; Estoque</NavLink>
-          <NavLink to="/insumos">Insumos</NavLink>
           <NavLink to="/fornecedores">Fornecedores</NavLink>
           <NavLink to="/usuarios">Usuários</NavLink>
           <NavLink to="/relatorios">Relatórios</NavLink>
@@ -46,7 +44,7 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/pdv" element={<Private><Layout><PDV /></Layout></Private>} />
       <Route path="/produtos" element={<Private><Layout><Products /></Layout></Private>} />
-      <Route path="/insumos" element={<Private><Layout><Ingredients /></Layout></Private>} />
+      <Route path="/insumos" element={<Navigate to="/produtos" replace />} />
       <Route path="/fornecedores" element={<Private><Layout><Suppliers /></Layout></Private>} />
       <Route path="/usuarios" element={<Private><Layout><Users /></Layout></Private>} />
       <Route path="/relatorios" element={<Private><Layout><Reports /></Layout></Private>} />

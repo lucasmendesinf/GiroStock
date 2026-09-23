@@ -7,7 +7,7 @@ const router = express.Router();
 
 router.get('/ingredients', requireArea('Estoque'), async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT id, nome, unidade, estoque_atual, ativo FROM ingredients
+    `SELECT id, nome, unidade, estoque_atual, custo_unitario, ativo FROM ingredients
      WHERE tenant_id = $1 ORDER BY nome`,
     [req.user.tenantId]
   );
@@ -15,47 +15,68 @@ router.get('/ingredients', requireArea('Estoque'), async (req, res) => {
 });
 
 router.post('/ingredients', requireArea('Estoque'), async (req, res) => {
-  const { nome, unidade, estoque_atual } = req.body || {};
+  const { nome, unidade, estoque_atual, custo_total } = req.body || {};
   if (!nome || !unidade) {
     return res.status(400).json({ erro: 'nome e unidade sao obrigatorios' });
   }
   const inicial = Number(estoque_atual ?? 0);
   if (inicial < 0) return res.status(400).json({ erro: 'estoque atual nao pode ser negativo' });
+  const custoTotal = Number(custo_total ?? 0);
+  if (custoTotal < 0) return res.status(400).json({ erro: 'custo total nao pode ser negativo' });
+  const custoUnitario = inicial > 0 ? custoTotal / inicial : 0;
 
   const { rows } = await pool.query(
-    `INSERT INTO ingredients (tenant_id, nome, unidade, estoque_atual)
-     VALUES ($1, $2, $3, $4)
-     RETURNING id, nome, unidade, estoque_atual, ativo`,
-    [req.user.tenantId, nome, unidade, inicial]
+    `INSERT INTO ingredients (tenant_id, nome, unidade, estoque_atual, custo_unitario)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id, nome, unidade, estoque_atual, custo_unitario, ativo`,
+    [req.user.tenantId, nome, unidade, inicial, custoUnitario]
   );
   res.status(201).json(rows[0]);
 });
 
 router.post('/ingredients/:id/stock-entries', requireArea('Estoque'), async (req, res) => {
-  const { quantidade } = req.body || {};
+  const { quantidade, custo_total } = req.body || {};
   const qtd = Number(quantidade);
   if (!(qtd > 0)) return res.status(400).json({ erro: 'quantidade deve ser maior que zero' });
+  const custoTotalEntrada = custo_total === undefined || custo_total === null || custo_total === '' ? null : Number(custo_total);
+  if (custoTotalEntrada !== null && custoTotalEntrada < 0) {
+    return res.status(400).json({ erro: 'custo total nao pode ser negativo' });
+  }
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const { rows } = await client.query(
-      `UPDATE ingredients SET estoque_atual = estoque_atual + $1
-       WHERE id = $2 AND tenant_id = $3
-       RETURNING id, nome, unidade, estoque_atual`,
-      [qtd, req.params.id, req.user.tenantId]
+
+    const atual = await client.query(
+      `SELECT estoque_atual, custo_unitario FROM ingredients WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
+      [req.params.id, req.user.tenantId]
     );
-    if (rows.length === 0) {
+    if (atual.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ erro: 'insumo nao encontrado' });
     }
+
+    const estoqueAtual = Number(atual.rows[0].estoque_atual);
+    const custoUnitarioAtual = Number(atual.rows[0].custo_unitario);
+    // Media ponderada: mistura o valor ja em estoque com o custo desta nova entrada.
+    const novoCustoUnitario = custoTotalEntrada === null
+      ? custoUnitarioAtual
+      : (estoqueAtual * custoUnitarioAtual + custoTotalEntrada) / (estoqueAtual + qtd);
+
+    const { rows } = await client.query(
+      `UPDATE ingredients SET estoque_atual = estoque_atual + $1, custo_unitario = $2
+       WHERE id = $3 AND tenant_id = $4
+       RETURNING id, nome, unidade, estoque_atual, custo_unitario`,
+      [qtd, novoCustoUnitario, req.params.id, req.user.tenantId]
+    );
+
     await logAudit(client, {
       tenantId: req.user.tenantId,
       usuarioId: req.user.id,
       acao: 'entrada_estoque',
       recurso: 'ingredients',
       recursoId: req.params.id,
-      detalhes: { quantidade: qtd },
+      detalhes: { quantidade: qtd, custo_total: custoTotalEntrada },
     });
     await client.query('COMMIT');
     res.json(rows[0]);

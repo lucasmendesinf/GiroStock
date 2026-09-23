@@ -85,15 +85,28 @@ export default function Products() {
     } catch (err) { falhar(err); }
   }
 
+  function custoFracionado(ingredientId, quantidade) {
+    const ing = ingredients.find((i) => i.id === ingredientId);
+    return ing ? Number(ing.custo_unitario) * Number(quantidade) : 0;
+  }
+
+  function custoTotalFicha(lista) {
+    return lista.reduce((soma, f) => soma + custoFracionado(f.ingredient_id, f.quantidade_por_unidade), 0);
+  }
+
   function adicionarInsumoAoNovoProduto() {
     if (!novoFichaItem.ingredient_id || !(Number(novoFichaItem.quantidade_por_unidade) > 0)) return;
     if (fichaNovoProduto.some((f) => f.ingredient_id === novoFichaItem.ingredient_id)) return;
-    setFichaNovoProduto([...fichaNovoProduto, { ...novoFichaItem, quantidade_por_unidade: Number(novoFichaItem.quantidade_por_unidade) }]);
+    const proxima = [...fichaNovoProduto, { ...novoFichaItem, quantidade_por_unidade: Number(novoFichaItem.quantidade_por_unidade) }];
+    setFichaNovoProduto(proxima);
+    setForm((prev) => ({ ...prev, preco_custo: custoTotalFicha(proxima).toFixed(2) }));
     setNovoFichaItem({ ingredient_id: '', quantidade_por_unidade: '' });
   }
 
   function removerInsumoDoNovoProduto(ingredientId) {
-    setFichaNovoProduto(fichaNovoProduto.filter((f) => f.ingredient_id !== ingredientId));
+    const proxima = fichaNovoProduto.filter((f) => f.ingredient_id !== ingredientId);
+    setFichaNovoProduto(proxima);
+    setForm((prev) => ({ ...prev, preco_custo: proxima.length > 0 ? custoTotalFicha(proxima).toFixed(2) : prev.preco_custo }));
   }
 
   async function criarProduto(e) {
@@ -130,15 +143,20 @@ export default function Products() {
   }
 
   // ---------- ABA: INSUMOS ----------
-  const [insumoForm, setInsumoForm] = useState({ nome: '', unidade: 'G', estoque_atual: '0' });
+  const [insumoForm, setInsumoForm] = useState({ nome: '', unidade: 'G', estoque_atual: '0', custo_total: '' });
   const [quickQty, setQuickQty] = useState({});
+  const [quickCusto, setQuickCusto] = useState({});
 
   async function criarInsumo(e) {
     e.preventDefault();
     try {
-      await api.post('/ingredients', { ...insumoForm, estoque_atual: Number(insumoForm.estoque_atual) });
+      await api.post('/ingredients', {
+        ...insumoForm,
+        estoque_atual: Number(insumoForm.estoque_atual),
+        custo_total: insumoForm.custo_total === '' ? 0 : Number(insumoForm.custo_total),
+      });
       avisar('Insumo cadastrado.');
-      setInsumoForm({ nome: '', unidade: 'G', estoque_atual: '0' });
+      setInsumoForm({ nome: '', unidade: 'G', estoque_atual: '0', custo_total: '' });
       reload();
     } catch (err) { falhar(err); }
   }
@@ -147,8 +165,12 @@ export default function Products() {
     const quantidade = Number(quickQty[id]);
     if (!(quantidade > 0)) return;
     try {
-      await api.post(`/ingredients/${id}/stock-entries`, { quantidade });
+      const custoTotal = quickCusto[id];
+      const payload = { quantidade };
+      if (custoTotal !== undefined && custoTotal !== '') payload.custo_total = Number(custoTotal);
+      await api.post(`/ingredients/${id}/stock-entries`, payload);
       setQuickQty({ ...quickQty, [id]: '' });
+      setQuickCusto({ ...quickCusto, [id]: '' });
       avisar('Estoque de insumo atualizado.');
       reload();
     } catch (err) { falhar(err); }
@@ -293,15 +315,24 @@ export default function Products() {
                     return (
                       <li key={f.ingredient_id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--line)', fontSize: '13px' }}>
                         <span>{ing ? ing.nome : f.ingredient_id}: {f.quantidade_por_unidade}{ing ? ing.unidade : ''}</span>
-                        <button type="button" onClick={() => removerInsumoDoNovoProduto(f.ingredient_id)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer' }}>remover</button>
+                        <span style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                          <span style={{ color: 'var(--gold-light)' }}>R$ {custoFracionado(f.ingredient_id, f.quantidade_por_unidade).toFixed(2)}</span>
+                          <button type="button" onClick={() => removerInsumoDoNovoProduto(f.ingredient_id)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer' }}>remover</button>
+                        </span>
                       </li>
                     );
                   })}
                 </ul>
+                {fichaNovoProduto.length > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 700, padding: '4px 0 12px' }}>
+                    <span>Custo dos insumos (somado ao Preço de custo)</span>
+                    <span style={{ color: 'var(--gold-light)' }}>R$ {custoTotalFicha(fichaNovoProduto).toFixed(2)}</span>
+                  </div>
+                )}
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   <select style={{ flexGrow: 1 }} value={novoFichaItem.ingredient_id} onChange={(e) => setNovoFichaItem({ ...novoFichaItem, ingredient_id: e.target.value })}>
                     <option value="">Insumo...</option>
-                    {ingredients.map((i) => <option key={i.id} value={i.id}>{i.nome} (saldo: {i.estoque_atual}{i.unidade})</option>)}
+                    {ingredients.map((i) => <option key={i.id} value={i.id}>{i.nome} (saldo: {i.estoque_atual}{i.unidade} · R$ {Number(i.custo_unitario).toFixed(4)}/{i.unidade})</option>)}
                   </select>
                   <input style={{ width: '90px' }} type="number" step="0.001" placeholder="Qtd/un" value={novoFichaItem.quantidade_por_unidade} onChange={(e) => setNovoFichaItem({ ...novoFichaItem, quantidade_por_unidade: e.target.value })} />
                   <button type="button" onClick={adicionarInsumoAoNovoProduto}>+ Insumo</button>
@@ -433,16 +464,17 @@ export default function Products() {
               <span style={{ fontSize: '11px', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '1.5px' }}>Novo insumo (matéria-prima)</span>
               <form onSubmit={criarInsumo} style={{ marginTop: '12px' }}>
                 <input placeholder="Nome do insumo *" value={insumoForm.nome} onChange={(e) => setInsumoForm({ ...insumoForm, nome: e.target.value })} required />
-                <div style={{ display: 'flex', gap: '10px' }}>
+                <div className="form-row">
                   <select style={{ width: '110px' }} value={insumoForm.unidade} onChange={(e) => setInsumoForm({ ...insumoForm, unidade: e.target.value })}>
                     {UNIDADES_INSUMO.map((u) => <option key={u} value={u}>{u}</option>)}
                   </select>
                   <input style={{ flexGrow: 1 }} type="number" step="0.001" placeholder="Estoque atual *" value={insumoForm.estoque_atual} onChange={(e) => setInsumoForm({ ...insumoForm, estoque_atual: e.target.value })} />
                 </div>
+                <input type="number" step="0.01" placeholder="Custo total desta compra (R$, opcional)" value={insumoForm.custo_total} onChange={(e) => setInsumoForm({ ...insumoForm, custo_total: e.target.value })} />
                 <button type="submit">Cadastrar insumo</button>
               </form>
               <p style={{ fontSize: '12px', color: 'var(--muted)', lineHeight: 1.6, marginTop: '10px' }}>
-                Este é o estoque de matéria-prima. Ao vincular um insumo à ficha técnica de um produto, a venda desse produto baixa automaticamente a quantidade correspondente aqui.
+                Informe o custo total pago pela quantidade cadastrada (ex: R$ 50,00 por 1kg de queijo) para o sistema calcular o custo por unidade — usado para somar automaticamente o custo dos insumos no cadastro de produtos com ficha técnica. Ao vincular um insumo à ficha técnica, a venda do produto baixa automaticamente a quantidade correspondente aqui.
               </p>
             </div>
 
@@ -452,10 +484,11 @@ export default function Products() {
                 <div className="insumo-card" key={i.id}>
                   <div>
                     <span className="nome">{i.nome}</span>
-                    <div className="saldo">Saldo atual: {i.estoque_atual} {i.unidade}</div>
+                    <div className="saldo">Saldo atual: {i.estoque_atual} {i.unidade} · custo R$ {Number(i.custo_unitario).toFixed(4)}/{i.unidade}</div>
                   </div>
                   <div className="acoes">
                     <input type="number" step="0.001" placeholder="Qtd" value={quickQty[i.id] || ''} onChange={(e) => setQuickQty({ ...quickQty, [i.id]: e.target.value })} />
+                    <input type="number" step="0.01" placeholder="Custo R$" value={quickCusto[i.id] || ''} onChange={(e) => setQuickCusto({ ...quickCusto, [i.id]: e.target.value })} />
                     <button onClick={() => lancarEntradaInsumo(i.id)}>+ estoque</button>
                   </div>
                 </div>
@@ -523,17 +556,24 @@ export default function Products() {
               <span className="detail-section-title">Insumos (ficha técnica)</span>
               <div style={{ fontSize: '12px', color: 'var(--muted)', margin: '2px 0 10px' }}>Use para produtos compostos, como lanches e combos.</div>
               {detalhe.ficha_tecnica.length > 0 ? (
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                  {detalhe.ficha_tecnica.map((f) => (
-                    <li key={f.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--panel-alt)', border: '1px solid var(--line)', borderRadius: '10px', marginBottom: '8px', fontSize: '13px' }}>
-                      <span>{f.ingredient_nome}</span>
-                      <span style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--muted)' }}>{f.quantidade_por_unidade} {f.unidade}</span>
-                        <button onClick={() => removerIngrediente(f.ingredient_id)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer' }}>remover</button>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                <>
+                  <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                    {detalhe.ficha_tecnica.map((f) => (
+                      <li key={f.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--panel-alt)', border: '1px solid var(--line)', borderRadius: '10px', marginBottom: '8px', fontSize: '13px' }}>
+                        <span>{f.ingredient_nome}</span>
+                        <span style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                          <span style={{ color: 'var(--muted)' }}>{f.quantidade_por_unidade} {f.unidade}</span>
+                          <span style={{ color: 'var(--gold-light)', fontWeight: 700 }}>R$ {Number(f.custo_fracionado).toFixed(2)}</span>
+                          <button onClick={() => removerIngrediente(f.ingredient_id)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer' }}>remover</button>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 700, padding: '8px 14px' }}>
+                    <span>Custo total dos insumos</span>
+                    <span style={{ color: 'var(--gold-light)' }}>R$ {detalhe.ficha_tecnica.reduce((s, f) => s + Number(f.custo_fracionado), 0).toFixed(2)}</span>
+                  </div>
+                </>
               ) : (
                 <div className="empty-state" style={{ border: '1px dashed var(--line)', borderRadius: '10px', background: 'var(--panel-alt)' }}>Nenhum insumo cadastrado para este produto.</div>
               )}

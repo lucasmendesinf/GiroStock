@@ -96,7 +96,8 @@ router.get('/products/:id', async (req, res) => {
   );
 
   const ficha = await pool.query(
-    `SELECT pi.id, pi.ingredient_id, i.nome AS ingredient_nome, i.unidade, pi.quantidade_por_unidade
+    `SELECT pi.id, pi.ingredient_id, i.nome AS ingredient_nome, i.unidade, pi.quantidade_por_unidade,
+            i.custo_unitario, (i.custo_unitario * pi.quantidade_por_unidade) AS custo_fracionado
      FROM product_ingredients pi JOIN ingredients i ON i.id = pi.ingredient_id
      WHERE pi.product_id = $1 AND pi.tenant_id = $2
      ORDER BY i.nome`,

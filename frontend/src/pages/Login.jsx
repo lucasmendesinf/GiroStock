@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import ThemeToggle from '../components/ThemeToggle.jsx';
 
 export default function Login() {
   const { login } = useAuth();
@@ -26,6 +27,7 @@ export default function Login() {
 
   return (
     <div className="login-screen">
+      <div className="theme-toggle-corner"><ThemeToggle /></div>
       <form className="login-card" onSubmit={handleSubmit}>
         <h1>GiroStock</h1>
         <label>

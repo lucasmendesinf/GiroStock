@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate, NavLink } from 'react-router-dom';
 import { useAuth } from './context/AuthContext.jsx';
+import ThemeToggle from './components/ThemeToggle.jsx';
 import Login from './pages/Login.jsx';
 import PDV from './pages/PDV.jsx';
 import Products from './pages/Products.jsx';
@@ -29,6 +30,7 @@ function Layout({ children }) {
           <NavLink to="/relatorios">Relatórios</NavLink>
         </nav>
         <div className="user-box">
+          <ThemeToggle />
           <span>{user?.nome} ({user?.perfil})</span>
           <button onClick={logout}>Sair</button>
         </div>

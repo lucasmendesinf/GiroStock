@@ -1,4 +1,5 @@
-:root {
+:root,
+:root[data-theme="dark"] {
   --bg: #0c0b0d;
   --panel: #17151a;
   --panel-alt: #201d22;
@@ -10,6 +11,24 @@
   --line: rgba(205, 164, 63, 0.22);
   --err: #e08a8a;
   --ok: #7bd88f;
+  --btn-text: #1a1408;
+  --topbar-grad: linear-gradient(180deg, #131114, #0c0b0d);
+}
+
+:root[data-theme="light"] {
+  --bg: #faf8f4;
+  --panel: #ffffff;
+  --panel-alt: #f6f0e3;
+  --gold: #b9862a;
+  --gold-light: #8a6414;
+  --red: #7a1420;
+  --ivory: #241f1a;
+  --muted: #746a5c;
+  --line: rgba(180, 134, 42, 0.35);
+  --err: #b13434;
+  --ok: #2f8f4e;
+  --btn-text: #1a1408;
+  --topbar-grad: linear-gradient(180deg, #ffffff, #faf8f4);
 }
 
 * { box-sizing: border-box; }
@@ -19,6 +38,7 @@ body {
   font-family: 'Manrope', system-ui, sans-serif;
   background: var(--bg);
   color: var(--ivory);
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 h1, h2, h3 { font-family: 'Playfair Display', serif; margin: 0; }
@@ -39,7 +59,7 @@ input:focus, select:focus, button:focus-visible { outline: 2px solid var(--gold-
   gap: 18px;
   height: 84px;
   padding: 0 32px;
-  background: linear-gradient(180deg, #131114, #0c0b0d);
+  background: var(--topbar-grad);
   border-bottom: 1px solid var(--line);
 }
 .topbar .brand {
@@ -73,7 +93,7 @@ input:focus, select:focus, button:focus-visible { outline: 2px solid var(--gold-
 
 main { padding: 28px 32px; flex: 1; }
 
-.login-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--bg); }
+.login-screen { position: relative; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--bg); }
 .login-card {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -99,7 +119,7 @@ main { padding: 28px 32px; flex: 1; }
   border-radius: 12px;
   border: none;
   background: linear-gradient(90deg, var(--red), var(--gold));
-  color: var(--bg);
+  color: var(--btn-text);
   font-weight: 800;
   font-size: 14px;
   text-transform: uppercase;
@@ -126,7 +146,7 @@ main { padding: 28px 32px; flex: 1; }
   border-radius: 10px;
   border: none;
   background: linear-gradient(90deg, var(--red), var(--gold));
-  color: var(--bg);
+  color: var(--btn-text);
   font-weight: 800;
   font-size: 13px;
   text-transform: uppercase;
@@ -246,7 +266,7 @@ tbody tr:hover { background: var(--panel-alt); }
   border: none;
   border-radius: 12px;
   background: linear-gradient(90deg, var(--red), var(--gold));
-  color: var(--bg);
+  color: var(--btn-text);
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -281,7 +301,7 @@ tbody tr:hover { background: var(--panel-alt); }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }
 .modal-actions button { padding: 10px 18px; border-radius: 10px; border: none; cursor: pointer; font-weight: 700; font-size: 13px; }
 .modal-actions button:first-child { background: none; border: 1px solid var(--line); color: var(--ivory); }
-.modal-actions button:last-child { background: linear-gradient(90deg, var(--red), var(--gold)); color: var(--bg); text-transform: uppercase; }
+.modal-actions button:last-child { background: linear-gradient(90deg, var(--red), var(--gold)); color: var(--btn-text); text-transform: uppercase; }
 
 .formas-pagamento { display: flex; gap: 10px; flex-wrap: wrap; }
 .formas-pagamento button {
@@ -325,3 +345,30 @@ tbody tr:hover { background: var(--panel-alt); }
   color: var(--ivory);
   font-size: 13px;
 }
+
+.theme-toggle {
+  width: 50px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.theme-toggle-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--red), var(--gold));
+  color: var(--btn-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease;
+}
+.theme-toggle[aria-checked="true"] .theme-toggle-thumb { transform: translateX(24px); }
+
+.theme-toggle-corner { position: absolute; top: 28px; right: 28px; }

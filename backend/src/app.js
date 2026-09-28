@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const path = require('path');
+const fs = require('fs');
 
 const { authRequired } = require('./middleware/auth');
 
@@ -17,7 +19,9 @@ const reportsRoutes = require('./routes/reports.routes');
 
 const app = express();
 
-app.use(helmet());
+// CSP desabilitado: o frontend carrega a fonte do Google Fonts (cross-origin)
+// e este e um sistema interno, nao uma pagina publica renderizando conteudo de terceiros.
+app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
 app.use(express.json());
 
@@ -34,6 +38,18 @@ app.use('/api', authRequired, locationsRoutes);
 app.use('/api', authRequired, cashRoutes);
 app.use('/api', authRequired, salesRoutes);
 app.use('/api', authRequired, reportsRoutes);
+
+// Serve o build do frontend (frontend/dist) quando presente, permitindo rodar
+// backend + frontend como um unico processo Node (ex: cPanel Node.js Selector,
+// sem Docker/Nginx). Em desenvolvimento local o Vite dev server continua
+// separado e essa pasta simplesmente nao existe.
+const frontendDist = path.join(__dirname, '..', '..', 'frontend', 'dist');
+if (fs.existsSync(frontendDist)) {
+  app.use(express.static(frontendDist));
+  app.get(/^(?!\/api).*/, (req, res) => {
+    res.sendFile(path.join(frontendDist, 'index.html'));
+  });
+}
 
 app.use((req, res) => {
   res.status(404).json({ erro: 'rota nao encontrada' });

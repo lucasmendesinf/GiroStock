@@ -13,14 +13,14 @@ const router = express.Router();
 
 function exigirMotivo(motivo) {
   if (!motivo || String(motivo).trim().length < 3) {
-    throw new HttpError(400, 'motivo e obrigatorio (minimo 3 caracteres)');
+    throw new HttpError(400, 'motivo é obrigatório (mínimo 3 caracteres)');
   }
   return String(motivo).trim();
 }
 
 // Local valido, ativo, da empresa e acessivel ao usuario.
 async function localDoUsuario(db, locationId, user, acao) {
-  if (!locationId) throw new HttpError(400, 'location_id (local do estoque) e obrigatorio');
+  if (!locationId) throw new HttpError(400, 'location_id (local do estoque) é obrigatório');
   await getOwnedLocation(db, locationId, user.tenantId);
   assertLocationAccess(user, locationId, acao);
 }
@@ -80,16 +80,16 @@ router.get('/ingredients', requireArea('Estoque'), async (req, res) => {
 router.post('/ingredients', requireArea('Estoque'), async (req, res) => {
   const { nome, unidade, location_id, custo_total } = req.body || {};
   if (!nome || !unidade) {
-    return res.status(400).json({ erro: 'nome e unidade sao obrigatorios' });
+    return res.status(400).json({ erro: 'nome e unidade são obrigatórios' });
   }
   // "estoque_inicial" (aceita o nome antigo "estoque_atual")
   const inicialInformado = req.body.estoque_inicial ?? req.body.estoque_atual ?? 0;
   const inicial = Number(inicialInformado);
-  if (!(inicial >= 0)) return res.status(400).json({ erro: 'estoque inicial nao pode ser negativo' });
+  if (!(inicial >= 0)) return res.status(400).json({ erro: 'estoque inicial não pode ser negativo' });
   const custoTotal = Number(custo_total ?? 0);
-  if (!(custoTotal >= 0)) return res.status(400).json({ erro: 'custo total nao pode ser negativo' });
+  if (!(custoTotal >= 0)) return res.status(400).json({ erro: 'custo total não pode ser negativo' });
   const custoUnitario = inicial > 0 ? custoTotal / inicial : 0;
-  if (inicial > 0) await localDoUsuario(pool, location_id, req.user, 'lancar estoque neste local');
+  if (inicial > 0) await localDoUsuario(pool, location_id, req.user, 'lançar estoque neste local');
 
   const client = await pool.connect();
   try {
@@ -121,10 +121,10 @@ router.post('/ingredients/:id/stock-entries', requireArea('Estoque'), async (req
   if (!(qtd > 0)) return res.status(400).json({ erro: 'quantidade deve ser maior que zero' });
   const custoTotalEntrada = custo_total === undefined || custo_total === null || custo_total === '' ? null : Number(custo_total);
   if (custoTotalEntrada !== null && !(custoTotalEntrada >= 0)) {
-    return res.status(400).json({ erro: 'custo total nao pode ser negativo' });
+    return res.status(400).json({ erro: 'custo total não pode ser negativo' });
   }
   await getOwned(pool, 'ingredients', req.params.id, req.user.tenantId);
-  await localDoUsuario(pool, location_id, req.user, 'lancar entrada neste local');
+  await localDoUsuario(pool, location_id, req.user, 'lançar entrada neste local');
 
   const client = await pool.connect();
   try {
@@ -175,7 +175,7 @@ router.post('/ingredients/:id/stock-exits', requireArea('Estoque'), async (req, 
   if (!(qtd > 0)) return res.status(400).json({ erro: 'quantidade deve ser maior que zero' });
   const motivo = exigirMotivo(req.body && req.body.motivo);
   await getOwned(pool, 'ingredients', req.params.id, req.user.tenantId);
-  await localDoUsuario(pool, location_id, req.user, 'dar saida neste local');
+  await localDoUsuario(pool, location_id, req.user, 'dar saída neste local');
 
   const client = await pool.connect();
   try {
@@ -183,7 +183,7 @@ router.post('/ingredients/:id/stock-exits', requireArea('Estoque'), async (req, 
     const saldos = await lockIngredientBalances(client, req.user.tenantId, req.params.id, [location_id]);
     const disponivel = saldos.get(location_id) || 0;
     if (qtd > disponivel) {
-      throw new HttpError(400, `saldo insuficiente neste local (disponivel: ${disponivel}, solicitado: ${qtd})`);
+      throw new HttpError(400, `saldo insuficiente neste local (disponível: ${disponivel}, solicitado: ${qtd})`);
     }
     await client.query(
       `UPDATE ingredient_balances SET saldo = saldo - $1 WHERE ingredient_id = $2 AND location_id = $3 AND tenant_id = $4`,
@@ -214,7 +214,7 @@ router.post('/ingredients/:id/transfers', requireArea('Estoque'), async (req, re
   if (!(qtd > 0)) return res.status(400).json({ erro: 'quantidade deve ser maior que zero' });
   const motivo = exigirMotivo(req.body && req.body.motivo);
   if (!location_origem_id || !location_destino_id) {
-    throw new HttpError(400, 'location_origem_id e location_destino_id sao obrigatorios');
+    throw new HttpError(400, 'location_origem_id e location_destino_id são obrigatórios');
   }
   if (location_origem_id === location_destino_id) {
     throw new HttpError(400, 'local de origem deve ser diferente do local de destino');
@@ -230,7 +230,7 @@ router.post('/ingredients/:id/transfers', requireArea('Estoque'), async (req, re
     const saldos = await lockIngredientBalances(client, req.user.tenantId, req.params.id, [location_origem_id, location_destino_id]);
     const disponivel = saldos.get(location_origem_id) || 0;
     if (qtd > disponivel) {
-      throw new HttpError(400, `saldo insuficiente no local de origem (disponivel: ${disponivel}, solicitado: ${qtd})`);
+      throw new HttpError(400, `saldo insuficiente no local de origem (disponível: ${disponivel}, solicitado: ${qtd})`);
     }
     await client.query(
       `UPDATE ingredient_balances SET saldo = saldo - $1 WHERE ingredient_id = $2 AND location_id = $3 AND tenant_id = $4`,
@@ -263,16 +263,16 @@ router.post('/ingredients/:id/stock-adjustment', requireArea('Estoque'), async (
   const { novo_saldo, novo_custo_unitario, location_id } = req.body || {};
   const novoSaldo = Number(novo_saldo);
   if (novo_saldo === undefined || novo_saldo === null || novo_saldo === '' || isNaN(novoSaldo) || novoSaldo < 0) {
-    return res.status(400).json({ erro: 'novo_saldo deve ser um numero valido (0 ou mais)' });
+    return res.status(400).json({ erro: 'novo_saldo deve ser um número válido (0 ou mais)' });
   }
   const sobrescreverCusto = novo_custo_unitario !== undefined && novo_custo_unitario !== null && novo_custo_unitario !== '';
   const novoCustoUnitario = sobrescreverCusto ? Number(novo_custo_unitario) : null;
   if (sobrescreverCusto && (isNaN(novoCustoUnitario) || novoCustoUnitario < 0)) {
-    return res.status(400).json({ erro: 'novo_custo_unitario deve ser um numero valido (0 ou mais)' });
+    return res.status(400).json({ erro: 'novo_custo_unitario deve ser um número válido (0 ou mais)' });
   }
   const motivo = exigirMotivo(req.body && req.body.motivo);
   await getOwned(pool, 'ingredients', req.params.id, req.user.tenantId);
-  await localDoUsuario(pool, location_id, req.user, 'fazer balanco neste local');
+  await localDoUsuario(pool, location_id, req.user, 'fazer balanço neste local');
 
   const client = await pool.connect();
   try {

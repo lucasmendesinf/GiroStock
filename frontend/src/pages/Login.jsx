@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import ThemeToggle from '../components/ThemeToggle.jsx';
+import { rotaInicial } from '../utils/permissions.js';
 
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState('admin@girostock.local');
+  const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -16,10 +17,10 @@ export default function Login() {
     setErro(null);
     setLoading(true);
     try {
-      await login(email, senha);
-      navigate('/pdv');
+      const usuario = await login(email.trim(), senha);
+      navigate(rotaInicial(usuario));
     } catch (err) {
-      setErro(err.message);
+      setErro(err.status === 401 ? 'E-mail ou senha incorretos.' : err.message);
     } finally {
       setLoading(false);
     }
@@ -32,13 +33,13 @@ export default function Login() {
         <h1>GiroStock</h1>
         <label>
           E-mail
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <input type="email" autoComplete="username" autoFocus value={email} onChange={(e) => setEmail(e.target.value)} required />
         </label>
         <label>
           Senha
-          <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} required />
+          <input type="password" autoComplete="current-password" value={senha} onChange={(e) => setSenha(e.target.value)} required />
         </label>
-        {erro && <p className="error">{erro}</p>}
+        {erro && <p className="error" role="alert">{erro}</p>}
         <button type="submit" disabled={loading}>{loading ? 'Entrando...' : 'Entrar'}</button>
       </form>
     </div>

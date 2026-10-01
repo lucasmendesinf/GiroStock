@@ -23,13 +23,13 @@ router.get('/categories', requireArea('Estoque'), async (req, res) => {
 
 router.post('/categories', requireArea('Estoque'), async (req, res) => {
   const { nome, parent_id } = req.body || {};
-  if (!nome) return res.status(400).json({ erro: 'nome e obrigatorio' });
+  if (!nome) return res.status(400).json({ erro: 'nome é obrigatório' });
   if (parent_id) {
     const parent = await pool.query(
       `SELECT 1 FROM categories WHERE id = $1 AND tenant_id = $2`,
       [parent_id, req.user.tenantId]
     );
-    if (parent.rows.length === 0) return res.status(400).json({ erro: 'categoria pai nao encontrada' });
+    if (parent.rows.length === 0) return res.status(400).json({ erro: 'categoria pai não encontrada' });
   }
   const { rows } = await pool.query(
     `INSERT INTO categories (tenant_id, nome, parent_id) VALUES ($1, $2, $3) RETURNING id, nome, parent_id`,
@@ -43,14 +43,14 @@ router.delete('/categories/:id', requireArea('Estoque'), async (req, res) => {
     `SELECT 1 FROM categories WHERE id = $1 AND tenant_id = $2`,
     [req.params.id, req.user.tenantId]
   );
-  if (categoria.rows.length === 0) return res.status(404).json({ erro: 'categoria nao encontrada' });
+  if (categoria.rows.length === 0) return res.status(404).json({ erro: 'categoria não encontrada' });
 
   const produtos = await pool.query(
     `SELECT COUNT(*)::int AS total FROM products WHERE categoria_id = $1 AND tenant_id = $2`,
     [req.params.id, req.user.tenantId]
   );
   if (produtos.rows[0].total > 0) {
-    return res.status(400).json({ erro: `nao e possivel remover: existem ${produtos.rows[0].total} produto(s) vinculados a esta categoria` });
+    return res.status(400).json({ erro: `não e possível remover: existem ${produtos.rows[0].total} produto(s) vinculados a esta categoria` });
   }
 
   const subcategorias = await pool.query(
@@ -58,7 +58,7 @@ router.delete('/categories/:id', requireArea('Estoque'), async (req, res) => {
     [req.params.id, req.user.tenantId]
   );
   if (subcategorias.rows[0].total > 0) {
-    return res.status(400).json({ erro: `nao e possivel remover: existem ${subcategorias.rows[0].total} subcategoria(s) vinculadas a esta categoria` });
+    return res.status(400).json({ erro: `não e possível remover: existem ${subcategorias.rows[0].total} subcategoria(s) vinculadas a esta categoria` });
   }
 
   await pool.query(`DELETE FROM categories WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.user.tenantId]);
@@ -97,9 +97,9 @@ async function sincronizarFornecedores(client, tenantId, productId, ids) {
 function validarPrecos(precoCusto, precoVenda) {
   const custo = Number(precoCusto);
   const venda = Number(precoVenda);
-  if (!(custo > 0)) throw new HttpError(400, 'preco de custo deve ser maior que zero');
-  if (!(venda > 0)) throw new HttpError(400, 'preco de venda deve ser maior que zero');
-  if (!(venda > custo)) throw new HttpError(400, 'preco de venda deve ser maior que o custo');
+  if (!(custo > 0)) throw new HttpError(400, 'preço de custo deve ser maior que zero');
+  if (!(venda > 0)) throw new HttpError(400, 'preço de venda deve ser maior que zero');
+  if (!(venda > custo)) throw new HttpError(400, 'preço de venda deve ser maior que o custo');
   return { custo, venda };
 }
 
@@ -108,7 +108,7 @@ async function assertBarcodeLivre(db, tenantId, barcode, ignorarId = null) {
     `SELECT 1 FROM products WHERE tenant_id = $1 AND barcode = $2 AND ($3::uuid IS NULL OR id <> $3)`,
     [tenantId, barcode, ignorarId]
   );
-  if (rows.length > 0) throw new HttpError(409, 'ja existe produto com este codigo de barras');
+  if (rows.length > 0) throw new HttpError(409, 'já existe produto com este código de barras');
 }
 
 // Proximo codigo PRD-XXXX da empresa. O lock de transacao serializa cadastros
@@ -248,21 +248,21 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
   const { nome, categoria_id, barcode, unidade, location_id, estoque_inicial, ficha_tecnica } = body;
 
   if (!nome || nome.trim().length < 3) {
-    return res.status(400).json({ erro: 'nome deve ter no minimo 3 caracteres' });
+    return res.status(400).json({ erro: 'nome deve ter no mínimo 3 caracteres' });
   }
-  if (!categoria_id) return res.status(400).json({ erro: 'categoria e obrigatoria' });
+  if (!categoria_id) return res.status(400).json({ erro: 'categoria é obrigatória' });
   if (!barcode || !isValidBarcode(barcode)) {
-    return res.status(400).json({ erro: 'codigo de barras deve ter 8 a 14 digitos numericos' });
+    return res.status(400).json({ erro: 'código de barras deve ter 8 a 14 dígitos numéricos' });
   }
   if (!UNIDADES.includes(unidade)) {
-    return res.status(400).json({ erro: 'unidade invalida' });
+    return res.status(400).json({ erro: 'unidade inválida' });
   }
   const { custo, venda } = validarPrecos(body.preco_custo, body.preco_venda);
 
   const fichaItems = Array.isArray(ficha_tecnica) ? ficha_tecnica : [];
   for (const item of fichaItems) {
     if (!item.ingredient_id || !(Number(item.quantidade_por_unidade) > 0)) {
-      return res.status(400).json({ erro: 'cada insumo da ficha tecnica precisa de ingredient_id e quantidade_por_unidade (>0)' });
+      return res.status(400).json({ erro: 'cada insumo da ficha técnica precisa de ingredient_id e quantidade_por_unidade (>0)' });
     }
   }
 
@@ -270,11 +270,11 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
   // e controlada pelos insumos da receita, entao local/estoque inicial nao se aplicam.
   const temFicha = fichaItems.length > 0;
   if (!temFicha && !location_id) {
-    return res.status(400).json({ erro: 'local de estoque inicial e obrigatorio' });
+    return res.status(400).json({ erro: 'local de estoque inicial é obrigatório' });
   }
   const saldoInicial = Number(estoque_inicial ?? 0);
   if (!temFicha) {
-    if (!(saldoInicial >= 0)) return res.status(400).json({ erro: 'estoque inicial nao pode ser negativo' });
+    if (!(saldoInicial >= 0)) return res.status(400).json({ erro: 'estoque inicial não pode ser negativo' });
     if (!isQuantidadeValidaParaUnidade(saldoInicial, unidade)) {
       return res.status(400).json({ erro: `produto vendido em ${unidade} so aceita estoque em quantidade inteira` });
     }
@@ -285,7 +285,7 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
   const fornecedores = await resolverFornecedores(pool, req.user.tenantId, body);
   if (!temFicha) {
     await getOwnedLocation(pool, location_id, req.user.tenantId);
-    assertLocationAccess(req.user, location_id, 'lancar estoque neste local');
+    assertLocationAccess(req.user, location_id, 'lançar estoque neste local');
   }
   await assertBarcodeLivre(pool, req.user.tenantId, barcode);
 
@@ -327,7 +327,7 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
         [ingredientIds, req.user.tenantId]
       );
       if (validIngredients.rows.length !== new Set(ingredientIds).size) {
-        throw new HttpError(400, 'um ou mais insumos da ficha tecnica nao foram encontrados');
+        throw new HttpError(400, 'um ou mais insumos da ficha técnica não foram encontrados');
       }
       for (const item of fichaItems) {
         const inserted = await client.query(
@@ -367,18 +367,18 @@ router.put('/products/:id', requireArea('Estoque'), async (req, res) => {
   });
 
   const nome = body.nome !== undefined ? String(body.nome).trim() : atual.nome;
-  if (nome.length < 3) throw new HttpError(400, 'nome deve ter no minimo 3 caracteres');
+  if (nome.length < 3) throw new HttpError(400, 'nome deve ter no mínimo 3 caracteres');
 
   const categoriaId = body.categoria_id !== undefined ? body.categoria_id : atual.categoria_id;
-  if (!categoriaId) throw new HttpError(400, 'categoria e obrigatoria');
+  if (!categoriaId) throw new HttpError(400, 'categoria é obrigatória');
   if (categoriaId !== atual.categoria_id) await getOwned(pool, 'categories', categoriaId, req.user.tenantId);
 
   const barcode = body.barcode !== undefined ? String(body.barcode) : atual.barcode;
-  if (!isValidBarcode(barcode)) throw new HttpError(400, 'codigo de barras deve ter 8 a 14 digitos numericos');
+  if (!isValidBarcode(barcode)) throw new HttpError(400, 'código de barras deve ter 8 a 14 dígitos numéricos');
   if (barcode !== atual.barcode) await assertBarcodeLivre(pool, req.user.tenantId, barcode, req.params.id);
 
   const unidade = body.unidade !== undefined ? body.unidade : atual.unidade;
-  if (!UNIDADES.includes(unidade)) throw new HttpError(400, 'unidade invalida');
+  if (!UNIDADES.includes(unidade)) throw new HttpError(400, 'unidade inválida');
   if (unidade !== atual.unidade && UNIDADES_INTEIRAS.includes(unidade)) {
     const fracionado = await pool.query(
       `SELECT 1 FROM stock_balances WHERE product_id = $1 AND tenant_id = $2 AND saldo <> trunc(saldo) LIMIT 1`,
@@ -471,7 +471,7 @@ router.patch('/products/:id/status', requireArea('Estoque'), async (req, res) =>
 router.put('/products/:id/minimum', requireArea('Estoque'), async (req, res) => {
   const { location_id, estoque_minimo } = req.body || {};
   const minimo = Number(estoque_minimo);
-  if (!location_id || !(minimo >= 0)) throw new HttpError(400, 'location_id e estoque_minimo (0 ou mais) sao obrigatorios');
+  if (!location_id || !(minimo >= 0)) throw new HttpError(400, 'location_id e estoque_minimo (0 ou mais) são obrigatórios');
   await getOwned(pool, 'products', req.params.id, req.user.tenantId);
   await getOwnedLocation(pool, location_id, req.user.tenantId);
   assertLocationAccess(req.user, location_id, 'configurar este local');
@@ -479,7 +479,7 @@ router.put('/products/:id/minimum', requireArea('Estoque'), async (req, res) => 
     `SELECT 1 FROM product_ingredients WHERE product_id = $1 AND tenant_id = $2 LIMIT 1`,
     [req.params.id, req.user.tenantId]
   );
-  if (ficha.rows.length > 0) throw new HttpError(400, 'produto com ficha tecnica nao tem estoque proprio; defina o minimo nos insumos');
+  if (ficha.rows.length > 0) throw new HttpError(400, 'produto com ficha técnica não tem estoque próprio; defina o mínimo nos insumos');
 
   const { rows } = await pool.query(
     `INSERT INTO stock_balances (product_id, location_id, tenant_id, saldo, estoque_minimo)
@@ -496,7 +496,7 @@ router.post('/products/:id/ingredients', requireArea('Estoque'), async (req, res
   const { ingredient_id, quantidade_por_unidade } = req.body || {};
   const qtd = Number(quantidade_por_unidade);
   if (!ingredient_id || !(qtd > 0)) {
-    return res.status(400).json({ erro: 'ingredient_id e quantidade_por_unidade (>0) sao obrigatorios' });
+    return res.status(400).json({ erro: 'ingredient_id e quantidade_por_unidade (>0) são obrigatórios' });
   }
   await getOwned(pool, 'products', req.params.id, req.user.tenantId);
   await getOwned(pool, 'ingredients', ingredient_id, req.user.tenantId);
@@ -508,7 +508,7 @@ router.post('/products/:id/ingredients', requireArea('Estoque'), async (req, res
     [req.params.id, req.user.tenantId]
   );
   if (Number(saldoProprio.rows[0].total) > 0) {
-    throw new HttpError(400, `este produto tem ${Number(saldoProprio.rows[0].total)} em estoque proprio; de saida desse saldo antes de vincular insumos`);
+    throw new HttpError(400, `este produto tem ${Number(saldoProprio.rows[0].total)} em estoque próprio; de saída desse saldo antes de vincular insumos`);
   }
 
   const { rows } = await pool.query(

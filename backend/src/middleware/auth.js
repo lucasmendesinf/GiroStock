@@ -7,13 +7,13 @@ async function authRequired(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) {
-    return res.status(401).json({ erro: 'Token de autenticacao ausente' });
+    return res.status(401).json({ erro: 'Token de autenticação ausente' });
   }
   let payload;
   try {
     payload = jwt.verify(token, process.env.JWT_SECRET);
   } catch (err) {
-    return res.status(401).json({ erro: 'Token invalido ou expirado' });
+    return res.status(401).json({ erro: 'Token inválido ou expirado' });
   }
 
   const { rows } = await pool.query(
@@ -22,7 +22,7 @@ async function authRequired(req, res, next) {
   );
   const user = rows[0];
   if (!user || !user.ativo || user.tenant_id !== payload.tenantId) {
-    return res.status(401).json({ erro: 'Usuario inativo ou inexistente' });
+    return res.status(401).json({ erro: 'Usuário inativo ou inexistente' });
   }
   req.user = {
     id: user.id,

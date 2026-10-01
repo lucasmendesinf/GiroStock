@@ -13,7 +13,7 @@ function requireArea(area) {
     const perfil = req.user && req.user.perfil;
     const permitido = MATRIX[perfil] && MATRIX[perfil][area];
     if (!permitido) {
-      return res.status(403).json({ erro: `Perfil ${perfil} nao tem acesso a area ${area}` });
+      return res.status(403).json({ erro: `Perfil ${perfil} não tem acesso a área ${area}` });
     }
     next();
   };

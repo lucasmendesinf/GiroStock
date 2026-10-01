@@ -29,6 +29,47 @@ Acesse:
 - API direta: http://localhost:3000
 - Frontend (dev, sem Docker): `cd frontend && npm install && npm run dev`
 
+## Uso no dia a dia
+
+### PDV (feito para o teclado e o leitor de código de barras)
+
+| Tecla / entrada | O que faz |
+|---|---|
+| Código de barras + `Enter` | adiciona o produto (o leitor já envia o Enter) |
+| `3*7891234567890` | adiciona 3 unidades |
+| `0,350*7891234567890` | produto por peso/volume (KG, L): 0,350 kg |
+| Digitar o nome, `↑` `↓`, `Enter` | busca por nome e escolhe o resultado |
+| `Del` (com a busca vazia) | tira o último item |
+| `F2` | abre o pagamento |
+| `1` `2` `3` `4` (no pagamento) | Pix, crédito, débito, dinheiro |
+| `Enter` (no pagamento) | confirma a venda |
+| `P` / `F9` | imprime o cupom (não fiscal) da venda / reimprime o último |
+| `F4` | sangria / suprimento |
+| `F6` | cancela a venda em andamento |
+| `F8` | fecha o caixa |
+
+- A busca só mostra produtos com estoque na loja do PDV; a quantidade no carrinho é limitada ao saldo.
+- A quantidade pode ser digitada no carrinho (produtos em KG/L abrem o campo de peso ao serem adicionados).
+- Desconto em R$ ou %, botão "valor exato" e troco calculado na hora.
+- Cada venda recebe um número curto e sequencial por empresa (Venda nº 123).
+- No PDV o menu do sistema fica escondido (modo caixa) para o operador não sair da venda sem querer.
+
+### Telas
+
+- O menu mostra só as telas que o perfil pode usar; quem abre uma tela sem permissão vê um aviso.
+- Cada perfil cai na sua tela inicial: Caixa no PDV, os demais no **Início** (vendas de hoje, alertas de estoque, caixas abertos).
+- **Produtos**: tabela com busca (nome, código PRD ou EAN), filtros por categoria, fornecedor, situação e estoque baixo; cadastro em janela.
+- **Entrada por nota**: vários produtos de uma compra lançados de uma vez (aceita leitor), com fornecedor e número da nota.
+- **Insumos**: um botão "Movimentar" por insumo (entrada, saída, transferência, balanço e mínimo), já na loja que tem saldo.
+- **Relatórios**: período (hoje, ontem, 7 dias, mês, mês passado ou datas), ranking de produtos, descontos, histórico paginado e fechamentos de caixa (esperado × contado).
+- **Usuários**: perfil padrão Caixa, confirmação ao mudar acesso, edição de nome e redefinição de senha; cada usuário troca a própria senha no menu da conta.
+- Valores e quantidades no padrão brasileiro (R$ 1.234,56), avisos no canto da tela e confirmação em ações que desativam ou cancelam algo.
+- Funciona em celular e tablet (menu recolhível e tabelas que escondem colunas secundárias).
+
+### Migração `005_ux_vendas_numero_desconto.sql`
+
+- Numera as vendas existentes por empresa, na ordem em que foram feitas, e cria os campos de subtotal e desconto.
+
 ## Teste ponta a ponta
 
 Com um banco de teste recém-criado (`npm run migrate && npm run seed`) e a API rodando:

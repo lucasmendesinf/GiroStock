@@ -17,19 +17,19 @@ function validarFornecedor(body) {
   const documento = onlyDigits(body && body.documento);
 
   if (!nome || !documento || !telefone || !categoria) {
-    throw new HttpError(400, 'nome, documento, telefone e categoria sao obrigatorios');
+    throw new HttpError(400, 'nome, documento, telefone e categoria são obrigatórios');
   }
   if (!isValidDocumento(documento)) {
-    throw new HttpError(400, 'CPF ou CNPJ invalido (confira os digitos)');
+    throw new HttpError(400, 'CPF ou CNPJ inválido (confira os dígitos)');
   }
-  if (!isValidTelefone(telefone)) throw new HttpError(400, 'telefone deve ter no minimo 10 digitos');
-  if (email && !isValidEmail(email)) throw new HttpError(400, 'email invalido');
-  if (!CATEGORIAS.includes(categoria)) throw new HttpError(400, 'categoria invalida');
+  if (!isValidTelefone(telefone)) throw new HttpError(400, 'telefone deve ter no mínimo 10 dígitos');
+  if (email && !isValidEmail(email)) throw new HttpError(400, 'email inválido');
+  if (!CATEGORIAS.includes(categoria)) throw new HttpError(400, 'categoria inválida');
 
   let prazo = null;
   if (prazo_medio_dias !== undefined && prazo_medio_dias !== null && prazo_medio_dias !== '') {
     prazo = Number(prazo_medio_dias);
-    if (!Number.isInteger(prazo) || prazo < 0) throw new HttpError(400, 'prazo medio deve ser um numero inteiro de dias (0 ou mais)');
+    if (!Number.isInteger(prazo) || prazo < 0) throw new HttpError(400, 'prazo médio deve ser um número inteiro de dias (0 ou mais)');
   }
   return { nome: nome.trim(), documento, telefone, email: email || null, categoria, prazo_medio_dias: prazo };
 }
@@ -39,7 +39,7 @@ async function assertDocumentoLivre(tenantId, documento, ignorarId = null) {
     `SELECT 1 FROM suppliers WHERE tenant_id = $1 AND documento = $2 AND ($3::uuid IS NULL OR id <> $3)`,
     [tenantId, documento, ignorarId]
   );
-  if (rows.length > 0) throw new HttpError(409, 'ja existe fornecedor com este documento');
+  if (rows.length > 0) throw new HttpError(409, 'já existe fornecedor com este documento');
 }
 
 router.get('/suppliers', requireArea('Estoque'), async (req, res) => {

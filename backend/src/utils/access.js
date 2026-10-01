@@ -14,7 +14,7 @@ function canAccessLocation(user, locationId) {
 
 function assertLocationAccess(user, locationId, acao = 'operar neste local') {
   if (!canAccessLocation(user, locationId)) {
-    throw new HttpError(403, `seu usuario esta vinculado a outro local e nao pode ${acao}`);
+    throw new HttpError(403, `seu usuário está vinculado a outro local e não pode ${acao}`);
   }
 }
 

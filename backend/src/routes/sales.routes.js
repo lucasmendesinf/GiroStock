@@ -16,7 +16,7 @@ function agruparItens(itens) {
   const porProduto = new Map();
   for (const item of itens) {
     if (!item || !isUuid(item.product_id) || !(Number(item.quantidade) > 0)) {
-      throw new HttpError(400, 'cada item precisa de product_id valido e quantidade (>0)');
+      throw new HttpError(400, 'cada item precisa de product_id válido e quantidade (>0)');
     }
     porProduto.set(item.product_id, (porProduto.get(item.product_id) || 0) + Number(item.quantidade));
   }
@@ -25,12 +25,16 @@ function agruparItens(itens) {
 
 router.post('/sales', requireArea('Vendas'), async (req, res) => {
   const { terminal_id, itens, forma_pagamento, valor_recebido } = req.body || {};
+  const descontoInformado = Number((req.body && req.body.desconto) || 0);
+  if (!(descontoInformado >= 0)) {
+    return res.status(400).json({ erro: 'desconto deve ser um valor em reais (0 ou mais)' });
+  }
 
   if (!terminal_id || !Array.isArray(itens) || itens.length === 0 || !forma_pagamento) {
-    return res.status(400).json({ erro: 'terminal_id, itens (nao vazio) e forma_pagamento sao obrigatorios' });
+    return res.status(400).json({ erro: 'terminal_id, itens (não vazio) e forma_pagamento são obrigatórios' });
   }
   if (!FORMAS_PAGAMENTO.includes(forma_pagamento)) {
-    return res.status(400).json({ erro: 'forma_pagamento invalida' });
+    return res.status(400).json({ erro: 'forma_pagamento inválida' });
   }
   const itensAgrupados = agruparItens(itens);
 
@@ -47,7 +51,7 @@ router.post('/sales', requireArea('Vendas'), async (req, res) => {
       [terminal_id, req.user.tenantId, terminal.location_id]
     );
     if (register.rows.length === 0) throw new HttpError(404, 'terminal sem caixa configurado');
-    if (!register.rows[0].location_ativo) throw new HttpError(400, 'o local deste terminal esta inativo');
+    if (!register.rows[0].location_ativo) throw new HttpError(400, 'o local deste terminal está inativo');
     const locationId = terminal.location_id;
     const cashRegisterId = register.rows[0].id;
     assertLocationAccess(req.user, locationId, 'vender neste terminal');
@@ -73,22 +77,27 @@ router.post('/sales', requireArea('Vendas'), async (req, res) => {
     for (const item of itensAgrupados) {
       const produto = productMap.get(item.product_id);
       if (!produto || !produto.ativo) {
-        throw new HttpError(400, `produto ${item.product_id} nao encontrado ou inativo`);
+        throw new HttpError(400, `produto ${item.product_id} não encontrado ou inativo`);
       }
       if (!isQuantidadeValidaParaUnidade(item.quantidade, produto.unidade)) {
         throw new HttpError(400, `"${produto.nome}" e vendido em ${produto.unidade} e so aceita quantidade inteira`);
       }
     }
 
-    let total = 0;
+    let subtotalVenda = 0;
     const itemsComPreco = itensAgrupados.map((item) => {
       const produto = productMap.get(item.product_id);
       const precoUnitario = Number(produto.preco_venda);
       const subtotal = Number((precoUnitario * item.quantidade).toFixed(2));
-      total += subtotal;
+      subtotalVenda += subtotal;
       return { ...item, preco_unitario: precoUnitario, custo_unitario: Number(produto.preco_custo), subtotal };
     });
-    total = Number(total.toFixed(2));
+    subtotalVenda = Number(subtotalVenda.toFixed(2));
+    const desconto = Number(descontoInformado.toFixed(2));
+    if (desconto >= subtotalVenda) {
+      throw new HttpError(400, `desconto (${desconto}) deve ser menor que o subtotal da venda (${subtotalVenda})`);
+    }
+    const total = Number((subtotalVenda - desconto).toFixed(2));
 
     let troco = null;
     let valorRecebidoFinal = null;
@@ -129,7 +138,7 @@ router.post('/sales', requireArea('Vendas'), async (req, res) => {
         const disponivel = saldoMap.get(item.product_id) || 0;
         if (disponivel < item.quantidade) {
           const nome = productMap.get(item.product_id).nome;
-          throw new HttpError(400, `estoque insuficiente de "${nome}" nesta loja (disponivel: ${disponivel}, necessario: ${item.quantidade})`);
+          throw new HttpError(400, `estoque insuficiente de "${nome}" nesta loja (disponível: ${disponivel}, necessário: ${item.quantidade})`);
         }
       }
     }
@@ -155,17 +164,26 @@ router.post('/sales', requireArea('Vendas'), async (req, res) => {
       for (const [ingredientId, info] of necessidadePorInsumo) {
         const disponivel = saldoInsumoMap.get(ingredientId) || 0;
         if (disponivel < info.necessario) {
-          throw new HttpError(400, `${info.nome}: necessario ${info.necessario}${info.unidade}, disponivel nesta loja ${disponivel}${info.unidade}`);
+          throw new HttpError(400, `${info.nome}: necessário ${info.necessario}${info.unidade}, disponível nesta loja ${disponivel}${info.unidade}`);
         }
       }
     }
 
-    // Tudo validado: grava a venda
+    // Tudo validado: grava a venda com o proximo numero sequencial da empresa
+    // (o lock de transacao serializa vendas simultaneas so na hora de numerar).
+    await client.query(`SELECT pg_advisory_xact_lock(hashtext('sales:' || $1::text))`, [req.user.tenantId]);
+    const proximo = await client.query(
+      `SELECT COALESCE(MAX(numero), 0) + 1 AS numero FROM sales WHERE tenant_id = $1`,
+      [req.user.tenantId]
+    );
+    const numero = proximo.rows[0].numero;
     const sale = await client.query(
-      `INSERT INTO sales (tenant_id, location_id, terminal_id, cash_session_id, operador_id, forma_pagamento, valor_recebido, troco, total, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'concluida')
-       RETURNING id, total, troco, forma_pagamento, criado_em`,
-      [req.user.tenantId, locationId, terminal_id, cashSessionId, req.user.id, forma_pagamento, valorRecebidoFinal, troco, total]
+      `INSERT INTO sales (tenant_id, numero, location_id, terminal_id, cash_session_id, operador_id, forma_pagamento,
+                          valor_recebido, troco, subtotal, desconto, total, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'concluida')
+       RETURNING id, numero, subtotal, desconto, total, troco, forma_pagamento, criado_em`,
+      [req.user.tenantId, numero, locationId, terminal_id, cashSessionId, req.user.id, forma_pagamento,
+        valorRecebidoFinal, troco, subtotalVenda, desconto, total]
     );
     const saleId = sale.rows[0].id;
 
@@ -185,7 +203,7 @@ router.post('/sales', requireArea('Vendas'), async (req, res) => {
         await client.query(
           `INSERT INTO stock_movements (tenant_id, product_id, tipo, quantidade, location_origem_id, location_destino_id, motivo, usuario_id, sale_id)
            VALUES ($1, $2, 'saida', $3, $4, NULL, $5, $6, $7)`,
-          [req.user.tenantId, item.product_id, item.quantidade, locationId, `Venda ${saleId}`, req.user.id, saleId]
+          [req.user.tenantId, item.product_id, item.quantidade, locationId, `Venda nº ${numero}`, req.user.id, saleId]
         );
         continue;
       }
@@ -210,12 +228,15 @@ router.post('/sales', requireArea('Vendas'), async (req, res) => {
       acao: 'venda',
       recurso: 'sales',
       recursoId: saleId,
-      detalhes: { total, forma_pagamento },
+      detalhes: { numero, subtotal: subtotalVenda, desconto, total, forma_pagamento },
     });
 
     await client.query('COMMIT');
     res.status(201).json({
       id: saleId,
+      numero,
+      subtotal: subtotalVenda,
+      desconto,
       total,
       troco,
       forma_pagamento,
@@ -236,17 +257,17 @@ router.post('/sales/:id/cancel', requireArea('Vendas'), async (req, res) => {
     throw new HttpError(403, 'somente Administrador ou Gerente podem cancelar vendas');
   }
   const motivo = String((req.body && req.body.motivo) || '').trim();
-  if (motivo.length < 3) throw new HttpError(400, 'motivo do cancelamento e obrigatorio (minimo 3 caracteres)');
+  if (motivo.length < 3) throw new HttpError(400, 'motivo do cancelamento é obrigatório (mínimo 3 caracteres)');
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
     const sale = await getOwned(client, 'sales', req.params.id, req.user.tenantId, {
-      columns: 'id, status, location_id, cash_session_id, total',
+      columns: 'id, numero, status, location_id, cash_session_id, total',
       lock: true,
     });
-    if (sale.status !== 'concluida') throw new HttpError(400, 'esta venda ja foi cancelada');
+    if (sale.status !== 'concluida') throw new HttpError(400, 'esta venda já foi cancelada');
     assertLocationAccess(req.user, sale.location_id, 'cancelar vendas deste local');
 
     const session = await client.query(
@@ -254,7 +275,7 @@ router.post('/sales/:id/cancel', requireArea('Vendas'), async (req, res) => {
       [sale.cash_session_id, req.user.tenantId]
     );
     if (session.rows[0].fechado_em) {
-      throw new HttpError(400, 'o caixa desta venda ja foi fechado; nao e possivel cancela-la');
+      throw new HttpError(400, 'o caixa desta venda já foi fechado; não e possível cancelá-la');
     }
 
     const itens = await client.query(
@@ -291,7 +312,7 @@ router.post('/sales/:id/cancel', requireArea('Vendas'), async (req, res) => {
         `INSERT INTO stock_movements (tenant_id, product_id, tipo, quantidade, location_origem_id, location_destino_id, motivo, usuario_id, sale_id)
          VALUES ($1, $2, 'entrada', $3, NULL, $4, $5, $6, $7)`,
         [req.user.tenantId, saida.product_id, saida.quantidade, saida.location_origem_id,
-          `Estorno do cancelamento da venda ${sale.id}: ${motivo}`, req.user.id, sale.id]
+          `Estorno do cancelamento da venda nº ${sale.numero}: ${motivo}`, req.user.id, sale.id]
       );
     }
 
@@ -370,8 +391,8 @@ function filtrosVendas(req) {
 router.get('/sales', requireArea('Vendas'), async (req, res) => {
   const { params, where } = filtrosVendas(req);
   const { rows } = await pool.query(
-    `SELECT s.id, s.criado_em, u.nome AS operador_nome, t.nome AS terminal_nome, l.nome AS location_nome,
-            s.forma_pagamento, s.total, s.status
+    `SELECT s.id, s.numero, s.criado_em, u.nome AS operador_nome, t.nome AS terminal_nome, l.nome AS location_nome,
+            s.forma_pagamento, s.subtotal, s.desconto, s.total, s.status
      FROM sales s
      JOIN users u ON u.id = s.operador_id
      JOIN terminals t ON t.id = s.terminal_id
@@ -387,11 +408,12 @@ router.get('/sales', requireArea('Vendas'), async (req, res) => {
 router.get('/sales/:id', async (req, res) => {
   const perfil = req.user.perfil;
   if (!['Administrador', 'Gerente', 'Caixa/Operador', 'Financeiro'].includes(perfil)) {
-    throw new HttpError(403, `Perfil ${perfil} nao tem acesso a vendas`);
+    throw new HttpError(403, `Perfil ${perfil} não tem acesso a vendas`);
   }
   await getOwned(pool, 'sales', req.params.id, req.user.tenantId);
   const venda = await pool.query(
-    `SELECT s.id, s.criado_em, s.status, s.forma_pagamento, s.valor_recebido, s.troco, s.total,
+    `SELECT s.id, s.numero, s.criado_em, s.status, s.forma_pagamento, s.valor_recebido, s.troco, s.subtotal, s.desconto, s.total,
+            tn.nome AS empresa_nome,
             s.location_id, l.nome AS location_nome, t.nome AS terminal_nome, u.nome AS operador_nome,
             s.cash_session_id, cs.fechado_em IS NULL AS caixa_aberto,
             s.cancelado_em, s.motivo_cancelamento, uc.nome AS cancelado_por_nome
@@ -400,6 +422,7 @@ router.get('/sales/:id', async (req, res) => {
      JOIN terminals t ON t.id = s.terminal_id
      JOIN users u ON u.id = s.operador_id
      JOIN cash_sessions cs ON cs.id = s.cash_session_id
+     JOIN tenants tn ON tn.id = s.tenant_id
      LEFT JOIN users uc ON uc.id = s.cancelado_por
      WHERE s.id = $1 AND s.tenant_id = $2`,
     [req.params.id, req.user.tenantId]
@@ -409,7 +432,7 @@ router.get('/sales/:id', async (req, res) => {
 
   const itens = await pool.query(
     `SELECT si.id, si.product_id, p.nome AS product_nome, p.codigo_interno, si.quantidade,
-            si.preco_unitario, si.custo_unitario, si.subtotal
+            p.unidade, si.preco_unitario, si.custo_unitario, si.subtotal
      FROM sale_items si JOIN products p ON p.id = si.product_id
      WHERE si.sale_id = $1 AND si.tenant_id = $2
      ORDER BY p.nome`,

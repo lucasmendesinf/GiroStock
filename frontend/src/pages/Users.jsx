@@ -33,9 +33,23 @@ export default function Users() {
   }
 
   async function alternarStatus(u) {
-    await api.patch(`/users/${u.id}/status`, { ativo: !u.ativo });
-    reload();
+    setErro(null);
+    try {
+      await api.patch(`/users/${u.id}/status`, { ativo: !u.ativo });
+      reload();
+    } catch (err) { setErro(err.message); }
   }
+
+  // Perfil e loja de atuacao podem ser trocados a qualquer momento (vale sem novo login).
+  async function alterar(u, campos) {
+    setErro(null);
+    try {
+      await api.patch(`/users/${u.id}`, campos);
+      reload();
+    } catch (err) { setErro(err.message); }
+  }
+
+  const locaisAtivos = locations.filter((l) => l.ativo);
 
   return (
     <div className="page">
@@ -52,8 +66,9 @@ export default function Users() {
           </select>
           <select value={form.location_id} onChange={(e) => setForm({ ...form, location_id: e.target.value })}>
             <option value="">Local de atuacao (todos)</option>
-            {locations.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
+            {locaisAtivos.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
           </select>
+          <p className="form-hint">Com uma loja definida, o usuário só vende, movimenta estoque e vê relatórios dessa loja. Administradores sempre têm acesso a todas.</p>
           <input type="password" placeholder="Senha (min. 6)" value={form.senha} onChange={(e) => setForm({ ...form, senha: e.target.value })} required />
           <input type="password" placeholder="Confirmar senha" value={form.confirmarSenha} onChange={(e) => setForm({ ...form, confirmarSenha: e.target.value })} required />
           <button type="submit">Cadastrar</button>
@@ -63,13 +78,23 @@ export default function Users() {
       <div className="card">
         <h3>Usuários cadastrados</h3>
         <table>
-          <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Loja de atuação</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {users.map((u) => (
               <tr key={u.id}>
                 <td>{u.nome}</td>
                 <td>{u.email}</td>
-                <td><span className="badge">{u.perfil}</span></td>
+                <td>
+                  <select value={u.perfil} onChange={(e) => alterar(u, { perfil: e.target.value })}>
+                    {PERFIS.map((p) => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </td>
+                <td>
+                  <select value={u.location_id || ''} onChange={(e) => alterar(u, { location_id: e.target.value || null })}>
+                    <option value="">Todas as lojas</option>
+                    {locations.filter((l) => l.ativo || l.id === u.location_id).map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
+                  </select>
+                </td>
                 <td>{u.ativo ? 'Ativo' : 'Inativo'}</td>
                 <td><button onClick={() => alternarStatus(u)}>{u.ativo ? 'Desativar' : 'Ativar'}</button></td>
               </tr>

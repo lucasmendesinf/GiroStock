@@ -2,8 +2,33 @@ const express = require('express');
 const pool = require('../db/pool');
 const { requireArea } = require('../middleware/permissions');
 const { logAudit } = require('../utils/audit');
+const { getOwned } = require('../utils/tenant');
+const { assertLocationAccess } = require('../utils/access');
+const { HttpError } = require('../utils/http');
 
 const router = express.Router();
+
+// Terminal da empresa e do local do usuario (usuario vinculado a um local so opera os caixas dele).
+async function getTerminalDoUsuario(db, terminalId, user) {
+  const terminal = await getOwned(db, 'terminals', terminalId, user.tenantId, { columns: 'id, location_id, ativo' });
+  assertLocationAccess(user, terminal.location_id, 'operar o caixa deste terminal');
+  return terminal;
+}
+
+// Sessao de caixa aberta da empresa, travada, conferindo o acesso ao local do terminal.
+async function getSessaoAbertaDoUsuario(client, sessionId, user) {
+  const { rows } = await client.query(
+    `SELECT cs.id, t.location_id FROM cash_sessions cs
+     JOIN cash_registers cr ON cr.id = cs.cash_register_id
+     JOIN terminals t ON t.id = cr.terminal_id
+     WHERE cs.id = $1 AND cs.tenant_id = $2 AND cs.fechado_em IS NULL
+     FOR UPDATE OF cs`,
+    [sessionId, user.tenantId]
+  );
+  if (rows.length === 0) throw new HttpError(404, 'sessao de caixa aberta nao encontrada');
+  assertLocationAccess(user, rows[0].location_id, 'operar o caixa deste terminal');
+  return rows[0];
+}
 
 async function computeSaldoDisponivel(client, tenantId, sessionId) {
   const session = await client.query(
@@ -37,6 +62,7 @@ async function computeSaldoDisponivel(client, tenantId, sessionId) {
 router.get('/cash-sessions/current', requireArea('Vendas'), async (req, res) => {
   const { terminal_id } = req.query;
   if (!terminal_id) return res.status(400).json({ erro: 'terminal_id e obrigatorio' });
+  await getTerminalDoUsuario(pool, terminal_id, req.user);
 
   const register = await pool.query(
     `SELECT id FROM cash_registers WHERE terminal_id = $1 AND tenant_id = $2`,
@@ -58,6 +84,9 @@ router.post('/cash-sessions', requireArea('Vendas'), async (req, res) => {
   if (!terminal_id || !(valor >= 0)) {
     return res.status(400).json({ erro: 'terminal_id e valor_inicial (>=0) sao obrigatorios' });
   }
+
+  const terminal = await getTerminalDoUsuario(pool, terminal_id, req.user);
+  if (!terminal.ativo) throw new HttpError(400, 'terminal inativo');
 
   const client = await pool.connect();
   try {
@@ -117,14 +146,7 @@ router.post('/cash-sessions/:id/movements', requireArea('Vendas'), async (req, r
   try {
     await client.query('BEGIN');
 
-    const session = await client.query(
-      `SELECT id FROM cash_sessions WHERE id = $1 AND tenant_id = $2 AND fechado_em IS NULL FOR UPDATE`,
-      [req.params.id, req.user.tenantId]
-    );
-    if (session.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ erro: 'sessao de caixa aberta nao encontrada' });
-    }
+    await getSessaoAbertaDoUsuario(client, req.params.id, req.user);
 
     if (tipo === 'sangria') {
       const saldoDisponivel = await computeSaldoDisponivel(client, req.user.tenantId, req.params.id);
@@ -171,14 +193,7 @@ router.post('/cash-sessions/:id/close', requireArea('Vendas'), async (req, res) 
   try {
     await client.query('BEGIN');
 
-    const session = await client.query(
-      `SELECT id FROM cash_sessions WHERE id = $1 AND tenant_id = $2 AND fechado_em IS NULL FOR UPDATE`,
-      [req.params.id, req.user.tenantId]
-    );
-    if (session.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ erro: 'sessao de caixa aberta nao encontrada' });
-    }
+    await getSessaoAbertaDoUsuario(client, req.params.id, req.user);
 
     const esperado = await computeSaldoDisponivel(client, req.user.tenantId, req.params.id);
     const diferenca = informado - esperado;

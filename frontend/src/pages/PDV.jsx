@@ -59,9 +59,12 @@ export default function PDV() {
   const [fechamentoResultado, setFechamentoResultado] = useState(null);
 
   useEffect(() => {
+    // So PDVs ativos (o backend ja limita aos da loja do usuario, se ele tiver uma).
     api.get('/terminals').then((rows) => {
-      setTerminals(rows);
-      if (rows.length > 0) setTerminalId(rows[0].id);
+      const ativos = rows.filter((t) => t.ativo);
+      setTerminals(ativos);
+      if (ativos.length > 0) setTerminalId(ativos[0].id);
+      else setSession(null);
     });
   }, []);
 
@@ -73,6 +76,9 @@ export default function PDV() {
   }, []);
 
   useEffect(() => {
+    // O carrinho e validado contra o estoque da loja do terminal: trocar de terminal limpa o carrinho.
+    setCart([]);
+    setResults([]);
     if (terminalId) loadSession(terminalId);
   }, [terminalId, loadSession]);
 
@@ -95,7 +101,7 @@ export default function PDV() {
   async function buscarPorNome(q) {
     setQuery(q);
     if (q.length < 2) { setResults([]); return; }
-    const rows = await api.get(`/products/search?q=${encodeURIComponent(q)}`);
+    const rows = await api.get(`/products/search?q=${encodeURIComponent(q)}&terminal_id=${terminalId}`);
     setResults(rows);
   }
 
@@ -103,7 +109,7 @@ export default function PDV() {
     if (e.key !== 'Enter') return;
     const codigo = query.trim();
     if (!codigo) return;
-    const rows = await api.get(`/products/search?barcode=${encodeURIComponent(codigo)}`);
+    const rows = await api.get(`/products/search?barcode=${encodeURIComponent(codigo)}&terminal_id=${terminalId}`);
     if (rows.length > 0) {
       addToCart(rows[0]);
     }
@@ -111,29 +117,49 @@ export default function PDV() {
 
   async function buscarPorCodigoBarras(e) {
     if (e.key !== 'Enter') return;
-    const rows = await api.get(`/products/search?barcode=${encodeURIComponent(barcode)}`);
+    const rows = await api.get(`/products/search?barcode=${encodeURIComponent(barcode)}&terminal_id=${terminalId}`);
     if (rows.length > 0) {
-      addToCart(rows[0]);
-      setBarcode('');
+      if (addToCart(rows[0])) setBarcode('');
     } else {
       setErro('Produto nao encontrado para este codigo de barras');
     }
   }
 
+  // Limite do carrinho: saldo do produto na loja do terminal (lanches com ficha tecnica
+  // sao validados pelos insumos so ao finalizar). Retorna false se nao foi possivel adicionar.
+  function limiteDe(product) {
+    return product.tem_ficha_tecnica || product.saldo === null || product.saldo === undefined ? Infinity : Number(product.saldo);
+  }
+
   function addToCart(product) {
+    const limite = limiteDe(product);
+    const noCarrinho = cart.find((i) => i.id === product.id);
+    if ((noCarrinho ? noCarrinho.quantidade : 0) + 1 > limite) {
+      setErro(limite <= 0
+        ? `"${product.nome}" está sem estoque nesta loja`
+        : `"${product.nome}": só há ${limite} em estoque nesta loja`);
+      return false;
+    }
+    setErro(null);
     setCart((prev) => {
       const existing = prev.find((i) => i.id === product.id);
       if (existing) {
         return prev.map((i) => (i.id === product.id ? { ...i, quantidade: i.quantidade + 1 } : i));
       }
-      return [...prev, { id: product.id, nome: product.nome, preco_venda: Number(product.preco_venda), quantidade: 1 }];
+      return [...prev, { id: product.id, nome: product.nome, preco_venda: Number(product.preco_venda), quantidade: 1, limite }];
     });
     setResults([]);
     setQuery('');
     focarBusca();
+    return true;
   }
 
   function changeQty(id, delta) {
+    const item = cart.find((i) => i.id === id);
+    if (item && delta > 0 && item.quantidade + delta > item.limite) {
+      setErro(`"${item.nome}": só há ${item.limite} em estoque nesta loja`);
+      return;
+    }
     setCart((prev) => prev
       .map((i) => (i.id === id ? { ...i, quantidade: i.quantidade + delta } : i))
       .filter((i) => i.quantidade > 0));
@@ -210,9 +236,12 @@ export default function PDV() {
         {dicaEsc}
         <div className="card abertura-caixa">
           <h2>Abertura de Caixa</h2>
+          {terminals.length === 0 && (
+            <p className="error">Nenhum PDV ativo disponível para o seu usuário. Cadastre um PDV em "Lojas &amp; PDVs".</p>
+          )}
           <p>Terminal:</p>
           <select value={terminalId} onChange={(e) => setTerminalId(e.target.value)}>
-            {terminals.map((t) => <option key={t.id} value={t.id}>{t.nome}</option>)}
+            {terminals.map((t) => <option key={t.id} value={t.id}>{t.nome} — {t.location_nome}</option>)}
           </select>
           <form onSubmit={abrirCaixa}>
             <label>
@@ -221,7 +250,7 @@ export default function PDV() {
                 onChange={(e) => setValorInicial(e.target.value)} required />
             </label>
             {erro && <p className="error">{erro}</p>}
-            <button type="submit">Abrir caixa</button>
+            <button type="submit" disabled={!terminalId}>Abrir caixa</button>
           </form>
         </div>
       </>
@@ -250,7 +279,7 @@ export default function PDV() {
       {dicaEsc}
       <div className="pdv-header">
         <select value={terminalId} onChange={(e) => setTerminalId(e.target.value)}>
-          {terminals.map((t) => <option key={t.id} value={t.id}>{t.nome}</option>)}
+          {terminals.map((t) => <option key={t.id} value={t.id}>{t.nome} — {t.location_nome}</option>)}
         </select>
         <button onClick={() => setMovModalAberto(true)}>Sangria/Suprimento</button>
         <button onClick={() => setFecharAberto(true)}>Fechar caixa</button>
@@ -268,6 +297,7 @@ export default function PDV() {
             {results.map((p) => (
               <li key={p.id} onClick={() => addToCart(p)}>
                 {p.nome} — R$ {Number(p.preco_venda).toFixed(2)}
+                <span className="saldo-pdv">{p.tem_ficha_tecnica ? 'preparo' : `estoque: ${Number(p.saldo)}`}</span>
               </li>
             ))}
           </ul>

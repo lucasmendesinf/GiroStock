@@ -133,7 +133,7 @@ main { padding: 28px 32px; flex: 1; }
 .card h3 { font-size: 17px; }
 .card form { display: flex; flex-direction: column; gap: 12px; max-width: 440px; }
 .card form.inline-form, form.inline-form { flex-direction: row; flex-wrap: wrap; align-items: center; max-width: none; }
-.card input, .card select {
+.card input, .card select, .loja-card input, .modal-content .detail-section input {
   padding: 12px 14px;
   border-radius: 10px;
   border: 1.5px solid var(--line);
@@ -491,3 +491,31 @@ button.pe-mov-type-btn.active { border-color: var(--gold-light); background: rgb
    e quebra para a proxima linha se nao couber, em vez de estourar o card. */
 .form-row { display: flex; gap: 10px; flex-wrap: wrap; }
 .form-row > input, .form-row > select { flex: 1 1 140px; min-width: 0; }
+
+/* ---------- Status, alertas e acoes (fornecedores, lojas, vendas) ---------- */
+.badge-inativo { font-size: 11px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--muted); color: var(--muted); }
+.badge-alerta { font-size: 11px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--err); color: var(--err); font-weight: 700; }
+.badge-cancelada { font-size: 11px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--err); color: var(--err); font-weight: 700; }
+.row-inativa td { opacity: 0.55; }
+.row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+/* Botao secundario: precisa vencer ".card button" / ".inline-form button" (gradiente) */
+.btn-link, .card .btn-link, .inline-form .btn-link, .modal-content .btn-link {
+  background: none; border: 1px solid var(--line); color: var(--ivory); border-radius: 8px;
+  padding: 6px 12px; font-size: 12px; font-weight: 700; cursor: pointer; text-transform: none; letter-spacing: normal;
+}
+.btn-link.perigo, .card .btn-link.perigo, .inline-form .btn-link.perigo, .modal-content .btn-link.perigo { border-color: var(--err); color: var(--err); }
+.btn-link:disabled { opacity: 0.45; cursor: not-allowed; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--panel-alt); border: 1px solid var(--line); color: var(--ivory); }
+.chip.principal { border-color: var(--gold-light); color: var(--gold-light); }
+.chip button { background: none; border: none; color: var(--muted); cursor: pointer; padding: 0; font-size: 13px; }
+.alertas-card { border-color: var(--err); }
+.alertas-card h3 { color: var(--err); }
+.alertas-card ul { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.form-hint { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 0; }
+.detail-section-title { display: block; }
+.loja-card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 10px; }
+.loja-card-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.loja-card-top .nome { font-size: 15px; font-weight: 700; color: var(--ivory); }
+.terminal-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 12px; background: var(--panel-alt); border: 1px solid var(--line); border-radius: 10px; font-size: 13px; flex-wrap: wrap; }
+.saldo-pdv { font-size: 11px; color: var(--muted); margin-left: 6px; }

@@ -3,6 +3,8 @@ import { api } from '../api/client';
 import { useToast, useConfirm } from '../context/UiContext.jsx';
 import { Field, Modal, Vazio } from '../components/ui.jsx';
 import { brl, data, qtd } from '../utils/format';
+import { useAuth } from '../context/AuthContext.jsx';
+import { pode } from '../utils/permissions.js';
 
 const CATEGORIAS = ['Bebidas', 'Cigarros e Tabacaria', 'Alimentos e Insumos', 'Embalagens', 'Outros'];
 const FORM_VAZIO = { nome: '', documento: '', telefone: '', email: '', categoria: CATEGORIAS[0], prazo_medio_dias: '' };
@@ -28,6 +30,9 @@ function normalizar(t) {
 export default function Suppliers() {
   const toast = useToast();
   const confirmar = useConfirm();
+  const { user } = useAuth();
+  const podeCriar = pode(user, 'fornecedores.criar');
+  const podeEditar = pode(user, 'fornecedores.editar');
   const [suppliers, setSuppliers] = useState([]);
   const [busca, setBusca] = useState('');
   const [situacao, setSituacao] = useState('ativos');
@@ -71,7 +76,7 @@ export default function Suppliers() {
     <div className="page">
       <div className="page-header">
         <h2>Fornecedores</h2>
-        <button type="button" className="btn-primario" onClick={() => setFormAberto('novo')}>+ Novo fornecedor</button>
+        {podeCriar && <button type="button" className="btn-primario" onClick={() => setFormAberto('novo')}>+ Novo fornecedor</button>}
       </div>
 
       <div className="toolbar">
@@ -100,8 +105,8 @@ export default function Suppliers() {
                   <td>
                     <div className="row-actions">
                       <button className="btn-link" onClick={() => abrirDetalhe(s)}>Produtos e compras</button>
-                      <button className="btn-link" onClick={() => setFormAberto(s)}>Editar</button>
-                      <button className={`btn-link ${s.ativo ? 'perigo' : ''}`} onClick={() => alternarStatus(s)}>{s.ativo ? 'Desativar' : 'Reativar'}</button>
+                      {podeEditar && <button className="btn-link" onClick={() => setFormAberto(s)}>Editar</button>}
+                      {podeEditar && <button className={`btn-link ${s.ativo ? 'perigo' : ''}`} onClick={() => alternarStatus(s)}>{s.ativo ? 'Desativar' : 'Reativar'}</button>}
                     </div>
                   </td>
                 </tr>

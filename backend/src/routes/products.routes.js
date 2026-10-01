@@ -1,6 +1,6 @@
 const express = require('express');
 const pool = require('../db/pool');
-const { requireArea } = require('../middleware/permissions');
+const { requirePermission, temPermissao } = require('../middleware/permissions');
 const { isValidBarcode, UNIDADES_INTEIRAS, isQuantidadeValidaParaUnidade } = require('../utils/validators');
 const { logAudit } = require('../utils/audit');
 const { getOwned, getOwnedLocation } = require('../utils/tenant');
@@ -10,7 +10,7 @@ const { HttpError } = require('../utils/http');
 const router = express.Router();
 const UNIDADES = ['UN', 'KG', 'L', 'CX'];
 
-router.get('/categories', requireArea('Estoque'), async (req, res) => {
+router.get('/categories', requirePermission('estoque.ver'), async (req, res) => {
   const { rows } = await pool.query(
     `SELECT c.id, c.nome, c.parent_id,
             (SELECT COUNT(*)::int FROM products p WHERE p.categoria_id = c.id AND p.tenant_id = c.tenant_id) AS produto_count,
@@ -21,7 +21,7 @@ router.get('/categories', requireArea('Estoque'), async (req, res) => {
   res.json(rows);
 });
 
-router.post('/categories', requireArea('Estoque'), async (req, res) => {
+router.post('/categories', requirePermission('produtos.criar'), async (req, res) => {
   const { nome, parent_id } = req.body || {};
   if (!nome) return res.status(400).json({ erro: 'nome é obrigatório' });
   if (parent_id) {
@@ -38,7 +38,35 @@ router.post('/categories', requireArea('Estoque'), async (req, res) => {
   res.status(201).json(rows[0]);
 });
 
-router.delete('/categories/:id', requireArea('Estoque'), async (req, res) => {
+// Renomear categoria e/ou mudar a categoria pai.
+router.patch('/categories/:id', requirePermission('produtos.editar'), async (req, res) => {
+  const body = req.body || {};
+  const atual = await getOwned(pool, 'categories', req.params.id, req.user.tenantId, { columns: 'id, nome, parent_id' });
+  const nome = body.nome !== undefined ? String(body.nome).trim() : atual.nome;
+  if (!nome) throw new HttpError(400, 'nome é obrigatório');
+  let parentId = atual.parent_id;
+  if (body.parent_id !== undefined) {
+    parentId = body.parent_id || null;
+    if (parentId) {
+      if (parentId === atual.id) throw new HttpError(400, 'a categoria não pode ser pai dela mesma');
+      const pai = await getOwned(pool, 'categories', parentId, req.user.tenantId, { columns: 'id, parent_id' });
+      if (pai.parent_id) throw new HttpError(400, 'só é possível criar subcategoria de uma categoria principal');
+      const filhos = await pool.query(`SELECT 1 FROM categories WHERE parent_id = $1 AND tenant_id = $2 LIMIT 1`, [atual.id, req.user.tenantId]);
+      if (filhos.rows.length) throw new HttpError(400, 'esta categoria tem subcategorias e não pode virar subcategoria');
+    }
+  }
+  const { rows } = await pool.query(
+    `UPDATE categories SET nome = $1, parent_id = $2 WHERE id = $3 AND tenant_id = $4 RETURNING id, nome, parent_id`,
+    [nome, parentId, req.params.id, req.user.tenantId]
+  );
+  await logAudit(pool, {
+    tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'editar', recurso: 'categories', recursoId: req.params.id,
+    detalhes: { antes: atual, depois: rows[0] },
+  });
+  res.json(rows[0]);
+});
+
+router.delete('/categories/:id', requirePermission('produtos.editar'), async (req, res) => {
   const categoria = await pool.query(
     `SELECT 1 FROM categories WHERE id = $1 AND tenant_id = $2`,
     [req.params.id, req.user.tenantId]
@@ -66,6 +94,12 @@ router.delete('/categories/:id', requireArea('Estoque'), async (req, res) => {
 });
 
 // ---------- Helpers de produto ----------
+
+function textoOuNull(valor) {
+  if (valor === undefined || valor === null) return null;
+  const t = String(valor).trim();
+  return t === '' ? null : t.slice(0, 1000);
+}
 
 // Monta a lista de fornecedores do produto. supplier_id e o fornecedor principal;
 // supplier_ids sao todos os fornecedores (o principal e incluido automaticamente).
@@ -139,7 +173,7 @@ router.get('/products', async (req, res) => {
     filtro = ` AND p.ativo = $${params.length}`;
   }
   const { rows } = await pool.query(
-    `SELECT p.id, p.codigo_interno, p.nome, p.categoria_id, c.nome AS categoria_nome,
+    `SELECT p.id, p.codigo_interno, p.nome, p.descricao, p.categoria_id, c.nome AS categoria_nome,
             p.supplier_id, s.nome AS supplier_nome, p.barcode,
             p.unidade, p.preco_custo, p.preco_venda, p.ativo,
             ${SQL_FORNECEDORES},
@@ -211,7 +245,7 @@ router.get('/products/search', async (req, res) => {
 
 router.get('/products/:id', async (req, res) => {
   const product = await getOwned(pool, 'products', req.params.id, req.user.tenantId, {
-    columns: 'id, codigo_interno, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, ativo',
+    columns: 'id, codigo_interno, nome, descricao, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, ativo',
   });
 
   const fornecedores = await pool.query(
@@ -243,7 +277,7 @@ router.get('/products/:id', async (req, res) => {
   res.json({ ...product, fornecedores: fornecedores.rows, saldos_por_local: saldos.rows, ficha_tecnica: ficha.rows });
 });
 
-router.post('/products', requireArea('Estoque'), async (req, res) => {
+router.post('/products', requirePermission('produtos.criar'), async (req, res) => {
   const body = req.body || {};
   const { nome, categoria_id, barcode, unidade, location_id, estoque_inicial, ficha_tecnica } = body;
 
@@ -296,10 +330,10 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
     const codigoInterno = await proximoCodigoInterno(client, req.user.tenantId);
 
     const { rows } = await client.query(
-      `INSERT INTO products (tenant_id, codigo_interno, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       RETURNING id, codigo_interno, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, ativo`,
-      [req.user.tenantId, codigoInterno, nome.trim(), categoria_id, fornecedores.principal, barcode, unidade, custo, venda]
+      `INSERT INTO products (tenant_id, codigo_interno, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, descricao)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING id, codigo_interno, nome, descricao, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, ativo`,
+      [req.user.tenantId, codigoInterno, nome.trim(), categoria_id, fornecedores.principal, barcode, unidade, custo, venda, textoOuNull(body.descricao)]
     );
     const product = rows[0];
     await sincronizarFornecedores(client, req.user.tenantId, product.id, fornecedores.ids);
@@ -360,11 +394,12 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
 });
 
 // Edicao do produto. Campos omitidos mantem o valor atual.
-router.put('/products/:id', requireArea('Estoque'), async (req, res) => {
+router.put('/products/:id', requirePermission('produtos.editar'), async (req, res) => {
   const body = req.body || {};
   const atual = await getOwned(pool, 'products', req.params.id, req.user.tenantId, {
-    columns: 'id, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda',
+    columns: 'id, nome, descricao, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda',
   });
+  const descricao = body.descricao !== undefined ? textoOuNull(body.descricao) : atual.descricao;
 
   const nome = body.nome !== undefined ? String(body.nome).trim() : atual.nome;
   if (nome.length < 3) throw new HttpError(400, 'nome deve ter no mínimo 3 caracteres');
@@ -408,11 +443,11 @@ router.put('/products/:id', requireArea('Estoque'), async (req, res) => {
     await client.query('BEGIN');
     const { rows } = await client.query(
       `UPDATE products SET nome = $1, categoria_id = $2, barcode = $3, unidade = $4, preco_custo = $5, preco_venda = $6,
-              supplier_id = $7
+              supplier_id = $7, descricao = $10
        WHERE id = $8 AND tenant_id = $9
-       RETURNING id, codigo_interno, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, ativo`,
+       RETURNING id, codigo_interno, nome, descricao, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, ativo`,
       [nome, categoriaId, barcode, unidade, custo, venda,
-        fornecedores ? fornecedores.principal : atual.supplier_id, req.params.id, req.user.tenantId]
+        fornecedores ? fornecedores.principal : atual.supplier_id, req.params.id, req.user.tenantId, descricao]
     );
     if (fornecedores) await sincronizarFornecedores(client, req.user.tenantId, req.params.id, fornecedores.ids);
 
@@ -423,8 +458,8 @@ router.put('/products/:id', requireArea('Estoque'), async (req, res) => {
       recurso: 'products',
       recursoId: req.params.id,
       detalhes: {
-        antes: { nome: atual.nome, barcode: atual.barcode, unidade: atual.unidade, preco_custo: atual.preco_custo, preco_venda: atual.preco_venda },
-        depois: { nome, barcode, unidade, preco_custo: custo, preco_venda: venda },
+        antes: { nome: atual.nome, descricao: atual.descricao, barcode: atual.barcode, unidade: atual.unidade, preco_custo: atual.preco_custo, preco_venda: atual.preco_venda },
+        depois: { nome, descricao, barcode, unidade, preco_custo: custo, preco_venda: venda },
         fornecedores: fornecedores ? fornecedores.ids : undefined,
       },
     });
@@ -440,7 +475,7 @@ router.put('/products/:id', requireArea('Estoque'), async (req, res) => {
 
 // Produto inativo some do PDV e nao recebe novas entradas, mas o historico e o saldo
 // continuam (ainda e possivel transferir ou dar saida do que sobrou).
-router.patch('/products/:id/status', requireArea('Estoque'), async (req, res) => {
+router.patch('/products/:id/status', requirePermission('produtos.editar'), async (req, res) => {
   const ativo = !!(req.body && req.body.ativo);
   await getOwned(pool, 'products', req.params.id, req.user.tenantId);
   const client = await pool.connect();
@@ -468,7 +503,7 @@ router.patch('/products/:id/status', requireArea('Estoque'), async (req, res) =>
 });
 
 // Estoque minimo do produto em um local (0 = sem alerta).
-router.put('/products/:id/minimum', requireArea('Estoque'), async (req, res) => {
+router.put('/products/:id/minimum', requirePermission('produtos.editar'), async (req, res) => {
   const { location_id, estoque_minimo } = req.body || {};
   const minimo = Number(estoque_minimo);
   if (!location_id || !(minimo >= 0)) throw new HttpError(400, 'location_id e estoque_minimo (0 ou mais) são obrigatórios');
@@ -492,7 +527,7 @@ router.put('/products/:id/minimum', requireArea('Estoque'), async (req, res) => 
 });
 
 // Ficha tecnica
-router.post('/products/:id/ingredients', requireArea('Estoque'), async (req, res) => {
+router.post('/products/:id/ingredients', requirePermission('produtos.editar'), async (req, res) => {
   const { ingredient_id, quantidade_por_unidade } = req.body || {};
   const qtd = Number(quantidade_por_unidade);
   if (!ingredient_id || !(qtd > 0)) {
@@ -521,7 +556,7 @@ router.post('/products/:id/ingredients', requireArea('Estoque'), async (req, res
   res.status(201).json(rows[0]);
 });
 
-router.delete('/products/:id/ingredients/:ingredientId', requireArea('Estoque'), async (req, res) => {
+router.delete('/products/:id/ingredients/:ingredientId', requirePermission('produtos.editar'), async (req, res) => {
   await pool.query(
     `DELETE FROM product_ingredients WHERE product_id = $1 AND ingredient_id = $2 AND tenant_id = $3`,
     [req.params.id, req.params.ingredientId, req.user.tenantId]

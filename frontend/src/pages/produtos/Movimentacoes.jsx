@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../api/client';
 import { useToast } from '../../context/UiContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
+import { pode } from '../../utils/permissions.js';
 import { Field, Paginacao, Vazio } from '../../components/ui.jsx';
 import ProdutoPicker from '../../components/ProdutoPicker.jsx';
 import { brl, dataHora, parseNumero, qtd } from '../../utils/format';
@@ -76,7 +77,7 @@ export default function Movimentacoes({ products, locations, suppliers, alertas,
         </div>
       )}
 
-      <div className="card">
+      {pode(user, 'estoque.movimentar') && <div className="card">
         <div className="segmentado" role="radiogroup" aria-label="Tipo de movimentação">
           {['transferencia', 'entrada', 'saida'].map((t) => (
             <button key={t} type="button" className={tipo === t ? 'ativo' : ''} onClick={() => setTipo(t)}>{TIPO_MOV(t)}</button>
@@ -124,7 +125,7 @@ export default function Movimentacoes({ products, locations, suppliers, alertas,
           </Field>
           <button type="submit" className="btn-primario">Registrar {TIPO_MOV(tipo).toLowerCase()}</button>
         </form>
-      </div>
+      </div>}
 
       <div className="card">
         <h3>Histórico de movimentações</h3>

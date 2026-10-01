@@ -5,6 +5,8 @@ import { brl, qtd, parseNumero, dataHora, UNIDADES_INTEIRAS, FORMA_PAGAMENTO } f
 import { useToast, useConfirm } from '../context/UiContext.jsx';
 import { Field, Modal } from '../components/ui.jsx';
 import Cupom, { imprimirCupom as abrirImpressao } from '../components/Cupom.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
+import { pode } from '../utils/permissions.js';
 
 const TROCOS_RAPIDOS = [10, 20, 50, 100, 200];
 const FORMAS = ['pix', 'cartao_credito', 'cartao_debito', 'dinheiro'];
@@ -18,6 +20,8 @@ function ehCodigoDeBarras(texto) {
 export default function PDV() {
   const toast = useToast();
   const confirmar = useConfirm();
+  const { user } = useAuth();
+  const podeDesconto = pode(user, 'vendas.desconto');
 
   // ---------- tela cheia ----------
   const [mostrarDicaEsc, setMostrarDicaEsc] = useState(false);
@@ -520,7 +524,7 @@ export default function PDV() {
           </div>
 
           <div className="form-grid">
-            <Field label="Desconto">
+            {podeDesconto && <Field label="Desconto">
               <div className="input-com-seletor">
                 <input inputMode="decimal" placeholder="0" value={descontoTexto} onChange={(e) => setDescontoTexto(e.target.value)} />
                 <select value={descontoTipo} onChange={(e) => setDescontoTipo(e.target.value)} aria-label="Tipo de desconto">
@@ -528,7 +532,7 @@ export default function PDV() {
                   <option value="percentual">%</option>
                 </select>
               </div>
-            </Field>
+            </Field>}
             {formaPagamento === 'dinheiro' && (
               <Field label="Valor recebido">
                 <input ref={recebidoRef} inputMode="decimal" placeholder="0,00" value={valorRecebido} onChange={(e) => setValorRecebido(e.target.value)} />

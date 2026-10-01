@@ -1,6 +1,6 @@
 const express = require('express');
 const pool = require('../db/pool');
-const { requireArea } = require('../middleware/permissions');
+const { requirePermission, temPermissao } = require('../middleware/permissions');
 const { logAudit } = require('../utils/audit');
 const { getOwned, getOwnedLocation } = require('../utils/tenant');
 const { restrictedLocation } = require('../utils/access');
@@ -18,7 +18,7 @@ router.get('/locations', async (req, res) => {
   res.json(rows);
 });
 
-router.post('/locations', requireArea('Configuracoes'), async (req, res) => {
+router.post('/locations', requirePermission('lojas.gerenciar'), async (req, res) => {
   const nome = String((req.body && req.body.nome) || '').trim();
   if (!nome) return res.status(400).json({ erro: 'nome é obrigatório' });
   const { rows } = await pool.query(
@@ -30,7 +30,7 @@ router.post('/locations', requireArea('Configuracoes'), async (req, res) => {
 
 // Renomear e/ou ativar/desativar um local. Para desativar, o local nao pode ter
 // saldo de produtos/insumos nem caixa aberto (transfira o estoque antes).
-router.patch('/locations/:id', requireArea('Configuracoes'), async (req, res) => {
+router.patch('/locations/:id', requirePermission('lojas.gerenciar'), async (req, res) => {
   const body = req.body || {};
   const atual = await getOwned(pool, 'locations', req.params.id, req.user.tenantId, { columns: 'id, nome, ativo' });
   const nome = body.nome !== undefined ? String(body.nome).trim() : atual.nome;
@@ -104,7 +104,7 @@ router.get('/terminals', async (req, res) => {
   res.json(rows);
 });
 
-router.post('/terminals', requireArea('Configuracoes'), async (req, res) => {
+router.post('/terminals', requirePermission('lojas.gerenciar'), async (req, res) => {
   const { location_id } = req.body || {};
   const nome = String((req.body && req.body.nome) || '').trim();
   if (!nome || !location_id) return res.status(400).json({ erro: 'nome e location_id são obrigatórios' });
@@ -131,7 +131,7 @@ router.post('/terminals', requireArea('Configuracoes'), async (req, res) => {
   }
 });
 
-router.patch('/terminals/:id', requireArea('Configuracoes'), async (req, res) => {
+router.patch('/terminals/:id', requirePermission('lojas.gerenciar'), async (req, res) => {
   const body = req.body || {};
   const atual = await getOwned(pool, 'terminals', req.params.id, req.user.tenantId, { columns: 'id, nome, location_id, ativo' });
   const nome = body.nome !== undefined ? String(body.nome).trim() : atual.nome;

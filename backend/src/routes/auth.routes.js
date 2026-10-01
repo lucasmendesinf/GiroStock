@@ -3,11 +3,19 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const pool = require('../db/pool');
 const { authRequired } = require('../middleware/auth');
-const { MATRIX } = require('../middleware/permissions');
+const { PERMISSOES } = require('../middleware/permissions');
 const { logAudit } = require('../utils/audit');
 const { HttpError } = require('../utils/http');
 
 const router = express.Router();
+
+const SELECT_USUARIO = `SELECT u.id, u.tenant_id, u.nome, u.email, u.location_id, u.access_level_id, u.permissoes_extra,
+            al.nome AS nivel, al.permissoes AS permissoes_nivel,
+            t.nome AS empresa_nome, l.nome AS location_nome`;
+const FROM_USUARIO = `FROM users u
+     JOIN tenants t ON t.id = u.tenant_id
+     JOIN access_levels al ON al.id = u.access_level_id
+     LEFT JOIN locations l ON l.id = u.location_id`;
 
 router.post('/login', async (req, res) => {
   const { email, senha } = req.body || {};
@@ -16,28 +24,26 @@ router.post('/login', async (req, res) => {
   }
 
   const { rows } = await pool.query(
-    `SELECT u.id, u.tenant_id, u.nome, u.email, u.senha_hash, u.perfil, u.location_id, u.ativo,
-            t.nome AS empresa_nome, l.nome AS location_nome
-     FROM users u JOIN tenants t ON t.id = u.tenant_id
-     LEFT JOIN locations l ON l.id = u.location_id
+    `${SELECT_USUARIO}, u.senha_hash, u.ativo
+     ${FROM_USUARIO}
      WHERE u.email = $1`,
     [email]
   );
   const user = rows[0];
   if (!user || !user.ativo) {
-    return res.status(401).json({ erro: 'Credenciais invalidas' });
+    return res.status(401).json({ erro: 'Credenciais inválidas' });
   }
 
   const ok = await bcrypt.compare(senha, user.senha_hash);
   if (!ok) {
-    return res.status(401).json({ erro: 'Credenciais invalidas' });
+    return res.status(401).json({ erro: 'Credenciais inválidas' });
   }
 
   const token = jwt.sign(
     {
       sub: user.id,
       tenantId: user.tenant_id,
-      perfil: user.perfil,
+      nivel: user.nivel,
       locationId: user.location_id,
     },
     process.env.JWT_SECRET,
@@ -50,28 +56,29 @@ router.post('/login', async (req, res) => {
   });
 });
 
-// Dados publicos do usuario logado, incluindo as areas que o perfil acessa
-// (o frontend monta o menu a partir disso).
+// Dados publicos do usuario logado, incluindo o nivel e as permissoes efetivas
+// (nivel + extras); o frontend monta o menu e os botoes a partir disso.
 function dadosDoUsuario(user) {
+  const permissoes = [...new Set([...(user.permissoes_nivel || []), ...(user.permissoes_extra || [])])];
   return {
     id: user.id,
     nome: user.nome,
     email: user.email,
-    perfil: user.perfil,
+    nivel: user.nivel,
+    perfil: user.nivel,
+    accessLevelId: user.access_level_id,
+    permissoes: permissoes.includes('*') ? ['*', ...PERMISSOES.map((p) => p.chave)] : permissoes,
+    admin: permissoes.includes('*'),
     locationId: user.location_id,
     locationNome: user.location_nome || null,
     empresaNome: user.empresa_nome,
-    areas: MATRIX[user.perfil] || {},
   };
 }
 
 // Recarrega o usuario logado (perfil/loja podem ter mudado desde o login).
 router.get('/me', authRequired, async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT u.id, u.nome, u.email, u.perfil, u.location_id, t.nome AS empresa_nome, l.nome AS location_nome
-     FROM users u JOIN tenants t ON t.id = u.tenant_id
-     LEFT JOIN locations l ON l.id = u.location_id
-     WHERE u.id = $1`,
+    `${SELECT_USUARIO} ${FROM_USUARIO} WHERE u.id = $1`,
     [req.user.id]
   );
   res.json(dadosDoUsuario(rows[0]));

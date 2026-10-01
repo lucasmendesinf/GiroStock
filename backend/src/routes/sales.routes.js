@@ -1,6 +1,6 @@
 const express = require('express');
 const pool = require('../db/pool');
-const { requireArea } = require('../middleware/permissions');
+const { requirePermission, temPermissao } = require('../middleware/permissions');
 const { logAudit } = require('../utils/audit');
 const { getOwned, isUuid } = require('../utils/tenant');
 const { assertLocationAccess, restrictedLocation, canCancelSales } = require('../utils/access');
@@ -23,11 +23,14 @@ function agruparItens(itens) {
   return [...porProduto.entries()].map(([product_id, quantidade]) => ({ product_id, quantidade }));
 }
 
-router.post('/sales', requireArea('Vendas'), async (req, res) => {
+router.post('/sales', requirePermission('vendas.pdv'), async (req, res) => {
   const { terminal_id, itens, forma_pagamento, valor_recebido } = req.body || {};
   const descontoInformado = Number((req.body && req.body.desconto) || 0);
   if (!(descontoInformado >= 0)) {
     return res.status(400).json({ erro: 'desconto deve ser um valor em reais (0 ou mais)' });
+  }
+  if (descontoInformado > 0 && !temPermissao(req.user, 'vendas.desconto')) {
+    return res.status(403).json({ erro: 'seu nível de acesso não permite dar desconto' });
   }
 
   if (!terminal_id || !Array.isArray(itens) || itens.length === 0 || !forma_pagamento) {
@@ -252,9 +255,9 @@ router.post('/sales', requireArea('Vendas'), async (req, res) => {
 
 // Cancela uma venda devolvendo o estoque (produtos e insumos) ao local da venda.
 // So enquanto o caixa da venda estiver aberto, para nao alterar um fechamento ja conferido.
-router.post('/sales/:id/cancel', requireArea('Vendas'), async (req, res) => {
+router.post('/sales/:id/cancel', requirePermission('vendas.cancelar'), async (req, res) => {
   if (!canCancelSales(req.user)) {
-    throw new HttpError(403, 'somente Administrador ou Gerente podem cancelar vendas');
+    throw new HttpError(403, 'seu nível de acesso não permite cancelar vendas');
   }
   const motivo = String((req.body && req.body.motivo) || '').trim();
   if (motivo.length < 3) throw new HttpError(400, 'motivo do cancelamento é obrigatório (mínimo 3 caracteres)');
@@ -388,7 +391,7 @@ function filtrosVendas(req) {
   return { params, where };
 }
 
-router.get('/sales', requireArea('Vendas'), async (req, res) => {
+router.get('/sales', requirePermission('vendas.pdv', 'relatorios.ver'), async (req, res) => {
   const { params, where } = filtrosVendas(req);
   const { rows } = await pool.query(
     `SELECT s.id, s.numero, s.criado_em, u.nome AS operador_nome, t.nome AS terminal_nome, l.nome AS location_nome,
@@ -406,9 +409,8 @@ router.get('/sales', requireArea('Vendas'), async (req, res) => {
 
 // Detalhe da venda com os itens (aberto para quem vende e para quem ve relatorios).
 router.get('/sales/:id', async (req, res) => {
-  const perfil = req.user.perfil;
-  if (!['Administrador', 'Gerente', 'Caixa/Operador', 'Financeiro'].includes(perfil)) {
-    throw new HttpError(403, `Perfil ${perfil} não tem acesso a vendas`);
+  if (!temPermissao(req.user, 'vendas.pdv') && !temPermissao(req.user, 'relatorios.ver')) {
+    throw new HttpError(403, 'seu nível de acesso não permite ver vendas');
   }
   await getOwned(pool, 'sales', req.params.id, req.user.tenantId);
   const venda = await pool.query(

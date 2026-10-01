@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../api/client';
 import { useToast, useConfirm } from '../../context/UiContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
+import { pode } from '../../utils/permissions.js';
 import { Field, Modal } from '../../components/ui.jsx';
 import { brl, brlFino, dataHora, parseNumero, pct, qtd } from '../../utils/format';
 import { UNIDADES_PRODUTO, ordenarCategoriasHierarquia, SeletorFornecedores, stepDaUnidade, TIPO_MOV, lojaPadrao, lembrarLoja } from './comum.jsx';
@@ -18,6 +19,8 @@ export default function DetalheProduto({ productId, categories, suppliers, locat
   const [minimos, setMinimos] = useState({});
   const locaisAtivos = locations.filter((l) => l.ativo);
   const localPadrao = lojaPadrao(user, locaisAtivos);
+  const podeEditar = pode(user, 'produtos.editar');
+  const podeMovimentar = pode(user, 'estoque.movimentar');
   const ENTRADA_VAZIA = { quantidade: '', location_id: localPadrao, supplier_id: '', custo_unitario: '', documento_fiscal: '', motivo: 'Compra' };
   const [entrada, setEntrada] = useState(ENTRADA_VAZIA);
   const [fichaForm, setFichaForm] = useState({ ingredient_id: '', quantidade_por_unidade: '' });
@@ -49,7 +52,7 @@ export default function DetalheProduto({ productId, categories, suppliers, locat
   function iniciarEdicao() {
     const principal = p.supplier_id || '';
     setEditando({
-      nome: p.nome, categoria_id: p.categoria_id || '', barcode: p.barcode, unidade: p.unidade,
+      nome: p.nome, descricao: p.descricao || '', categoria_id: p.categoria_id || '', barcode: p.barcode, unidade: p.unidade,
       preco_custo: String(p.preco_custo).replace('.', ','), preco_venda: String(p.preco_venda).replace('.', ','),
       supplier_id: principal,
       supplier_ids: p.fornecedores.map((f) => f.id).filter((id) => id !== principal),
@@ -136,8 +139,9 @@ export default function DetalheProduto({ productId, categories, suppliers, locat
     <Modal titulo={<>{p.nome} {!p.ativo && <span className="badge-inativo">inativo</span>}</>}
       subtitulo={`${p.codigo_interno} · EAN ${p.barcode}`} onClose={onClose} largura="extra">
       <div className="row-actions">
-        {!editando && <button type="button" className="btn-link" onClick={iniciarEdicao}>Editar produto</button>}
-        <button type="button" className={`btn-link ${p.ativo ? 'perigo' : ''}`} onClick={alternarStatus}>{p.ativo ? 'Desativar' : 'Reativar'}</button>
+        {podeEditar && !editando && <button type="button" className="btn-link" onClick={iniciarEdicao}>Editar produto</button>}
+        {podeEditar && <button type="button" className={`btn-link ${p.ativo ? 'perigo' : ''}`} onClick={alternarStatus}>{p.ativo ? 'Desativar' : 'Reativar'}</button>}
+        {!podeEditar && <span className="muted">Seu nível de acesso não permite editar produtos.</span>}
       </div>
 
       {editando ? (
@@ -145,6 +149,7 @@ export default function DetalheProduto({ productId, categories, suppliers, locat
           <span className="detail-section-title">Editar produto</span>
           <div className="form-grid">
             <Field label="Nome *" style={{ flexBasis: '100%' }}><input value={editando.nome} onChange={(e) => setEditando({ ...editando, nome: e.target.value })} required minLength={3} /></Field>
+            <Field label="Descrição" style={{ flexBasis: '100%' }}><input value={editando.descricao} onChange={(e) => setEditando({ ...editando, descricao: e.target.value })} maxLength={1000} placeholder="Opcional" /></Field>
             <Field label="Categoria *">
               <select value={editando.categoria_id} onChange={(e) => setEditando({ ...editando, categoria_id: e.target.value })} required>
                 {ordenarCategoriasHierarquia(categories).map((c) => <option key={c.id} value={c.id}>{'— '.repeat(c.nivel)}{c.nome}</option>)}
@@ -176,6 +181,7 @@ export default function DetalheProduto({ productId, categories, suppliers, locat
             <div><span className="label">Venda</span><span className="valor destaque">{brl(p.preco_venda)}</span></div>
             <div><span className="label">Margem</span><span className="valor">{pct(margem.toFixed(1))}</span></div>
           </div>
+          {p.descricao && <p className="descricao-produto">{p.descricao}</p>}
           <div className="chips">
             <span className="muted">Fornecedores:</span>
             {p.fornecedores.length === 0 && <span className="muted">nenhum</span>}
@@ -198,10 +204,10 @@ export default function DetalheProduto({ productId, categories, suppliers, locat
                       <td>{l.nome}</td>
                       <td className={`num ${s && s.abaixo_minimo ? 'texto-alerta' : ''}`}>{qtd(s ? s.saldo : 0, p.unidade)} {p.unidade}</td>
                       <td>
-                        <input className="input-curto" inputMode="decimal" aria-label={`Estoque mínimo em ${l.nome}`}
+                        {!podeEditar ? qtd(s ? s.estoque_minimo : 0, p.unidade) : <input className="input-curto" inputMode="decimal" aria-label={`Estoque mínimo em ${l.nome}`}
                           value={minimos[l.id] ?? qtd(s ? s.estoque_minimo : 0, p.unidade)}
                           onChange={(e) => setMinimos({ ...minimos, [l.id]: e.target.value })}
-                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); salvarMinimo(l.id); } }} />
+                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); salvarMinimo(l.id); } }} />}
                       </td>
                       <td>{minimos[l.id] !== undefined && <button type="button" className="btn-link" onClick={() => salvarMinimo(l.id)}>Salvar</button>}</td>
                     </tr>
@@ -213,7 +219,7 @@ export default function DetalheProduto({ productId, categories, suppliers, locat
         </div>
       )}
 
-      {!composto && p.ativo && (
+      {!composto && p.ativo && podeMovimentar && (
         <form onSubmit={lancarEntrada} className="detail-section">
           <span className="detail-section-title">Entrada de compra</span>
           <div className="form-grid">
@@ -237,7 +243,7 @@ export default function DetalheProduto({ productId, categories, suppliers, locat
         </form>
       )}
 
-      {(composto || p.saldos_por_local.every((s) => Number(s.saldo) === 0)) && (
+      {(composto || (podeEditar && p.saldos_por_local.every((s) => Number(s.saldo) === 0))) && (
         <div className="detail-section">
           <span className="detail-section-title">Ficha técnica {composto ? '' : '(transforma em produto composto)'}</span>
           {composto && (
@@ -245,13 +251,13 @@ export default function DetalheProduto({ productId, categories, suppliers, locat
               {p.ficha_tecnica.map((f) => (
                 <li key={f.id}>
                   <span>{f.ingredient_nome} — {qtd(f.quantidade_por_unidade)} {f.unidade}</span>
-                  <span><span className="muted">{brl(f.custo_fracionado)}</span> <button type="button" className="btn-link" onClick={() => removerInsumo(f)}>Remover</button></span>
+                  <span><span className="muted">{brl(f.custo_fracionado)}</span> {podeEditar && <button type="button" className="btn-link" onClick={() => removerInsumo(f)}>Remover</button>}</span>
                 </li>
               ))}
               <li><strong>Custo total dos insumos</strong><strong>{brl(p.ficha_tecnica.reduce((s, f) => s + Number(f.custo_fracionado), 0))}</strong></li>
             </ul>
           )}
-          <form onSubmit={addInsumo} className="form-grid">
+          {podeEditar && <form onSubmit={addInsumo} className="form-grid">
             <Field label="Insumo">
               <select value={fichaForm.ingredient_id} onChange={(e) => setFichaForm({ ...fichaForm, ingredient_id: e.target.value })} required>
                 <option value="">Escolha...</option>
@@ -260,7 +266,7 @@ export default function DetalheProduto({ productId, categories, suppliers, locat
             </Field>
             <Field label="Qtd por unidade" style={{ flex: '0 0 150px' }}><input inputMode="decimal" value={fichaForm.quantidade_por_unidade} onChange={(e) => setFichaForm({ ...fichaForm, quantidade_por_unidade: e.target.value })} required /></Field>
             <button type="submit" className="btn-link">+ Adicionar</button>
-          </form>
+          </form>}
         </div>
       )}
 

@@ -1,6 +1,6 @@
 const express = require('express');
 const pool = require('../db/pool');
-const { requireArea } = require('../middleware/permissions');
+const { requirePermission, temPermissao } = require('../middleware/permissions');
 const { logAudit } = require('../utils/audit');
 const { getOwned, getOwnedLocation } = require('../utils/tenant');
 const { assertLocationAccess, restrictedLocation } = require('../utils/access');
@@ -191,7 +191,7 @@ async function aplicarMovimento(client, user, mov) {
   return { ...rows[0], preco_custo_atualizado: custoMedio };
 }
 
-router.post('/stock-movements', requireArea('Estoque'), async (req, res) => {
+router.post('/stock-movements', requirePermission('estoque.movimentar'), async (req, res) => {
   const mov = await prepararMovimento(pool, req.user, req.body);
   const client = await pool.connect();
   try {
@@ -209,7 +209,7 @@ router.post('/stock-movements', requireArea('Estoque'), async (req, res) => {
 
 // Entrada por nota: varios produtos de uma compra lancados de uma vez (tudo ou nada).
 // Corpo: { location_id, supplier_id?, documento_fiscal?, motivo?, itens: [{ product_id, quantidade, custo_unitario? }] }
-router.post('/stock-entries', requireArea('Estoque'), async (req, res) => {
+router.post('/stock-entries', requirePermission('estoque.movimentar'), async (req, res) => {
   const { location_id, supplier_id, documento_fiscal, itens } = req.body || {};
   if (!location_id) throw new HttpError(400, 'location_id (local que recebe a mercadoria) é obrigatório');
   if (!Array.isArray(itens) || itens.length === 0) throw new HttpError(400, 'informe ao menos um item na nota');
@@ -256,7 +256,7 @@ router.post('/stock-entries', requireArea('Estoque'), async (req, res) => {
 
 // Historico de movimentacoes com filtros e paginacao.
 // Filtros: product_id, location_id, supplier_id, tipo, data_inicio, data_fim (AAAA-MM-DD), limit, offset.
-router.get('/stock-movements', requireArea('Estoque'), async (req, res) => {
+router.get('/stock-movements', requirePermission('estoque.ver'), async (req, res) => {
   const { product_id, location_id, supplier_id, tipo } = req.query;
   const params = [req.user.tenantId];
   let where = 'sm.tenant_id = $1';
@@ -305,7 +305,7 @@ router.get('/stock-movements', requireArea('Estoque'), async (req, res) => {
 });
 
 // Itens (produtos e insumos) com saldo no minimo ou abaixo dele, por local.
-router.get('/stock/alerts', requireArea('Estoque'), async (req, res) => {
+router.get('/stock/alerts', requirePermission('estoque.ver'), async (req, res) => {
   const params = [req.user.tenantId];
   let filtroProduto = '';
   let filtroInsumo = '';

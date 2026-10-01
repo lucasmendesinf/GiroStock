@@ -15,7 +15,7 @@ export default function FormProduto({ categories, suppliers, locations, ingredie
   const locaisAtivos = locations.filter((l) => l.ativo);
   const localPadrao = lojaPadrao(user, locaisAtivos);
   const [form, setForm] = useState({
-    nome: '', categoria_id: '', unidade: 'UN', barcode: '', preco_custo: '', preco_venda: '',
+    nome: '', descricao: '', categoria_id: '', unidade: 'UN', barcode: '', preco_custo: '', preco_venda: '',
     supplier_id: '', supplier_ids: [], location_id: localPadrao, estoque_inicial: '0',
   });
   const [composto, setComposto] = useState(false);
@@ -52,6 +52,7 @@ export default function FormProduto({ categories, suppliers, locations, ingredie
     try {
       const produto = await api.post('/products', {
         nome: form.nome,
+        descricao: form.descricao,
         categoria_id: form.categoria_id,
         unidade: form.unidade,
         barcode: form.barcode.trim(),
@@ -80,6 +81,9 @@ export default function FormProduto({ categories, suppliers, locations, ingredie
         <div className="form-grid">
           <Field label="Nome do produto *" style={{ flexBasis: '100%' }}>
             <input autoFocus value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} minLength={3} required />
+          </Field>
+          <Field label="Descrição (opcional)" style={{ flexBasis: '100%' }} hint="Aparece na lista de produtos. Ex: sabor, tamanho, observações.">
+            <input value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} maxLength={1000} />
           </Field>
           <Field label="Categoria *">
             <select value={form.categoria_id} onChange={(e) => setForm({ ...form, categoria_id: e.target.value })} required>

@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useToast } from '../context/UiContext.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
+import { pode } from '../utils/permissions.js';
 import ListaProdutos from './produtos/ListaProdutos.jsx';
 import Movimentacoes from './produtos/Movimentacoes.jsx';
 import EntradaNota from './produtos/EntradaNota.jsx';
@@ -17,8 +19,10 @@ const ABAS = [
 // Dados compartilhados entre as abas; cada aba recarrega o que precisar via reload().
 export default function Products() {
   const toast = useToast();
+  const { user } = useAuth();
+  const abas = ABAS.filter((a) => a.id !== 'nota' || pode(user, 'estoque.movimentar'));
   const [params, setParams] = useSearchParams();
-  const aba = ABAS.some((a) => a.id === params.get('aba')) ? params.get('aba') : 'produtos';
+  const aba = abas.some((a) => a.id === params.get('aba')) ? params.get('aba') : 'produtos';
   const [dados, setDados] = useState({ products: [], categories: [], locations: [], suppliers: [], ingredients: [], alertas: [] });
   const [carregado, setCarregado] = useState(false);
 
@@ -41,7 +45,7 @@ export default function Products() {
     <div className="page">
       <h2>Produtos &amp; Estoque</h2>
       <div className="pe-tabs" role="tablist">
-        {ABAS.map((a) => (
+        {abas.map((a) => (
           <button key={a.id} role="tab" aria-selected={aba === a.id} className={`pe-tab ${aba === a.id ? 'active' : ''}`}
             onClick={() => setParams(a.id === 'produtos' ? {} : { aba: a.id })}>
             {a.label}{a.id === 'estoque' && dados.alertas.length > 0 ? ` (${dados.alertas.length})` : ''}

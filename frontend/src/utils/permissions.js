@@ -1,29 +1,40 @@
-// Areas do sistema por tela. O backend envia em user.areas o que o perfil acessa
-// (mesma matriz de backend/src/middleware/permissions.js).
+// Permissoes vem do backend em user.permissoes (nivel de acesso + permissoes extras).
+// '*' = Administrador (tudo). Mesmo catalogo de backend/src/middleware/permissions.js.
+
+export function pode(user, ...chaves) {
+  if (!user || !Array.isArray(user.permissoes)) return false;
+  if (user.permissoes.includes('*')) return true;
+  return chaves.some((c) => user.permissoes.includes(c));
+}
+
 export const TELAS = [
-  { path: '/inicio', label: 'Início', area: null, paraPerfis: ['Administrador', 'Gerente', 'Financeiro', 'Estoque', 'Lanchonete/Cozinha'] },
-  { path: '/pdv', label: 'PDV', area: 'Vendas' },
-  { path: '/produtos', label: 'Produtos & Estoque', area: 'Estoque' },
-  { path: '/fornecedores', label: 'Fornecedores', area: 'Estoque' },
-  { path: '/lojas', label: 'Lojas & PDVs', area: 'Configuracoes' },
-  { path: '/usuarios', label: 'Usuários', area: 'Configuracoes' },
-  { path: '/relatorios', label: 'Relatórios', area: 'Relatorios' },
+  { path: '/inicio', label: 'Início', permissoes: null },
+  { path: '/pdv', label: 'PDV', permissoes: ['vendas.pdv'] },
+  { path: '/produtos', label: 'Produtos & Estoque', permissoes: ['estoque.ver'] },
+  { path: '/fornecedores', label: 'Fornecedores', permissoes: ['estoque.ver'] },
+  { path: '/lojas', label: 'Lojas & PDVs', permissoes: ['lojas.gerenciar'] },
+  { path: '/usuarios', label: 'Usuários', permissoes: ['usuarios.gerenciar'] },
+  { path: '/relatorios', label: 'Relatórios', permissoes: ['relatorios.ver'] },
 ];
 
-export function podeAcessar(user, area) {
+export function podeAcessar(user, permissoes) {
   if (!user) return false;
-  if (!area) return true;
-  return !!(user.areas && user.areas[area]);
+  if (!permissoes || permissoes.length === 0) return true;
+  return pode(user, ...permissoes);
 }
 
 export function telasDoUsuario(user) {
-  return TELAS.filter((t) => podeAcessar(user, t.area) && (!t.paraPerfis || t.paraPerfis.includes(user.perfil)));
+  const telas = TELAS.filter((t) => podeAcessar(user, t.permissoes));
+  // Quem so vende nao precisa da tela Inicio: o menu fica so com o PDV.
+  const outras = telas.filter((t) => t.path !== '/inicio');
+  if (outras.length === 1 && outras[0].path === '/pdv') return outras;
+  return telas;
 }
 
-// Tela inicial apos o login: caixa vai direto ao PDV, estoque aos produtos, etc.
+// Tela inicial apos o login: quem so vende vai direto ao PDV; os demais ao Inicio.
 export function rotaInicial(user) {
   if (!user) return '/login';
-  if (user.perfil === 'Caixa/Operador') return '/pdv';
-  const telas = telasDoUsuario(user);
-  return telas.length > 0 ? telas[0].path : '/inicio';
+  const telas = telasDoUsuario(user).filter((t) => t.path !== '/inicio');
+  if (telas.length === 1 && telas[0].path === '/pdv') return '/pdv';
+  return '/inicio';
 }

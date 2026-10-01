@@ -19,7 +19,8 @@ const B = process.env.API_URL || 'http://localhost:3000';
   if (existe.rows.length === 0) {
     const t = (await db.query("INSERT INTO tenants (nome) VALUES ('Empresa B (teste)') RETURNING id")).rows[0].id;
     await db.query("INSERT INTO locations (tenant_id, nome) VALUES ($1, 'Loja B')", [t]);
-    await db.query("INSERT INTO users (tenant_id, nome, email, senha_hash, perfil) VALUES ($1, 'Admin B', 'b@b.com', $2, 'Administrador')",
+    await db.query('SELECT girostock_criar_niveis_padrao($1)', [t]);
+    await db.query("INSERT INTO users (tenant_id, nome, email, senha_hash, access_level_id) SELECT $1, 'Admin B', 'b@b.com', $2, id FROM access_levels WHERE tenant_id = $1 AND nome = 'Administrador'",
       [t, bcrypt.hashSync('123456', 10)]);
   }
   await db.end();
@@ -298,9 +299,9 @@ const caixas = (await r('GET', '/reports/cash-sessions', null, A)).j;
 check('resumo de fechamentos de caixa', caixas.length >= 3 && caixas.some((c) => c.fechado_em && c.diferenca !== null), caixas.length);
 
 const me = (await r('GET', '/auth/me', null, A)).j;
-check('/auth/me traz areas, empresa e loja', me.areas && me.areas.Vendas === true && !!me.empresaNome, me);
+check('/auth/me traz nivel, permissoes e empresa', me.admin === true && me.nivel === 'Administrador' && me.permissoes.includes('produtos.editar') && !!me.empresaNome, me);
 const meCx = (await r('GET', '/auth/me', null, CX)).j;
-check('perfil caixa so tem a area de Vendas', meCx.areas.Vendas && !meCx.areas.Estoque && !meCx.areas.Relatorios && meCx.locationNome === 'Distribuidora', meCx);
+check('nivel caixa so tem permissoes de venda', meCx.permissoes.includes('vendas.pdv') && !meCx.permissoes.includes('estoque.ver') && !meCx.permissoes.includes('relatorios.ver') && meCx.locationNome === 'Distribuidora', meCx);
 check('troca de senha com senha atual errada -> 400', st(await r('POST', '/auth/change-password', { senha_atual: 'errada', nova_senha: 'nova123' }, CX), 400));
 check('troca da propria senha', st(await r('POST', '/auth/change-password', { senha_atual: '123456', nova_senha: 'nova123' }, CX), 204));
 check('login com a nova senha', !!(await login('cx@d.com', 'nova123')));
@@ -310,6 +311,81 @@ check('admin edita nome do usuario', (await r('PATCH', `/users/${cxId}`, { nome:
 check('caixa nao redefine senha de ninguem -> 403', st(await r('PATCH', `/users/${cxId}/password`, { senha: 'x12345' }, CX), 403));
 const erroAcento = await r('POST', '/stock-movements', { product_id: agua.id, tipo: 'saida', quantidade: 9999, location_origem_id: L.Distribuidora, motivo: 'x' }, A);
 check('mensagens de erro com acento', /disponível/.test(erroAcento.j.erro), erroAcento.j);
+
+console.log('\n# 15. Niveis de acesso e permissoes de edicao');
+const catalogo = (await r('GET', '/permissions', null, A)).j;
+check('catalogo de permissoes', Array.isArray(catalogo) && catalogo.some((p) => p.chave === 'produtos.editar'), catalogo.length);
+const niveis = (await r('GET', '/access-levels', null, A)).j;
+check('6 niveis padrao na empresa', niveis.length === 6 && niveis[0].admin, niveis.map((n) => n.nome));
+const nivelAdmin = niveis.find((n) => n.admin);
+const nivelEstoque = niveis.find((n) => n.nome === 'Estoque');
+
+// Estoquista (EST, loja Tabacaria) nao edita cadastros por padrao
+check('estoque NAO edita produto -> 403', st(await r('PUT', `/products/${P}`, { nome: 'Hackeado' }, EST), 403));
+check('estoque NAO edita fornecedor -> 403', st(await r('PUT', `/suppliers/${sup.j.id}`, { nome: 'X', documento: '07526557000100', telefone: '4199990000', categoria: 'Bebidas' }, EST), 403));
+const pao = (await r('GET', '/ingredients', null, A)).j.find((i) => i.nome === 'Pao');
+check('estoque NAO edita insumo -> 403', st(await r('PUT', `/ingredients/${pao.id}`, { nome: 'X' }, EST), 403));
+check('estoque NAO renomeia categoria -> 403', st(await r('PATCH', `/categories/${catBeb}`, { nome: 'X' }, EST), 403));
+check('estoque NAO desativa produto -> 403', st(await r('PATCH', `/products/${P}/status`, { ativo: false }, EST), 403));
+check('estoque NAO muda custo do insumo no balanco -> 403', st(await r('POST', `/ingredients/${pao.id}/stock-adjustment`, { novo_saldo: 1, novo_custo_unitario: 9, location_id: L.Tabacaria, motivo: 'contagem' }, EST), 403));
+check('estoque faz balanco sem mudar custo', st(await r('POST', `/ingredients/${pao.id}/stock-adjustment`, { novo_saldo: 3, location_id: L.Tabacaria, motivo: 'contagem' }, EST), 200));
+check('estoque ainda cadastra produto (produtos.criar)', st(await r('POST', '/products', { nome: 'Produto do Estoquista', categoria_id: catBeb, barcode: '7896000000031', unidade: 'UN', preco_custo: 1, preco_venda: 2, location_id: L.Tabacaria }, EST), 201));
+
+// Admin concede a permissao extra ao estoquista
+const estId = (await r('GET', '/users', null, A)).j.find((u) => u.email === 'est@t.com').id;
+const concede = await r('PATCH', `/users/${estId}`, { permissoes_extra: ['produtos.editar'] }, A);
+check('admin concede produtos.editar ao estoquista', st(concede, 200) && concede.j.permissoes_extra.includes('produtos.editar'), concede.j);
+const edEst = await r('PUT', `/products/${P}`, { descricao: 'Cerveja pilsen gelada' }, EST);
+check('agora o estoquista edita produto (descricao)', st(edEst, 200) && edEst.j.descricao === 'Cerveja pilsen gelada', edEst.j);
+check('descricao aparece no detalhe', (await r('GET', `/products/${P}`, null, A)).j.descricao === 'Cerveja pilsen gelada');
+check('mas continua sem editar fornecedor -> 403', st(await r('PUT', `/suppliers/${sup.j.id}`, { nome: 'X', documento: '07526557000100', telefone: '4199990000', categoria: 'Bebidas' }, EST), 403));
+check('permissao desconhecida -> 400', st(await r('PATCH', `/users/${estId}`, { permissoes_extra: ['tudo.liberado'] }, A), 400));
+
+// Nivel personalizado
+const conf = await r('POST', '/access-levels', { nome: 'Conferente', permissoes: ['estoque.ver', 'fornecedores.editar'] }, A);
+check('admin cria nivel personalizado', st(conf, 201), conf.j);
+check('nivel com nome repetido -> 409', st(await r('POST', '/access-levels', { nome: 'conferente', permissoes: [] }, A), 409));
+await r('POST', '/users', { nome: 'Conferente 1', email: 'conf@t.com', senha: '123456', access_level_id: conf.j.id }, A);
+const CONF = await login('conf@t.com', '123456');
+check('conferente edita fornecedor', st(await r('PUT', `/suppliers/${sup.j.id}`, { nome: 'Ambev Conferida', documento: '07526557000100', telefone: '4199990000', categoria: 'Bebidas' }, CONF), 200));
+check('conferente nao cadastra produto -> 403', st(await r('POST', '/products', { nome: 'X1', categoria_id: catBeb, barcode: '7896000000048', unidade: 'UN', preco_custo: 1, preco_venda: 2, location_id: L.Tabacaria }, CONF), 403));
+const confEd = await r('PUT', `/access-levels/${conf.j.id}`, { nome: 'Conferente de notas', permissoes: ['estoque.ver'] }, A);
+check('admin edita nivel (nome e permissoes)', st(confEd, 200) && confEd.j.nome === 'Conferente de notas', confEd.j);
+check('mudanca do nivel vale na hora', st(await r('PUT', `/suppliers/${sup.j.id}`, { nome: 'Ambev', documento: '07526557000100', telefone: '4199990000', categoria: 'Bebidas' }, CONF), 403));
+check('nivel Administrador nao pode ser alterado -> 400', st(await r('PUT', `/access-levels/${nivelAdmin.id}`, { permissoes: ['estoque.ver'] }, A), 400));
+check('nivel padrao nao pode ser renomeado -> 400', st(await r('PUT', `/access-levels/${nivelEstoque.id}`, { nome: 'Almoxarifado' }, A), 400));
+check('nivel padrao pode ter permissoes ajustadas', st(await r('PUT', `/access-levels/${nivelEstoque.id}`, { permissoes: [...nivelEstoque.permissoes, 'insumos.editar'] }, A), 200));
+check('nao remove nivel com usuarios -> 400', st(await r('DELETE', `/access-levels/${conf.j.id}`, null, A), 400));
+const vazio = await r('POST', '/access-levels', { nome: 'Temporario', permissoes: [] }, A);
+check('remove nivel vazio', st(await r('DELETE', `/access-levels/${vazio.j.id}`, null, A), 204));
+
+// Sem escalada de privilegio
+const nivelSup = await r('POST', '/access-levels', { nome: 'Supervisor', permissoes: ['usuarios.gerenciar', 'estoque.ver', 'vendas.pdv'] }, A);
+await r('POST', '/users', { nome: 'Supervisor 1', email: 'super@t.com', senha: '123456', access_level_id: nivelSup.j.id }, A);
+const SUP = await login('super@t.com', '123456');
+check('supervisor nao cria Administrador -> 403', st(await r('POST', '/users', { nome: 'Novo Admin', email: 'na@t.com', senha: '123456', perfil: 'Administrador' }, SUP), 403));
+check('supervisor nao concede permissao extra que nao tem -> 403', st(await r('POST', '/users', { nome: 'N1', email: 'n1@t.com', senha: '123456', access_level_id: nivelSup.j.id, permissoes_extra: ['produtos.editar'] }, SUP), 403));
+check('supervisor nao usa nivel com permissao que nao tem (Caixa tem desconto) -> 403', st(await r('POST', '/users', { nome: 'N2', email: 'n2@t.com', senha: '123456', perfil: 'Caixa/Operador' }, SUP), 403));
+check('supervisor cria usuario com nivel dentro das proprias permissoes', st(await r('POST', '/users', { nome: 'N4', email: 'n4@t.com', senha: '123456', access_level_id: conf.j.id }, SUP), 201));
+const adminId = (await r('GET', '/users', null, A)).j.find((u) => u.email === 'admin@girostock.local').id;
+check('supervisor nao mexe no Administrador -> 403', st(await r('PATCH', `/users/${adminId}/password`, { senha: 'hack123' }, SUP), 403));
+check('supervisor nao configura niveis -> 403', st(await r('POST', '/access-levels', { nome: 'Hack', permissoes: [] }, SUP), 403));
+check('admin nao rebaixa a si mesmo -> 400', st(await r('PATCH', `/users/${adminId}`, { perfil: 'Gerente' }, A), 400));
+
+// Desconto exige permissao
+const semDesc = await r('POST', '/access-levels', { nome: 'Caixa sem desconto', permissoes: ['vendas.pdv'] }, A);
+await r('POST', '/users', { nome: 'Caixa SD', email: 'sd@t.com', senha: '123456', access_level_id: semDesc.j.id, location_id: L.Distribuidora }, A);
+const SD = await login('sd@t.com', '123456');
+check('sem vendas.desconto nao da desconto -> 403', st(await r('POST', '/sales', { terminal_id: PDV1, itens: [{ product_id: agua.id, quantidade: 1 }], forma_pagamento: 'pix', desconto: 1 }, SD), 403));
+check('sem desconto vende normalmente', st(await r('POST', '/sales', { terminal_id: PDV1, itens: [{ product_id: agua.id, quantidade: 1 }], forma_pagamento: 'pix' }, SD), 201));
+
+// Edicoes que nao existiam
+const insEd = await r('PUT', `/ingredients/${pao.id}`, { nome: 'Pão francês', custo_unitario: 0.95 }, A);
+check('admin edita nome e custo do insumo', st(insEd, 200) && insEd.j.nome === 'Pão francês' && Number(insEd.j.custo_unitario) === 0.95, insEd.j);
+check('trocar unidade de insumo com saldo -> 400', st(await r('PUT', `/ingredients/${pao.id}`, { unidade: 'KG' }, A), 400));
+check('desativar insumo', (await r('PATCH', `/ingredients/${pao.id}/status`, { ativo: false }, A)).j.ativo === false);
+const catEd = await r('PATCH', `/categories/${catBeb}`, { nome: 'Bebidas e Gelados' }, A);
+check('admin renomeia categoria', st(catEd, 200) && catEd.j.nome === 'Bebidas e Gelados', catEd.j);
 
 console.log(`\nRESULTADO: ${pass} ok, ${fail} falhas`);
 if (fail) {

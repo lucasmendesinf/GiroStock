@@ -56,15 +56,42 @@ Acesse:
 
 ### Telas
 
-- O menu mostra só as telas que o perfil pode usar; quem abre uma tela sem permissão vê um aviso.
-- Cada perfil cai na sua tela inicial: Caixa no PDV, os demais no **Início** (vendas de hoje, alertas de estoque, caixas abertos).
+- O menu mostra só as telas que o nível de acesso permite; quem abre uma tela sem permissão vê um aviso.
+- Quem só vende cai direto no PDV; os demais no **Início** (vendas de hoje, alertas de estoque, caixas abertos).
 - **Produtos**: tabela com busca (nome, código PRD ou EAN), filtros por categoria, fornecedor, situação e estoque baixo; cadastro em janela.
 - **Entrada por nota**: vários produtos de uma compra lançados de uma vez (aceita leitor), com fornecedor e número da nota.
 - **Insumos**: um botão "Movimentar" por insumo (entrada, saída, transferência, balanço e mínimo), já na loja que tem saldo.
 - **Relatórios**: período (hoje, ontem, 7 dias, mês, mês passado ou datas), ranking de produtos, descontos, histórico paginado e fechamentos de caixa (esperado × contado).
-- **Usuários**: perfil padrão Caixa, confirmação ao mudar acesso, edição de nome e redefinição de senha; cada usuário troca a própria senha no menu da conta.
+- **Usuários**: nível padrão Caixa, permissões extras por usuário, confirmação ao mudar acesso, edição de nome e redefinição de senha; cada usuário troca a própria senha no menu da conta. A aba **Níveis de acesso** cria e configura os níveis.
 - Valores e quantidades no padrão brasileiro (R$ 1.234,56), avisos no canto da tela e confirmação em ações que desativam ou cancelam algo.
 - Funciona em celular e tablet (menu recolhível e tabelas que escondem colunas secundárias).
+
+## Níveis de acesso e permissões
+
+Cada usuário tem um **nível de acesso** (lista de permissões) e, opcionalmente, **permissões extras** só para ele. O Administrador cria níveis novos e ajusta os padrões em **Usuários → Níveis de acesso**; a mudança vale na hora para todos do nível.
+
+| Permissão | O que libera |
+|---|---|
+| `vendas.pdv` | Usar o PDV: vender, abrir e fechar caixa, sangria e suprimento |
+| `vendas.desconto` | Dar desconto nas vendas |
+| `vendas.cancelar` | Cancelar vendas (estorna estoque e caixa) |
+| `estoque.ver` | Ver produtos, estoque, fornecedores e insumos |
+| `estoque.movimentar` | Entradas, saídas, transferências, notas e balanço de insumos |
+| `produtos.criar` / `produtos.editar` | Cadastrar / editar produtos e categorias (nome, descrição, preços, código de barras, fornecedores, ficha técnica, estoque mínimo, desativar) |
+| `fornecedores.criar` / `fornecedores.editar` | Cadastrar / editar e desativar fornecedores |
+| `insumos.criar` / `insumos.editar` | Cadastrar / editar insumos (nome, unidade, custo, estoque mínimo) e desativar |
+| `relatorios.ver` | Relatórios e fechamentos de caixa |
+| `lojas.gerenciar` | Lojas e PDVs |
+| `usuarios.gerenciar` | Usuários (só concede permissões que a própria pessoa tem) |
+
+Níveis padrão: **Administrador** (tudo, não pode ser alterado), **Gerente**, **Caixa/Operador**, **Estoque**, **Financeiro** e **Lanchonete/Cozinha**. Por padrão **só o Administrador edita** produtos, fornecedores, insumos e categorias; os demais níveis cadastram, e a edição é liberada pelo Administrador no nível ou por usuário.
+
+Regras de segurança: só o Administrador configura níveis e atribui o nível Administrador; ninguém concede uma permissão que não tem; a empresa sempre mantém ao menos um Administrador ativo; o Administrador não rebaixa a si mesmo.
+
+### Migração `006_niveis_de_acesso.sql`
+
+- Cria os níveis padrão em cada empresa e coloca cada usuário no nível equivalente ao perfil que ele tinha.
+- Troca a coluna `perfil` por `access_level_id` + `permissoes_extra` e cria `products.descricao`.
 
 ### Migração `005_ux_vendas_numero_desconto.sql`
 
@@ -124,13 +151,13 @@ nginx/     Proxy reverso
 
 - Linhas repetidas do mesmo produto são somadas antes de validar o estoque.
 - A venda baixa o estoque (ou os insumos da ficha técnica) da loja do PDV e grava o custo de cada item, usado no lucro bruto dos relatórios.
-- Administrador ou Gerente cancelam vendas enquanto o caixa da venda estiver aberto; o cancelamento devolve produtos e insumos ao estoque e tira o valor do caixa.
+- Quem tem a permissão "Cancelar vendas" cancela enquanto o caixa da venda estiver aberto; o cancelamento devolve produtos e insumos ao estoque e tira o valor do caixa.
 
 ### Usuários e lojas
 
 - O e-mail de login é único no sistema todo.
 - Usuário com loja de atuação definida só vende, movimenta estoque e vê relatórios daquela loja (Administrador sempre vê tudo). Em transferências, ele envia a partir da própria loja.
-- Desativar um usuário ou trocar seu perfil/loja vale na hora, sem novo login.
+- Desativar um usuário ou trocar seu nível, permissões ou loja vale na hora, sem novo login.
 
 ### Migração `004_estoque_fornecedores_vendas.sql`
 

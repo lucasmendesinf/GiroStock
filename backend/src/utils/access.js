@@ -1,9 +1,10 @@
 const { HttpError } = require('./http');
+const { temPermissao, ehAdmin } = require('../middleware/permissions');
 
 // Usuario com local de atuacao definido so opera naquele local.
-// Administrador sempre tem acesso a todos os locais.
+// Quem tem o nivel Administrador sempre tem acesso a todos os locais.
 function restrictedLocation(user) {
-  if (!user || user.perfil === 'Administrador') return null;
+  if (!user || ehAdmin(user)) return null;
   return user.locationId || null;
 }
 
@@ -18,9 +19,8 @@ function assertLocationAccess(user, locationId, acao = 'operar neste local') {
   }
 }
 
-// Perfis que podem cancelar vendas (estorno de estoque e de caixa).
 function canCancelSales(user) {
-  return user && (user.perfil === 'Administrador' || user.perfil === 'Gerente');
+  return temPermissao(user, 'vendas.cancelar');
 }
 
 module.exports = { restrictedLocation, canAccessLocation, assertLocationAccess, canCancelSales };

@@ -1,6 +1,6 @@
 const express = require('express');
 const pool = require('../db/pool');
-const { requireArea } = require('../middleware/permissions');
+const { requirePermission, temPermissao } = require('../middleware/permissions');
 const { onlyDigits, isValidDocumento, isValidEmail, isValidTelefone } = require('../utils/validators');
 const { logAudit } = require('../utils/audit');
 const { getOwned } = require('../utils/tenant');
@@ -42,7 +42,7 @@ async function assertDocumentoLivre(tenantId, documento, ignorarId = null) {
   if (rows.length > 0) throw new HttpError(409, 'já existe fornecedor com este documento');
 }
 
-router.get('/suppliers', requireArea('Estoque'), async (req, res) => {
+router.get('/suppliers', requirePermission('estoque.ver'), async (req, res) => {
   const { rows } = await pool.query(
     `SELECT s.id, s.nome, s.documento, s.telefone, s.email, s.categoria, s.prazo_medio_dias, s.ativo,
             (SELECT COUNT(*)::int FROM product_suppliers ps WHERE ps.supplier_id = s.id AND ps.tenant_id = s.tenant_id) AS produto_count
@@ -53,7 +53,7 @@ router.get('/suppliers', requireArea('Estoque'), async (req, res) => {
 });
 
 // Fornecedor + produtos vinculados + ultimas entradas de estoque feitas por ele.
-router.get('/suppliers/:id', requireArea('Estoque'), async (req, res) => {
+router.get('/suppliers/:id', requirePermission('estoque.ver'), async (req, res) => {
   const supplier = await getOwned(pool, 'suppliers', req.params.id, req.user.tenantId, { columns: COLUNAS });
 
   const produtos = await pool.query(
@@ -77,7 +77,7 @@ router.get('/suppliers/:id', requireArea('Estoque'), async (req, res) => {
   res.json({ ...supplier, produtos: produtos.rows, entradas: entradas.rows });
 });
 
-router.post('/suppliers', requireArea('Estoque'), async (req, res) => {
+router.post('/suppliers', requirePermission('fornecedores.criar'), async (req, res) => {
   const dados = validarFornecedor(req.body);
   await assertDocumentoLivre(req.user.tenantId, dados.documento);
 
@@ -90,7 +90,7 @@ router.post('/suppliers', requireArea('Estoque'), async (req, res) => {
   res.status(201).json(rows[0]);
 });
 
-router.put('/suppliers/:id', requireArea('Estoque'), async (req, res) => {
+router.put('/suppliers/:id', requirePermission('fornecedores.editar'), async (req, res) => {
   const anterior = await getOwned(pool, 'suppliers', req.params.id, req.user.tenantId, { columns: COLUNAS });
   const dados = validarFornecedor(req.body);
   await assertDocumentoLivre(req.user.tenantId, dados.documento, req.params.id);
@@ -124,7 +124,7 @@ router.put('/suppliers/:id', requireArea('Estoque'), async (req, res) => {
 
 // Desativar mantem o historico (produtos e entradas continuam apontando para ele),
 // mas o fornecedor deixa de aparecer para novos vinculos e novas entradas.
-router.patch('/suppliers/:id/status', requireArea('Estoque'), async (req, res) => {
+router.patch('/suppliers/:id/status', requirePermission('fornecedores.editar'), async (req, res) => {
   const ativo = !!(req.body && req.body.ativo);
   await getOwned(pool, 'suppliers', req.params.id, req.user.tenantId);
 

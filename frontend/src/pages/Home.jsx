@@ -2,15 +2,15 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext.jsx';
-import { podeAcessar } from '../utils/permissions.js';
+import { pode } from '../utils/permissions.js';
 import { brl, dataHora, isoLocal, qtd, FORMA_PAGAMENTO } from '../utils/format.js';
 import { Vazio } from '../components/ui.jsx';
 
 // Painel inicial: vendas de hoje, alertas de estoque, caixas abertos e ultimas vendas.
 export default function Home() {
   const { user } = useAuth();
-  const veRelatorios = podeAcessar(user, 'Relatorios');
-  const veEstoque = podeAcessar(user, 'Estoque');
+  const veRelatorios = pode(user, 'relatorios.ver');
+  const veEstoque = pode(user, 'estoque.ver');
   const [resumo, setResumo] = useState(null);
   const [ultimas, setUltimas] = useState([]);
   const [alertas, setAlertas] = useState([]);
@@ -33,8 +33,8 @@ export default function Home() {
       <div className="page-header">
         <h2>Olá, {user.nome.split(' ')[0]}</h2>
         <div className="row-actions">
-          {podeAcessar(user, 'Vendas') && <Link className="btn-primario" to="/pdv">Abrir PDV</Link>}
-          {veEstoque && <Link className="btn-link" to="/produtos?aba=nota">Entrada de nota</Link>}
+          {pode(user, 'vendas.pdv') && <Link className="btn-primario" to="/pdv">Abrir PDV</Link>}
+          {pode(user, 'estoque.movimentar') && <Link className="btn-link" to="/produtos?aba=nota">Entrada de nota</Link>}
           {veRelatorios && <Link className="btn-link" to="/relatorios">Relatórios</Link>}
         </div>
       </div>

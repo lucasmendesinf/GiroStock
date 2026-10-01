@@ -36,10 +36,12 @@ async function run() {
       );
     }
 
+    // Niveis de acesso padrao (Administrador, Gerente, Caixa/Operador, ...).
+    await client.query(`SELECT girostock_criar_niveis_padrao($1)`, [tenantId]);
     const senhaHash = await bcrypt.hash('admin123', 10);
     await client.query(
-      `INSERT INTO users (tenant_id, nome, email, senha_hash, perfil, location_id)
-       VALUES ($1, $2, $3, $4, 'Administrador', NULL)`,
+      `INSERT INTO users (tenant_id, nome, email, senha_hash, access_level_id, location_id)
+       SELECT $1, $2, $3, $4, id, NULL FROM access_levels WHERE tenant_id = $1 AND nome = 'Administrador'`,
       [tenantId, 'Administrador', 'admin@girostock.local', senhaHash]
     );
 

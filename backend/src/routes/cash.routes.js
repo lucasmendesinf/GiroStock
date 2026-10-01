@@ -1,6 +1,6 @@
 const express = require('express');
 const pool = require('../db/pool');
-const { requireArea } = require('../middleware/permissions');
+const { requirePermission, temPermissao } = require('../middleware/permissions');
 const { logAudit } = require('../utils/audit');
 const { getOwned } = require('../utils/tenant');
 const { assertLocationAccess } = require('../utils/access');
@@ -59,7 +59,7 @@ async function computeSaldoDisponivel(client, tenantId, sessionId) {
   return inicial + dinheiro + suprimentos - sangrias;
 }
 
-router.get('/cash-sessions/current', requireArea('Vendas'), async (req, res) => {
+router.get('/cash-sessions/current', requirePermission('vendas.pdv'), async (req, res) => {
   const { terminal_id } = req.query;
   if (!terminal_id) return res.status(400).json({ erro: 'terminal_id é obrigatório' });
   await getTerminalDoUsuario(pool, terminal_id, req.user);
@@ -78,7 +78,7 @@ router.get('/cash-sessions/current', requireArea('Vendas'), async (req, res) => 
   res.json(rows[0] || null);
 });
 
-router.post('/cash-sessions', requireArea('Vendas'), async (req, res) => {
+router.post('/cash-sessions', requirePermission('vendas.pdv'), async (req, res) => {
   const { terminal_id, valor_inicial } = req.body || {};
   const valor = Number(valor_inicial);
   if (!terminal_id || !(valor >= 0)) {
@@ -135,7 +135,7 @@ router.post('/cash-sessions', requireArea('Vendas'), async (req, res) => {
   }
 });
 
-router.post('/cash-sessions/:id/movements', requireArea('Vendas'), async (req, res) => {
+router.post('/cash-sessions/:id/movements', requirePermission('vendas.pdv'), async (req, res) => {
   const { tipo, valor, motivo } = req.body || {};
   const val = Number(valor);
   if (!['sangria', 'suprimento'].includes(tipo) || !(val > 0) || !motivo) {
@@ -184,7 +184,7 @@ router.post('/cash-sessions/:id/movements', requireArea('Vendas'), async (req, r
   }
 });
 
-router.post('/cash-sessions/:id/close', requireArea('Vendas'), async (req, res) => {
+router.post('/cash-sessions/:id/close', requirePermission('vendas.pdv'), async (req, res) => {
   const { valor_informado } = req.body || {};
   const informado = Number(valor_informado);
   if (!(informado >= 0)) return res.status(400).json({ erro: 'valor_informado (>=0) é obrigatório' });

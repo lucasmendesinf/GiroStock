@@ -17,10 +17,10 @@ import Reports from './pages/Reports.jsx';
 import Locations from './pages/Locations.jsx';
 
 // Tela protegida: exige login e, se informada, acesso a area do perfil.
-function Private({ area, children }) {
+function Private({ permissoes, children }) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
-  if (!podeAcessar(user, area)) return <Layout><SemAcesso /></Layout>;
+  if (!podeAcessar(user, permissoes)) return <Layout><SemAcesso /></Layout>;
   return <Layout>{children}</Layout>;
 }
 
@@ -30,7 +30,7 @@ function SemAcesso() {
     <div className="page">
       <div className="card sem-acesso">
         <h3>Você não tem acesso a esta área</h3>
-        <p>O perfil <strong>{user.perfil}</strong> não pode abrir esta tela. Se precisar, peça a um administrador para ajustar o seu perfil.</p>
+        <p>Seu nível de acesso (<strong>{user.nivel || user.perfil}</strong>) não permite abrir esta tela. Se precisar, peça a um administrador para liberar a permissão.</p>
         <NavLink className="btn-link" to={rotaInicial(user)}>Ir para a minha tela inicial</NavLink>
       </div>
     </div>
@@ -118,7 +118,7 @@ function Layout({ children }) {
           <div className="conta">
             <button type="button" className="conta-botao" aria-expanded={contaAberta} onClick={() => setContaAberta(!contaAberta)}>
               <span className="conta-nome">{user?.nome}</span>
-              <span className="conta-perfil">{user?.perfil}{user?.locationNome ? ` · ${user.locationNome}` : ''}</span>
+              <span className="conta-perfil">{user?.nivel || user?.perfil}{user?.locationNome ? ` · ${user.locationNome}` : ''}</span>
             </button>
             {contaAberta && (
               <div className="conta-menu">
@@ -146,13 +146,13 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/inicio" element={<Private><Home /></Private>} />
-      <Route path="/pdv" element={<Private area="Vendas"><PDV /></Private>} />
-      <Route path="/produtos" element={<Private area="Estoque"><Products /></Private>} />
+      <Route path="/pdv" element={<Private permissoes={['vendas.pdv']}><PDV /></Private>} />
+      <Route path="/produtos" element={<Private permissoes={['estoque.ver']}><Products /></Private>} />
       <Route path="/insumos" element={<Navigate to="/produtos" replace />} />
-      <Route path="/fornecedores" element={<Private area="Estoque"><Suppliers /></Private>} />
-      <Route path="/lojas" element={<Private area="Configuracoes"><Locations /></Private>} />
-      <Route path="/usuarios" element={<Private area="Configuracoes"><Users /></Private>} />
-      <Route path="/relatorios" element={<Private area="Relatorios"><Reports /></Private>} />
+      <Route path="/fornecedores" element={<Private permissoes={['estoque.ver']}><Suppliers /></Private>} />
+      <Route path="/lojas" element={<Private permissoes={['lojas.gerenciar']}><Locations /></Private>} />
+      <Route path="/usuarios" element={<Private permissoes={['usuarios.gerenciar']}><Users /></Private>} />
+      <Route path="/relatorios" element={<Private permissoes={['relatorios.ver']}><Reports /></Private>} />
       <Route path="*" element={<Inicial />} />
     </Routes>
   );

@@ -1,6 +1,6 @@
 const express = require('express');
 const pool = require('../db/pool');
-const { requireArea } = require('../middleware/permissions');
+const { requirePermission, temPermissao } = require('../middleware/permissions');
 const { restrictedLocation } = require('../utils/access');
 const { filtroPeriodo, paginacao } = require('../utils/query');
 
@@ -37,7 +37,7 @@ function filtros(req, { incluirStatus }) {
   return { params, where };
 }
 
-router.get('/reports/sales-summary', requireArea('Relatorios'), async (req, res) => {
+router.get('/reports/sales-summary', requirePermission('relatorios.ver'), async (req, res) => {
   const { params, where } = filtros(req, { incluirStatus: false });
 
   const resumo = await pool.query(
@@ -105,7 +105,7 @@ router.get('/reports/sales-summary', requireArea('Relatorios'), async (req, res)
 });
 
 // Historico paginado; inclui canceladas (filtravel por ?status=concluida|cancelada).
-router.get('/reports/sales-history', requireArea('Relatorios'), async (req, res) => {
+router.get('/reports/sales-history', requirePermission('relatorios.ver'), async (req, res) => {
   const { params, where } = filtros(req, { incluirStatus: true });
   const { limit, offset } = paginacao(req.query, 50, 500);
 
@@ -126,7 +126,7 @@ router.get('/reports/sales-history', requireArea('Relatorios'), async (req, res)
 });
 
 // Produtos mais vendidos no periodo (quantidade, faturamento e lucro).
-router.get('/reports/top-products', requireArea('Relatorios'), async (req, res) => {
+router.get('/reports/top-products', requirePermission('relatorios.ver'), async (req, res) => {
   const { params, where } = filtros(req, { incluirStatus: false });
   const { rows } = await pool.query(
     `SELECT p.id, p.nome, p.unidade,
@@ -147,7 +147,7 @@ router.get('/reports/top-products', requireArea('Relatorios'), async (req, res) 
 
 // Resumo por sessao de caixa (abertura/fechamento): vendas por forma, sangrias,
 // suprimentos, valor esperado em dinheiro, valor informado e diferenca.
-router.get('/reports/cash-sessions', requireArea('Relatorios'), async (req, res) => {
+router.get('/reports/cash-sessions', requirePermission('relatorios.ver'), async (req, res) => {
   const params = [req.user.tenantId];
   let where = 'cs.tenant_id = $1';
   const local = restrictedLocation(req.user) || req.query.location_id;

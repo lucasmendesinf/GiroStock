@@ -1,6 +1,6 @@
 const express = require('express');
 const pool = require('../db/pool');
-const { requireArea } = require('../middleware/permissions');
+const { requirePermission, temPermissao } = require('../middleware/permissions');
 const { logAudit } = require('../utils/audit');
 const { getOwned, getOwnedLocation } = require('../utils/tenant');
 const { assertLocationAccess, restrictedLocation } = require('../utils/access');
@@ -60,7 +60,7 @@ async function carregarInsumo(db, tenantId, ingredientId) {
   return rows[0];
 }
 
-router.get('/ingredients', requireArea('Estoque'), async (req, res) => {
+router.get('/ingredients', requirePermission('estoque.ver'), async (req, res) => {
   const { rows } = await pool.query(
     `SELECT i.id, i.nome, i.unidade, i.custo_unitario, i.ativo,
             COALESCE((SELECT SUM(ib.saldo) FROM ingredient_balances ib WHERE ib.ingredient_id = i.id AND ib.tenant_id = i.tenant_id), 0) AS saldo_total,
@@ -77,7 +77,7 @@ router.get('/ingredients', requireArea('Estoque'), async (req, res) => {
   res.json(rows);
 });
 
-router.post('/ingredients', requireArea('Estoque'), async (req, res) => {
+router.post('/ingredients', requirePermission('insumos.criar'), async (req, res) => {
   const { nome, unidade, location_id, custo_total } = req.body || {};
   if (!nome || !unidade) {
     return res.status(400).json({ erro: 'nome e unidade são obrigatórios' });
@@ -115,7 +115,7 @@ router.post('/ingredients', requireArea('Estoque'), async (req, res) => {
   }
 });
 
-router.post('/ingredients/:id/stock-entries', requireArea('Estoque'), async (req, res) => {
+router.post('/ingredients/:id/stock-entries', requirePermission('estoque.movimentar'), async (req, res) => {
   const { quantidade, custo_total, location_id } = req.body || {};
   const qtd = Number(quantidade);
   if (!(qtd > 0)) return res.status(400).json({ erro: 'quantidade deve ser maior que zero' });
@@ -169,7 +169,7 @@ router.post('/ingredients/:id/stock-entries', requireArea('Estoque'), async (req
   }
 });
 
-router.post('/ingredients/:id/stock-exits', requireArea('Estoque'), async (req, res) => {
+router.post('/ingredients/:id/stock-exits', requirePermission('estoque.movimentar'), async (req, res) => {
   const { quantidade, location_id } = req.body || {};
   const qtd = Number(quantidade);
   if (!(qtd > 0)) return res.status(400).json({ erro: 'quantidade deve ser maior que zero' });
@@ -208,7 +208,7 @@ router.post('/ingredients/:id/stock-exits', requireArea('Estoque'), async (req, 
 });
 
 // Transferencia de insumo entre locais (ex: estoque central -> lanchonete, ou -> evento).
-router.post('/ingredients/:id/transfers', requireArea('Estoque'), async (req, res) => {
+router.post('/ingredients/:id/transfers', requirePermission('estoque.movimentar'), async (req, res) => {
   const { quantidade, location_origem_id, location_destino_id } = req.body || {};
   const qtd = Number(quantidade);
   if (!(qtd > 0)) return res.status(400).json({ erro: 'quantidade deve ser maior que zero' });
@@ -259,7 +259,7 @@ router.post('/ingredients/:id/transfers', requireArea('Estoque'), async (req, re
 });
 
 // Balanco (contagem): sobrescreve o saldo do insumo em um local e, opcionalmente, o custo.
-router.post('/ingredients/:id/stock-adjustment', requireArea('Estoque'), async (req, res) => {
+router.post('/ingredients/:id/stock-adjustment', requirePermission('estoque.movimentar'), async (req, res) => {
   const { novo_saldo, novo_custo_unitario, location_id } = req.body || {};
   const novoSaldo = Number(novo_saldo);
   if (novo_saldo === undefined || novo_saldo === null || novo_saldo === '' || isNaN(novoSaldo) || novoSaldo < 0) {
@@ -267,6 +267,9 @@ router.post('/ingredients/:id/stock-adjustment', requireArea('Estoque'), async (
   }
   const sobrescreverCusto = novo_custo_unitario !== undefined && novo_custo_unitario !== null && novo_custo_unitario !== '';
   const novoCustoUnitario = sobrescreverCusto ? Number(novo_custo_unitario) : null;
+  if (sobrescreverCusto && !temPermissao(req.user, 'insumos.editar')) {
+    throw new HttpError(403, 'alterar o custo do insumo exige a permissão de editar insumos');
+  }
   if (sobrescreverCusto && (isNaN(novoCustoUnitario) || novoCustoUnitario < 0)) {
     return res.status(400).json({ erro: 'novo_custo_unitario deve ser um número válido (0 ou mais)' });
   }
@@ -317,8 +320,69 @@ router.post('/ingredients/:id/stock-adjustment', requireArea('Estoque'), async (
   }
 });
 
+// Edicao do insumo: nome, unidade e custo por unidade. A unidade so muda se o insumo
+// nao tem saldo nem esta em ficha tecnica (as quantidades ficariam erradas).
+router.put('/ingredients/:id', requirePermission('insumos.editar'), async (req, res) => {
+  const body = req.body || {};
+  const atual = await getOwned(pool, 'ingredients', req.params.id, req.user.tenantId, { columns: 'id, nome, unidade, custo_unitario' });
+  const nome = body.nome !== undefined ? String(body.nome).trim() : atual.nome;
+  if (nome.length < 2) throw new HttpError(400, 'nome deve ter no mínimo 2 caracteres');
+  const unidade = body.unidade !== undefined ? String(body.unidade).trim() : atual.unidade;
+  if (!unidade) throw new HttpError(400, 'unidade é obrigatória');
+  let custo = Number(atual.custo_unitario);
+  if (body.custo_unitario !== undefined && body.custo_unitario !== null && body.custo_unitario !== '') {
+    custo = Number(body.custo_unitario);
+    if (!(custo >= 0)) throw new HttpError(400, 'custo por unidade deve ser 0 ou mais');
+  }
+  if (unidade !== atual.unidade) {
+    const uso = await pool.query(
+      `SELECT (SELECT COALESCE(SUM(saldo), 0) FROM ingredient_balances WHERE ingredient_id = $1 AND tenant_id = $2) AS saldo,
+              (SELECT COUNT(*)::int FROM product_ingredients WHERE ingredient_id = $1 AND tenant_id = $2) AS fichas`,
+      [req.params.id, req.user.tenantId]
+    );
+    if (Number(uso.rows[0].saldo) > 0 || uso.rows[0].fichas > 0) {
+      throw new HttpError(400, 'só é possível trocar a unidade de um insumo sem saldo e fora de fichas técnicas');
+    }
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `UPDATE ingredients SET nome = $1, unidade = $2, custo_unitario = $3 WHERE id = $4 AND tenant_id = $5`,
+      [nome, unidade, custo, req.params.id, req.user.tenantId]
+    );
+    await logAudit(client, {
+      tenantId: req.user.tenantId,
+      usuarioId: req.user.id,
+      acao: 'editar',
+      recurso: 'ingredients',
+      recursoId: req.params.id,
+      detalhes: { antes: atual, depois: { nome, unidade, custo_unitario: custo } },
+    });
+    await client.query('COMMIT');
+    res.json(await carregarInsumo(pool, req.user.tenantId, req.params.id));
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+});
+
+// Insumo inativo nao aparece para novas fichas tecnicas; as fichas existentes continuam.
+router.patch('/ingredients/:id/status', requirePermission('insumos.editar'), async (req, res) => {
+  const ativo = !!(req.body && req.body.ativo);
+  await getOwned(pool, 'ingredients', req.params.id, req.user.tenantId);
+  await pool.query(`UPDATE ingredients SET ativo = $1 WHERE id = $2 AND tenant_id = $3`, [ativo, req.params.id, req.user.tenantId]);
+  await logAudit(pool, {
+    tenantId: req.user.tenantId, usuarioId: req.user.id, acao: ativo ? 'ativar' : 'desativar', recurso: 'ingredients', recursoId: req.params.id,
+  });
+  res.json(await carregarInsumo(pool, req.user.tenantId, req.params.id));
+});
+
 // Estoque minimo do insumo em um local (0 = sem alerta).
-router.put('/ingredients/:id/minimum', requireArea('Estoque'), async (req, res) => {
+router.put('/ingredients/:id/minimum', requirePermission('insumos.editar'), async (req, res) => {
   const { location_id, estoque_minimo } = req.body || {};
   const minimo = Number(estoque_minimo);
   if (!(minimo >= 0)) throw new HttpError(400, 'estoque_minimo deve ser 0 ou mais');
@@ -334,7 +398,7 @@ router.put('/ingredients/:id/minimum', requireArea('Estoque'), async (req, res) 
   res.json(rows[0]);
 });
 
-router.get('/ingredients/:id/consumption-history', requireArea('Estoque'), async (req, res) => {
+router.get('/ingredients/:id/consumption-history', requirePermission('estoque.ver'), async (req, res) => {
   await getOwned(pool, 'ingredients', req.params.id, req.user.tenantId);
   const { rows } = await pool.query(
     `SELECT ic.id, ic.quantidade_consumida, ic.criado_em, l.nome AS location_nome,
@@ -350,7 +414,7 @@ router.get('/ingredients/:id/consumption-history', requireArea('Estoque'), async
   res.json(rows);
 });
 
-router.get('/consumption-feed', requireArea('Estoque'), async (req, res) => {
+router.get('/consumption-feed', requirePermission('estoque.ver'), async (req, res) => {
   const params = [req.user.tenantId];
   let filtro = '';
   const local = restrictedLocation(req.user);

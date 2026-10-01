@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import { Field, Modal, Vazio } from '../../components/ui.jsx';
 import { brl, brlFino, dataHora, parseNumero, qtd } from '../../utils/format';
 import { UNIDADES_INSUMO } from './comum.jsx';
+import { pode } from '../../utils/permissions.js';
 
 const ACOES = [
   { id: 'entrada', label: 'Entrada' },
@@ -20,6 +21,10 @@ export default function Insumos({ ingredients, locations, reload }) {
   const locaisAtivos = locations.filter((l) => l.ativo);
   const [novo, setNovo] = useState(false);
   const [movimentando, setMovimentando] = useState(null);
+  const [editandoInsumo, setEditandoInsumo] = useState(null);
+  const podeCriar = pode(user, 'insumos.criar');
+  const podeEditar = pode(user, 'insumos.editar');
+  const podeMovimentar = pode(user, 'estoque.movimentar') || podeEditar;
   const [consumo, setConsumo] = useState([]);
 
   useEffect(() => {
@@ -32,7 +37,7 @@ export default function Insumos({ ingredients, locations, reload }) {
         <div className="toolbar">
           <span className="muted">Matéria-prima usada nas fichas técnicas (lanches, porções, combos). Cada loja tem o próprio saldo.</span>
           <span className="toolbar-espaco" />
-          <button type="button" className="btn-primario" onClick={() => setNovo(true)}>+ Novo insumo</button>
+          {podeCriar && <button type="button" className="btn-primario" onClick={() => setNovo(true)}>+ Novo insumo</button>}
         </div>
         <div className="card">
           <div className="tabela-wrap">
@@ -41,7 +46,7 @@ export default function Insumos({ ingredients, locations, reload }) {
               <tbody>
                 {ingredients.map((i) => (
                   <tr key={i.id}>
-                    <td><div className="celula-principal">{i.nome}</div><div className="celula-sub">{i.unidade} · valor em estoque {brl(Number(i.saldo_total) * Number(i.custo_unitario))}</div></td>
+                    <td className={i.ativo ? '' : 'row-inativa-cel'}><div className="celula-principal">{i.nome} {!i.ativo && <span className="badge-inativo">inativo</span>}</div><div className="celula-sub">{i.unidade} · valor em estoque {brl(Number(i.saldo_total) * Number(i.custo_unitario))}</div></td>
                     <td className="num col-opcional">{brlFino(i.custo_unitario)}/{i.unidade}</td>
                     <td className="num">{qtd(i.saldo_total)} {i.unidade}</td>
                     <td className="col-opcional">
@@ -54,7 +59,12 @@ export default function Insumos({ ingredients, locations, reload }) {
                         ))}
                       </div>
                     </td>
-                    <td><button type="button" className="btn-link" onClick={() => setMovimentando(i)}>Movimentar</button></td>
+                    <td>
+                      <div className="row-actions">
+                        {podeMovimentar && <button type="button" className="btn-link" onClick={() => setMovimentando(i)}>Movimentar</button>}
+                        {podeEditar && <button type="button" className="btn-link" onClick={() => setEditandoInsumo(i)}>Editar</button>}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -81,6 +91,7 @@ export default function Insumos({ ingredients, locations, reload }) {
       </div>
 
       {novo && <NovoInsumo locaisAtivos={locaisAtivos} user={user} reload={reload} onClose={() => setNovo(false)} />}
+      {editandoInsumo && <EditarInsumo insumo={editandoInsumo} reload={reload} onClose={() => setEditandoInsumo(null)} />}
       {movimentando && (
         <MovimentarInsumo insumo={ingredients.find((i) => i.id === movimentando.id) || movimentando}
           locaisAtivos={locaisAtivos} user={user} reload={reload} onClose={() => setMovimentando(null)} />
@@ -146,7 +157,10 @@ function NovoInsumo({ locaisAtivos, user, reload, onClose }) {
 function MovimentarInsumo({ insumo, locaisAtivos, user, reload, onClose }) {
   const toast = useToast();
   const confirmar = useConfirm();
-  const [acao, setAcao] = useState('entrada');
+  const podeEditar = pode(user, 'insumos.editar');
+  const podeMovimentar = pode(user, 'estoque.movimentar');
+  const acoes = ACOES.filter((a) => (a.id === 'minimo' ? podeEditar : podeMovimentar));
+  const [acao, setAcao] = useState(acoes[0] ? acoes[0].id : 'entrada');
   const [local, setLocal] = useState(localInicial(user, locaisAtivos, insumo));
   const [form, setForm] = useState({ quantidade: '', custo_total: '', destino: '', novo_saldo: '', novo_custo: '', minimo: '', motivo: '' });
   const saldoAqui = Number((insumo.saldos_por_local.find((s) => s.location_id === local) || { saldo: 0 }).saldo);
@@ -187,7 +201,7 @@ function MovimentarInsumo({ insumo, locaisAtivos, user, reload, onClose }) {
   return (
     <Modal titulo={`Movimentar ${insumo.nome}`} subtitulo={`Custo atual ${brlFino(insumo.custo_unitario)}/${insumo.unidade} · saldo total ${qtd(insumo.saldo_total)} ${insumo.unidade}`} onClose={onClose} largura="larga">
       <div className="segmentado">
-        {ACOES.map((a) => <button key={a.id} type="button" className={acao === a.id ? 'ativo' : ''} onClick={() => setAcao(a.id)}>{a.label}</button>)}
+        {acoes.map((a) => <button key={a.id} type="button" className={acao === a.id ? 'ativo' : ''} onClick={() => setAcao(a.id)}>{a.label}</button>)}
       </div>
       <form onSubmit={executar} className="form-stack">
         <div className="form-grid">
@@ -220,7 +234,7 @@ function MovimentarInsumo({ insumo, locaisAtivos, user, reload, onClose }) {
             <Field label={`Saldo contado (${insumo.unidade}) *`} hint={`Hoje: ${qtd(saldoAqui)}. Use 0 para zerar.`}>
               <input inputMode="decimal" value={form.novo_saldo} onChange={(e) => setForm({ ...form, novo_saldo: e.target.value })} required />
             </Field>
-            <Field label={`Novo custo por ${insumo.unidade} (opcional)`}><input inputMode="decimal" value={form.novo_custo} onChange={(e) => setForm({ ...form, novo_custo: e.target.value })} placeholder={brlFino(insumo.custo_unitario)} /></Field>
+            {podeEditar && <Field label={`Novo custo por ${insumo.unidade} (opcional)`}><input inputMode="decimal" value={form.novo_custo} onChange={(e) => setForm({ ...form, novo_custo: e.target.value })} placeholder={brlFino(insumo.custo_unitario)} /></Field>}
           </div>
         )}
 
@@ -237,6 +251,63 @@ function MovimentarInsumo({ insumo, locaisAtivos, user, reload, onClose }) {
         <div className="modal-actions">
           <button type="button" onClick={onClose}>Fechar</button>
           <button type="submit">Confirmar</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+// Edicao do insumo (nome, unidade, custo por unidade) e ativar/desativar.
+function EditarInsumo({ insumo, reload, onClose }) {
+  const toast = useToast();
+  const confirmar = useConfirm();
+  const [form, setForm] = useState({
+    nome: insumo.nome, unidade: insumo.unidade, custo_unitario: String(Number(insumo.custo_unitario)).replace('.', ','),
+  });
+  const unidades = UNIDADES_INSUMO.includes(insumo.unidade) ? UNIDADES_INSUMO : [insumo.unidade, ...UNIDADES_INSUMO];
+
+  async function salvar(e) {
+    e.preventDefault();
+    try {
+      await api.put(`/ingredients/${insumo.id}`, { nome: form.nome, unidade: form.unidade, custo_unitario: parseNumero(form.custo_unitario) });
+      toast.sucesso('Insumo atualizado.');
+      await reload();
+      onClose();
+    } catch (err) { toast.erro(err); }
+  }
+
+  async function alternarStatus() {
+    if (insumo.ativo && !(await confirmar({
+      titulo: `Desativar ${insumo.nome}?`,
+      mensagem: 'Ele deixa de aparecer para novas fichas técnicas. As fichas que já usam o insumo continuam funcionando.',
+      confirmar: 'Desativar', perigo: true,
+    }))) return;
+    try {
+      await api.patch(`/ingredients/${insumo.id}/status`, { ativo: !insumo.ativo });
+      toast.sucesso(insumo.ativo ? 'Insumo desativado.' : 'Insumo reativado.');
+      await reload();
+      onClose();
+    } catch (err) { toast.erro(err); }
+  }
+
+  return (
+    <Modal titulo={`Editar ${insumo.nome}`} onClose={onClose}>
+      <form onSubmit={salvar} className="form-stack">
+        <Field label="Nome *"><input autoFocus value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required minLength={2} /></Field>
+        <div className="form-grid">
+          <Field label="Unidade" style={{ flex: '0 0 120px' }} hint="Só muda sem saldo e fora de fichas.">
+            <select value={form.unidade} onChange={(e) => setForm({ ...form, unidade: e.target.value })}>
+              {unidades.map((u) => <option key={u} value={u}>{u}</option>)}
+            </select>
+          </Field>
+          <Field label={`Custo por ${form.unidade} (R$)`} hint="Usado no custo das fichas técnicas.">
+            <input inputMode="decimal" value={form.custo_unitario} onChange={(e) => setForm({ ...form, custo_unitario: e.target.value })} required />
+          </Field>
+        </div>
+        <div className="modal-actions">
+          <button type="button" className={insumo.ativo ? 'perigo' : ''} onClick={alternarStatus}>{insumo.ativo ? 'Desativar' : 'Reativar'}</button>
+          <button type="button" onClick={onClose}>Cancelar</button>
+          <button type="submit">Salvar</button>
         </div>
       </form>
     </Modal>

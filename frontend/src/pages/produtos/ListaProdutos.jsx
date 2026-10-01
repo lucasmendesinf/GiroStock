@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
 import { brl, qtd, pct } from '../../utils/format';
+import { useAuth } from '../../context/AuthContext.jsx';
+import { pode } from '../../utils/permissions.js';
 import { Paginacao, Vazio } from '../../components/ui.jsx';
 import FormProduto from './FormProduto.jsx';
 import DetalheProduto from './DetalheProduto.jsx';
@@ -13,6 +15,7 @@ function normalizar(t) {
 
 export default function ListaProdutos(props) {
   const { products, categories, suppliers, carregado } = props;
+  const { user } = useAuth();
   const [busca, setBusca] = useState('');
   const [categoria, setCategoria] = useState('');
   const [fornecedor, setFornecedor] = useState('');
@@ -72,8 +75,8 @@ export default function ListaProdutos(props) {
         </select>
         <label className="check"><input type="checkbox" checked={soAlerta} onChange={mudarFiltro(setSoAlerta)} /> Só abaixo do mínimo</label>
         <span className="toolbar-espaco" />
-        <button type="button" className="btn-link" onClick={() => setCategoriasAberto(true)}>Categorias</button>
-        <button type="button" className="btn-primario" onClick={() => setNovo(true)}>+ Novo produto</button>
+        {pode(user, 'produtos.criar', 'produtos.editar') && <button type="button" className="btn-link" onClick={() => setCategoriasAberto(true)}>Categorias</button>}
+        {pode(user, 'produtos.criar') && <button type="button" className="btn-primario" onClick={() => setNovo(true)}>+ Novo produto</button>}
       </div>
 
       <div className="card">
@@ -95,7 +98,7 @@ export default function ListaProdutos(props) {
                     onKeyDown={(e) => { if (e.key === 'Enter') setDetalheId(p.id); }}>
                     <td>
                       <div className="celula-principal">{p.nome} {!p.ativo && <span className="badge-inativo">inativo</span>}</div>
-                      <div className="celula-sub">{p.codigo_interno} · EAN {p.barcode} · {p.unidade}</div>
+                      <div className="celula-sub">{p.codigo_interno} · EAN {p.barcode} · {p.unidade}{p.descricao ? ` · ${p.descricao}` : ''}</div>
                     </td>
                     <td className="col-opcional">{p.categoria_nome || '—'}</td>
                     <td className="col-opcional">{principal ? principal.nome : <span className="muted">—</span>}{p.fornecedores.length > 1 ? <span className="muted"> +{p.fornecedores.length - 1}</span> : ''}</td>

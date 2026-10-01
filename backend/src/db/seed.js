@@ -23,16 +23,18 @@ async function run() {
       locations[nome] = r.rows[0].id;
     }
 
-    const terminal = await client.query(
-      `INSERT INTO terminals (tenant_id, location_id, nome) VALUES ($1, $2, $3) RETURNING id`,
-      [tenantId, locations['Distribuidora'], 'PDV 01']
-    );
-    const terminalId = terminal.rows[0].id;
-
-    await client.query(
-      `INSERT INTO cash_registers (tenant_id, terminal_id) VALUES ($1, $2)`,
-      [tenantId, terminalId]
-    );
+    // Um PDV (terminal + caixa) para a distribuidora e outro para a lanchonete.
+    const pdvs = [['Distribuidora', 'PDV 01'], ['Lanchonete', 'PDV Lanchonete']];
+    for (const [local, nome] of pdvs) {
+      const terminal = await client.query(
+        `INSERT INTO terminals (tenant_id, location_id, nome) VALUES ($1, $2, $3) RETURNING id`,
+        [tenantId, locations[local], nome]
+      );
+      await client.query(
+        `INSERT INTO cash_registers (tenant_id, terminal_id) VALUES ($1, $2)`,
+        [tenantId, terminal.rows[0].id]
+      );
+    }
 
     const senhaHash = await bcrypt.hash('admin123', 10);
     await client.query(
@@ -54,7 +56,7 @@ async function run() {
 
     const supplier = await client.query(
       `INSERT INTO suppliers (tenant_id, nome, documento, telefone, categoria)
-       VALUES ($1, 'Distribuidora Exemplo Ltda', '12345678000199', '4133334444', 'Bebidas')
+       VALUES ($1, 'Distribuidora Exemplo Ltda', '11222333000181', '4133334444', 'Bebidas')
        RETURNING id`,
       [tenantId]
     );
@@ -78,22 +80,25 @@ async function run() {
       [refri.rows[0].id, locations['Distribuidora'], tenantId]
     );
     await client.query(
-      `INSERT INTO stock_balances (product_id, location_id, tenant_id, saldo) VALUES ($1, $2, $3, 30)`,
-      [xburguer.rows[0].id, locations['Lanchonete'], tenantId]
+      `INSERT INTO product_suppliers (tenant_id, product_id, supplier_id) VALUES ($1, $2, $3), ($1, $4, $3)`,
+      [tenantId, refri.rows[0].id, supplier.rows[0].id, xburguer.rows[0].id]
     );
 
-    const pao = await client.query(
-      `INSERT INTO ingredients (tenant_id, nome, unidade, estoque_atual) VALUES ($1, 'Pao', 'UN', 40) RETURNING id`,
-      [tenantId]
-    );
-    const carne = await client.query(
-      `INSERT INTO ingredients (tenant_id, nome, unidade, estoque_atual) VALUES ($1, 'Carne', 'G', 5000) RETURNING id`,
-      [tenantId]
-    );
-    const bacon = await client.query(
-      `INSERT INTO ingredients (tenant_id, nome, unidade, estoque_atual) VALUES ($1, 'Bacon', 'G', 200) RETURNING id`,
-      [tenantId]
-    );
+    // X-Burguer tem ficha tecnica: nao tem estoque proprio, consome os insumos da lanchonete.
+    async function insumo(nome, unidade, saldo, custoUnitario) {
+      const r = await client.query(
+        `INSERT INTO ingredients (tenant_id, nome, unidade, custo_unitario) VALUES ($1, $2, $3, $4) RETURNING id`,
+        [tenantId, nome, unidade, custoUnitario]
+      );
+      await client.query(
+        `INSERT INTO ingredient_balances (ingredient_id, location_id, tenant_id, saldo) VALUES ($1, $2, $3, $4)`,
+        [r.rows[0].id, locations['Lanchonete'], tenantId, saldo]
+      );
+      return r;
+    }
+    const pao = await insumo('Pao', 'UN', 40, 0.8);
+    const carne = await insumo('Carne', 'G', 5000, 0.03);
+    const bacon = await insumo('Bacon', 'G', 200, 0.05);
 
     await client.query(
       `INSERT INTO product_ingredients (tenant_id, product_id, ingredient_id, quantidade_por_unidade) VALUES

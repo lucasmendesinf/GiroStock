@@ -1,10 +1,14 @@
 const express = require('express');
+// Faz o Express 4 encaminhar erros de handlers async ao middleware de erro.
+// Sem isso, qualquer erro do banco (ex: id invalido) derrubava o processo inteiro.
+require('express-async-errors');
 const cors = require('cors');
 const helmet = require('helmet');
 const path = require('path');
 const fs = require('fs');
 
 const { authRequired } = require('./middleware/auth');
+const { mapPgError } = require('./utils/http');
 
 const authRoutes = require('./routes/auth.routes');
 const usersRoutes = require('./routes/users.routes');
@@ -57,6 +61,13 @@ app.use((req, res) => {
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
+  if (err.status && err.status < 500) {
+    // HttpError das rotas ou JSON malformado no corpo (body-parser)
+    const erro = err.type === 'entity.parse.failed' ? 'corpo da requisicao nao e um JSON valido' : err.message;
+    return res.status(err.status).json({ erro });
+  }
+  const mapped = mapPgError(err);
+  if (mapped) return res.status(mapped.status).json({ erro: mapped.erro });
   console.error(err);
   res.status(500).json({ erro: 'erro interno do servidor' });
 });

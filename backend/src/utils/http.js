@@ -13,15 +13,15 @@ function mapPgError(err) {
   switch (err && err.code) {
     case '22P02': // invalid_text_representation (ex: uuid invalido)
     case '22003': // numeric_value_out_of_range
-      return { status: 400, erro: 'valor ou identificador invalido na requisicao' };
+      return { status: 400, erro: 'valor ou identificador inválido na requisição' };
     case '23503': // foreign_key_violation
-      return { status: 400, erro: 'registro vinculado nao encontrado' };
+      return { status: 400, erro: 'registro vinculado não encontrado' };
     case '23505': // unique_violation
       return { status: 409, erro: 'registro duplicado' };
     case '23514': // check_violation
-      return { status: 400, erro: `valor invalido (regra: ${err.constraint || 'restricao do banco'})` };
+      return { status: 400, erro: `valor inválido (regra: ${err.constraint || 'restrição do banco'})` };
     case '40P01': // deadlock_detected
-      return { status: 409, erro: 'operacao concorrente, tente novamente' };
+      return { status: 409, erro: 'operação concorrente, tente novamente' };
     default:
       return null;
   }

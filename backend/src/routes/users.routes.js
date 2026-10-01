@@ -23,16 +23,16 @@ router.post('/users', requireArea('Configuracoes'), async (req, res) => {
   const { nome, email, senha, perfil, location_id } = req.body || {};
 
   if (!nome || !email || !senha || !perfil) {
-    return res.status(400).json({ erro: 'nome, email, senha e perfil sao obrigatorios' });
+    return res.status(400).json({ erro: 'nome, email, senha e perfil são obrigatórios' });
   }
   if (!isValidEmail(email)) {
-    return res.status(400).json({ erro: 'email invalido' });
+    return res.status(400).json({ erro: 'email inválido' });
   }
   if (senha.length < 6) {
-    return res.status(400).json({ erro: 'senha deve ter no minimo 6 caracteres' });
+    return res.status(400).json({ erro: 'senha deve ter no mínimo 6 caracteres' });
   }
   if (!PERFIS.includes(perfil)) {
-    return res.status(400).json({ erro: 'perfil invalido' });
+    return res.status(400).json({ erro: 'perfil inválido' });
   }
 
   if (location_id) await getOwnedLocation(pool, location_id, req.user.tenantId);
@@ -40,7 +40,7 @@ router.post('/users', requireArea('Configuracoes'), async (req, res) => {
   // E-mail e unico no sistema todo: o login nao informa a empresa.
   const existing = await pool.query(`SELECT 1 FROM users WHERE email = $1`, [email]);
   if (existing.rows.length > 0) {
-    return res.status(409).json({ erro: 'ja existe um usuario com este email' });
+    return res.status(409).json({ erro: 'já existe um usuário com este email' });
   }
 
   const senhaHash = await bcrypt.hash(senha, 10);
@@ -78,27 +78,29 @@ router.patch('/users/:id', requireArea('Configuracoes'), async (req, res) => {
     `SELECT id, perfil, location_id FROM users WHERE id = $1 AND tenant_id = $2`,
     [req.params.id, req.user.tenantId]
   );
-  if (alvo.rows.length === 0) return res.status(404).json({ erro: 'usuario nao encontrado' });
+  if (alvo.rows.length === 0) return res.status(404).json({ erro: 'usuário não encontrado' });
   const atual = alvo.rows[0];
 
+  const nome = body.nome !== undefined ? String(body.nome).trim() : null;
+  if (nome !== null && nome.length < 2) throw new HttpError(400, 'nome deve ter no mínimo 2 caracteres');
   const perfil = body.perfil !== undefined ? body.perfil : atual.perfil;
-  if (!PERFIS.includes(perfil)) throw new HttpError(400, 'perfil invalido');
+  if (!PERFIS.includes(perfil)) throw new HttpError(400, 'perfil inválido');
   let locationId = atual.location_id;
   if (body.location_id !== undefined) {
     locationId = body.location_id || null;
     if (locationId) await getOwnedLocation(pool, locationId, req.user.tenantId);
   }
   if (req.params.id === req.user.id && perfil !== 'Administrador' && atual.perfil === 'Administrador') {
-    throw new HttpError(400, 'voce nao pode remover o seu proprio perfil de Administrador');
+    throw new HttpError(400, 'você não pode remover o seu próprio perfil de Administrador');
   }
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const { rows } = await client.query(
-      `UPDATE users SET perfil = $1, location_id = $2 WHERE id = $3 AND tenant_id = $4
+      `UPDATE users SET perfil = $1, location_id = $2, nome = COALESCE($5, nome) WHERE id = $3 AND tenant_id = $4
        RETURNING id, nome, email, perfil, location_id, ativo`,
-      [perfil, locationId, req.params.id, req.user.tenantId]
+      [perfil, locationId, req.params.id, req.user.tenantId, nome]
     );
     await logAudit(client, {
       tenantId: req.user.tenantId,
@@ -118,10 +120,24 @@ router.patch('/users/:id', requireArea('Configuracoes'), async (req, res) => {
   }
 });
 
+// Administrador define uma nova senha para o usuario (ex: esqueceu a senha).
+router.patch('/users/:id/password', requireArea('Configuracoes'), async (req, res) => {
+  const { senha } = req.body || {};
+  if (!senha || String(senha).length < 6) throw new HttpError(400, 'a senha deve ter no mínimo 6 caracteres');
+  const alvo = await pool.query(`SELECT id FROM users WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.user.tenantId]);
+  if (alvo.rows.length === 0) return res.status(404).json({ erro: 'usuário não encontrado' });
+  const hash = await bcrypt.hash(String(senha), 10);
+  await pool.query(`UPDATE users SET senha_hash = $1 WHERE id = $2 AND tenant_id = $3`, [hash, req.params.id, req.user.tenantId]);
+  await logAudit(pool, {
+    tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'redefinir_senha', recurso: 'users', recursoId: req.params.id,
+  });
+  res.status(204).send();
+});
+
 router.patch('/users/:id/status', requireArea('Configuracoes'), async (req, res) => {
   const { ativo } = req.body || {};
   if (req.params.id === req.user.id && !ativo) {
-    return res.status(400).json({ erro: 'voce nao pode desativar o seu proprio usuario' });
+    return res.status(400).json({ erro: 'você não pode desativar o seu próprio usuário' });
   }
   const client = await pool.connect();
   try {
@@ -132,7 +148,7 @@ router.patch('/users/:id/status', requireArea('Configuracoes'), async (req, res)
     );
     if (rows.length === 0) {
       await client.query('ROLLBACK');
-      return res.status(404).json({ erro: 'usuario nao encontrado' });
+      return res.status(404).json({ erro: 'usuário não encontrado' });
     }
     await logAudit(client, {
       tenantId: req.user.tenantId,

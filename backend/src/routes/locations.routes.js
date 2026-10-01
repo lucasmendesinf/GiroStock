@@ -20,7 +20,7 @@ router.get('/locations', async (req, res) => {
 
 router.post('/locations', requireArea('Configuracoes'), async (req, res) => {
   const nome = String((req.body && req.body.nome) || '').trim();
-  if (!nome) return res.status(400).json({ erro: 'nome e obrigatorio' });
+  if (!nome) return res.status(400).json({ erro: 'nome é obrigatório' });
   const { rows } = await pool.query(
     `INSERT INTO locations (tenant_id, nome) VALUES ($1, $2) RETURNING id, nome, ativo`,
     [req.user.tenantId, nome]
@@ -34,7 +34,7 @@ router.patch('/locations/:id', requireArea('Configuracoes'), async (req, res) =>
   const body = req.body || {};
   const atual = await getOwned(pool, 'locations', req.params.id, req.user.tenantId, { columns: 'id, nome, ativo' });
   const nome = body.nome !== undefined ? String(body.nome).trim() : atual.nome;
-  if (!nome) throw new HttpError(400, 'nome e obrigatorio');
+  if (!nome) throw new HttpError(400, 'nome é obrigatório');
   const ativo = body.ativo !== undefined ? !!body.ativo : atual.ativo;
 
   if (atual.ativo && !ativo) {
@@ -44,7 +44,7 @@ router.patch('/locations/:id', requireArea('Configuracoes'), async (req, res) =>
       [req.params.id, req.user.tenantId]
     );
     if (Number(saldo.rows[0].produtos) > 0 || Number(saldo.rows[0].insumos) > 0) {
-      throw new HttpError(400, 'este local ainda tem estoque; transfira ou de saida do saldo antes de desativar');
+      throw new HttpError(400, 'este local ainda tem estoque; transfira ou de saída do saldo antes de desativar');
     }
     const caixa = await pool.query(
       `SELECT 1 FROM cash_sessions cs
@@ -107,7 +107,7 @@ router.get('/terminals', async (req, res) => {
 router.post('/terminals', requireArea('Configuracoes'), async (req, res) => {
   const { location_id } = req.body || {};
   const nome = String((req.body && req.body.nome) || '').trim();
-  if (!nome || !location_id) return res.status(400).json({ erro: 'nome e location_id sao obrigatorios' });
+  if (!nome || !location_id) return res.status(400).json({ erro: 'nome e location_id são obrigatórios' });
   await getOwnedLocation(pool, location_id, req.user.tenantId);
 
   const client = await pool.connect();
@@ -135,7 +135,7 @@ router.patch('/terminals/:id', requireArea('Configuracoes'), async (req, res) =>
   const body = req.body || {};
   const atual = await getOwned(pool, 'terminals', req.params.id, req.user.tenantId, { columns: 'id, nome, location_id, ativo' });
   const nome = body.nome !== undefined ? String(body.nome).trim() : atual.nome;
-  if (!nome) throw new HttpError(400, 'nome e obrigatorio');
+  if (!nome) throw new HttpError(400, 'nome é obrigatório');
   const ativo = body.ativo !== undefined ? !!body.ativo : atual.ativo;
 
   if (ativo && !atual.ativo) {
@@ -147,7 +147,7 @@ router.patch('/terminals/:id', requireArea('Configuracoes'), async (req, res) =>
        WHERE cr.terminal_id = $1 AND cs.tenant_id = $2 AND cs.fechado_em IS NULL LIMIT 1`,
       [req.params.id, req.user.tenantId]
     );
-    if (caixa.rows.length > 0) throw new HttpError(400, 'este terminal esta com o caixa aberto; feche-o antes de desativar');
+    if (caixa.rows.length > 0) throw new HttpError(400, 'este terminal está com o caixa aberto; feche-o antes de desativar');
   }
 
   const { rows } = await pool.query(

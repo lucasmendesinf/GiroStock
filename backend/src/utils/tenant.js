@@ -10,7 +10,7 @@ const LABELS = {
   categories: 'categoria',
   ingredients: 'insumo',
   terminals: 'terminal',
-  users: 'usuario',
+  users: 'usuário',
   sales: 'venda',
 };
 
@@ -24,13 +24,13 @@ function isUuid(id) {
 async function getOwned(db, table, id, tenantId, { ativo = false, columns = 'id', lock = false } = {}) {
   const label = LABELS[table];
   if (!label) throw new Error(`tabela nao permitida: ${table}`);
-  if (!isUuid(id)) throw new HttpError(400, `${label} invalido`);
+  if (!isUuid(id)) throw new HttpError(400, `${label} inválido`);
   const { rows } = await db.query(
     `SELECT ${columns} FROM ${table} WHERE id = $1 AND tenant_id = $2${lock ? ' FOR UPDATE' : ''}`,
     [id, tenantId]
   );
-  if (rows.length === 0) throw new HttpError(404, `${label} nao encontrado`);
-  if (ativo && rows[0].ativo === false) throw new HttpError(400, `${label} esta inativo`);
+  if (rows.length === 0) throw new HttpError(404, `${label} não encontrado`);
+  if (ativo && rows[0].ativo === false) throw new HttpError(400, `${label} está inativo`);
   return rows[0];
 }
 

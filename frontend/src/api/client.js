@@ -19,8 +19,14 @@ async function request(path, { method = 'GET', body } = {}) {
 
   const data = await res.json().catch(() => null);
   if (!res.ok) {
-    const erro = (data && data.erro) || `Erro ${res.status}`;
-    throw new Error(erro);
+    // Sessao expirada/usuario desativado: volta para o login.
+    if (res.status === 401 && token && !path.startsWith('/auth/login')) {
+      clearSession();
+      window.location.assign('/login');
+    }
+    const erro = new Error((data && data.erro) || `Erro ${res.status}`);
+    erro.status = res.status;
+    throw erro;
   }
   return data;
 }
@@ -38,12 +44,20 @@ export function saveSession(token, usuario) {
   localStorage.setItem('girostock_user', JSON.stringify(usuario));
 }
 
+export function updateStoredUser(usuario) {
+  localStorage.setItem('girostock_user', JSON.stringify(usuario));
+}
+
 export function clearSession() {
   localStorage.removeItem('girostock_token');
   localStorage.removeItem('girostock_user');
 }
 
 export function getCurrentUser() {
-  const raw = localStorage.getItem('girostock_user');
-  return raw ? JSON.parse(raw) : null;
+  try {
+    const raw = localStorage.getItem('girostock_user');
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
 }

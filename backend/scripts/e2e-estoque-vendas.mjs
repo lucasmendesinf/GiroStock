@@ -103,7 +103,7 @@ check('entrada com custo >= preco de venda -> 400', st(await r('POST', '/stock-m
 check('entrada fracionada em produto UN -> 400', st(await r('POST', '/stock-movements', { product_id: P, tipo: 'entrada', quantidade: 0.5, location_destino_id: L.Distribuidora, motivo: 'x' }, A), 400));
 const entradasSup = (await r('GET', `/suppliers/${sup2.j.id}`, null, A)).j.entradas;
 check('historico de compras do fornecedor', entradasSup.length === 1 && entradasSup[0].documento_fiscal === 'NF 1234', entradasSup);
-const movs = (await r('GET', `/stock-movements?product_id=${P}`, null, A)).j;
+const movs = (await r('GET', `/stock-movements?product_id=${P}`, null, A)).j.itens;
 check('historico mostra fornecedor e usuario', movs[0].supplier_nome === 'Coca Teste' && movs[0].usuario_nome === 'Administrador', movs[0]);
 
 console.log('\n# 5. Lojas e terminais');
@@ -185,7 +185,7 @@ check('gerente cancela venda', st(canc, 200) && canc.j.status === 'cancelada', c
 det = (await r('GET', `/products/${P}`, null, A)).j;
 check('estoque da cerveja voltou (1 + 4 = 5)', saldo('Distribuidora') === 5, det.saldos_por_local);
 check('cancelar de novo -> 400', st(await r('POST', `/sales/${v1.j.id}/cancel`, { motivo: 'de novo' }, GER), 400));
-const estorno = (await r('GET', `/stock-movements?product_id=${P}`, null, A)).j[0];
+const estorno = (await r('GET', `/stock-movements?product_id=${P}`, null, A)).j.itens[0];
 check('movimento de estorno registrado', estorno.tipo === 'entrada' && estorno.motivo.startsWith('Estorno'), estorno);
 const fech = await r('POST', `/cash-sessions/${antes.id}/close`, { valor_informado: 100 }, A);
 check('caixa esperado ignora venda cancelada (100)', Number(fech.j.valor_esperado_fechamento) === 100, fech.j);
@@ -197,7 +197,7 @@ check('nao cancela venda de caixa ja fechado', st(await r('POST', `/sales/${v2.j
 const resumo = (await r('GET', '/reports/sales-summary', null, A)).j;
 check('relatorio: custo, lucro e canceladas', resumo.total_vendido === 6 && resumo.custo_total === 3.5 && resumo.lucro_bruto === 2.5 && resumo.vendas_canceladas === 1, resumo);
 const hist = (await r('GET', '/reports/sales-history', null, A)).j;
-check('historico mostra venda cancelada com status', hist.some((h) => h.status === 'cancelada'), hist.map((h) => h.status));
+check('historico mostra venda cancelada com status', hist.itens.some((h) => h.status === 'cancelada'), hist);
 
 console.log('\n# 10. Usuario restrito a sua loja');
 await r('POST', '/cash-sessions', { terminal_id: PDV1, valor_inicial: 0 }, A);
@@ -252,6 +252,64 @@ await r('PATCH', `/products/${refri}/status`, { ativo: false }, A);
 check('produto inativo some da busca do PDV', (await r('GET', `/products/search?q=refri&terminal_id=${PDV1}`, null, A)).j.length === 0);
 check('produto inativo nao recebe entrada', st(await r('POST', '/stock-movements', { product_id: refri, tipo: 'entrada', quantidade: 1, location_destino_id: L.Distribuidora, motivo: 'x' }, A), 400));
 check('produto inativo ainda pode ser transferido', st(await r('POST', '/stock-movements', { product_id: refri, tipo: 'transferencia', quantidade: 1, location_origem_id: L.Distribuidora, location_destino_id: L.Tabacaria, motivo: 'x' }, A), 201));
+
+
+console.log('\n# 14. Melhorias de UX: numero da venda, desconto, entrada por nota, periodo, caixas, senha');
+const PL = (await r('GET', '/products', null, A)).j;
+const agua = (await r('POST', '/products', { nome: 'Agua 500ml', categoria_id: catBeb, barcode: '7896000000017', unidade: 'UN', preco_custo: 1, preco_venda: 3, location_id: L.Distribuidora, estoque_inicial: 50 }, A)).j;
+const gelo = (await r('POST', '/products', { nome: 'Gelo kg', categoria_id: catBeb, barcode: '7896000000024', unidade: 'KG', preco_custo: 2, preco_venda: 5, location_id: L.Distribuidora, estoque_inicial: 10 }, A)).j;
+check('produtos para os testes de UX criados', agua.id && gelo.id, { agua, gelo });
+const s1 = await r('POST', '/sales', { terminal_id: PDV1, itens: [{ product_id: agua.id, quantidade: 2 }], forma_pagamento: 'pix' }, A);
+const s2 = await r('POST', '/sales', { terminal_id: PDV1, itens: [{ product_id: agua.id, quantidade: 1 }], forma_pagamento: 'pix' }, A);
+check('venda recebe numero sequencial', st(s1, 201) && s2.j.numero === s1.j.numero + 1, [s1.j, s2.j]);
+const sd = await r('POST', '/sales', { terminal_id: PDV1, itens: [{ product_id: agua.id, quantidade: 4 }], forma_pagamento: 'dinheiro', valor_recebido: 20, desconto: 2 }, A);
+check('desconto: subtotal 12 - 2 = total 10, troco 10', st(sd, 201) && sd.j.subtotal === 12 && sd.j.total === 10 && sd.j.troco === 10, sd.j);
+check('desconto maior ou igual ao subtotal -> 400', st(await r('POST', '/sales', { terminal_id: PDV1, itens: [{ product_id: agua.id, quantidade: 1 }], forma_pagamento: 'pix', desconto: 3 }, A), 400));
+const sk = await r('POST', '/sales', { terminal_id: PDV1, itens: [{ product_id: gelo.id, quantidade: 0.35 }], forma_pagamento: 'pix' }, A);
+check('venda fracionada de produto em KG (0,35 kg)', st(sk, 201) && sk.j.total === 1.75, sk.j);
+const dsd = (await r('GET', `/sales/${sd.j.id}`, null, A)).j;
+check('detalhe traz numero, subtotal, desconto e empresa (cupom)', dsd.numero === sd.j.numero && Number(dsd.desconto) === 2 && !!dsd.empresa_nome && dsd.itens[0].unidade === 'UN', dsd);
+const movVenda = (await r('GET', `/stock-movements?product_id=${agua.id}&tipo=saida`, null, A)).j;
+check('historico de estoque mostra numero da venda', movVenda.itens[0].sale_numero === sd.j.numero, movVenda.itens[0]);
+
+const nota = await r('POST', '/stock-entries', { location_id: L.Tabacaria, supplier_id: sup.j.id, documento_fiscal: '9876', itens: [
+  { product_id: agua.id, quantidade: 10, custo_unitario: 1.5 }, { product_id: gelo.id, quantidade: 2.5, custo_unitario: 2 }] }, A);
+check('entrada por nota com 2 itens', st(nota, 201) && nota.j.itens === 2 && nota.j.valor_total === 20, nota.j);
+const aguaDet = (await r('GET', `/products/${agua.id}`, null, A)).j;
+check('nota somou estoque na Tabacaria', Number(aguaDet.saldos_por_local.find((x) => x.location_nome === 'Tabacaria').saldo) === 10, aguaDet.saldos_por_local);
+const notaRuim = await r('POST', '/stock-entries', { location_id: L.Tabacaria, itens: [{ product_id: agua.id, quantidade: 5 }, { product_id: agua.id, quantidade: 1.5 }] }, A);
+check('nota com item invalido -> 400 e nada gravado (tudo ou nada)', st(notaRuim, 400) && /item 2/.test(notaRuim.j.erro), notaRuim.j);
+const aguaDepois = (await r('GET', `/products/${agua.id}`, null, A)).j;
+check('saldo da Tabacaria nao mudou apos nota recusada', Number(aguaDepois.saldos_por_local.find((x) => x.location_nome === 'Tabacaria').saldo) === 10);
+check('nota sem itens -> 400', st(await r('POST', '/stock-entries', { location_id: L.Tabacaria, itens: [] }, A), 400));
+
+const hoje = new Date();
+const dia = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+const resumoHoje = (await r('GET', `/reports/sales-summary?data_inicio=${dia}&data_fim=${dia}`, null, A)).j;
+const resumoAntigo = (await r('GET', '/reports/sales-summary?data_inicio=2020-01-01&data_fim=2020-01-31', null, A)).j;
+check('relatorio filtra por periodo', resumoHoje.numero_vendas > 0 && resumoAntigo.numero_vendas === 0, { hoje: resumoHoje.numero_vendas, antigo: resumoAntigo.numero_vendas });
+check('relatorio soma descontos', resumoHoje.total_descontos >= 2, resumoHoje);
+check('data invalida -> 400', st(await r('GET', '/reports/sales-summary?data_inicio=01/10/2026', null, A), 400));
+const pag = (await r('GET', '/reports/sales-history?limit=2&offset=0', null, A)).j;
+check('historico de vendas paginado', pag.itens.length === 2 && pag.total > 2, { total: pag.total, n: pag.itens.length });
+const top = (await r('GET', `/reports/top-products?data_inicio=${dia}&data_fim=${dia}`, null, A)).j;
+check('ranking de produtos', top.length > 0 && top[0].faturamento !== undefined, top);
+const caixas = (await r('GET', '/reports/cash-sessions', null, A)).j;
+check('resumo de fechamentos de caixa', caixas.length >= 3 && caixas.some((c) => c.fechado_em && c.diferenca !== null), caixas.length);
+
+const me = (await r('GET', '/auth/me', null, A)).j;
+check('/auth/me traz areas, empresa e loja', me.areas && me.areas.Vendas === true && !!me.empresaNome, me);
+const meCx = (await r('GET', '/auth/me', null, CX)).j;
+check('perfil caixa so tem a area de Vendas', meCx.areas.Vendas && !meCx.areas.Estoque && !meCx.areas.Relatorios && meCx.locationNome === 'Distribuidora', meCx);
+check('troca de senha com senha atual errada -> 400', st(await r('POST', '/auth/change-password', { senha_atual: 'errada', nova_senha: 'nova123' }, CX), 400));
+check('troca da propria senha', st(await r('POST', '/auth/change-password', { senha_atual: '123456', nova_senha: 'nova123' }, CX), 204));
+check('login com a nova senha', !!(await login('cx@d.com', 'nova123')));
+const cxId = (await r('GET', '/users', null, A)).j.find((u) => u.email === 'cx@d.com').id;
+check('admin redefine senha do usuario', st(await r('PATCH', `/users/${cxId}/password`, { senha: 'reset99' }, A), 204) && !!(await login('cx@d.com', 'reset99')));
+check('admin edita nome do usuario', (await r('PATCH', `/users/${cxId}`, { nome: 'Caixa Renomeado' }, A)).j.nome === 'Caixa Renomeado');
+check('caixa nao redefine senha de ninguem -> 403', st(await r('PATCH', `/users/${cxId}/password`, { senha: 'x12345' }, CX), 403));
+const erroAcento = await r('POST', '/stock-movements', { product_id: agua.id, tipo: 'saida', quantidade: 9999, location_origem_id: L.Distribuidora, motivo: 'x' }, A);
+check('mensagens de erro com acento', /disponível/.test(erroAcento.j.erro), erroAcento.j);
 
 console.log(`\nRESULTADO: ${pass} ok, ${fail} falhas`);
 if (fail) {

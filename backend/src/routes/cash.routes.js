@@ -25,7 +25,7 @@ async function getSessaoAbertaDoUsuario(client, sessionId, user) {
      FOR UPDATE OF cs`,
     [sessionId, user.tenantId]
   );
-  if (rows.length === 0) throw new HttpError(404, 'sessao de caixa aberta nao encontrada');
+  if (rows.length === 0) throw new HttpError(404, 'sessão de caixa aberta não encontrada');
   assertLocationAccess(user, rows[0].location_id, 'operar o caixa deste terminal');
   return rows[0];
 }
@@ -61,14 +61,14 @@ async function computeSaldoDisponivel(client, tenantId, sessionId) {
 
 router.get('/cash-sessions/current', requireArea('Vendas'), async (req, res) => {
   const { terminal_id } = req.query;
-  if (!terminal_id) return res.status(400).json({ erro: 'terminal_id e obrigatorio' });
+  if (!terminal_id) return res.status(400).json({ erro: 'terminal_id é obrigatório' });
   await getTerminalDoUsuario(pool, terminal_id, req.user);
 
   const register = await pool.query(
     `SELECT id FROM cash_registers WHERE terminal_id = $1 AND tenant_id = $2`,
     [terminal_id, req.user.tenantId]
   );
-  if (register.rows.length === 0) return res.status(404).json({ erro: 'caixa nao configurado para este terminal' });
+  if (register.rows.length === 0) return res.status(404).json({ erro: 'caixa não configurado para este terminal' });
 
   const { rows } = await pool.query(
     `SELECT id, cash_register_id, valor_inicial, aberto_em
@@ -82,7 +82,7 @@ router.post('/cash-sessions', requireArea('Vendas'), async (req, res) => {
   const { terminal_id, valor_inicial } = req.body || {};
   const valor = Number(valor_inicial);
   if (!terminal_id || !(valor >= 0)) {
-    return res.status(400).json({ erro: 'terminal_id e valor_inicial (>=0) sao obrigatorios' });
+    return res.status(400).json({ erro: 'terminal_id e valor_inicial (>=0) são obrigatórios' });
   }
 
   const terminal = await getTerminalDoUsuario(pool, terminal_id, req.user);
@@ -97,7 +97,7 @@ router.post('/cash-sessions', requireArea('Vendas'), async (req, res) => {
     );
     if (register.rows.length === 0) {
       await client.query('ROLLBACK');
-      return res.status(404).json({ erro: 'caixa nao configurado para este terminal' });
+      return res.status(404).json({ erro: 'caixa não configurado para este terminal' });
     }
 
     const existing = await client.query(
@@ -106,7 +106,7 @@ router.post('/cash-sessions', requireArea('Vendas'), async (req, res) => {
     );
     if (existing.rows.length > 0) {
       await client.query('ROLLBACK');
-      return res.status(409).json({ erro: 'ja existe uma sessao de caixa aberta para este terminal' });
+      return res.status(409).json({ erro: 'já existe uma sessão de caixa aberta para este terminal' });
     }
 
     const { rows } = await client.query(
@@ -139,7 +139,7 @@ router.post('/cash-sessions/:id/movements', requireArea('Vendas'), async (req, r
   const { tipo, valor, motivo } = req.body || {};
   const val = Number(valor);
   if (!['sangria', 'suprimento'].includes(tipo) || !(val > 0) || !motivo) {
-    return res.status(400).json({ erro: 'tipo (sangria/suprimento), valor (>0) e motivo sao obrigatorios' });
+    return res.status(400).json({ erro: 'tipo (sangria/suprimento), valor (>0) e motivo são obrigatórios' });
   }
 
   const client = await pool.connect();
@@ -153,7 +153,7 @@ router.post('/cash-sessions/:id/movements', requireArea('Vendas'), async (req, r
       if (saldoDisponivel < val) {
         await client.query('ROLLBACK');
         return res.status(400).json({
-          erro: `sangria maior que o saldo disponivel em caixa (disponivel: ${saldoDisponivel.toFixed(2)})`,
+          erro: `sangria maior que o saldo disponível em caixa (disponível: ${saldoDisponivel.toFixed(2)})`,
         });
       }
     }
@@ -187,7 +187,7 @@ router.post('/cash-sessions/:id/movements', requireArea('Vendas'), async (req, r
 router.post('/cash-sessions/:id/close', requireArea('Vendas'), async (req, res) => {
   const { valor_informado } = req.body || {};
   const informado = Number(valor_informado);
-  if (!(informado >= 0)) return res.status(400).json({ erro: 'valor_informado (>=0) e obrigatorio' });
+  if (!(informado >= 0)) return res.status(400).json({ erro: 'valor_informado (>=0) é obrigatório' });
 
   const client = await pool.connect();
   try {

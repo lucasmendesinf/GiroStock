@@ -764,3 +764,7 @@ kbd { display: inline-block; min-width: 18px; padding: 1px 5px; border-radius: 5
 .permissao-item input { width: auto; margin-top: 3px; flex-shrink: 0; }
 .permissao-item.ajustada span { color: var(--gold-light); font-weight: 600; }
 .permissao-item em { font-style: normal; font-size: 11px; opacity: 0.8; }
+
+/* PDV: produto sem saldo na loja aparece na busca, mas esmaecido (nao pode ser vendido) */
+.resultados li.sem-estoque { opacity: 0.55; }
+.resultados li.sem-estoque .saldo-pdv { color: var(--err); }

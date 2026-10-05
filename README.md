@@ -48,7 +48,7 @@ Acesse:
 | `F6` | cancela a venda em andamento |
 | `F8` | fecha o caixa |
 
-- A busca só mostra produtos com estoque na loja do PDV; a quantidade no carrinho é limitada ao saldo.
+- A busca mostra também produtos sem saldo na loja do PDV, esmaecidos e marcados "sem estoque nesta loja" (com aviso se há em outra loja); eles não podem ser vendidos, e a quantidade no carrinho é limitada ao saldo.
 - A quantidade pode ser digitada no carrinho (produtos em KG/L abrem o campo de peso ao serem adicionados).
 - Desconto em R$ ou %, botão "valor exato" e troco calculado na hora.
 - Cada venda recebe um número curto e sequencial por empresa (Venda nº 123).

@@ -198,12 +198,14 @@ router.get('/products/search', async (req, res) => {
               CASE WHEN $2::uuid IS NULL THEN NULL
                    ELSE COALESCE((SELECT sb.saldo FROM stock_balances sb
                                   WHERE sb.product_id = p.id AND sb.location_id = $2::uuid AND sb.tenant_id = p.tenant_id), 0)
-              END AS saldo
+              END AS saldo,
+              EXISTS(SELECT 1 FROM stock_balances sb2
+                     WHERE sb2.product_id = p.id AND sb2.tenant_id = p.tenant_id AND sb2.saldo > 0
+                       AND ($2::uuid IS NULL OR sb2.location_id <> $2::uuid)) AS em_outras_lojas
        FROM products p
        WHERE ${where}
      ) x
-     ${!barcode && locationId ? 'WHERE x.tem_ficha_tecnica OR x.saldo > 0' : ''}
-     ORDER BY x.nome LIMIT 30`,
+     ORDER BY (x.tem_ficha_tecnica OR COALESCE(x.saldo, 1) > 0) DESC, x.nome LIMIT 30`,
     params
   );
   res.json(rows);

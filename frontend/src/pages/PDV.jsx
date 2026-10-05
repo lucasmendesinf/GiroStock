@@ -451,11 +451,11 @@ export default function PDV() {
           />
           <ul className="resultados" role="listbox">
             {results.map((p, i) => (
-              <li key={p.id} role="option" aria-selected={i === selecionado} className={i === selecionado ? 'selecionado' : ''}
+              <li key={p.id} role="option" aria-selected={i === selecionado} className={`${i === selecionado ? 'selecionado' : ''} ${!p.tem_ficha_tecnica && Number(p.saldo) <= 0 ? 'sem-estoque' : ''}`}
                 onMouseEnter={() => setSelecionado(i)} onClick={() => { if (addToCart(p)) { setBusca(''); setResults([]); } }}>
                 <span className="resultado-nome">{p.nome}</span>
                 <span className="resultado-preco">{brl(p.preco_venda)}{p.unidade !== 'UN' ? ` / ${p.unidade}` : ''}</span>
-                <span className="saldo-pdv">{p.tem_ficha_tecnica ? 'preparo' : `estoque: ${qtd(p.saldo, p.unidade)}`}</span>
+                <span className="saldo-pdv">{p.tem_ficha_tecnica ? 'preparo' : Number(p.saldo) <= 0 ? `sem estoque nesta loja${p.em_outras_lojas ? ' (há em outra loja)' : ''}` : `estoque: ${qtd(p.saldo, p.unidade)}`}</span>
               </li>
             ))}
           </ul>

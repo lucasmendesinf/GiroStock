@@ -129,6 +129,48 @@ async function recalcularCustoProdutos(client, tenantId, ingredientId) {
   );
 }
 
+// Edita o cadastro do insumo: nome, custo por unidade, ativo e (so sem saldo e sem uso em receita) a unidade.
+router.put('/ingredients/:id', requireArea('Estoque'), async (req, res) => {
+  const atual = await getOwned(pool, 'ingredients', req.params.id, req.user.tenantId, { columns: 'id, nome, unidade, custo_unitario, ativo' });
+  const body = req.body || {};
+  const nome = body.nome === undefined ? atual.nome : String(body.nome).trim();
+  if (nome.length < 2) throw new HttpError(400, 'nome precisa ter pelo menos 2 caracteres');
+  const custo = body.custo_unitario === undefined || body.custo_unitario === '' ? Number(atual.custo_unitario) : Number(body.custo_unitario);
+  if (!(custo >= 0)) throw new HttpError(400, 'custo por unidade deve ser 0 ou mais');
+  const ativo = body.ativo === undefined ? atual.ativo : !!body.ativo;
+  const unidade = body.unidade === undefined ? atual.unidade : String(body.unidade);
+  if (unidade !== atual.unidade) {
+    const uso = await pool.query(
+      `SELECT (SELECT COALESCE(SUM(saldo), 0) FROM ingredient_balances WHERE ingredient_id = $1 AND tenant_id = $2) AS saldo,
+              (SELECT COUNT(*) FROM product_ingredients WHERE ingredient_id = $1 AND tenant_id = $2) AS receitas`,
+      [req.params.id, req.user.tenantId]
+    );
+    if (Number(uso.rows[0].saldo) !== 0 || Number(uso.rows[0].receitas) > 0) {
+      throw new HttpError(400, 'não dá para trocar a unidade de um insumo com saldo ou usado em receita');
+    }
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `UPDATE ingredients SET nome = $1, unidade = $2, custo_unitario = $3, ativo = $4 WHERE id = $5 AND tenant_id = $6`,
+      [nome, unidade, custo, ativo, req.params.id, req.user.tenantId]
+    );
+    await recalcularCustoProdutos(client, req.user.tenantId, req.params.id);
+    await logAudit(client, {
+      tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'editar_insumo', recurso: 'ingredients', recursoId: req.params.id,
+      detalhes: { antes: { nome: atual.nome, unidade: atual.unidade, custo_unitario: Number(atual.custo_unitario), ativo: atual.ativo }, depois: { nome, unidade, custo_unitario: custo, ativo } },
+    });
+    await client.query('COMMIT');
+    res.json(await carregarInsumo(pool, req.user.tenantId, req.params.id));
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+});
+
 router.post('/ingredients/:id/stock-entries', requireArea('Estoque'), async (req, res) => {
   const { quantidade, custo_total, location_id } = req.body || {};
   const qtd = Number(quantidade);

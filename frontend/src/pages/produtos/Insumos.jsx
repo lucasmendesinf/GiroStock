@@ -20,6 +20,7 @@ export default function Insumos({ ingredients, locations, reload }) {
   const locaisAtivos = locations.filter((l) => l.ativo);
   const [novo, setNovo] = useState(false);
   const [movimentando, setMovimentando] = useState(null);
+  const [editando, setEditando] = useState(null);
   const [consumo, setConsumo] = useState([]);
 
   useEffect(() => {
@@ -41,7 +42,7 @@ export default function Insumos({ ingredients, locations, reload }) {
               <tbody>
                 {ingredients.map((i) => (
                   <tr key={i.id}>
-                    <td><div className="celula-principal">{i.nome}</div><div className="celula-sub">{i.unidade} · valor em estoque {brl(Number(i.saldo_total) * Number(i.custo_unitario))}</div></td>
+                    <td><div className="celula-principal">{i.nome}{!i.ativo && <span className="badge-inativo"> inativo</span>}</div><div className="celula-sub">{i.unidade} · valor em estoque {brl(Number(i.saldo_total) * Number(i.custo_unitario))}</div></td>
                     <td className="num col-opcional">{brlFino(i.custo_unitario)}/{i.unidade}</td>
                     <td className="num">{qtd(i.saldo_total)} {i.unidade}</td>
                     <td className="col-opcional">
@@ -54,7 +55,7 @@ export default function Insumos({ ingredients, locations, reload }) {
                         ))}
                       </div>
                     </td>
-                    <td><button type="button" className="btn-link" onClick={() => setMovimentando(i)}>Movimentar</button></td>
+                    <td><div className="acoes"><button type="button" className="btn-link" onClick={() => setEditando(i)}>Editar</button><button type="button" className="btn-link" onClick={() => setMovimentando(i)}>Movimentar</button></div></td>
                   </tr>
                 ))}
               </tbody>
@@ -81,6 +82,7 @@ export default function Insumos({ ingredients, locations, reload }) {
       </div>
 
       {novo && <NovoInsumo locaisAtivos={locaisAtivos} user={user} reload={reload} onClose={() => setNovo(false)} />}
+      {editando && <EditarInsumo insumo={editando} reload={reload} onClose={() => setEditando(null)} />}
       {movimentando && (
         <MovimentarInsumo insumo={ingredients.find((i) => i.id === movimentando.id) || movimentando}
           locaisAtivos={locaisAtivos} user={user} reload={reload} onClose={() => setMovimentando(null)} />
@@ -137,6 +139,49 @@ function NovoInsumo({ locaisAtivos, user, reload, onClose }) {
         <div className="modal-actions">
           <button type="button" onClick={onClose}>Cancelar</button>
           <button type="submit">Cadastrar insumo</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function EditarInsumo({ insumo, reload, onClose }) {
+  const toast = useToast();
+  const [form, setForm] = useState({
+    nome: insumo.nome, unidade: insumo.unidade, ativo: insumo.ativo,
+    custo_unitario: String(Number(insumo.custo_unitario)).replace('.', ','),
+  });
+  const podeTrocarUnidade = Number(insumo.saldo_total) === 0;
+  async function salvar(e) {
+    e.preventDefault();
+    try {
+      await api.put(`/ingredients/${insumo.id}`, {
+        nome: form.nome, unidade: form.unidade, ativo: form.ativo,
+        custo_unitario: form.custo_unitario === '' ? 0 : parseNumero(form.custo_unitario),
+      });
+      toast.sucesso('Insumo atualizado. Produtos com receita tiveram o custo recalculado.');
+      await reload();
+      onClose();
+    } catch (err) { toast.erro(err); }
+  }
+  return (
+    <Modal titulo={`Editar ${insumo.nome}`} subtitulo="Cadastro do insumo · para mudar saldo use Movimentar" onClose={onClose}>
+      <form onSubmit={salvar} className="form-stack">
+        <Field label="Nome *"><input autoFocus value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required minLength={2} /></Field>
+        <div className="form-grid">
+          <Field label="Unidade" hint={podeTrocarUnidade ? undefined : 'Só pode trocar com saldo zerado.'} style={{ flex: '0 0 130px' }}>
+            <select value={form.unidade} disabled={!podeTrocarUnidade} onChange={(e) => setForm({ ...form, unidade: e.target.value })}>
+              {UNIDADES_INSUMO.map((u) => <option key={u} value={u}>{u}</option>)}
+            </select>
+          </Field>
+          <Field label={`Custo por ${form.unidade} (R$)`} hint="Ex: R$ 100 por 10 kg = 0,01 por grama.">
+            <input inputMode="decimal" value={form.custo_unitario} onChange={(e) => setForm({ ...form, custo_unitario: e.target.value })} placeholder="0" />
+          </Field>
+        </div>
+        <label className="check"><input type="checkbox" checked={form.ativo} onChange={(e) => setForm({ ...form, ativo: e.target.checked })} /> Insumo ativo (aparece para novas receitas)</label>
+        <div className="modal-actions">
+          <button type="button" onClick={onClose}>Cancelar</button>
+          <button type="submit">Salvar alterações</button>
         </div>
       </form>
     </Modal>

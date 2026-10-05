@@ -1,6 +1,6 @@
 import { forwardRef, useState } from 'react';
 import { Field } from '../../components/ui.jsx';
-import { brl, parseNumero, qtd } from '../../utils/format';
+import { brl, brlFino, parseNumero, qtd } from '../../utils/format';
 
 // Custo dos insumos da receita: soma de (qtd por unidade x custo unitario do insumo).
 export function custoDaReceita(ficha, ingredients) {
@@ -67,7 +67,9 @@ const ReceitaEditor = forwardRef(function ReceitaEditor({ ficha, setFicha, ingre
                   const dara = ing && q > 0 ? Math.floor(Number(ing.saldo_total) / q) : 0;
                   return (
                     <tr key={f.ingredient_id}>
-                      <td><b>{ing ? ing.nome : '?'}</b></td>
+                      <td><b>{ing ? ing.nome : '?'}</b>
+                        {ing && <div className="celula-sub">{Number(ing.custo_unitario) > 0 ? `${brlFino(ing.custo_unitario)} / ${ing.unidade}` : <span style={{ color: 'var(--warn)' }}>sem custo: informe o custo total na entrada do insumo</span>}</div>}
+                      </td>
                       <td className="num">
                         <input key={`${f.ingredient_id}-${q}`} className="es-min" inputMode="decimal" aria-label={`Quantidade de ${ing ? ing.nome : 'insumo'} por unidade`}
                           defaultValue={String(q).replace('.', ',')}

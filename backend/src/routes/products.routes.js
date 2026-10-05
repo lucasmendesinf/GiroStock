@@ -198,16 +198,26 @@ router.get('/products/search', async (req, res) => {
        SELECT p.id, p.nome, p.barcode, p.preco_venda, p.unidade,
               EXISTS(SELECT 1 FROM product_ingredients pi WHERE pi.product_id = p.id AND pi.tenant_id = p.tenant_id) AS tem_ficha_tecnica,
               CASE WHEN $2::uuid IS NULL THEN NULL
+                   WHEN EXISTS(SELECT 1 FROM product_ingredients pi WHERE pi.product_id = p.id AND pi.tenant_id = p.tenant_id)
+                     THEN (SELECT MIN(FLOOR(COALESCE(ib.saldo, 0) / pi.quantidade_por_unidade))
+                           FROM product_ingredients pi
+                           LEFT JOIN ingredient_balances ib ON ib.ingredient_id = pi.ingredient_id AND ib.location_id = $2::uuid AND ib.tenant_id = pi.tenant_id
+                           WHERE pi.product_id = p.id AND pi.tenant_id = p.tenant_id)
                    ELSE COALESCE((SELECT sb.saldo FROM stock_balances sb
                                   WHERE sb.product_id = p.id AND sb.location_id = $2::uuid AND sb.tenant_id = p.tenant_id), 0)
               END AS saldo,
+              (SELECT i.nome FROM product_ingredients pi
+               JOIN ingredients i ON i.id = pi.ingredient_id
+               LEFT JOIN ingredient_balances ib ON ib.ingredient_id = pi.ingredient_id AND ib.location_id = $2::uuid AND ib.tenant_id = pi.tenant_id
+               WHERE pi.product_id = p.id AND pi.tenant_id = p.tenant_id AND $2::uuid IS NOT NULL
+               ORDER BY FLOOR(COALESCE(ib.saldo, 0) / pi.quantidade_por_unidade), i.nome LIMIT 1) AS insumo_limitante,
               EXISTS(SELECT 1 FROM stock_balances sb2
                      WHERE sb2.product_id = p.id AND sb2.tenant_id = p.tenant_id AND sb2.saldo > 0
                        AND ($2::uuid IS NULL OR sb2.location_id <> $2::uuid)) AS em_outras_lojas
        FROM products p
        WHERE ${where}
      ) x
-     ORDER BY (x.tem_ficha_tecnica OR COALESCE(x.saldo, 1) > 0) DESC, x.nome LIMIT 30`,
+     ORDER BY (COALESCE(x.saldo, 1) > 0) DESC, x.nome LIMIT 30`,
     params
   );
   res.json(rows);

@@ -100,7 +100,16 @@ export default function PDV() {
   const focarBusca = useCallback(() => setTimeout(() => buscaRef.current?.focus(), 0), []);
 
   function limiteDe(product) {
-    return product.tem_ficha_tecnica || product.saldo === null || product.saldo === undefined ? Infinity : Number(product.saldo);
+    return product.saldo === null || product.saldo === undefined ? Infinity : Number(product.saldo);
+  }
+
+  function msgSemEstoque(product, limite) {
+    if (product.tem_ficha_tecnica) {
+      return limite <= 0
+        ? `"${product.nome}" sem estoque: falta insumo${product.insumo_limitante ? ` (${product.insumo_limitante})` : ''} nesta loja.`
+        : `"${product.nome}": os insumos só dão para ${limite} unidade(s) nesta loja${product.insumo_limitante ? ` (limite: ${product.insumo_limitante})` : ''}.`;
+    }
+    return limite <= 0 ? `"${product.nome}" está sem estoque nesta loja.` : `"${product.nome}": só há ${qtd(limite, product.unidade)} em estoque nesta loja.`;
   }
 
   function onBuscaChange(texto) {
@@ -129,7 +138,7 @@ export default function PDV() {
     const noCarrinho = cart.find((i) => i.id === product.id);
     const novaQtd = (noCarrinho ? noCarrinho.quantidade : 0) + quantidade;
     if (novaQtd > limite) {
-      toast.erro(limite <= 0 ? `"${product.nome}" está sem estoque nesta loja.` : `"${product.nome}": só há ${qtd(limite, product.unidade)} em estoque nesta loja.`);
+      toast.erro(msgSemEstoque(product, limite));
       return false;
     }
     setCart((prev) => {
@@ -138,7 +147,7 @@ export default function PDV() {
       }
       return [...prev, {
         id: product.id, nome: product.nome, unidade: product.unidade, preco_venda: Number(product.preco_venda),
-        quantidade, limite,
+        quantidade, limite, tem_ficha_tecnica: product.tem_ficha_tecnica, insumo_limitante: product.insumo_limitante,
       }];
     });
     // Produto por peso/volume adicionado sem quantidade: abre o campo para digitar o peso.
@@ -202,7 +211,7 @@ export default function PDV() {
       return;
     }
     if (nova > item.limite) {
-      toast.erro(`"${item.nome}": só há ${qtd(item.limite, item.unidade)} em estoque nesta loja.`);
+      toast.erro(msgSemEstoque(item, item.limite));
       return;
     }
     setCart((prev) => prev.map((i) => (i.id === item.id ? { ...i, quantidade: nova } : i)));
@@ -451,11 +460,11 @@ export default function PDV() {
           />
           <ul className="resultados" role="listbox">
             {results.map((p, i) => (
-              <li key={p.id} role="option" aria-selected={i === selecionado} className={`${i === selecionado ? 'selecionado' : ''} ${!p.tem_ficha_tecnica && Number(p.saldo) <= 0 ? 'sem-estoque' : ''}`}
+              <li key={p.id} role="option" aria-selected={i === selecionado} className={`${i === selecionado ? 'selecionado' : ''} ${Number(p.saldo) <= 0 ? 'sem-estoque' : ''}`}
                 onMouseEnter={() => setSelecionado(i)} onClick={() => { if (addToCart(p)) { setBusca(''); setResults([]); } }}>
                 <span className="resultado-nome">{p.nome}</span>
                 <span className="resultado-preco">{brl(p.preco_venda)}{p.unidade !== 'UN' ? ` / ${p.unidade}` : ''}</span>
-                <span className="saldo-pdv">{p.tem_ficha_tecnica ? 'preparo' : Number(p.saldo) <= 0 ? `sem estoque nesta loja${p.em_outras_lojas ? ' (há em outra loja)' : ''}` : `estoque: ${qtd(p.saldo, p.unidade)}`}</span>
+                <span className="saldo-pdv">{Number(p.saldo) <= 0 ? (p.tem_ficha_tecnica ? `sem estoque: falta ${p.insumo_limitante || 'insumo'}` : `sem estoque nesta loja${p.em_outras_lojas ? ' (há em outra loja)' : ''}`) : p.tem_ficha_tecnica ? `dá para ${p.saldo} un.` : `estoque: ${qtd(p.saldo, p.unidade)}`}</span>
               </li>
             ))}
           </ul>

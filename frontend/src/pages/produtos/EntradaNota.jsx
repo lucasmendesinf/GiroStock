@@ -6,9 +6,10 @@ import { Field, Vazio } from '../../components/ui.jsx';
 import ProdutoPicker from '../../components/ProdutoPicker.jsx';
 import { brl, parseNumero } from '../../utils/format';
 import { stepDaUnidade, lojaPadrao, lembrarLoja } from './comum.jsx';
+import FormProduto from './FormProduto.jsx';
 
 // Entrada de varios produtos de uma mesma nota de compra, gravada de uma vez (tudo ou nada).
-export default function EntradaNota({ products, locations, suppliers, reload }) {
+export default function EntradaNota({ products, locations, suppliers, categories, ingredients, reload }) {
   const toast = useToast();
   const confirmar = useConfirm();
   const { user } = useAuth();
@@ -17,6 +18,7 @@ export default function EntradaNota({ products, locations, suppliers, reload }) 
   const [cab, setCab] = useState({ location_id: localPadrao, supplier_id: '', documento_fiscal: '' });
   const [itens, setItens] = useState([]);
   const [salvando, setSalvando] = useState(false);
+  const [cadastrando, setCadastrando] = useState(false);
   const elegiveis = products.filter((p) => p.ativo && !p.tem_ficha_tecnica);
 
   function adicionar(p) {
@@ -26,6 +28,16 @@ export default function EntradaNota({ products, locations, suppliers, reload }) 
     }
     setItens([...itens, { product_id: p.id, nome: p.nome, unidade: p.unidade, codigo: p.codigo_interno, quantidade: '', custo_unitario: String(p.preco_custo).replace('.', ',') }]);
     setTimeout(() => document.getElementById(`qtd-${p.id}`)?.focus(), 0);
+  }
+
+  // Produto cadastrado no meio da nota: entra direto na lista de itens (produto controlado por insumos nao recebe estoque).
+  async function aoCadastrar(id) {
+    setCadastrando(false);
+    try {
+      const p = await api.get(`/products/${id}`);
+      if (p.ficha_tecnica && p.ficha_tecnica.length > 0) return;
+      adicionar(p);
+    } catch (err) { toast.erro(err); }
   }
 
   function atualizar(id, campo, valor) {
@@ -71,6 +83,7 @@ export default function EntradaNota({ products, locations, suppliers, reload }) 
   }
 
   return (
+    <>
     <form onSubmit={gravar}>
       <div className="card">
         <h3>Dados da nota</h3>
@@ -93,8 +106,11 @@ export default function EntradaNota({ products, locations, suppliers, reload }) 
 
       <div className="card">
         <h3>Itens</h3>
-        <div style={{ margin: '12px 0' }}>
-          <ProdutoPicker produtos={elegiveis} onSelecionar={adicionar} limparAoSelecionar placeholder="Bipe o código de barras ou digite o nome para adicionar" />
+        <div style={{ margin: '12px 0', display: 'flex', gap: '8px', alignItems: 'stretch', flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+            <ProdutoPicker produtos={elegiveis} onSelecionar={adicionar} limparAoSelecionar placeholder="Bipe o código de barras ou digite o nome para adicionar" />
+          </div>
+          <button type="button" className="es-btn-ghost" onClick={() => setCadastrando(true)} title="Não achou o produto? Cadastre um novo">+ Novo produto</button>
         </div>
         {itens.length === 0 ? <Vazio>Nenhum item. Use o campo acima (aceita leitor de código de barras).</Vazio> : (
           <div className="tabela-wrap">
@@ -128,5 +144,10 @@ export default function EntradaNota({ products, locations, suppliers, reload }) 
         <p className="form-hint">O custo vem preenchido com o custo atual; altere para o valor da nota. O custo de cada produto é recalculado pela média ponderada.</p>
       </div>
     </form>
+      {cadastrando && (
+        <FormProduto categories={categories} suppliers={suppliers} ingredients={ingredients} reload={reload}
+          onClose={() => setCadastrando(false)} onSalvo={aoCadastrar} />
+      )}
+    </>
   );
 }

@@ -18,9 +18,9 @@ function assertLocationAccess(user, locationId, acao = 'operar neste local') {
   }
 }
 
-// Perfis que podem cancelar vendas (estorno de estoque e de caixa).
+// Usuarios com a permissao CancelarVendas (padrao: Administrador e Gerente) (estorno de estoque e de caixa).
 function canCancelSales(user) {
-  return user && (user.perfil === 'Administrador' || user.perfil === 'Gerente');
+  return !!(user && user.areas && user.areas.CancelarVendas);
 }
 
 module.exports = { restrictedLocation, canAccessLocation, assertLocationAccess, canCancelSales };

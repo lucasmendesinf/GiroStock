@@ -1,7 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const pool = require('../db/pool');
-const { requireArea } = require('../middleware/permissions');
+const { requireArea, MATRIX, PERMISSOES, areasEfetivas, normalizarOverrides } = require('../middleware/permissions');
 const { isValidEmail } = require('../utils/validators');
 const { logAudit } = require('../utils/audit');
 const { getOwnedLocation } = require('../utils/tenant');
@@ -10,9 +10,14 @@ const { HttpError } = require('../utils/http');
 const router = express.Router();
 const PERFIS = ['Administrador', 'Gerente', 'Caixa/Operador', 'Estoque', 'Lanchonete/Cozinha', 'Financeiro'];
 
+// Padrao de cada perfil e lista de permissoes ajustaveis (a tela de usuarios monta os checkboxes com isso).
+router.get('/users/permissoes', requireArea('Configuracoes'), (req, res) => {
+  res.json({ permissoes: PERMISSOES, padrao: MATRIX });
+});
+
 router.get('/users', requireArea('Configuracoes'), async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT id, nome, email, perfil, location_id, ativo, criado_em
+    `SELECT id, nome, email, perfil, location_id, ativo, criado_em, permissoes
      FROM users WHERE tenant_id = $1 ORDER BY nome`,
     [req.user.tenantId]
   );
@@ -21,6 +26,8 @@ router.get('/users', requireArea('Configuracoes'), async (req, res) => {
 
 router.post('/users', requireArea('Configuracoes'), async (req, res) => {
   const { nome, email, senha, perfil, location_id } = req.body || {};
+  const permissoes = normalizarOverrides(perfil, (req.body || {}).permissoes);
+  if (permissoes === false) throw new HttpError(400, 'permissões inválidas');
 
   if (!nome || !email || !senha || !perfil) {
     return res.status(400).json({ erro: 'nome, email, senha e perfil são obrigatórios' });
@@ -48,10 +55,10 @@ router.post('/users', requireArea('Configuracoes'), async (req, res) => {
   try {
     await client.query('BEGIN');
     const { rows } = await client.query(
-      `INSERT INTO users (tenant_id, nome, email, senha_hash, perfil, location_id)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, nome, email, perfil, location_id, ativo`,
-      [req.user.tenantId, nome, email, senhaHash, perfil, location_id || null]
+      `INSERT INTO users (tenant_id, nome, email, senha_hash, perfil, location_id, permissoes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, nome, email, perfil, location_id, ativo, permissoes`,
+      [req.user.tenantId, nome, email, senhaHash, perfil, location_id || null, permissoes ? JSON.stringify(permissoes) : null]
     );
     await logAudit(client, {
       tenantId: req.user.tenantId,
@@ -59,7 +66,7 @@ router.post('/users', requireArea('Configuracoes'), async (req, res) => {
       acao: 'criar',
       recurso: 'users',
       recursoId: rows[0].id,
-      detalhes: { perfil },
+      detalhes: { perfil, permissoes },
     });
     await client.query('COMMIT');
     res.status(201).json(rows[0]);
@@ -75,7 +82,7 @@ router.post('/users', requireArea('Configuracoes'), async (req, res) => {
 router.patch('/users/:id', requireArea('Configuracoes'), async (req, res) => {
   const body = req.body || {};
   const alvo = await pool.query(
-    `SELECT id, perfil, location_id FROM users WHERE id = $1 AND tenant_id = $2`,
+    `SELECT id, perfil, location_id, permissoes FROM users WHERE id = $1 AND tenant_id = $2`,
     [req.params.id, req.user.tenantId]
   );
   if (alvo.rows.length === 0) return res.status(404).json({ erro: 'usuário não encontrado' });
@@ -90,6 +97,17 @@ router.patch('/users/:id', requireArea('Configuracoes'), async (req, res) => {
     locationId = body.location_id || null;
     if (locationId) await getOwnedLocation(pool, locationId, req.user.tenantId);
   }
+  // Ajustes individuais: se vierem no corpo, valem; se o perfil mudou sem ajustes, voltam ao padrao.
+  let permissoes = atual.permissoes;
+  if (body.permissoes !== undefined) {
+    permissoes = normalizarOverrides(perfil, body.permissoes);
+    if (permissoes === false) throw new HttpError(400, 'permissões inválidas');
+  } else if (perfil !== atual.perfil) {
+    permissoes = null;
+  }
+  if (req.params.id === req.user.id && !areasEfetivas(perfil, permissoes).Configuracoes) {
+    throw new HttpError(400, 'você não pode tirar o seu próprio acesso a Configurações');
+  }
   if (req.params.id === req.user.id && perfil !== 'Administrador' && atual.perfil === 'Administrador') {
     throw new HttpError(400, 'você não pode remover o seu próprio perfil de Administrador');
   }
@@ -98,9 +116,9 @@ router.patch('/users/:id', requireArea('Configuracoes'), async (req, res) => {
   try {
     await client.query('BEGIN');
     const { rows } = await client.query(
-      `UPDATE users SET perfil = $1, location_id = $2, nome = COALESCE($5, nome) WHERE id = $3 AND tenant_id = $4
-       RETURNING id, nome, email, perfil, location_id, ativo`,
-      [perfil, locationId, req.params.id, req.user.tenantId, nome]
+      `UPDATE users SET perfil = $1, location_id = $2, nome = COALESCE($5, nome), permissoes = $6 WHERE id = $3 AND tenant_id = $4
+       RETURNING id, nome, email, perfil, location_id, ativo, permissoes`,
+      [perfil, locationId, req.params.id, req.user.tenantId, nome, permissoes ? JSON.stringify(permissoes) : null]
     );
     await logAudit(client, {
       tenantId: req.user.tenantId,
@@ -108,7 +126,7 @@ router.patch('/users/:id', requireArea('Configuracoes'), async (req, res) => {
       acao: 'alterar_permissao',
       recurso: 'users',
       recursoId: req.params.id,
-      detalhes: { perfil_anterior: atual.perfil, perfil, location_anterior: atual.location_id, location_id: locationId },
+      detalhes: { perfil_anterior: atual.perfil, perfil, permissoes_anteriores: atual.permissoes, permissoes, location_anterior: atual.location_id, location_id: locationId },
     });
     await client.query('COMMIT');
     res.json(rows[0]);

@@ -757,3 +757,10 @@ kbd { display: inline-block; min-width: 18px; padding: 1px 5px; border-radius: 5
   .tabela-wrap table { min-width: 0; }
   .carrinho-item { grid-template-columns: 1fr auto auto; }
 }
+
+/* Permissoes por usuario (tela de Usuarios) */
+.permissoes-lista { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; background: var(--panel-alt); border: 1px solid var(--line); border-radius: 10px; }
+.permissao-item { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; color: var(--ivory); cursor: pointer; text-transform: none; letter-spacing: normal; }
+.permissao-item input { width: auto; margin-top: 3px; flex-shrink: 0; }
+.permissao-item.ajustada span { color: var(--gold-light); font-weight: 600; }
+.permissao-item em { font-style: normal; font-size: 11px; opacity: 0.8; }

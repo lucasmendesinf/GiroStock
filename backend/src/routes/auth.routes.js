@@ -3,7 +3,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const pool = require('../db/pool');
 const { authRequired } = require('../middleware/auth');
-const { MATRIX } = require('../middleware/permissions');
+const { areasEfetivas } = require('../middleware/permissions');
 const { logAudit } = require('../utils/audit');
 const { HttpError } = require('../utils/http');
 
@@ -16,7 +16,7 @@ router.post('/login', async (req, res) => {
   }
 
   const { rows } = await pool.query(
-    `SELECT u.id, u.tenant_id, u.nome, u.email, u.senha_hash, u.perfil, u.location_id, u.ativo,
+    `SELECT u.id, u.tenant_id, u.nome, u.email, u.senha_hash, u.perfil, u.location_id, u.ativo, u.permissoes,
             t.nome AS empresa_nome, l.nome AS location_nome
      FROM users u JOIN tenants t ON t.id = u.tenant_id
      LEFT JOIN locations l ON l.id = u.location_id
@@ -61,14 +61,14 @@ function dadosDoUsuario(user) {
     locationId: user.location_id,
     locationNome: user.location_nome || null,
     empresaNome: user.empresa_nome,
-    areas: MATRIX[user.perfil] || {},
+    areas: areasEfetivas(user.perfil, user.permissoes),
   };
 }
 
 // Recarrega o usuario logado (perfil/loja podem ter mudado desde o login).
 router.get('/me', authRequired, async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT u.id, u.nome, u.email, u.perfil, u.location_id, t.nome AS empresa_nome, l.nome AS location_nome
+    `SELECT u.id, u.nome, u.email, u.perfil, u.location_id, u.permissoes, t.nome AS empresa_nome, l.nome AS location_nome
      FROM users u JOIN tenants t ON t.id = u.tenant_id
      LEFT JOIN locations l ON l.id = u.location_id
      WHERE u.id = $1`,

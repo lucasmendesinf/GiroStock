@@ -23,7 +23,7 @@ export function telasDoUsuario(user) {
 // Tela inicial apos o login: caixa vai direto ao PDV, estoque aos produtos, etc.
 export function rotaInicial(user) {
   if (!user) return '/login';
-  if (user.perfil === 'Caixa/Operador') return '/pdv';
+  if (user.perfil === 'Caixa/Operador' && podeAcessar(user, 'Vendas')) return '/pdv';
   const telas = telasDoUsuario(user);
   return telas.length > 0 ? telas[0].path : '/inicio';
 }

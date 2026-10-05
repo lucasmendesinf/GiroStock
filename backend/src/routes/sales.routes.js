@@ -406,9 +406,8 @@ router.get('/sales', requireArea('Vendas'), async (req, res) => {
 
 // Detalhe da venda com os itens (aberto para quem vende e para quem ve relatorios).
 router.get('/sales/:id', async (req, res) => {
-  const perfil = req.user.perfil;
-  if (!['Administrador', 'Gerente', 'Caixa/Operador', 'Financeiro'].includes(perfil)) {
-    throw new HttpError(403, `Perfil ${perfil} não tem acesso a vendas`);
+  if (!req.user.areas.Vendas && !req.user.areas.Relatorios) {
+    throw new HttpError(403, 'Seu usuário não tem acesso a vendas');
   }
   await getOwned(pool, 'sales', req.params.id, req.user.tenantId);
   const venda = await pool.query(

@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const pool = require('../db/pool');
+const { areasEfetivas } = require('./permissions');
 
 // Valida o token e recarrega o usuario do banco a cada requisicao: assim um usuario
 // desativado perde o acesso na hora, e mudancas de perfil/local valem sem novo login.
@@ -17,7 +18,7 @@ async function authRequired(req, res, next) {
   }
 
   const { rows } = await pool.query(
-    `SELECT id, tenant_id, perfil, location_id, ativo FROM users WHERE id = $1`,
+    `SELECT id, tenant_id, perfil, location_id, ativo, permissoes FROM users WHERE id = $1`,
     [payload.sub]
   );
   const user = rows[0];
@@ -29,6 +30,7 @@ async function authRequired(req, res, next) {
     tenantId: user.tenant_id,
     perfil: user.perfil,
     locationId: user.location_id,
+    areas: areasEfetivas(user.perfil, user.permissoes),
   };
   next();
 }

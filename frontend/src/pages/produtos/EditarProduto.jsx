@@ -146,7 +146,7 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
           </Field>
         </div>
 
-        <div className="form-grid">
+        <div className="es-form" style={{ alignItems: 'start' }}>
           <Field label="Preço de custo (R$) *" hint={usaReceita ? 'Calculado pelos insumos' : undefined}>
             <input inputMode="decimal" readOnly={usaReceita} value={usaReceita ? custoFicha.toFixed(2).replace('.', ',') : form.preco_custo}
               onChange={(e) => setForm({ ...form, preco_custo: e.target.value })} />
@@ -154,7 +154,7 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
           <Field label="Preço de venda (R$) *" hint={margem !== null && Number.isFinite(margem) ? `Margem: ${pct(margem.toFixed(1))}` : undefined}>
             <input inputMode="decimal" value={form.preco_venda} onChange={(e) => setForm({ ...form, preco_venda: e.target.value })} />
           </Field>
-          <Field label="Fornecedores">
+          <Field label="Fornecedores" className="full">
             <SeletorFornecedores suppliers={suppliers} principal={form.supplier_id} extras={form.supplier_ids}
               onChange={(principal, extras) => setForm({ ...form, supplier_id: principal, supplier_ids: principal ? extras : [] })} />
           </Field>

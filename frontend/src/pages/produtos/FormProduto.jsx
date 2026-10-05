@@ -99,7 +99,7 @@ export default function FormProduto({ categories, suppliers, ingredients, reload
           </Field>
         </div>
 
-        <div className="form-grid">
+        <div className="es-form" style={{ alignItems: 'start' }}>
           <Field label="Preço de custo (R$) *" hint={composto ? 'Calculado pelos insumos' : undefined}>
             <input inputMode="decimal" readOnly={composto} placeholder="0,00"
               value={composto ? custoFicha.toFixed(2).replace('.', ',') : form.preco_custo}
@@ -108,7 +108,7 @@ export default function FormProduto({ categories, suppliers, ingredients, reload
           <Field label="Preço de venda (R$) *" hint={margem !== null && Number.isFinite(margem) ? `Margem: ${pct(margem.toFixed(1))}` : undefined}>
             <input inputMode="decimal" value={form.preco_venda} onChange={(e) => setForm({ ...form, preco_venda: e.target.value })} placeholder="0,00" />
           </Field>
-          <Field label="Fornecedor principal">
+          <Field label="Fornecedor principal" className="full">
             <SeletorFornecedores suppliers={suppliers} principal={form.supplier_id} extras={form.supplier_ids}
               onChange={(principal, extras) => setForm({ ...form, supplier_id: principal, supplier_ids: principal ? extras : [] })} />
           </Field>

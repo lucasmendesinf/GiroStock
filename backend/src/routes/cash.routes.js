@@ -5,7 +5,6 @@ const { logAudit } = require('../utils/audit');
 const { getOwned } = require('../utils/tenant');
 const { assertLocationAccess } = require('../utils/access');
 const { HttpError } = require('../utils/http');
-const { centavos, reais, temNoMaximoCentavos } = require('../utils/dinheiro');
 
 const router = express.Router();
 
@@ -57,7 +56,7 @@ async function computeSaldoDisponivel(client, tenantId, sessionId) {
 
   const inicial = Number(session.rows[0].valor_inicial);
   const dinheiro = Number(vendasDinheiro.rows[0].total);
-  return reais(centavos(inicial) + centavos(dinheiro) + centavos(suprimentos) - centavos(sangrias));
+  return inicial + dinheiro + suprimentos - sangrias;
 }
 
 router.get('/cash-sessions/current', requireArea('Vendas'), async (req, res) => {
@@ -82,7 +81,7 @@ router.get('/cash-sessions/current', requireArea('Vendas'), async (req, res) => 
 router.post('/cash-sessions', requireArea('Vendas'), async (req, res) => {
   const { terminal_id, valor_inicial } = req.body || {};
   const valor = Number(valor_inicial);
-  if (!terminal_id || !(valor >= 0) || !temNoMaximoCentavos(valor)) {
+  if (!terminal_id || !(valor >= 0)) {
     return res.status(400).json({ erro: 'terminal_id e valor_inicial (>=0) são obrigatórios' });
   }
 
@@ -139,7 +138,7 @@ router.post('/cash-sessions', requireArea('Vendas'), async (req, res) => {
 router.post('/cash-sessions/:id/movements', requireArea('Vendas'), async (req, res) => {
   const { tipo, valor, motivo } = req.body || {};
   const val = Number(valor);
-  if (!['sangria', 'suprimento'].includes(tipo) || !(val > 0) || !temNoMaximoCentavos(val) || !motivo) {
+  if (!['sangria', 'suprimento'].includes(tipo) || !(val > 0) || !motivo) {
     return res.status(400).json({ erro: 'tipo (sangria/suprimento), valor (>0) e motivo são obrigatórios' });
   }
 
@@ -188,7 +187,7 @@ router.post('/cash-sessions/:id/movements', requireArea('Vendas'), async (req, r
 router.post('/cash-sessions/:id/close', requireArea('Vendas'), async (req, res) => {
   const { valor_informado } = req.body || {};
   const informado = Number(valor_informado);
-  if (!(informado >= 0) || !temNoMaximoCentavos(informado)) return res.status(400).json({ erro: 'valor_informado (>=0) é obrigatório' });
+  if (!(informado >= 0)) return res.status(400).json({ erro: 'valor_informado (>=0) é obrigatório' });
 
   const client = await pool.connect();
   try {
@@ -197,7 +196,7 @@ router.post('/cash-sessions/:id/close', requireArea('Vendas'), async (req, res) 
     await getSessaoAbertaDoUsuario(client, req.params.id, req.user);
 
     const esperado = await computeSaldoDisponivel(client, req.user.tenantId, req.params.id);
-    const diferenca = reais(centavos(informado) - centavos(esperado));
+    const diferenca = informado - esperado;
 
     const { rows } = await client.query(
       `UPDATE cash_sessions

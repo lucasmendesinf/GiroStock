@@ -5,7 +5,6 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import { Field, Modal, Vazio } from '../../components/ui.jsx';
 import { brl, brlFino, dataHora, parseNumero, qtd } from '../../utils/format';
 import { UNIDADES_INSUMO } from './comum.jsx';
-import MoneyInput from '../../components/MoneyInput.jsx';
 
 const ACOES = [
   { id: 'entrada', label: 'Entrada' },
@@ -133,7 +132,7 @@ function NovoInsumo({ locaisAtivos, user, reload, onClose }) {
           </select>
         </Field>
         <Field label="Custo total pago por essa quantidade (R$)" hint="Ex: R$ 50,00 por 1000 g de queijo → o sistema calcula o custo por grama.">
-          <MoneyInput value={form.custo_total} onChange={(v) => setForm({ ...form, custo_total: v })} placeholder="0,00" />
+          <input inputMode="decimal" value={form.custo_total} onChange={(e) => setForm({ ...form, custo_total: e.target.value })} placeholder="0,00" />
         </Field>
         <div className="modal-actions">
           <button type="button" onClick={onClose}>Cancelar</button>
@@ -211,7 +210,7 @@ function MovimentarInsumo({ insumo, locaisAtivos, user, reload, onClose }) {
           <div className="form-grid">
             <Field label={`Quantidade (${insumo.unidade}) *`}><input inputMode="decimal" autoFocus value={form.quantidade} onChange={(e) => setForm({ ...form, quantidade: e.target.value })} required /></Field>
             {acao === 'entrada' && (
-              <Field label="Custo total pago (R$)" hint="Opcional: atualiza o custo médio"><MoneyInput value={form.custo_total} onChange={(v) => setForm({ ...form, custo_total: v })} placeholder="0,00" /></Field>
+              <Field label="Custo total pago (R$)" hint="Opcional: atualiza o custo médio"><input inputMode="decimal" value={form.custo_total} onChange={(e) => setForm({ ...form, custo_total: e.target.value })} placeholder="0,00" /></Field>
             )}
           </div>
         )}
@@ -221,7 +220,7 @@ function MovimentarInsumo({ insumo, locaisAtivos, user, reload, onClose }) {
             <Field label={`Saldo contado (${insumo.unidade}) *`} hint={`Hoje: ${qtd(saldoAqui)}. Use 0 para zerar.`}>
               <input inputMode="decimal" value={form.novo_saldo} onChange={(e) => setForm({ ...form, novo_saldo: e.target.value })} required />
             </Field>
-            <Field label={`Novo custo por ${insumo.unidade} (opcional)`}><MoneyInput casas={4} value={form.novo_custo} onChange={(v) => setForm({ ...form, novo_custo: v })} placeholder={brlFino(insumo.custo_unitario)} /></Field>
+            <Field label={`Novo custo por ${insumo.unidade} (opcional)`}><input inputMode="decimal" value={form.novo_custo} onChange={(e) => setForm({ ...form, novo_custo: e.target.value })} placeholder={brlFino(insumo.custo_unitario)} /></Field>
           </div>
         )}
 

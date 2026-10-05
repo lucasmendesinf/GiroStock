@@ -5,7 +5,6 @@ import { brl, qtd, parseNumero, dataHora, UNIDADES_INTEIRAS, FORMA_PAGAMENTO } f
 import { useToast, useConfirm } from '../context/UiContext.jsx';
 import { Field, Modal } from '../components/ui.jsx';
 import Cupom, { imprimirCupom as abrirImpressao } from '../components/Cupom.jsx';
-import MoneyInput from '../components/MoneyInput.jsx';
 
 const TROCOS_RAPIDOS = [10, 20, 50, 100, 200];
 const FORMAS = ['pix', 'cartao_credito', 'cartao_debito', 'dinheiro'];
@@ -413,7 +412,7 @@ export default function PDV() {
                 </select>
               </Field>
               <Field label="Valor inicial em dinheiro (troco)" hint="Ex: 100,00">
-                <MoneyInput autoFocus value={valorInicial} onChange={(v) => setValorInicial(v)} placeholder="0,00" />
+                <input inputMode="decimal" autoFocus value={valorInicial} onChange={(e) => setValorInicial(e.target.value)} placeholder="0,00" />
               </Field>
               <button type="submit" className="btn-primario" disabled={!terminalId}>Abrir caixa</button>
             </form>
@@ -523,9 +522,7 @@ export default function PDV() {
           <div className="form-grid">
             <Field label="Desconto">
               <div className="input-com-seletor">
-                {descontoTipo === 'valor'
-                  ? <MoneyInput placeholder="0,00" value={descontoTexto} onChange={setDescontoTexto} />
-                  : <input inputMode="decimal" placeholder="0" value={descontoTexto} onChange={(e) => setDescontoTexto(e.target.value)} />}
+                <input inputMode="decimal" placeholder="0" value={descontoTexto} onChange={(e) => setDescontoTexto(e.target.value)} />
                 <select value={descontoTipo} onChange={(e) => setDescontoTipo(e.target.value)} aria-label="Tipo de desconto">
                   <option value="valor">R$</option>
                   <option value="percentual">%</option>
@@ -534,7 +531,7 @@ export default function PDV() {
             </Field>
             {formaPagamento === 'dinheiro' && (
               <Field label="Valor recebido">
-                <MoneyInput ref={recebidoRef} placeholder="0,00" value={valorRecebido} onChange={(v) => setValorRecebido(v)} />
+                <input ref={recebidoRef} inputMode="decimal" placeholder="0,00" value={valorRecebido} onChange={(e) => setValorRecebido(e.target.value)} />
               </Field>
             )}
           </div>
@@ -588,7 +585,7 @@ export default function PDV() {
               <button type="button" className={movTipo === 'sangria' ? 'ativo' : ''} onClick={() => setMovTipo('sangria')}>Sangria (retirada)</button>
               <button type="button" className={movTipo === 'suprimento' ? 'ativo' : ''} onClick={() => setMovTipo('suprimento')}>Suprimento (reforço)</button>
             </div>
-            <Field label="Valor"><MoneyInput autoFocus placeholder="0,00" value={movValor} onChange={(v) => setMovValor(v)} required /></Field>
+            <Field label="Valor"><input inputMode="decimal" autoFocus placeholder="0,00" value={movValor} onChange={(e) => setMovValor(e.target.value)} required /></Field>
             <Field label="Motivo"><input value={movMotivo} onChange={(e) => setMovMotivo(e.target.value)} placeholder="Ex: depósito no banco" required /></Field>
             <div className="modal-actions">
               <button type="button" onClick={() => setMovModalAberto(false)}>Voltar</button>
@@ -601,7 +598,7 @@ export default function PDV() {
       {fecharAberto && (
         <Modal titulo="Fechar caixa" subtitulo="Conte o dinheiro da gaveta e informe o total." onClose={() => setFecharAberto(false)}>
           <form className="form-stack" onSubmit={fecharCaixa}>
-            <Field label="Valor contado em dinheiro"><MoneyInput autoFocus placeholder="0,00" value={valorContado} onChange={(v) => setValorContado(v)} required /></Field>
+            <Field label="Valor contado em dinheiro"><input inputMode="decimal" autoFocus placeholder="0,00" value={valorContado} onChange={(e) => setValorContado(e.target.value)} required /></Field>
             <div className="modal-actions">
               <button type="button" onClick={() => setFecharAberto(false)}>Voltar</button>
               <button type="submit">Fechar caixa</button>

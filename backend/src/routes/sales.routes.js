@@ -6,7 +6,6 @@ const { getOwned, isUuid } = require('../utils/tenant');
 const { assertLocationAccess, restrictedLocation, canCancelSales } = require('../utils/access');
 const { isQuantidadeValidaParaUnidade } = require('../utils/validators');
 const { HttpError } = require('../utils/http');
-const { centavos, reais, somar, arredondarCentavos, temNoMaximoCentavos } = require('../utils/dinheiro');
 
 const router = express.Router();
 const FORMAS_PAGAMENTO = ['pix', 'cartao_credito', 'cartao_debito', 'dinheiro'];
@@ -27,8 +26,8 @@ function agruparItens(itens) {
 router.post('/sales', requireArea('Vendas'), async (req, res) => {
   const { terminal_id, itens, forma_pagamento, valor_recebido } = req.body || {};
   const descontoInformado = Number((req.body && req.body.desconto) || 0);
-  if (!(descontoInformado >= 0) || !temNoMaximoCentavos(descontoInformado)) {
-    return res.status(400).json({ erro: 'desconto deve ser um valor em reais (0 ou mais, com no máximo 2 casas decimais)' });
+  if (!(descontoInformado >= 0)) {
+    return res.status(400).json({ erro: 'desconto deve ser um valor em reais (0 ou mais)' });
   }
 
   if (!terminal_id || !Array.isArray(itens) || itens.length === 0 || !forma_pagamento) {
@@ -89,29 +88,26 @@ router.post('/sales', requireArea('Vendas'), async (req, res) => {
     const itemsComPreco = itensAgrupados.map((item) => {
       const produto = productMap.get(item.product_id);
       const precoUnitario = Number(produto.preco_venda);
-      const subtotal = reais(arredondarCentavos(centavos(precoUnitario) * item.quantidade));
-      subtotalVenda = somar(subtotalVenda, subtotal);
+      const subtotal = Number((precoUnitario * item.quantidade).toFixed(2));
+      subtotalVenda += subtotal;
       return { ...item, preco_unitario: precoUnitario, custo_unitario: Number(produto.preco_custo), subtotal };
     });
-    subtotalVenda = reais(centavos(subtotalVenda));
-    const desconto = reais(centavos(descontoInformado));
+    subtotalVenda = Number(subtotalVenda.toFixed(2));
+    const desconto = Number(descontoInformado.toFixed(2));
     if (desconto >= subtotalVenda) {
       throw new HttpError(400, `desconto (${desconto}) deve ser menor que o subtotal da venda (${subtotalVenda})`);
     }
-    const total = reais(centavos(subtotalVenda) - centavos(desconto));
+    const total = Number((subtotalVenda - desconto).toFixed(2));
 
     let troco = null;
     let valorRecebidoFinal = null;
     if (forma_pagamento === 'dinheiro') {
       const recebido = Number(valor_recebido);
-      if (Number.isFinite(recebido) && !temNoMaximoCentavos(recebido)) {
-        throw new HttpError(400, 'valor recebido deve ter no máximo 2 casas decimais');
-      }
       if (!(recebido >= total)) {
         throw new HttpError(400, `valor recebido (${recebido}) deve ser maior ou igual ao total (${total})`);
       }
       valorRecebidoFinal = recebido;
-      troco = reais(centavos(recebido) - centavos(total));
+      troco = Number((recebido - total).toFixed(2));
     }
 
     // Produtos com ficha tecnica (lanches montados a partir de insumos) nao tem estoque proprio:

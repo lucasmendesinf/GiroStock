@@ -6,7 +6,6 @@ import { Field, Modal } from '../../components/ui.jsx';
 import { brl, brlFino, parseNumero, pct } from '../../utils/format';
 import { UNIDADES_PRODUTO, ordenarCategoriasHierarquia, SeletorFornecedores, stepDaUnidade, lojaPadrao, lembrarLoja } from './comum.jsx';
 import Categorias from './Categorias.jsx';
-import MoneyInput from '../../components/MoneyInput.jsx';
 
 // Cadastro de produto em modal. Produto "composto" (lanche/combo) usa ficha tecnica
 // de insumos e nao tem estoque proprio.
@@ -101,10 +100,10 @@ export default function FormProduto({ categories, suppliers, locations, ingredie
 
         <div className="form-grid">
           <Field label="Preço de custo (R$) *" hint={composto ? 'Calculado pelos insumos (pode ajustar)' : undefined}>
-            <MoneyInput value={form.preco_custo} onChange={(v) => setForm({ ...form, preco_custo: v })} placeholder="0,00" required />
+            <input inputMode="decimal" value={form.preco_custo} onChange={(e) => setForm({ ...form, preco_custo: e.target.value })} placeholder="0,00" required />
           </Field>
           <Field label="Preço de venda (R$) *" hint={margem !== null && Number.isFinite(margem) ? `Margem: ${pct(margem.toFixed(1))}` : undefined}>
-            <MoneyInput value={form.preco_venda} onChange={(v) => setForm({ ...form, preco_venda: v })} placeholder="0,00" required />
+            <input inputMode="decimal" value={form.preco_venda} onChange={(e) => setForm({ ...form, preco_venda: e.target.value })} placeholder="0,00" required />
           </Field>
           <Field label="Fornecedor principal">
             <SeletorFornecedores suppliers={suppliers} principal={form.supplier_id} extras={form.supplier_ids}

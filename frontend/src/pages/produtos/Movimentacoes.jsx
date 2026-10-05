@@ -6,7 +6,6 @@ import { Field, Paginacao, Vazio } from '../../components/ui.jsx';
 import ProdutoPicker from '../../components/ProdutoPicker.jsx';
 import { brl, dataHora, parseNumero, qtd } from '../../utils/format';
 import { stepDaUnidade, TIPO_MOV, lembrarLoja } from './comum.jsx';
-import MoneyInput from '../../components/MoneyInput.jsx';
 
 const LIMITE = 30;
 
@@ -115,7 +114,7 @@ export default function Movimentacoes({ products, locations, suppliers, alertas,
                   {suppliers.filter((s) => s.ativo).map((s) => <option key={s.id} value={s.id}>{s.nome}</option>)}
                 </select>
               </Field>
-              <Field label="Custo unitário (R$)" style={{ flex: '0 0 140px' }}><MoneyInput value={form.custo_unitario} onChange={(v) => setForm({ ...form, custo_unitario: v })} placeholder="0,00" /></Field>
+              <Field label="Custo unitário (R$)" style={{ flex: '0 0 140px' }}><input inputMode="decimal" value={form.custo_unitario} onChange={(e) => setForm({ ...form, custo_unitario: e.target.value })} placeholder="0,00" /></Field>
               <Field label="Nota fiscal" style={{ flex: '0 0 140px' }}><input value={form.documento_fiscal} onChange={(e) => setForm({ ...form, documento_fiscal: e.target.value })} /></Field>
             </>
           )}

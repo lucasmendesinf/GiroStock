@@ -142,6 +142,7 @@ export default function Movimentacoes({ products, locations, suppliers, alertas,
             <option value="entrada">Entradas</option>
             <option value="saida">Saídas</option>
             <option value="transferencia">Transferências</option>
+            <option value="balanco">Balanços</option>
           </select>
           <input type="date" value={filtros.data_inicio} onChange={mudarFiltro('data_inicio')} aria-label="De" />
           <input type="date" value={filtros.data_fim} onChange={mudarFiltro('data_fim')} aria-label="Até" />
@@ -156,9 +157,9 @@ export default function Movimentacoes({ products, locations, suppliers, alertas,
                   <td><span className={`tipo-${m.tipo}`}>{TIPO_MOV(m.tipo)}</span></td>
                   <td>{m.product_nome}</td>
                   <td className="num">{qtd(m.quantidade, m.unidade)}</td>
-                  <td className="col-opcional">{m.location_origem_nome && m.location_destino_nome ? `${m.location_origem_nome} → ${m.location_destino_nome}` : (m.location_origem_nome || m.location_destino_nome)}</td>
+                  <td className="col-opcional">{m.tipo === 'balanco' ? (m.location_destino_nome || m.location_origem_nome) : m.location_origem_nome && m.location_destino_nome ? `${m.location_origem_nome} → ${m.location_destino_nome}` : (m.location_origem_nome || m.location_destino_nome)}</td>
                   <td className="col-opcional">
-                    {m.sale_numero ? `${m.tipo === 'entrada' ? 'Estorno da venda' : 'Venda'} nº ${m.sale_numero}` : m.motivo}
+                    {m.sale_numero ? `${m.tipo === 'entrada' ? 'Estorno da venda' : 'Venda'} nº ${m.sale_numero}` : m.tipo === 'balanco' ? `${m.motivo} (de ${qtd(m.saldo_anterior, m.unidade)} para ${qtd(m.saldo_novo, m.unidade)})` : m.motivo}
                     {(m.supplier_nome || m.documento_fiscal || m.custo_unitario) && (
                       <div className="celula-sub">{[m.supplier_nome, m.custo_unitario ? `${brl(m.custo_unitario)}/un` : null, m.documento_fiscal ? `NF ${m.documento_fiscal}` : null].filter(Boolean).join(' · ')}</div>
                     )}

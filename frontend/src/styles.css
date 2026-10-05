@@ -768,3 +768,71 @@ kbd { display: inline-block; min-width: 18px; padding: 1px 5px; border-radius: 5
 /* PDV: produto sem saldo na loja aparece na busca, mas esmaecido (nao pode ser vendido) */
 .resultados li.sem-estoque { opacity: 0.55; }
 .resultados li.sem-estoque .saldo-pdv { color: var(--err); }
+
+/* ===== Produtos & Estoque separados (lista + modal de estoque + receita) ===== */
+:root, :root[data-theme="dark"] { --warn: #e6b75a; }
+:root[data-theme="light"] { --warn: #a8741a; }
+
+.es-pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; border: 1px solid; white-space: nowrap; }
+.es-pill.ok { color: var(--ok); border-color: var(--ok); }
+.es-pill.warn { color: var(--warn); border-color: var(--warn); }
+.es-pill.err { color: var(--err); border-color: var(--err); }
+.es-pill.info { color: var(--gold-light); border-color: var(--gold-light); }
+
+.es-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; font-size: 12px; }
+button.es-chip { padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line); background: none; color: var(--muted); font-weight: 700; font-size: 12px; cursor: pointer; text-transform: none; letter-spacing: 0; }
+button.es-chip.on { border-color: var(--gold-light); color: var(--gold-light); background: rgba(205, 164, 63, 0.14); }
+.es-legenda { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin: 0 0 12px; }
+.es-legenda i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
+table.es-tabela tbody tr.es-row-warn td { background: rgba(230, 183, 90, 0.10); }
+table.es-tabela tbody tr.es-row-err td { background: rgba(224, 138, 138, 0.12); }
+table.es-tabela tbody tr.es-row-ok td:first-child { box-shadow: inset 4px 0 0 var(--ok); }
+table.es-tabela tbody tr.es-row-warn td:first-child { box-shadow: inset 4px 0 0 var(--warn); }
+table.es-tabela tbody tr.es-row-err td:first-child { box-shadow: inset 4px 0 0 var(--err); }
+.es-row-ok .es-qtd { color: var(--ok); }
+.es-row-warn .es-qtd { color: var(--warn); }
+.es-row-err .es-qtd { color: var(--err); }
+.es-foto { width: 46px; height: 46px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-alt); display: grid; place-items: center; color: var(--muted); }
+.es-foto svg, .es-ico svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+button.es-nome { font-weight: 700; cursor: pointer; background: none; border: none; color: var(--ivory); padding: 0; font-size: inherit; text-align: left; text-transform: none; letter-spacing: 0; }
+button.es-nome:hover { color: var(--gold-light); text-decoration: underline; }
+.es-preco { font-weight: 800; color: var(--gold-light); }
+.es-acoes { display: flex; gap: 6px; justify-content: flex-end; align-items: center; }
+button.es-ico { width: 36px; height: 36px; padding: 0; border-radius: 10px; border: 1px solid var(--line); background: none; color: var(--ivory); display: grid; place-items: center; position: relative; cursor: pointer; }
+button.es-ico:hover { border-color: var(--gold-light); }
+button.es-ico.estoque { color: var(--ok); border-color: var(--ok); }
+button.es-ico.estoque.warn { color: var(--warn); border-color: var(--warn); }
+button.es-ico.estoque.err { color: var(--err); border-color: var(--err); }
+button.es-ico.estoque::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 6px); right: 0; white-space: nowrap; background: var(--gold-light); color: var(--bg); font-size: 11px; font-weight: 800; padding: 4px 9px; border-radius: 8px; opacity: 0; pointer-events: none; transition: opacity 0.15s; z-index: 5; }
+button.es-ico.estoque:hover::after, .es-ico.estoque:focus-visible::after { opacity: 1; }
+
+.es-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.es-kpi { background: var(--panel-alt); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.es-kpi small { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); }
+.es-kpi b { font-size: 20px; font-weight: 800; color: var(--gold-light); }
+.es-tabs { display: flex; gap: 6px; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+button.es-tab { padding: 10px 16px; border: 1px solid var(--line); border-bottom: none; border-radius: 12px 12px 0 0; background: none; color: var(--muted); font-weight: 700; font-size: 13px; cursor: pointer; text-transform: none; letter-spacing: 0; }
+button.es-tab.on { background: var(--gold-light); color: var(--btn-text); border-color: var(--gold-light); }
+.es-form { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+.es-form .full { grid-column: 1 / -1; }
+.es-form .field { flex: none; }
+.es-resumo { background: var(--panel-alt); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; font-size: 13px; line-height: 1.6; }
+.es-resumo b { color: var(--gold-light); }
+.es-erro { color: var(--err); font-size: 13px; font-weight: 600; }
+.es-dica { font-size: 12px; color: var(--muted); margin-top: 8px; }
+.es-titulo { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 1.4px; font-weight: 700; margin-bottom: 8px; }
+.es-mov { display: flex; justify-content: space-between; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.es-mov:last-child { border-bottom: none; }
+.es-mov .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.t-entrada { color: var(--ok); } .t-saida { color: var(--err); } .t-transferencia { color: var(--gold-light); } .t-balanco { color: var(--warn); }
+.es-min { width: 90px; text-align: right; padding: 7px 9px; }
+.es-linha-receita { display: grid; grid-template-columns: 2fr 1fr auto; gap: 10px; align-items: end; }
+button.es-btn-ghost { background: none; border: 1px solid var(--gold-light); color: var(--gold-light); border-radius: 10px; padding: 9px 14px; font-weight: 800; font-size: 12px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.4px; }
+button.es-btn-ghost:disabled { opacity: 0.45; cursor: not-allowed; }
+@media (max-width: 760px) {
+  .es-kpis { grid-template-columns: repeat(2, 1fr); }
+  .es-form { grid-template-columns: 1fr; }
+  .es-linha-receita { grid-template-columns: 1fr; }
+}
+.tipo-balanco { color: var(--warn); font-weight: 700; }

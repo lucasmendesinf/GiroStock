@@ -62,7 +62,7 @@ export function SeletorFornecedores({ suppliers, principal, extras, onChange }) 
 }
 
 export function TIPO_MOV(tipo) {
-  return { entrada: 'Entrada', saida: 'Saída', transferencia: 'Transferência' }[tipo] || tipo;
+  return { entrada: 'Entrada', saida: 'Saída', transferencia: 'Transferência', balanco: 'Balanço' }[tipo] || tipo;
 }
 
 // Loja padrao dos formularios: a do usuario (se restrito), senao a ultima usada, senao a primeira ativa.

@@ -58,7 +58,10 @@ Acesse:
 
 - O menu mostra só as telas que o perfil pode usar; quem abre uma tela sem permissão vê um aviso.
 - Cada perfil cai na sua tela inicial: Caixa no PDV, os demais no **Início** (vendas de hoje, alertas de estoque, caixas abertos).
-- **Produtos**: tabela com busca (nome, código PRD ou EAN), filtros por categoria, fornecedor, situação e estoque baixo; cadastro em janela.
+- **Produtos**: cadastro e estoque são separados. A lista tem busca (nome, código PRD ou EAN), filtros por loja, categoria, fornecedor, situação e chips (todos, estoque baixo, sem estoque, controlados por insumos), com linha verde/amarela/vermelha pela situação do estoque. No fim de cada linha ficam dois ícones: **lápis** (editar o produto) e **caixa** (tratar o estoque).
+  - O cadastro/edição só trata os dados do produto (sem estoque inicial). Produto novo aparece "sem estoque" até a primeira entrada.
+  - O modal de estoque (ícone de caixa) tem as abas Saldo por loja (com mínimo editável), Entrada, Transferência, Saída, Balanço e Histórico. O **balanço** (`POST /api/products/:id/stock-adjustment`) substitui o saldo da loja pela contagem e guarda a diferença no histórico (migração `007_balanco_produto.sql`).
+  - Produto **controlado por insumos** (lanche/receita) não tem estoque próprio: o lápis e a caixa abrem a edição já na receita (quantidade por unidade editável, "dá para N", custo = soma dos insumos).
 - **Entrada por nota**: vários produtos de uma compra lançados de uma vez (aceita leitor), com fornecedor e número da nota.
 - **Insumos**: um botão "Movimentar" por insumo (entrada, saída, transferência, balanço e mínimo), já na loja que tem saldo.
 - **Relatórios**: período (hoje, ontem, 7 dias, mês, mês passado ou datas), ranking de produtos, descontos, histórico paginado e fechamentos de caixa (esperado × contado).

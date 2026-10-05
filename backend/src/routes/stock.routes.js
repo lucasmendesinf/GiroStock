@@ -207,6 +207,73 @@ router.post('/stock-movements', requireArea('Estoque'), async (req, res) => {
   }
 });
 
+// Balanco de produto: substitui o saldo de uma loja pela contagem fisica e guarda a diferenca
+// no historico (movimento tipo 'balanco': quantidade = |diferenca|, com saldo anterior e novo).
+// Corpo: { location_id, novo_saldo, motivo }
+router.post('/products/:id/stock-adjustment', requireArea('Estoque'), async (req, res) => {
+  const { location_id, novo_saldo } = req.body || {};
+  const motivo = textoOpcional(req.body && req.body.motivo);
+  if (!location_id) throw new HttpError(400, 'location_id é obrigatório');
+  if (novo_saldo === undefined || novo_saldo === null || novo_saldo === '' || !(Number(novo_saldo) >= 0)) {
+    throw new HttpError(400, 'novo_saldo deve ser um número válido (0 ou mais)');
+  }
+  if (!motivo || motivo.length < 3) throw new HttpError(400, 'motivo é obrigatório (mínimo 3 caracteres)');
+  const novoSaldo = Number(novo_saldo);
+
+  const product = await getOwned(pool, 'products', req.params.id, req.user.tenantId, { columns: 'id, nome, unidade' });
+  if (!isQuantidadeValidaParaUnidade(novoSaldo, product.unidade)) {
+    throw new HttpError(400, `"${product.nome}" é controlado em ${product.unidade} e só aceita quantidade inteira`);
+  }
+  const ficha = await pool.query(
+    `SELECT 1 FROM product_ingredients WHERE product_id = $1 AND tenant_id = $2 LIMIT 1`,
+    [product.id, req.user.tenantId]
+  );
+  if (ficha.rows.length > 0) {
+    throw new HttpError(400, `"${product.nome}" tem ficha técnica e não tem estoque próprio; ajuste os insumos dele`);
+  }
+  await getOwnedLocation(pool, location_id, req.user.tenantId);
+  assertLocationAccess(req.user, location_id, 'ajustar o estoque deste local');
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // Mesma ordem de travas das demais operacoes (produto -> saldos).
+    await client.query(`SELECT 1 FROM products WHERE id = $1 AND tenant_id = $2 FOR UPDATE`, [product.id, req.user.tenantId]);
+    await ensureBalanceRow(client, req.user.tenantId, product.id, location_id);
+    const saldos = await lockBalances(client, req.user.tenantId, product.id, [location_id]);
+    const anterior = saldos.has(location_id) ? saldos.get(location_id) : 0;
+    const diferenca = Number((novoSaldo - anterior).toFixed(3));
+    if (diferenca === 0) throw new HttpError(400, 'a contagem é igual ao saldo atual; não há o que ajustar');
+
+    await client.query(
+      `UPDATE stock_balances SET saldo = $1 WHERE product_id = $2 AND location_id = $3 AND tenant_id = $4`,
+      [novoSaldo, product.id, location_id, req.user.tenantId]
+    );
+    const { rows } = await client.query(
+      `INSERT INTO stock_movements (tenant_id, product_id, tipo, quantidade, location_origem_id, location_destino_id, motivo, usuario_id,
+                                    saldo_anterior, saldo_novo)
+       VALUES ($1, $2, 'balanco', $3, $4, $4, $5, $6, $7, $8)
+       RETURNING id, product_id, tipo, quantidade, location_origem_id, location_destino_id, motivo, saldo_anterior, saldo_novo, criado_em`,
+      [req.user.tenantId, product.id, Math.abs(diferenca), location_id, motivo, req.user.id, anterior, novoSaldo]
+    );
+    await logAudit(client, {
+      tenantId: req.user.tenantId,
+      usuarioId: req.user.id,
+      acao: 'balanco',
+      recurso: 'stock_movements',
+      recursoId: rows[0].id,
+      detalhes: { product_id: product.id, location_id, saldo_anterior: anterior, saldo_novo: novoSaldo, diferenca, motivo },
+    });
+    await client.query('COMMIT');
+    res.status(201).json({ ...rows[0], diferenca });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+});
+
 // Entrada por nota: varios produtos de uma compra lancados de uma vez (tudo ou nada).
 // Corpo: { location_id, supplier_id?, documento_fiscal?, motivo?, itens: [{ product_id, quantidade, custo_unitario? }] }
 router.post('/stock-entries', requireArea('Estoque'), async (req, res) => {
@@ -289,6 +356,7 @@ router.get('/stock-movements', requireArea('Estoque'), async (req, res) => {
             sm.motivo, sm.usuario_id, u.nome AS usuario_nome,
             sm.supplier_id, s.nome AS supplier_nome, sm.custo_unitario, sm.documento_fiscal,
             sm.sale_id, sa.numero AS sale_numero,
+            sm.saldo_anterior, sm.saldo_novo,
             sm.criado_em
      FROM stock_movements sm
      JOIN products p ON p.id = sm.product_id

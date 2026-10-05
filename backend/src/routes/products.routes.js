@@ -153,7 +153,9 @@ router.get('/products', async (req, res) => {
               '[]'
             ) AS saldos_por_local,
             EXISTS(SELECT 1 FROM product_ingredients pi WHERE pi.product_id = p.id AND pi.tenant_id = p.tenant_id) AS tem_ficha_tecnica,
-            (SELECT COUNT(*)::int FROM product_ingredients pi WHERE pi.product_id = p.id AND pi.tenant_id = p.tenant_id) AS insumo_count
+            (SELECT COUNT(*)::int FROM product_ingredients pi WHERE pi.product_id = p.id AND pi.tenant_id = p.tenant_id) AS insumo_count,
+            COALESCE((SELECT json_agg(json_build_object('ingredient_id', pi.ingredient_id, 'quantidade_por_unidade', pi.quantidade_por_unidade))
+                      FROM product_ingredients pi WHERE pi.product_id = p.id AND pi.tenant_id = p.tenant_id), '[]') AS ficha
      FROM products p
      LEFT JOIN categories c ON c.id = p.categoria_id
      LEFT JOIN suppliers s ON s.id = p.supplier_id
@@ -271,11 +273,14 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
   // Produtos com ficha tecnica (lanches) nao tem estoque proprio: a disponibilidade
   // e controlada pelos insumos da receita, entao local/estoque inicial nao se aplicam.
   const temFicha = fichaItems.length > 0;
-  if (!temFicha && !location_id) {
-    return res.status(400).json({ erro: 'local de estoque inicial é obrigatório' });
-  }
+  // O saldo nao precisa ser cadastrado junto com o produto: o estoque e tratado depois,
+  // pelo modal de estoque. Se vier local, o estoque inicial continua sendo lancado (compatibilidade).
   const saldoInicial = Number(estoque_inicial ?? 0);
-  if (!temFicha) {
+  const lancaEstoque = !temFicha && !!location_id;
+  if (!temFicha && !lancaEstoque && saldoInicial > 0) {
+    return res.status(400).json({ erro: 'informe a loja do estoque inicial' });
+  }
+  if (lancaEstoque) {
     if (!(saldoInicial >= 0)) return res.status(400).json({ erro: 'estoque inicial não pode ser negativo' });
     if (!isQuantidadeValidaParaUnidade(saldoInicial, unidade)) {
       return res.status(400).json({ erro: `produto vendido em ${unidade} so aceita estoque em quantidade inteira` });
@@ -285,7 +290,7 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
   // Tudo que vem por id precisa ser da empresa do usuario logado.
   await getOwned(pool, 'categories', categoria_id, req.user.tenantId);
   const fornecedores = await resolverFornecedores(pool, req.user.tenantId, body);
-  if (!temFicha) {
+  if (lancaEstoque) {
     await getOwnedLocation(pool, location_id, req.user.tenantId);
     assertLocationAccess(req.user, location_id, 'lançar estoque neste local');
   }
@@ -306,7 +311,7 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
     const product = rows[0];
     await sincronizarFornecedores(client, req.user.tenantId, product.id, fornecedores.ids);
 
-    if (!temFicha) {
+    if (lancaEstoque) {
       await client.query(
         `INSERT INTO stock_balances (product_id, location_id, tenant_id, saldo) VALUES ($1, $2, $3, $4)`,
         [product.id, location_id, req.user.tenantId, saldoInicial]

@@ -6,6 +6,7 @@ import { Field, Vazio } from '../../components/ui.jsx';
 import ProdutoPicker from '../../components/ProdutoPicker.jsx';
 import { brl, parseNumero } from '../../utils/format';
 import { stepDaUnidade, lojaPadrao, lembrarLoja } from './comum.jsx';
+import MoneyInput from '../../components/MoneyInput.jsx';
 
 // Entrada de varios produtos de uma mesma nota de compra, gravada de uma vez (tudo ou nada).
 export default function EntradaNota({ products, locations, suppliers, reload }) {
@@ -108,7 +109,7 @@ export default function EntradaNota({ products, locations, suppliers, reload }) 
                     <tr key={i.product_id}>
                       <td>{i.nome}<div className="celula-sub">{i.codigo} · {i.unidade}</div></td>
                       <td><input id={`qtd-${i.product_id}`} className="input-curto" type="number" min="0" step={stepDaUnidade(i.unidade)} value={i.quantidade} onChange={(e) => atualizar(i.product_id, 'quantidade', e.target.value)} required /></td>
-                      <td><input className="input-curto" inputMode="decimal" value={i.custo_unitario} onChange={(e) => atualizar(i.product_id, 'custo_unitario', e.target.value)} /></td>
+                      <td><MoneyInput className="input-curto" value={i.custo_unitario} onChange={(v) => atualizar(i.product_id, 'custo_unitario', v)} /></td>
                       <td className="num col-opcional">{q > 0 && c > 0 ? brl(q * c) : '—'}</td>
                       <td><button type="button" className="btn-link" onClick={() => setItens(itens.filter((x) => x.product_id !== i.product_id))}>Remover</button></td>
                     </tr>

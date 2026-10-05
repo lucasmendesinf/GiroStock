@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import { Field, Modal } from '../../components/ui.jsx';
 import { brl, brlFino, dataHora, parseNumero, pct, qtd } from '../../utils/format';
 import { UNIDADES_PRODUTO, ordenarCategoriasHierarquia, SeletorFornecedores, stepDaUnidade, TIPO_MOV, lojaPadrao, lembrarLoja } from './comum.jsx';
+import MoneyInput from '../../components/MoneyInput.jsx';
 
 // Detalhe do produto: dados, edicao, estoque por loja (com minimo), entrada de compra,
 // ficha tecnica e ultimas movimentacoes.
@@ -156,8 +157,8 @@ export default function DetalheProduto({ productId, categories, suppliers, locat
               </select>
             </Field>
             <Field label="Código de barras *"><input inputMode="numeric" value={editando.barcode} onChange={(e) => setEditando({ ...editando, barcode: e.target.value })} required /></Field>
-            <Field label="Preço de custo (R$) *"><input inputMode="decimal" value={editando.preco_custo} onChange={(e) => setEditando({ ...editando, preco_custo: e.target.value })} required /></Field>
-            <Field label="Preço de venda (R$) *"><input inputMode="decimal" value={editando.preco_venda} onChange={(e) => setEditando({ ...editando, preco_venda: e.target.value })} required /></Field>
+            <Field label="Preço de custo (R$) *"><MoneyInput value={editando.preco_custo} onChange={(v) => setEditando({ ...editando, preco_custo: v })} required /></Field>
+            <Field label="Preço de venda (R$) *"><MoneyInput value={editando.preco_venda} onChange={(v) => setEditando({ ...editando, preco_venda: v })} required /></Field>
             <Field label="Fornecedores">
               <SeletorFornecedores suppliers={suppliers} principal={editando.supplier_id} extras={editando.supplier_ids}
                 onChange={(principal, extras) => setEditando({ ...editando, supplier_id: principal, supplier_ids: principal ? extras : [] })} />
@@ -229,7 +230,7 @@ export default function DetalheProduto({ productId, categories, suppliers, locat
                 {suppliers.filter((s) => s.ativo).map((s) => <option key={s.id} value={s.id}>{s.nome}</option>)}
               </select>
             </Field>
-            <Field label="Custo unitário (R$)" style={{ flex: '0 0 140px' }}><input inputMode="decimal" value={entrada.custo_unitario} onChange={(e) => setEntrada({ ...entrada, custo_unitario: e.target.value })} placeholder="0,00" /></Field>
+            <Field label="Custo unitário (R$)" style={{ flex: '0 0 140px' }}><MoneyInput value={entrada.custo_unitario} onChange={(v) => setEntrada({ ...entrada, custo_unitario: v })} placeholder="0,00" /></Field>
             <Field label="Nota fiscal" style={{ flex: '0 0 140px' }}><input value={entrada.documento_fiscal} onChange={(e) => setEntrada({ ...entrada, documento_fiscal: e.target.value })} /></Field>
             <button type="submit" className="btn-primario">Lançar entrada</button>
           </div>

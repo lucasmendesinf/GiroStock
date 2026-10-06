@@ -5,11 +5,11 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import { Field, Paginacao, Vazio } from '../../components/ui.jsx';
 import ProdutoPicker from '../../components/ProdutoPicker.jsx';
 import { brl, dataHora, parseNumero, qtd } from '../../utils/format';
-import { stepDaUnidade, TIPO_MOV, lembrarLoja } from './comum.jsx';
+import { stepDaUnidade, TIPO_MOV, lembrarLoja, insumosComoItens, ehInsumo, idDoInsumo } from './comum.jsx';
 
 const LIMITE = 30;
 
-export default function Movimentacoes({ products, locations, suppliers, alertas, reload }) {
+export default function Movimentacoes({ products, ingredients = [], locations, suppliers, alertas, reload }) {
   const toast = useToast();
   const { user } = useAuth();
   const locaisAtivos = locations.filter((l) => l.ativo);
@@ -17,8 +17,10 @@ export default function Movimentacoes({ products, locations, suppliers, alertas,
   const VAZIO = { product_id: '', quantidade: '', location_origem_id: localPadrao, location_destino_id: localPadrao, motivo: '', supplier_id: '', custo_unitario: '', documento_fiscal: '' };
   const [tipo, setTipo] = useState('transferencia');
   const [form, setForm] = useState(VAZIO);
-  const movimentaveis = products.filter((p) => !p.tem_ficha_tecnica && (p.ativo || tipo !== 'entrada'));
-  const produto = products.find((p) => p.id === form.product_id);
+  const insumos = insumosComoItens(ingredients);
+  const movimentaveis = [...products.filter((p) => !p.tem_ficha_tecnica && (p.ativo || tipo !== 'entrada')), ...insumos];
+  const produto = movimentaveis.find((p) => p.id === form.product_id);
+  const ehIns = !!produto && produto.insumo;
   const saldoOrigem = produto && form.location_origem_id
     ? Number((produto.saldos_por_local.find((s) => s.location_id === form.location_origem_id) || { saldo: 0 }).saldo) : null;
 
@@ -39,8 +41,26 @@ export default function Movimentacoes({ products, locations, suppliers, alertas,
 
   async function registrar(e) {
     e.preventDefault();
-    if (!form.product_id) { toast.erro('Escolha o produto.'); return; }
+    if (!form.product_id) { toast.erro('Escolha o produto ou insumo.'); return; }
     try {
+      if (ehInsumo(form.product_id)) {
+        const base = `/ingredients/${idDoInsumo(form.product_id)}`;
+        const q = parseNumero(form.quantidade);
+        if (tipo === 'entrada') {
+          const body = { quantidade: q, location_id: form.location_destino_id, documento_fiscal: form.documento_fiscal || undefined };
+          if (form.custo_unitario !== '') body.custo_total = q * parseNumero(form.custo_unitario);
+          await api.post(`${base}/stock-entries`, body);
+        } else if (tipo === 'saida') {
+          await api.post(`${base}/stock-exits`, { quantidade: q, location_id: form.location_origem_id, motivo: form.motivo });
+        } else {
+          await api.post(`${base}/transfers`, { quantidade: q, location_origem_id: form.location_origem_id, location_destino_id: form.location_destino_id, motivo: form.motivo });
+        }
+        lembrarLoja(tipo === 'entrada' ? form.location_destino_id : form.location_origem_id);
+        toast.sucesso(`${TIPO_MOV(tipo)} de insumo registrada.`);
+        setForm({ ...VAZIO, location_origem_id: form.location_origem_id, location_destino_id: form.location_destino_id });
+        await reload();
+        return;
+      }
       const payload = { product_id: form.product_id, tipo, quantidade: parseNumero(form.quantidade), motivo: form.motivo };
       if (tipo !== 'entrada') payload.location_origem_id = form.location_origem_id;
       if (tipo !== 'saida') payload.location_destino_id = form.location_destino_id;
@@ -83,12 +103,12 @@ export default function Movimentacoes({ products, locations, suppliers, alertas,
           ))}
         </div>
         <form onSubmit={registrar} className="form-grid" style={{ marginTop: '14px' }}>
-          <Field label="Produto *" style={{ flex: '2 1 280px' }}>
-            <ProdutoPicker produtos={movimentaveis} valor={form.product_id} onSelecionar={(p) => setForm({ ...form, product_id: p.id })} />
+          <Field label="Produto ou insumo *" style={{ flex: '2 1 280px' }}>
+            <ProdutoPicker produtos={movimentaveis} valor={form.product_id} placeholder="Buscar produto, insumo, código ou EAN" onSelecionar={(p) => setForm({ ...form, product_id: p.id, custo_unitario: p.insumo && tipo === 'entrada' ? String(p.custo_unitario).replace('.', ',') : form.custo_unitario })} />
           </Field>
           <Field label={`Quantidade *${produto ? ` (${produto.unidade})` : ''}`} style={{ flex: '0 0 130px' }}
             hint={saldoOrigem !== null && tipo !== 'entrada' ? `Disponível: ${qtd(saldoOrigem, produto.unidade)}` : undefined}>
-            <input type="number" min="0" step={stepDaUnidade(produto && produto.unidade)} value={form.quantidade} onChange={(e) => setForm({ ...form, quantidade: e.target.value })} required />
+            <input type="number" min="0" step={ehIns && produto.unidade === 'UN' ? '1' : stepDaUnidade(produto && produto.unidade)} value={form.quantidade} onChange={(e) => setForm({ ...form, quantidade: e.target.value })} required />
           </Field>
           {tipo !== 'entrada' && (
             <Field label={tipo === 'transferencia' ? 'De (origem) *' : 'Loja *'}>
@@ -108,19 +128,19 @@ export default function Movimentacoes({ products, locations, suppliers, alertas,
           )}
           {tipo === 'entrada' && (
             <>
-              <Field label="Fornecedor">
+              {!ehIns && <Field label="Fornecedor">
                 <select value={form.supplier_id} onChange={(e) => setForm({ ...form, supplier_id: e.target.value })}>
                   <option value="">—</option>
                   {suppliers.filter((s) => s.ativo).map((s) => <option key={s.id} value={s.id}>{s.nome}</option>)}
                 </select>
-              </Field>
+              </Field>}
               <Field label="Custo unitário (R$)" style={{ flex: '0 0 140px' }}><input inputMode="decimal" value={form.custo_unitario} onChange={(e) => setForm({ ...form, custo_unitario: e.target.value })} placeholder="0,00" /></Field>
               <Field label="Nota fiscal" style={{ flex: '0 0 140px' }}><input value={form.documento_fiscal} onChange={(e) => setForm({ ...form, documento_fiscal: e.target.value })} /></Field>
             </>
           )}
-          <Field label="Motivo *" style={{ flex: '2 1 240px' }}>
+          <Field label={tipo === 'entrada' && ehIns ? 'Motivo' : 'Motivo *'} style={{ flex: '2 1 240px' }}>
             <input value={form.motivo} onChange={(e) => setForm({ ...form, motivo: e.target.value })}
-              placeholder={tipo === 'saida' ? 'Ex: avaria, vencimento, consumo interno' : tipo === 'entrada' ? 'Ex: compra, devolução' : 'Ex: abastecer loja'} required />
+              placeholder={tipo === 'saida' ? 'Ex: avaria, vencimento, consumo interno' : tipo === 'entrada' ? 'Ex: compra, devolução' : 'Ex: abastecer loja'} required={!(tipo === 'entrada' && ehIns)} />
           </Field>
           <button type="submit" className="btn-primario">Registrar {TIPO_MOV(tipo).toLowerCase()}</button>
         </form>

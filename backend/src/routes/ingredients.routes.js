@@ -226,10 +226,11 @@ router.post('/ingredients/:id/stock-entries', requireArea('Estoque'), async (req
     );
     const estoqueTotal = Number(atual.rows[0].saldo_total);
     const custoUnitarioAtual = Number(atual.rows[0].custo_unitario);
-    // Media ponderada: mistura o valor ja em estoque (todos os locais) com o custo desta nova entrada.
-    const novoCustoUnitario = custoTotalEntrada === null
+    // O custo do insumo e o da ultima entrada informada (custo total / quantidade). Sem custo na entrada, mantem o atual.
+    void estoqueTotal;
+    const novoCustoUnitario = custoTotalEntrada === null || !(custoTotalEntrada > 0)
       ? custoUnitarioAtual
-      : (estoqueTotal * custoUnitarioAtual + custoTotalEntrada) / (estoqueTotal + qtd);
+      : custoTotalEntrada / qtd;
 
     await client.query(`UPDATE ingredients SET custo_unitario = $1 WHERE id = $2 AND tenant_id = $3`,
       [novoCustoUnitario, req.params.id, req.user.tenantId]);
@@ -246,7 +247,7 @@ router.post('/ingredients/:id/stock-entries', requireArea('Estoque'), async (req
       acao: 'entrada_estoque',
       recurso: 'ingredients',
       recursoId: req.params.id,
-      detalhes: { quantidade: qtd, custo_total: custoTotalEntrada, location_id },
+      detalhes: { quantidade: qtd, custo_total: custoTotalEntrada, location_id, documento_fiscal: req.body.documento_fiscal || null, supplier_id: req.body.supplier_id || null },
     });
     await client.query('COMMIT');
     res.json(await carregarInsumo(pool, req.user.tenantId, req.params.id));

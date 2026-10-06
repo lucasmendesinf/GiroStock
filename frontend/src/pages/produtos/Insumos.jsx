@@ -61,7 +61,7 @@ export default function Insumos({ ingredients, locations, reload }) {
         <div className="card">
           <div className="tabela-wrap">
             <table>
-              <thead><tr><th>Insumo</th><th className="num col-opcional">Custo/un</th><th className="num">Saldo total</th><th className="col-opcional">Por loja</th><th /></tr></thead>
+              <thead><tr><th>Insumo</th><th className="num col-opcional">Custo atual/un</th><th className="num">Saldo total</th><th className="col-opcional">Por loja</th><th /></tr></thead>
               <tbody>
                 {visiveis.map((i) => (
                   <tr key={i.id} style={i.ativo ? undefined : { opacity: 0.6 }}>
@@ -197,7 +197,7 @@ function EditarInsumo({ insumo, reload, onClose }) {
               {UNIDADES_INSUMO.map((u) => <option key={u} value={u}>{u}</option>)}
             </select>
           </Field>
-          <Field label={`Custo por ${form.unidade} (R$)`} hint="Ex: R$ 100 por 10 kg = 0,01 por grama.">
+          <Field label={`Custo atual por ${form.unidade} (R$)`} hint="Vem da última entrada de estoque (custo total ÷ quantidade). Ex: R$ 100 por 10 kg = 0,01 por grama.">
             <input inputMode="decimal" value={form.custo_unitario} onChange={(e) => setForm({ ...form, custo_unitario: e.target.value })} placeholder="0" />
           </Field>
         </div>

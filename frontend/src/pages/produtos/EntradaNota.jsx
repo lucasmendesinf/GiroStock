@@ -5,12 +5,12 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import { Field, Vazio } from '../../components/ui.jsx';
 import ProdutoPicker from '../../components/ProdutoPicker.jsx';
 import { brl, parseNumero } from '../../utils/format';
-import { stepDaUnidade, lojaPadrao, lembrarLoja } from './comum.jsx';
+import { stepDaUnidade, lojaPadrao, lembrarLoja, insumosComoItens, ehInsumo, idDoInsumo } from './comum.jsx';
 import FormProduto from './FormProduto.jsx';
 import ImportarXml from './ImportarXml.jsx';
 
 // Entrada de varios produtos de uma mesma nota de compra, gravada de uma vez (tudo ou nada).
-export default function EntradaNota({ products, locations, suppliers, categories, ingredients, reload }) {
+export default function EntradaNota({ products, locations, suppliers, categories, ingredients = [], reload }) {
   const toast = useToast();
   const confirmar = useConfirm();
   const { user } = useAuth();
@@ -20,14 +20,14 @@ export default function EntradaNota({ products, locations, suppliers, categories
   const [itens, setItens] = useState([]);
   const [salvando, setSalvando] = useState(false);
   const [cadastrando, setCadastrando] = useState(false);
-  const elegiveis = products.filter((p) => p.ativo && !p.tem_ficha_tecnica);
+  const elegiveis = [...products.filter((p) => p.ativo && !p.tem_ficha_tecnica), ...insumosComoItens(ingredients)];
 
   function adicionar(p) {
     if (itens.some((i) => i.product_id === p.id)) {
       toast.erro(`"${p.nome}" já está na nota. Ajuste a quantidade na linha dele.`);
       return;
     }
-    setItens([...itens, { product_id: p.id, nome: p.nome, unidade: p.unidade, codigo: p.codigo_interno, quantidade: '', custo_unitario: String(p.preco_custo).replace('.', ',') }]);
+    setItens([...itens, { product_id: p.id, insumo: !!p.insumo, nome: p.nome, unidade: p.unidade, codigo: p.codigo_interno, quantidade: '', custo_unitario: String(p.preco_custo).replace('.', ',') }]);
     setTimeout(() => document.getElementById(`qtd-${p.id}`)?.focus(), 0);
   }
 
@@ -61,18 +61,30 @@ export default function EntradaNota({ products, locations, suppliers, categories
     if (itens.length === 0) { toast.erro('Adicione ao menos um produto.'); return; }
     setSalvando(true);
     try {
-      const r = await api.post('/stock-entries', {
+      const itensInsumo = itens.filter((i) => i.insumo);
+      const itensProduto = itens.filter((i) => !i.insumo);
+      const r = itensProduto.length === 0 ? { itens: 0, valor_total: 0 } : await api.post('/stock-entries', {
         location_id: cab.location_id,
         supplier_id: cab.supplier_id || null,
         documento_fiscal: cab.documento_fiscal,
-        itens: itens.map((i) => ({
+        itens: itensProduto.map((i) => ({
           product_id: i.product_id,
           quantidade: parseNumero(i.quantidade),
           custo_unitario: i.custo_unitario === '' ? null : parseNumero(i.custo_unitario),
         })),
       });
+      let valorInsumos = 0;
+      for (const i of itensInsumo) {
+        const q = parseNumero(i.quantidade);
+        const c = i.custo_unitario === '' ? null : parseNumero(i.custo_unitario);
+        await api.post(`/ingredients/${idDoInsumo(i.product_id)}/stock-entries`, {
+          quantidade: q, location_id: cab.location_id, custo_total: c === null ? undefined : q * c,
+          documento_fiscal: cab.documento_fiscal || undefined, supplier_id: cab.supplier_id || undefined,
+        });
+        valorInsumos += c === null ? 0 : q * c;
+      }
       lembrarLoja(cab.location_id);
-      toast.sucesso(`Nota lançada: ${r.itens} produto(s), ${brl(r.valor_total)}.`);
+      toast.sucesso(`Nota lançada: ${r.itens + itensInsumo.length} item(ns) (${itensInsumo.length} insumo(s)), ${brl(r.valor_total + valorInsumos)}.`);
       setItens([]);
       setCab({ ...cab, documento_fiscal: '' });
       reload();
@@ -109,7 +121,7 @@ export default function EntradaNota({ products, locations, suppliers, categories
         <h3>Itens</h3>
         <div style={{ margin: '12px 0', display: 'flex', gap: '8px', alignItems: 'stretch', flexWrap: 'wrap' }}>
           <div style={{ flex: '1 1 260px', minWidth: 0 }}>
-            <ProdutoPicker produtos={elegiveis} onSelecionar={adicionar} limparAoSelecionar placeholder="Bipe o código de barras ou digite o nome para adicionar" />
+            <ProdutoPicker produtos={elegiveis} onSelecionar={adicionar} limparAoSelecionar placeholder="Bipe o código de barras ou digite o nome do produto ou insumo" />
           </div>
           <ImportarXml products={products} suppliers={suppliers} locations={locations} categories={categories} locationId={cab.location_id} onLancado={reload} />
           <button type="button" className="es-btn-ghost" onClick={() => setCadastrando(true)} title="Não achou o produto? Cadastre um novo">+ Novo produto</button>
@@ -124,7 +136,7 @@ export default function EntradaNota({ products, locations, suppliers, categories
                   const c = parseNumero(i.custo_unitario);
                   return (
                     <tr key={i.product_id}>
-                      <td>{i.nome}<div className="celula-sub">{i.codigo} · {i.unidade}</div></td>
+                      <td>{i.nome}<div className="celula-sub">{i.insumo ? 'Insumo' : i.codigo} · {i.unidade}</div></td>
                       <td><input id={`qtd-${i.product_id}`} className="input-curto" type="number" min="0" step={stepDaUnidade(i.unidade)} value={i.quantidade} onChange={(e) => atualizar(i.product_id, 'quantidade', e.target.value)} required /></td>
                       <td><input className="input-curto" inputMode="decimal" value={i.custo_unitario} onChange={(e) => atualizar(i.product_id, 'custo_unitario', e.target.value)} /></td>
                       <td className="num col-opcional">{q > 0 && c > 0 ? brl(q * c) : '—'}</td>

@@ -58,7 +58,7 @@ const ReceitaEditor = forwardRef(function ReceitaEditor({ ficha, setFicha, ingre
           <div className="tabela-wrap">
             <table className="compacta">
               <thead>
-                <tr><th>Insumo</th><th className="num">Qtd por unidade</th><th className="num">Disponível</th><th className="num">Dá para</th><th className="num">Custo</th><th /></tr>
+                <tr><th>Insumo</th><th className="num">Qtd por unidade</th><th className="num">Disponível</th><th className="num">Capac. prod</th><th className="num">Custo</th><th /></tr>
               </thead>
               <tbody>
                 {ficha.map((f) => {

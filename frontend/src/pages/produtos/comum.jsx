@@ -3,6 +3,16 @@
 export const UNIDADES_PRODUTO = ['UN', 'KG', 'L', 'CX'];
 export const UNIDADES_INSUMO = ['G', 'KG', 'ML', 'L', 'UN', 'Fatia'];
 
+// Insumos ativos no formato de "produto" para os seletores de movimentacao/entrada (id com prefixo ins:).
+export const ehInsumo = (id) => String(id || '').startsWith('ins:');
+export const idDoInsumo = (id) => String(id).slice(4);
+export function insumosComoItens(ingredients) {
+  return (ingredients || []).filter((i) => i.ativo).map((i) => ({
+    id: `ins:${i.id}`, insumo: true, nome: i.nome, unidade: i.unidade, codigo_interno: 'Insumo', barcode: '',
+    custo_unitario: Number(i.custo_unitario), saldos_por_local: i.saldos_por_local, ativo: true, preco_venda: 0, preco_custo: Number(i.custo_unitario),
+  }));
+}
+
 export function stepDaUnidade(unidade) {
   return ['UN', 'CX'].includes(unidade) ? '1' : '0.001';
 }

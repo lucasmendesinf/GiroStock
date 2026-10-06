@@ -59,8 +59,8 @@ export default function ProdutoPicker({ produtos, valor, onSelecionar, placehold
           {sugestoes.map((p, i) => (
             <li key={p.id} role="option" aria-selected={i === indice} className={i === indice ? 'ativo' : ''}
               onMouseDown={(e) => { e.preventDefault(); escolher(p); }} onMouseEnter={() => setIndice(i)}>
-              <span>{p.nome}{!p.ativo ? ' (inativo)' : ''}</span>
-              <span className="muted">{p.codigo_interno} · {p.barcode} · {brl(p.preco_venda)}</span>
+              <span>{p.insumo && <span className="xml-etiqueta" style={{ marginLeft: 0, marginRight: 6 }}>insumo</span>}{p.nome}{!p.ativo ? ' (inativo)' : ''}</span>
+              <span className="muted">{p.insumo ? `Insumo · ${p.unidade} · custo ${brl(p.custo_unitario)}/${p.unidade}` : `${p.codigo_interno} · ${p.barcode} · ${brl(p.preco_venda)}`}</span>
             </li>
           ))}
         </ul>

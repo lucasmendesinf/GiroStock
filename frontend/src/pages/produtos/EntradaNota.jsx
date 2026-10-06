@@ -111,7 +111,7 @@ export default function EntradaNota({ products, locations, suppliers, categories
           <div style={{ flex: '1 1 260px', minWidth: 0 }}>
             <ProdutoPicker produtos={elegiveis} onSelecionar={adicionar} limparAoSelecionar placeholder="Bipe o código de barras ou digite o nome para adicionar" />
           </div>
-          <ImportarXml products={products} suppliers={suppliers} locations={locations} locationId={cab.location_id} onLancado={reload} />
+          <ImportarXml products={products} suppliers={suppliers} locations={locations} categories={categories} locationId={cab.location_id} onLancado={reload} />
           <button type="button" className="es-btn-ghost" onClick={() => setCadastrando(true)} title="Não achou o produto? Cadastre um novo">+ Novo produto</button>
         </div>
         {itens.length === 0 ? <Vazio>Nenhum item. Use o campo acima (aceita leitor de código de barras).</Vazio> : (

@@ -63,6 +63,10 @@ export default function EntradaNota({ products, locations, suppliers, categories
     try {
       const itensInsumo = itens.filter((i) => i.insumo);
       const itensProduto = itens.filter((i) => !i.insumo);
+      // Nota so de insumos nao passa por /stock-entries: registra a nota aqui (recusa se ja foi lancada).
+      if (itensProduto.length === 0 && cab.documento_fiscal.trim()) {
+        await api.post('/purchase-notes', { numero: cab.documento_fiscal.trim(), supplier_id: cab.supplier_id || null });
+      }
       const r = itensProduto.length === 0 ? { itens: 0, valor_total: 0 } : await api.post('/stock-entries', {
         location_id: cab.location_id,
         supplier_id: cab.supplier_id || null,

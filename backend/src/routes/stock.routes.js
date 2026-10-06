@@ -274,6 +274,43 @@ router.post('/products/:id/stock-adjustment', requireArea('Estoque'), async (req
   }
 });
 
+// Nota ja lancada? Mesmo numero e (mesmo fornecedor, ou algum dos dois sem fornecedor informado).
+async function notaJaLancada(db, tenantId, numero, supplierId) {
+  const { rows } = await db.query(
+    `SELECT pn.criado_em, s.nome AS supplier_nome FROM purchase_notes pn
+     LEFT JOIN suppliers s ON s.id = pn.supplier_id
+     WHERE pn.tenant_id = $1 AND lower(btrim(pn.numero)) = lower(btrim($2))
+       AND (pn.supplier_id IS NULL OR $3::uuid IS NULL OR pn.supplier_id = $3::uuid)
+     ORDER BY pn.criado_em LIMIT 1`,
+    [tenantId, numero, supplierId || null]
+  );
+  return rows[0] || null;
+}
+
+function erroNotaDuplicada(numero, nota) {
+  const quando = new Date(nota.criado_em).toLocaleDateString('pt-BR');
+  return new HttpError(409, `a nota ${numero} já foi lançada no estoque em ${quando}${nota.supplier_nome ? ` (${nota.supplier_nome})` : ''}; não é possível lançar a mesma nota duas vezes`);
+}
+
+router.get('/purchase-notes/check', requireArea('Estoque'), async (req, res) => {
+  const numero = textoOpcional(req.query.numero);
+  if (!numero) return res.json({ duplicada: false });
+  const nota = await notaJaLancada(pool, req.user.tenantId, numero, req.query.supplier_id || null);
+  res.json(nota ? { duplicada: true, em: nota.criado_em, fornecedor: nota.supplier_nome } : { duplicada: false });
+});
+
+// Registra uma nota (usada quando a nota so tem insumos, que nao passam por /stock-entries).
+router.post('/purchase-notes', requireArea('Estoque'), async (req, res) => {
+  const numero = textoOpcional(req.body && req.body.numero);
+  if (!numero) throw new HttpError(400, 'numero da nota é obrigatório');
+  const supplierId = (req.body && req.body.supplier_id) || null;
+  const nota = await notaJaLancada(pool, req.user.tenantId, numero, supplierId);
+  if (nota) throw erroNotaDuplicada(numero, nota);
+  await pool.query(`INSERT INTO purchase_notes (tenant_id, numero, supplier_id, usuario_id) VALUES ($1, $2, $3, $4)`,
+    [req.user.tenantId, numero, supplierId, req.user.id]);
+  res.status(201).json({ ok: true });
+});
+
 // Entrada por nota: varios produtos de uma compra lancados de uma vez (tudo ou nada).
 // Corpo: { location_id, supplier_id?, documento_fiscal?, motivo?, itens: [{ product_id, quantidade, custo_unitario? }] }
 router.post('/stock-entries', requireArea('Estoque'), async (req, res) => {
@@ -282,6 +319,10 @@ router.post('/stock-entries', requireArea('Estoque'), async (req, res) => {
   if (!Array.isArray(itens) || itens.length === 0) throw new HttpError(400, 'informe ao menos um item na nota');
   if (itens.length > 300) throw new HttpError(400, 'uma nota pode ter no máximo 300 itens');
   const doc = textoOpcional(documento_fiscal);
+  if (doc) {
+    const jaLancada = await notaJaLancada(pool, req.user.tenantId, doc, supplier_id || null);
+    if (jaLancada) throw erroNotaDuplicada(doc, jaLancada);
+  }
   const motivo = textoOpcional(req.body.motivo) || (doc ? `Entrada da nota ${doc}` : 'Entrada por nota');
 
   const preparados = [];
@@ -310,6 +351,10 @@ router.post('/stock-entries', requireArea('Estoque'), async (req, res) => {
     await client.query('BEGIN');
     const movimentos = [];
     for (const mov of preparados) movimentos.push(await aplicarMovimento(client, req.user, mov));
+    if (doc) {
+      await client.query(`INSERT INTO purchase_notes (tenant_id, numero, supplier_id, usuario_id) VALUES ($1, $2, $3, $4)`,
+        [req.user.tenantId, doc, supplier_id || null, req.user.id]);
+    }
     await client.query('COMMIT');
     const valorTotal = preparados.reduce((soma, m) => soma + (m.custoUnitario || 0) * m.qtd, 0);
     res.status(201).json({ itens: movimentos.length, valor_total: Number(valorTotal.toFixed(2)), movimentos });

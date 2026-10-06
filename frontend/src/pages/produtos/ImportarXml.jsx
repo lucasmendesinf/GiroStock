@@ -74,6 +74,7 @@ export default function ImportarXml({ products, suppliers, locations, categories
   const [categoriaId, setCategoriaId] = useState('');
   const [novoFornecedor, setNovoFornecedor] = useState({ cadastrar: true, nome: '', telefone: '', categoria: CATEGORIAS_FORNECEDOR[0] });
   const [salvando, setSalvando] = useState(false);
+  const [duplicada, setDuplicada] = useState(null);
   const criados = useRef({ fornecedor: null, produtos: {} });
   const elegiveis = products.filter((p) => p.ativo && !p.tem_ficha_tecnica);
 
@@ -101,6 +102,12 @@ export default function ImportarXml({ products, suppliers, locations, categories
           vendaTxt: precoSugerido(l.custo / unidadesNaCaixa(l.nome, l.unidade)),
         };
       }));
+      setDuplicada(null);
+      if (n.numero) {
+        const sup = suppliers.find((s) => soDigitos(s.documento) === n.cnpj);
+        const chk = await api.get(`/purchase-notes/check?numero=${encodeURIComponent(n.numero)}${sup ? `&supplier_id=${sup.id}` : ''}`);
+        if (chk.duplicada) setDuplicada(chk);
+      }
       setNota(n);
       setTentou(false);
       setLoja(locationId);
@@ -127,6 +134,7 @@ export default function ImportarXml({ products, suppliers, locations, categories
   const produtoDe = (id) => elegiveis.find((p) => p.id === id);
 
   function problema() {
+    if (duplicada) return [`A nota ${nota.numero} já foi importada em ${new Date(duplicada.em).toLocaleDateString('pt-BR')}${duplicada.fornecedor ? ` (${duplicada.fornecedor})` : ''}. Não é possível importar a mesma nota duas vezes.`, null];
     if (!loja) return ['Escolha a loja que recebe.', 'loja'];
     if (lancaveis.length === 0) return ['Nenhum item para lançar: vincule, cadastre ou desmarque "Ignorar" em algum item.', null];
     if (novos.length > 0 && !categoriaId) return ['Escolha a categoria dos produtos novos.', 'categoria'];
@@ -219,6 +227,7 @@ export default function ImportarXml({ products, suppliers, locations, categories
       {nota && (
         <Modal titulo="Conferir importação da NF-e" subtitulo={`Nota ${nota.numero || '—'} · ${nota.emitente || 'emitente não informado'}`} onClose={() => setNota(null)} largura="xml">
           <div className="form-stack" onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault(); }}>
+            {duplicada && <div className="es-erro" role="alert" style={{ border: '1px solid var(--err)', borderRadius: 12, padding: '12px 14px' }}>Esta nota (nº {nota.numero}) já foi importada em {new Date(duplicada.em).toLocaleDateString('pt-BR')}{duplicada.fornecedor ? ` — ${duplicada.fornecedor}` : ''}. Não é possível importar a mesma nota duas vezes.</div>}
             <div className="es-resumo">
               O <b>GTIN/EAN</b> de cada item é usado para achar o produto no cadastro. Itens não encontrados podem ser <b>vinculados</b> a um produto existente ou <b>cadastrados como novos</b>. Nada é gravado até você confirmar.
             </div>
@@ -332,7 +341,7 @@ export default function ImportarXml({ products, suppliers, locations, categories
             {tentou && aviso && <div className="es-erro" role="alert">{aviso}</div>}
             <div className="modal-actions">
               <button type="button" onClick={() => setNota(null)}>Cancelar</button>
-              <button type="button" disabled={salvando} onClick={tentarConfirmar}>{salvando ? 'Lançando...' : 'Confirmar e lançar no estoque'}</button>
+              <button type="button" disabled={salvando || !!duplicada} onClick={tentarConfirmar}>{salvando ? 'Lançando...' : 'Confirmar e lançar no estoque'}</button>
             </div>
           </div>
         </Modal>

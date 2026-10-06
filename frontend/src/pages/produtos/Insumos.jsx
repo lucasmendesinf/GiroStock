@@ -144,7 +144,7 @@ function NovoInsumo({ locaisAtivos, user, reload, onClose }) {
       <form onSubmit={salvar} className="form-stack">
         <Field label="Nome *"><input autoFocus value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} placeholder="Ex: Queijo mussarela" required /></Field>
         <div className="form-grid">
-          <Field label="Unidade" style={{ flex: '0 0 110px' }}>
+          <Field label="Unidade de medida" style={{ flex: "0 0 170px" }}>
             <select value={form.unidade} onChange={(e) => setForm({ ...form, unidade: e.target.value })}>
               {UNIDADES_INSUMO.map((u) => <option key={u} value={u}>{u}</option>)}
             </select>
@@ -190,7 +190,7 @@ function EditarInsumo({ insumo, reload, onClose }) {
       <form onSubmit={salvar} className="form-stack">
         <Field label="Nome *"><input autoFocus value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required minLength={2} /></Field>
         <div className="form-grid">
-          <Field label="Unidade" hint={podeTrocarUnidade ? undefined : 'Só pode trocar com saldo zerado.'} >
+          <Field label="Unidade de medida" hint={podeTrocarUnidade ? undefined : 'Só pode trocar com saldo zerado.'} >
             <select value={form.unidade} disabled={!podeTrocarUnidade} onChange={(e) => setForm({ ...form, unidade: e.target.value })}>
               {UNIDADES_INSUMO.map((u) => <option key={u} value={u}>{u}</option>)}
             </select>

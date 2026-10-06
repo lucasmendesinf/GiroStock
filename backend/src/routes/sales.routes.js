@@ -74,6 +74,15 @@ router.post('/sales', requireArea('Vendas'), async (req, res) => {
       [productIds, req.user.tenantId]
     );
     const productMap = new Map(products.rows.map((p) => [p.id, p]));
+    // Produto com receita: o custo da venda e a soma exata (qtd por unidade x custo atual de cada insumo),
+    // sem depender do preco_custo arredondado/desatualizado do cadastro.
+    const custosReceita = await client.query(
+      `SELECT pi.product_id, SUM(pi.quantidade_por_unidade * i.custo_unitario) AS custo
+       FROM product_ingredients pi JOIN ingredients i ON i.id = pi.ingredient_id
+       WHERE pi.product_id = ANY($1::uuid[]) AND pi.tenant_id = $2 GROUP BY pi.product_id`,
+      [productIds, req.user.tenantId]
+    );
+    const custoReceitaMap = new Map(custosReceita.rows.map((r) => [r.product_id, Number(r.custo)]));
     for (const item of itensAgrupados) {
       const produto = productMap.get(item.product_id);
       if (!produto || !produto.ativo) {
@@ -90,7 +99,7 @@ router.post('/sales', requireArea('Vendas'), async (req, res) => {
       const precoUnitario = Number(produto.preco_venda);
       const subtotal = Number((precoUnitario * item.quantidade).toFixed(2));
       subtotalVenda += subtotal;
-      return { ...item, preco_unitario: precoUnitario, custo_unitario: Number(produto.preco_custo), subtotal };
+      return { ...item, preco_unitario: precoUnitario, custo_unitario: custoReceitaMap.get(item.product_id) > 0 ? Number(custoReceitaMap.get(item.product_id).toFixed(4)) : Number(produto.preco_custo), subtotal };
     });
     subtotalVenda = Number(subtotalVenda.toFixed(2));
     const desconto = Number(descontoInformado.toFixed(2));

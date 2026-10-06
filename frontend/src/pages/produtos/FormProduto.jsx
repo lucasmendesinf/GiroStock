@@ -4,12 +4,17 @@ import { useToast } from '../../context/UiContext.jsx';
 import { Field, Modal } from '../../components/ui.jsx';
 import { brl, parseNumero, pct } from '../../utils/format';
 import { UNIDADES_PRODUTO, ordenarCategoriasHierarquia, SeletorFornecedores } from './comum.jsx';
-import ReceitaEditor, { custoDaReceita } from './ReceitaEditor.jsx';
+import ReceitaEditor, { custoDaReceita, insumosSemCusto } from './ReceitaEditor.jsx';
 import Categorias from './Categorias.jsx';
 
 // Cadastro de produto: so os dados do produto. O saldo nao e cadastrado aqui (depois de salvar,
 // o icone de caixa da lista trata o estoque). Produto controlado por insumos (lanche / receita)
 // nao tem estoque proprio: o custo vem da soma dos insumos.
+const textoCustoReceita = (ficha, ingredients) => {
+  const sem = insumosSemCusto(ficha, ingredients);
+  return sem.length ? `Soma dos insumos (atualiza ao mudar a receita). Sem custo: ${sem.join(', ')} — dê entrada informando o custo.` : 'Soma dos insumos (atualiza ao mudar a receita)';
+};
+
 export default function FormProduto({ categories, suppliers, ingredients, reload, onClose, onSalvo }) {
   const toast = useToast();
   const [form, setForm] = useState({
@@ -100,7 +105,7 @@ export default function FormProduto({ categories, suppliers, ingredients, reload
         </div>
 
         <div className="es-form" style={{ alignItems: 'start' }}>
-          <Field label="Preço de custo (R$) *" hint={composto ? 'Calculado pelos insumos' : undefined}>
+          <Field label="Preço de custo (R$) *" hint={composto ? textoCustoReceita(ficha, ingredients) : undefined}>
             <input inputMode="decimal" readOnly={composto} placeholder="0,00"
               value={composto ? custoFicha.toFixed(2).replace('.', ',') : form.preco_custo}
               onChange={(e) => setForm({ ...form, preco_custo: e.target.value })} />

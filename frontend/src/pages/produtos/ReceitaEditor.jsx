@@ -10,6 +10,11 @@ export function custoDaReceita(ficha, ingredients) {
   }, 0);
 }
 
+// Nomes dos insumos da receita que ainda estao sem custo (o custo da receita fica incompleto).
+export function insumosSemCusto(ficha, ingredients) {
+  return ficha.map((f) => ingredients.find((i) => i.id === f.ingredient_id)).filter((i) => i && !(Number(i.custo_unitario) > 0)).map((i) => i.nome);
+}
+
 // Quantas unidades do produto ainda dá para vender com os insumos disponiveis (todas as lojas).
 export function podeVenderReceita(ficha, ingredients) {
   if (ficha.length === 0) return 0;

@@ -4,7 +4,7 @@ import { useToast, useConfirm } from '../../context/UiContext.jsx';
 import { Field, Modal } from '../../components/ui.jsx';
 import { brl, parseNumero, pct } from '../../utils/format';
 import { UNIDADES_PRODUTO, ordenarCategoriasHierarquia, SeletorFornecedores } from './comum.jsx';
-import ReceitaEditor, { custoDaReceita } from './ReceitaEditor.jsx';
+import ReceitaEditor, { custoDaReceita, insumosSemCusto } from './ReceitaEditor.jsx';
 
 const numeroParaCampo = (n) => String(n).replace('.', ',');
 
@@ -147,7 +147,7 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
         </div>
 
         <div className="es-form" style={{ alignItems: 'start' }}>
-          <Field label="Preço de custo (R$) *" hint={usaReceita ? 'Calculado pelos insumos' : undefined}>
+          <Field label="Preço de custo (R$) *" hint={usaReceita ? (insumosSemCusto(ficha, ingredients).length ? `Soma dos insumos. Sem custo: ${insumosSemCusto(ficha, ingredients).join(', ')} — dê entrada informando o custo.` : 'Soma dos insumos (atualiza ao mudar a receita)') : undefined}>
             <input inputMode="decimal" readOnly={usaReceita} value={usaReceita ? custoFicha.toFixed(2).replace('.', ',') : form.preco_custo}
               onChange={(e) => setForm({ ...form, preco_custo: e.target.value })} />
           </Field>

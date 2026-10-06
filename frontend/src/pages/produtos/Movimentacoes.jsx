@@ -48,7 +48,7 @@ export default function Movimentacoes({ products, ingredients = [], locations, s
         const q = parseNumero(form.quantidade);
         if (tipo === 'entrada') {
           const body = { quantidade: q, location_id: form.location_destino_id, documento_fiscal: form.documento_fiscal || undefined };
-          if (form.custo_unitario !== '') body.custo_total = q * parseNumero(form.custo_unitario);
+          if (form.custo_unitario !== '') body.custo_total = parseNumero(form.custo_unitario);
           await api.post(`${base}/stock-entries`, body);
         } else if (tipo === 'saida') {
           await api.post(`${base}/stock-exits`, { quantidade: q, location_id: form.location_origem_id, motivo: form.motivo });
@@ -104,7 +104,7 @@ export default function Movimentacoes({ products, ingredients = [], locations, s
         </div>
         <form onSubmit={registrar} className="form-grid" style={{ marginTop: '14px' }}>
           <Field label="Produto ou insumo *" style={{ flex: '2 1 280px' }}>
-            <ProdutoPicker produtos={movimentaveis} valor={form.product_id} placeholder="Buscar produto, insumo, código ou EAN" onSelecionar={(p) => setForm({ ...form, product_id: p.id, custo_unitario: p.insumo && tipo === 'entrada' ? String(p.custo_unitario).replace('.', ',') : form.custo_unitario })} />
+            <ProdutoPicker produtos={movimentaveis} valor={form.product_id} placeholder="Buscar produto, insumo, código ou EAN" onSelecionar={(p) => setForm({ ...form, product_id: p.id, custo_unitario: '' })} />
           </Field>
           <Field label={`Quantidade *${produto ? ` (${produto.unidade})` : ''}`} style={{ flex: '0 0 130px' }}
             hint={saldoOrigem !== null && tipo !== 'entrada' ? `Disponível: ${qtd(saldoOrigem, produto.unidade)}` : undefined}>
@@ -134,7 +134,9 @@ export default function Movimentacoes({ products, ingredients = [], locations, s
                   {suppliers.filter((s) => s.ativo).map((s) => <option key={s.id} value={s.id}>{s.nome}</option>)}
                 </select>
               </Field>}
-              <Field label="Custo unitário (R$)" style={{ flex: '0 0 140px' }}><input inputMode="decimal" value={form.custo_unitario} onChange={(e) => setForm({ ...form, custo_unitario: e.target.value })} placeholder="0,00" /></Field>
+              <Field label={ehIns ? 'Custo total da compra (R$)' : 'Custo unitário (R$)'} style={{ flex: ehIns ? '0 0 190px' : '0 0 140px' }}
+                hint={ehIns ? 'Valor pago por toda a quantidade. Ex: R$ 150 por 1000 g' : undefined}>
+                <input inputMode="decimal" value={form.custo_unitario} onChange={(e) => setForm({ ...form, custo_unitario: e.target.value })} placeholder="0,00" /></Field>
               <Field label="Nota fiscal" style={{ flex: '0 0 140px' }}><input value={form.documento_fiscal} onChange={(e) => setForm({ ...form, documento_fiscal: e.target.value })} /></Field>
             </>
           )}

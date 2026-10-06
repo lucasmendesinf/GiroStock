@@ -27,7 +27,7 @@ export default function EntradaNota({ products, locations, suppliers, categories
       toast.erro(`"${p.nome}" já está na nota. Ajuste a quantidade na linha dele.`);
       return;
     }
-    setItens([...itens, { product_id: p.id, insumo: !!p.insumo, nome: p.nome, unidade: p.unidade, codigo: p.codigo_interno, quantidade: '', custo_unitario: String(p.preco_custo).replace('.', ',') }]);
+    setItens([...itens, { product_id: p.id, insumo: !!p.insumo, nome: p.nome, unidade: p.unidade, codigo: p.codigo_interno, quantidade: '', custo_unitario: p.insumo ? '' : String(p.preco_custo).replace('.', ',') }]);
     setTimeout(() => document.getElementById(`qtd-${p.id}`)?.focus(), 0);
   }
 
@@ -48,7 +48,7 @@ export default function EntradaNota({ products, locations, suppliers, categories
   const totalNota = itens.reduce((s, i) => {
     const q = parseNumero(i.quantidade);
     const c = parseNumero(i.custo_unitario);
-    return s + (q > 0 && c > 0 ? q * c : 0);
+    return s + (c > 0 && (i.insumo || q > 0) ? (i.insumo ? c : q * c) : 0);
   }, 0);
 
   async function limpar() {
@@ -76,12 +76,12 @@ export default function EntradaNota({ products, locations, suppliers, categories
       let valorInsumos = 0;
       for (const i of itensInsumo) {
         const q = parseNumero(i.quantidade);
-        const c = i.custo_unitario === '' ? null : parseNumero(i.custo_unitario);
+        const c = i.custo_unitario === '' ? null : parseNumero(i.custo_unitario); // insumo: valor total da compra
         await api.post(`/ingredients/${idDoInsumo(i.product_id)}/stock-entries`, {
-          quantidade: q, location_id: cab.location_id, custo_total: c === null ? undefined : q * c,
+          quantidade: q, location_id: cab.location_id, custo_total: c === null ? undefined : c,
           documento_fiscal: cab.documento_fiscal || undefined, supplier_id: cab.supplier_id || undefined,
         });
-        valorInsumos += c === null ? 0 : q * c;
+        valorInsumos += c === null ? 0 : c;
       }
       lembrarLoja(cab.location_id);
       toast.sucesso(`Nota lançada: ${r.itens + itensInsumo.length} item(ns) (${itensInsumo.length} insumo(s)), ${brl(r.valor_total + valorInsumos)}.`);
@@ -129,7 +129,7 @@ export default function EntradaNota({ products, locations, suppliers, categories
         {itens.length === 0 ? <Vazio>Nenhum item. Use o campo acima (aceita leitor de código de barras).</Vazio> : (
           <div className="tabela-wrap">
             <table>
-              <thead><tr><th>Produto</th><th>Qtd</th><th>Custo un. (R$)</th><th className="num col-opcional">Subtotal</th><th /></tr></thead>
+              <thead><tr><th>Produto</th><th>Qtd</th><th>Custo un. (R$) / total do insumo</th><th className="num col-opcional">Subtotal</th><th /></tr></thead>
               <tbody>
                 {itens.map((i) => {
                   const q = parseNumero(i.quantidade);
@@ -138,8 +138,8 @@ export default function EntradaNota({ products, locations, suppliers, categories
                     <tr key={i.product_id}>
                       <td>{i.nome}<div className="celula-sub">{i.insumo ? 'Insumo' : i.codigo} · {i.unidade}</div></td>
                       <td><input id={`qtd-${i.product_id}`} className="input-curto" type="number" min="0" step={stepDaUnidade(i.unidade)} value={i.quantidade} onChange={(e) => atualizar(i.product_id, 'quantidade', e.target.value)} required /></td>
-                      <td><input className="input-curto" inputMode="decimal" value={i.custo_unitario} onChange={(e) => atualizar(i.product_id, 'custo_unitario', e.target.value)} /></td>
-                      <td className="num col-opcional">{q > 0 && c > 0 ? brl(q * c) : '—'}</td>
+                      <td><input className="input-curto" inputMode="decimal" value={i.custo_unitario} onChange={(e) => atualizar(i.product_id, 'custo_unitario', e.target.value)} />{i.insumo && <div className="celula-sub">custo total da compra (÷ qtd = custo por {i.unidade})</div>}</td>
+                      <td className="num col-opcional">{c > 0 && (i.insumo || q > 0) ? brl(i.insumo ? c : q * c) : '—'}</td>
                       <td><button type="button" className="btn-link" onClick={() => setItens(itens.filter((x) => x.product_id !== i.product_id))}>Remover</button></td>
                     </tr>
                   );

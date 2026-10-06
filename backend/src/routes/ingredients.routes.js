@@ -118,15 +118,6 @@ router.post('/ingredients', requireArea('Estoque'), async (req, res) => {
 // Mantem o custo dos produtos com ficha tecnica = soma (qtd por unidade x custo unitario do insumo).
 // So atualiza quando o custo novo e maior que zero e menor que o preco de venda (respeita as restricoes da tabela).
 async function recalcularCustoProdutos(client, tenantId, ingredientId) {
-  const { rows: acima } = await client.query(
-    `SELECT p.nome FROM products p
-     JOIN (SELECT pi.product_id, SUM(pi.quantidade_por_unidade * i.custo_unitario) AS custo
-           FROM product_ingredients pi JOIN ingredients i ON i.id = pi.ingredient_id
-           WHERE pi.tenant_id = $1 AND pi.product_id IN (SELECT product_id FROM product_ingredients WHERE ingredient_id = $2 AND tenant_id = $1)
-           GROUP BY pi.product_id) c ON c.product_id = p.id
-     WHERE p.tenant_id = $1 AND c.custo >= p.preco_venda ORDER BY p.nome`,
-    [tenantId, ingredientId]
-  );
   await client.query(
     `UPDATE products p SET preco_custo = c.custo
      FROM (SELECT pi.product_id, ROUND(SUM(pi.quantidade_por_unidade * i.custo_unitario), 2) AS custo
@@ -136,7 +127,6 @@ async function recalcularCustoProdutos(client, tenantId, ingredientId) {
      WHERE p.id = c.product_id AND p.tenant_id = $1 AND c.custo > 0 AND c.custo < p.preco_venda`,
     [tenantId, ingredientId]
   );
-  return acima.map((r) => r.nome); // produtos cujo custo ficou igual/acima do preco de venda (custo nao gravado)
 }
 
 // Edita o cadastro do insumo: nome, custo por unidade, ativo e (so sem saldo e sem uso em receita) a unidade.
@@ -166,13 +156,13 @@ router.put('/ingredients/:id', requireArea('Estoque'), async (req, res) => {
       `UPDATE ingredients SET nome = $1, unidade = $2, custo_unitario = $3, ativo = $4 WHERE id = $5 AND tenant_id = $6`,
       [nome, unidade, custo, ativo, req.params.id, req.user.tenantId]
     );
-    const acimaVenda = await recalcularCustoProdutos(client, req.user.tenantId, req.params.id);
+    await recalcularCustoProdutos(client, req.user.tenantId, req.params.id);
     await logAudit(client, {
       tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'editar_insumo', recurso: 'ingredients', recursoId: req.params.id,
       detalhes: { antes: { nome: atual.nome, unidade: atual.unidade, custo_unitario: Number(atual.custo_unitario), ativo: atual.ativo }, depois: { nome, unidade, custo_unitario: custo, ativo } },
     });
     await client.query('COMMIT');
-    res.json({ ...(await carregarInsumo(pool, req.user.tenantId, req.params.id)), produtos_custo_acima_venda: acimaVenda });
+    res.json(await carregarInsumo(pool, req.user.tenantId, req.params.id));
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -244,7 +234,7 @@ router.post('/ingredients/:id/stock-entries', requireArea('Estoque'), async (req
 
     await client.query(`UPDATE ingredients SET custo_unitario = $1 WHERE id = $2 AND tenant_id = $3`,
       [novoCustoUnitario, req.params.id, req.user.tenantId]);
-    const acimaVenda = await recalcularCustoProdutos(client, req.user.tenantId, req.params.id);
+    await recalcularCustoProdutos(client, req.user.tenantId, req.params.id);
     await ensureIngredientBalance(client, req.user.tenantId, req.params.id, location_id);
     await client.query(
       `UPDATE ingredient_balances SET saldo = saldo + $1 WHERE ingredient_id = $2 AND location_id = $3 AND tenant_id = $4`,
@@ -260,7 +250,7 @@ router.post('/ingredients/:id/stock-entries', requireArea('Estoque'), async (req
       detalhes: { quantidade: qtd, custo_total: custoTotalEntrada, location_id, documento_fiscal: req.body.documento_fiscal || null, supplier_id: req.body.supplier_id || null },
     });
     await client.query('COMMIT');
-    res.json({ ...(await carregarInsumo(pool, req.user.tenantId, req.params.id)), produtos_custo_acima_venda: acimaVenda });
+    res.json(await carregarInsumo(pool, req.user.tenantId, req.params.id));
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -394,7 +384,7 @@ router.post('/ingredients/:id/stock-adjustment', requireArea('Estoque'), async (
     );
     await client.query(`UPDATE ingredients SET custo_unitario = $1 WHERE id = $2 AND tenant_id = $3`,
       [custoFinal, req.params.id, req.user.tenantId]);
-    const acimaVenda = await recalcularCustoProdutos(client, req.user.tenantId, req.params.id);
+    await recalcularCustoProdutos(client, req.user.tenantId, req.params.id);
 
     await logAudit(client, {
       tenantId: req.user.tenantId,
@@ -409,7 +399,7 @@ router.post('/ingredients/:id/stock-adjustment', requireArea('Estoque'), async (
       },
     });
     await client.query('COMMIT');
-    res.json({ ...(await carregarInsumo(pool, req.user.tenantId, req.params.id)), produtos_custo_acima_venda: acimaVenda });
+    res.json(await carregarInsumo(pool, req.user.tenantId, req.params.id));
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

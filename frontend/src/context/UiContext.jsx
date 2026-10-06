@@ -19,7 +19,6 @@ export function UiProvider({ children }) {
 
   const toast = useRef({});
   toast.current.sucesso = (m) => mostrar('ok', m);
-  toast.current.aviso = (m) => mostrar('erro', m);
   toast.current.erro = (m) => mostrar('erro', m instanceof Error ? m.message : m);
 
   // confirmar({ titulo, mensagem, confirmar: 'Desativar', perigo: true }) => Promise<boolean>

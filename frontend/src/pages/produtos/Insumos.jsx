@@ -4,7 +4,7 @@ import { useToast, useConfirm } from '../../context/UiContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { Field, Modal, Vazio } from '../../components/ui.jsx';
 import { brl, brlFino, dataHora, parseNumero, qtd } from '../../utils/format';
-import { UNIDADES_INSUMO, avisarCustoAcimaVenda } from './comum.jsx';
+import { UNIDADES_INSUMO } from './comum.jsx';
 
 const ACOES = [
   { id: 'entrada', label: 'Entrada' },
@@ -226,7 +226,7 @@ function MovimentarInsumo({ insumo, locaisAtivos, user, reload, onClose }) {
       if (acao === 'entrada') {
         const payload = { quantidade: parseNumero(form.quantidade), location_id: local };
         if (form.custo_total !== '') payload.custo_total = parseNumero(form.custo_total);
-        avisarCustoAcimaVenda(toast, await api.post(`${base}/stock-entries`, payload));
+        await api.post(`${base}/stock-entries`, payload);
       } else if (acao === 'saida') {
         await api.post(`${base}/stock-exits`, { quantidade: parseNumero(form.quantidade), location_id: local, motivo: form.motivo });
       } else if (acao === 'transferencia') {
@@ -236,7 +236,7 @@ function MovimentarInsumo({ insumo, locaisAtivos, user, reload, onClose }) {
         if (novo === 0 && saldoAqui > 0 && !(await confirmar({ titulo: `Zerar ${insumo.nome} nesta loja?`, mensagem: `O saldo de ${qtd(saldoAqui)} ${insumo.unidade} vai para zero.`, confirmar: 'Zerar', perigo: true }))) return;
         const payload = { novo_saldo: novo, location_id: local, motivo: form.motivo };
         if (form.novo_custo !== '') payload.novo_custo_unitario = parseNumero(form.novo_custo);
-        avisarCustoAcimaVenda(toast, await api.post(`${base}/stock-adjustment`, payload));
+        await api.post(`${base}/stock-adjustment`, payload);
       } else if (acao === 'minimo') {
         await api.put(`${base}/minimum`, { location_id: local, estoque_minimo: parseNumero(form.minimo || '0') });
       }

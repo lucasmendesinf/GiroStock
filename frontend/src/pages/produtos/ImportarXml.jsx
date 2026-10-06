@@ -102,6 +102,7 @@ export default function ImportarXml({ products, suppliers, locations, categories
         };
       }));
       setNota(n);
+      setTentou(false);
       setLoja(locationId);
       setNovoFornecedor({ cadastrar: true, nome: n.emitente, telefone: n.fone, categoria: CATEGORIAS_FORNECEDOR[0] });
       criados.current = { fornecedor: null, produtos: {} };
@@ -126,28 +127,44 @@ export default function ImportarXml({ products, suppliers, locations, categories
   const produtoDe = (id) => elegiveis.find((p) => p.id === id);
 
   function problema() {
-    if (!loja) return 'Escolha a loja que recebe.';
-    if (lancaveis.length === 0) return 'Nenhum item para lançar.';
-    if (novos.length > 0 && !categoriaId) return 'Escolha a categoria dos produtos novos.';
-    for (const l of lancaveis) {
-      if (!(parseNumero(l.qtdTxt) > 0) || !(parseNumero(l.custoTxt) >= 0)) return `Confira a quantidade e o custo de "${l.nome}".`;
-      if (!(parseNumero(l.porCaixaTxt) >= 1) || !Number.isInteger(parseNumero(l.porCaixaTxt))) return `"${l.nome}": unidades por caixa deve ser um número inteiro (1 se não vem em caixa).`;
-      if (l.modo === 'vincular' && !l.produtoId) return `Escolha o produto para vincular a "${l.nome}" (ou cadastre como novo / ignore).`;
+    if (!loja) return ['Escolha a loja que recebe.', 'loja'];
+    if (lancaveis.length === 0) return ['Nenhum item para lançar: vincule, cadastre ou desmarque "Ignorar" em algum item.', null];
+    if (novos.length > 0 && !categoriaId) return ['Escolha a categoria dos produtos novos.', 'categoria'];
+    for (const [i, l] of linhas.entries()) {
+      if (l.modo === 'ignorar') continue;
+      if (!(parseNumero(l.qtdTxt) > 0) || !(parseNumero(l.custoTxt) >= 0)) return [`Confira a quantidade e o custo de "${l.nome}".`, `${i}-${parseNumero(l.qtdTxt) > 0 ? 'custo' : 'qtd'}`];
+      if (!(parseNumero(l.porCaixaTxt) >= 1) || !Number.isInteger(parseNumero(l.porCaixaTxt))) return [`"${l.nome}": unidades por caixa deve ser um número inteiro (1 se não vem em caixa).`, `${i}-caixa`];
+      if (l.modo === 'vincular' && !l.produtoId) return [`Escolha o produto para vincular a "${l.nome}" (ou cadastre como novo / ignore).`, `${i}-vinculo`];
       if (l.modo === 'novo') {
         const custo = custoFinal(l);
-        if (l.nomeNovo.trim().length < 3) return 'O nome do produto novo precisa ter ao menos 3 caracteres.';
-        if (!eanValido(l.barcode)) return `Informe o código de barras (8 a 14 dígitos) de "${l.nomeNovo}".`;
-        if (!(custo > 0)) return `"${l.nomeNovo}": o custo precisa ser maior que zero para cadastrar o produto.`;
-        if (!(parseNumero(l.vendaTxt) > custo)) return `"${l.nomeNovo}": o preço de venda precisa ser maior que o custo.`;
+        if (l.nomeNovo.trim().length < 3) return ['O nome do produto novo precisa ter ao menos 3 caracteres.', `${i}-nome`];
+        if (!eanValido(l.barcode)) return [`Informe o código de barras (8 a 14 dígitos) de "${l.nomeNovo}".`, `${i}-barcode`];
+        if (!(custo > 0)) return [`"${l.nomeNovo}": o custo precisa ser maior que zero para cadastrar o produto.`, `${i}-custo`];
+        if (!(parseNumero(l.vendaTxt) > custo)) return [`"${l.nomeNovo}": o preço de venda precisa ser maior que o custo.`, `${i}-venda`];
       }
     }
     if (!fornecedor && nota.cnpj && novoFornecedor.cadastrar) {
-      if (novoFornecedor.nome.trim().length < 2) return 'Informe o nome do fornecedor novo.';
-      if (soDigitos(novoFornecedor.telefone).length < 10) return 'Informe o telefone do fornecedor novo (mínimo 10 dígitos).';
+      if (novoFornecedor.nome.trim().length < 2) return ['Informe o nome do fornecedor novo.', 'forn-nome'];
+      if (soDigitos(novoFornecedor.telefone).length < 10) return ['Informe o telefone do fornecedor novo (mínimo 10 dígitos).', 'forn-tel'];
     }
-    return '';
+    return ['', null];
   }
-  const aviso = nota ? problema() : '';
+  const [aviso, alvoAviso] = nota ? problema() : ['', null];
+  const [tentou, setTentou] = useState(false);
+  const erroEm = (id) => (tentou && aviso && alvoAviso === id ? 'xml-invalido' : '');
+
+  // Clique em confirmar com algo faltando: mostra o aviso e leva o foco ao campo.
+  function tentarConfirmar() {
+    if (!aviso) { confirmar(); return; }
+    setTentou(true);
+    setTimeout(() => {
+      const el = alvoAviso && document.querySelector(`[data-xml="${alvoAviso}"]`);
+      if (!el) return;
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      const campo = el.matches('input,select') ? el : el.querySelector('input,select');
+      if (campo) campo.focus();
+    }, 0);
+  }
 
   async function confirmar() {
     setSalvando(true);
@@ -218,9 +235,9 @@ export default function ImportarXml({ products, suppliers, locations, categories
                   </label>
                   {novoFornecedor.cadastrar && (
                     <div className="xml-grid">
-                      <Field label="Nome do fornecedor *"><input value={novoFornecedor.nome} onChange={(e) => setNovoFornecedor({ ...novoFornecedor, nome: e.target.value })} /></Field>
+                      <Field label="Nome do fornecedor *"><input data-xml="forn-nome" className={erroEm('forn-nome')} value={novoFornecedor.nome} onChange={(e) => setNovoFornecedor({ ...novoFornecedor, nome: e.target.value })} /></Field>
                       <Field label="Telefone *" hint={novoFornecedor.telefone ? undefined : 'A nota não trouxe telefone: informe.'}>
-                        <input inputMode="tel" value={novoFornecedor.telefone} onChange={(e) => setNovoFornecedor({ ...novoFornecedor, telefone: e.target.value })} />
+                        <input data-xml="forn-tel" className={erroEm('forn-tel')} inputMode="tel" value={novoFornecedor.telefone} onChange={(e) => setNovoFornecedor({ ...novoFornecedor, telefone: e.target.value })} />
                       </Field>
                       <Field label="Categoria">
                         <select value={novoFornecedor.categoria} onChange={(e) => setNovoFornecedor({ ...novoFornecedor, categoria: e.target.value })}>
@@ -237,14 +254,14 @@ export default function ImportarXml({ products, suppliers, locations, categories
               <div className="xml-secao-titulo">Destino do estoque</div>
               <div className="xml-grid">
                 <Field label="Loja que recebe *">
-                  <select value={loja} onChange={(e) => setLoja(e.target.value)}>
+                  <select data-xml="loja" className={erroEm('loja')} value={loja} onChange={(e) => setLoja(e.target.value)}>
                     <option value="">Escolha...</option>
                     {locations.filter((l) => l.ativo).map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
                   </select>
                 </Field>
                 {novos.length > 0 && (
                   <Field label="Categoria dos produtos novos *">
-                    <select value={categoriaId} onChange={(e) => setCategoriaId(e.target.value)}>
+                    <select data-xml="categoria" className={erroEm('categoria')} value={categoriaId} onChange={(e) => setCategoriaId(e.target.value)}>
                       <option value="">Escolha...</option>
                       {ordenarCategoriasHierarquia(categories).map((c) => <option key={c.id} value={c.id}>{'— '.repeat(c.nivel)}{c.nome}</option>)}
                     </select>
@@ -273,7 +290,7 @@ export default function ImportarXml({ products, suppliers, locations, categories
                     </div>
 
                     {l.modo === 'vincular' && (
-                      <div className="form-stack" style={{ gap: '6px' }}>
+                      <div className={`form-stack ${erroEm(`${i}-vinculo`)}`} data-xml={`${i}-vinculo`} style={{ gap: '6px' }}>
                         <ProdutoPicker produtos={elegiveis} valor={l.produtoId} onSelecionar={(p) => atualizar(i, { produtoId: p.id })}
                           placeholder="Buscar o produto do sistema por nome, código ou EAN" />
                         <div className="xml-vinculado">
@@ -284,18 +301,18 @@ export default function ImportarXml({ products, suppliers, locations, categories
 
                     {l.modo === 'novo' && (
                       <div className="xml-grid">
-                        <Field label="Nome do produto novo *" className="span2"><input value={l.nomeNovo} onChange={(e) => atualizar(i, { nomeNovo: e.target.value })} /></Field>
-                        <Field label="Código de barras *"><input inputMode="numeric" value={l.barcode} placeholder="8 a 14 dígitos" onChange={(e) => atualizar(i, { barcode: e.target.value })} /></Field>
-                        <Field label="Preço de venda por unidade (R$) *" hint="Sugerido: custo + 30%"><input inputMode="decimal" value={l.vendaTxt} onChange={(e) => atualizar(i, { vendaTxt: e.target.value, vendaEditada: true })} /></Field>
+                        <Field label="Nome do produto novo *" className="span2"><input data-xml={`${i}-nome`} className={erroEm(`${i}-nome`)} value={l.nomeNovo} onChange={(e) => atualizar(i, { nomeNovo: e.target.value })} /></Field>
+                        <Field label="Código de barras *"><input data-xml={`${i}-barcode`} className={erroEm(`${i}-barcode`)} inputMode="numeric" value={l.barcode} placeholder="8 a 14 dígitos" onChange={(e) => atualizar(i, { barcode: e.target.value })} /></Field>
+                        <Field label="Preço de venda por unidade (R$) *" hint="Sugerido: custo + 30%"><input data-xml={`${i}-venda`} className={erroEm(`${i}-venda`)} inputMode="decimal" value={l.vendaTxt} onChange={(e) => atualizar(i, { vendaTxt: e.target.value, vendaEditada: true })} /></Field>
                       </div>
                     )}
 
                     {ativo && (
                       <>
                         <div className="xml-grid">
-                          <Field label={`Quantidade comprada (${l.unidade || 'un'}) *`}><input inputMode="decimal" value={l.qtdTxt} onChange={(e) => mudar(i, { qtdTxt: e.target.value })} /></Field>
-                          <Field label="Unidades por caixa" hint="1 se o item não vem em caixa"><input inputMode="numeric" value={l.porCaixaTxt} onChange={(e) => mudar(i, { porCaixaTxt: e.target.value })} /></Field>
-                          <Field label={`Custo por ${l.unidade || 'item'} da nota (R$) *`}><input inputMode="decimal" value={l.custoTxt} onChange={(e) => mudar(i, { custoTxt: e.target.value })} /></Field>
+                          <Field label={`Quantidade comprada (${l.unidade || 'un'}) *`}><input data-xml={`${i}-qtd`} className={erroEm(`${i}-qtd`)} inputMode="decimal" value={l.qtdTxt} onChange={(e) => mudar(i, { qtdTxt: e.target.value })} /></Field>
+                          <Field label="Unidades por caixa" hint="1 se o item não vem em caixa"><input data-xml={`${i}-caixa`} className={erroEm(`${i}-caixa`)} inputMode="numeric" value={l.porCaixaTxt} onChange={(e) => mudar(i, { porCaixaTxt: e.target.value })} /></Field>
+                          <Field label={`Custo por ${l.unidade || 'item'} da nota (R$) *`}><input data-xml={`${i}-custo`} className={erroEm(`${i}-custo`)} inputMode="decimal" value={l.custoTxt} onChange={(e) => mudar(i, { custoTxt: e.target.value })} /></Field>
                           <Field label="Subtotal"><div style={{ padding: '10px 0', fontWeight: 700 }}>{parseNumero(l.qtdTxt) > 0 ? brl(parseNumero(l.qtdTxt) * parseNumero(l.custoTxt)) : '—'}</div></Field>
                         </div>
                         {porCaixa(l) > 1 && qtdFinal(l) > 0 && (
@@ -312,10 +329,10 @@ export default function ImportarXml({ products, suppliers, locations, categories
               <span><b>{lancaveis.length}</b> item(ns) a lançar{novos.length > 0 && <> (<b>{novos.length}</b> novo(s))</>}{ignorados > 0 && <> · {ignorados} ignorado(s)</>} · Total: <b>{brl(total)}</b></span>
             </div>
             <div className="es-dica" style={{ marginTop: 0 }}>Se a nota vem em caixa, quantidade e custo são por caixa. Produto novo é criado na unidade da nota (caixa = CX).</div>
-            {aviso && <div className="es-erro">{aviso}</div>}
+            {tentou && aviso && <div className="es-erro" role="alert">{aviso}</div>}
             <div className="modal-actions">
               <button type="button" onClick={() => setNota(null)}>Cancelar</button>
-              <button type="button" disabled={salvando || !!aviso} onClick={confirmar}>{salvando ? 'Lançando...' : 'Confirmar e lançar no estoque'}</button>
+              <button type="button" disabled={salvando} onClick={tentarConfirmar}>{salvando ? 'Lançando...' : 'Confirmar e lançar no estoque'}</button>
             </div>
           </div>
         </Modal>

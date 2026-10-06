@@ -838,6 +838,7 @@ button.es-btn-ghost:disabled { opacity: 0.45; cursor: not-allowed; }
 .tipo-balanco { color: var(--warn); font-weight: 700; }
 
 /* ===== Importacao de NF-e (XML) ===== */
+.modal-content input.xml-invalido, .modal-content select.xml-invalido, .xml-invalido input { border-color: var(--err); box-shadow: 0 0 0 3px color-mix(in srgb, var(--err) 30%, transparent); }
 .xml-secao { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; background: var(--panel-alt); display: flex; flex-direction: column; gap: 12px; }
 .xml-secao-titulo { font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .xml-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px 16px; align-items: start; }

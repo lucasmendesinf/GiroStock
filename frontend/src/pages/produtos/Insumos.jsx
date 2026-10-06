@@ -21,6 +21,28 @@ export default function Insumos({ ingredients, locations, reload }) {
   const [novo, setNovo] = useState(false);
   const [movimentando, setMovimentando] = useState(null);
   const [editando, setEditando] = useState(null);
+  const [verInativos, setVerInativos] = useState(false);
+  const confirmar = useConfirm();
+  const visiveis = ingredients.filter((i) => i.ativo || verInativos);
+  const qtdInativos = ingredients.filter((i) => !i.ativo).length;
+
+  async function desativar(i) {
+    if (i.ativo && !(await confirmar({ titulo: `Desativar "${i.nome}"?`, mensagem: 'O insumo some da lista e não poderá ser adicionado a novos lanches. O histórico fica guardado e dá para reativar depois.', confirmar: 'Desativar', perigo: true }))) return;
+    try {
+      await api.put(`/ingredients/${i.id}`, { ativo: !i.ativo });
+      toast.sucesso(i.ativo ? 'Insumo desativado.' : 'Insumo reativado.');
+      await reload();
+    } catch (err) { toast.erro(err); }
+  }
+
+  async function excluir(i) {
+    if (!(await confirmar({ titulo: `Excluir "${i.nome}"?`, mensagem: 'Só é possível se o insumo nunca teve movimentação de estoque nem está em receitas. Se já teve, use Desativar.', confirmar: 'Excluir', perigo: true }))) return;
+    try {
+      await api.del(`/ingredients/${i.id}`);
+      toast.sucesso('Insumo excluído.');
+      await reload();
+    } catch (err) { toast.erro(err); }
+  }
   const [consumo, setConsumo] = useState([]);
 
   useEffect(() => {
@@ -33,6 +55,7 @@ export default function Insumos({ ingredients, locations, reload }) {
         <div className="toolbar">
           <span className="muted">Matéria-prima usada nas fichas técnicas (lanches, porções, combos). Cada loja tem o próprio saldo.</span>
           <span className="toolbar-espaco" />
+          {qtdInativos > 0 && <label className="check"><input type="checkbox" checked={verInativos} onChange={(e) => setVerInativos(e.target.checked)} /> Mostrar desativados ({qtdInativos})</label>}
           <button type="button" className="btn-primario" onClick={() => setNovo(true)}>+ Novo insumo</button>
         </div>
         <div className="card">
@@ -40,8 +63,8 @@ export default function Insumos({ ingredients, locations, reload }) {
             <table>
               <thead><tr><th>Insumo</th><th className="num col-opcional">Custo/un</th><th className="num">Saldo total</th><th className="col-opcional">Por loja</th><th /></tr></thead>
               <tbody>
-                {ingredients.map((i) => (
-                  <tr key={i.id}>
+                {visiveis.map((i) => (
+                  <tr key={i.id} style={i.ativo ? undefined : { opacity: 0.6 }}>
                     <td><div className="celula-principal">{i.nome}{!i.ativo && <span className="badge-inativo"> inativo</span>}</div><div className="celula-sub">{i.unidade} · valor em estoque {brl(Number(i.saldo_total) * Number(i.custo_unitario))}</div></td>
                     <td className="num col-opcional">{brlFino(i.custo_unitario)}/{i.unidade}</td>
                     <td className="num">{qtd(i.saldo_total)} {i.unidade}</td>
@@ -55,13 +78,13 @@ export default function Insumos({ ingredients, locations, reload }) {
                         ))}
                       </div>
                     </td>
-                    <td><div className="acoes"><button type="button" className="btn-link" onClick={() => setEditando(i)}>Editar</button><button type="button" className="btn-link" onClick={() => setMovimentando(i)}>Movimentar</button></div></td>
+                    <td><div className="acoes"><button type="button" className="btn-link" onClick={() => setEditando(i)}>Editar</button>{i.ativo && <button type="button" className="btn-link" onClick={() => setMovimentando(i)}>Movimentar</button>}<button type="button" className="btn-link" onClick={() => desativar(i)}>{i.ativo ? 'Desativar' : 'Reativar'}</button><button type="button" className="btn-link perigo" onClick={() => excluir(i)}>Excluir</button></div></td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          {ingredients.length === 0 && <Vazio>Nenhum insumo cadastrado ainda.</Vazio>}
+          {visiveis.length === 0 && <Vazio>Nenhum insumo cadastrado ainda.</Vazio>}
         </div>
       </div>
 

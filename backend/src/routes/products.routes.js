@@ -340,11 +340,11 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
     if (fichaItems.length > 0) {
       const ingredientIds = fichaItems.map((i) => i.ingredient_id);
       const validIngredients = await client.query(
-        `SELECT id FROM ingredients WHERE id = ANY($1::uuid[]) AND tenant_id = $2`,
+        `SELECT id FROM ingredients WHERE id = ANY($1::uuid[]) AND tenant_id = $2 AND ativo = true`,
         [ingredientIds, req.user.tenantId]
       );
       if (validIngredients.rows.length !== new Set(ingredientIds).size) {
-        throw new HttpError(400, 'um ou mais insumos da ficha técnica não foram encontrados');
+        throw new HttpError(400, 'um ou mais insumos da ficha técnica não foram encontrados ou estão desativados');
       }
       for (const item of fichaItems) {
         const inserted = await client.query(
@@ -516,7 +516,11 @@ router.post('/products/:id/ingredients', requireArea('Estoque'), async (req, res
     return res.status(400).json({ erro: 'ingredient_id e quantidade_por_unidade (>0) são obrigatórios' });
   }
   await getOwned(pool, 'products', req.params.id, req.user.tenantId);
-  await getOwned(pool, 'ingredients', ingredient_id, req.user.tenantId);
+  const insumo = await getOwned(pool, 'ingredients', ingredient_id, req.user.tenantId, { columns: 'id, ativo' });
+  if (!insumo.ativo) {
+    const jaNaReceita = await pool.query(`SELECT 1 FROM product_ingredients WHERE product_id = $1 AND ingredient_id = $2 AND tenant_id = $3`, [req.params.id, ingredient_id, req.user.tenantId]);
+    if (jaNaReceita.rows.length === 0) throw new HttpError(400, 'insumo desativado: reative-o para usar em um produto');
+  }
 
   // Ao ganhar ficha tecnica o produto passa a ser controlado pelos insumos e o
   // saldo proprio seria ignorado; exige zerar/transferir esse saldo antes.

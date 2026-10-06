@@ -171,6 +171,38 @@ router.put('/ingredients/:id', requireArea('Estoque'), async (req, res) => {
   }
 });
 
+// Exclui o insumo so se nunca teve movimentacao e nao esta em nenhuma receita; senao, so desativar.
+router.delete('/ingredients/:id', requireArea('Estoque'), async (req, res) => {
+  const atual = await getOwned(pool, 'ingredients', req.params.id, req.user.tenantId, { columns: 'id, nome' });
+  const { rows } = await pool.query(
+    `SELECT
+       EXISTS(SELECT 1 FROM product_ingredients WHERE ingredient_id = $1 AND tenant_id = $2) AS em_receita,
+       EXISTS(SELECT 1 FROM ingredient_balances WHERE ingredient_id = $1 AND tenant_id = $2 AND saldo <> 0) AS com_saldo,
+       EXISTS(SELECT 1 FROM ingredient_consumptions WHERE ingredient_id = $1) AS consumido,
+       EXISTS(SELECT 1 FROM audit_logs WHERE tenant_id = $2 AND recurso = 'ingredients' AND recurso_id = $1
+              AND acao IN ('entrada_estoque', 'saida_estoque', 'transferencia', 'balanco_estoque')) AS movimentado`,
+    [req.params.id, req.user.tenantId]
+  );
+  const r = rows[0];
+  if (r.em_receita) throw new HttpError(409, 'este insumo está em receitas de produtos; remova-o das receitas ou apenas desative');
+  if (r.com_saldo || r.consumido || r.movimentado) throw new HttpError(409, 'este insumo já tem movimentação de estoque, então só pode ser desativado');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM ingredient_balances WHERE ingredient_id = $1 AND tenant_id = $2', [req.params.id, req.user.tenantId]);
+    await client.query('DELETE FROM ingredients WHERE id = $1 AND tenant_id = $2', [req.params.id, req.user.tenantId]);
+    await logAudit(client, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'excluir', recurso: 'ingredients', recursoId: req.params.id, detalhes: { nome: atual.nome } });
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    if (err.code === '23503') throw new HttpError(409, 'este insumo já tem movimentação, então só pode ser desativado');
+    throw err;
+  } finally {
+    client.release();
+  }
+});
+
 router.post('/ingredients/:id/stock-entries', requireArea('Estoque'), async (req, res) => {
   const { quantidade, custo_total, location_id } = req.body || {};
   const qtd = Number(quantidade);

@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react';
 import { brl, qtd } from '../../utils/format';
-import { Paginacao, Vazio } from '../../components/ui.jsx';
+import { Vazio } from '../../components/ui.jsx';
 import FormProduto from './FormProduto.jsx';
 import EditarProduto from './EditarProduto.jsx';
 import EstoqueProduto from './EstoqueProduto.jsx';
 import Categorias from './Categorias.jsx';
 import { situacaoProduto, saldoNaLoja, totalDoProduto } from './estoque.js';
 
-const POR_PAGINA = 25;
+const POR_PAGINA = 10;
 const CHIPS = [
   ['todos', 'Todos'],
   ['baixo', 'Estoque baixo'],
@@ -38,7 +38,7 @@ export default function ListaProdutos(props) {
   const [situacao, setSituacao] = useState('ativos');
   const [soAlerta, setSoAlerta] = useState(false);
   const [chip, setChip] = useState('todos');
-  const [offset, setOffset] = useState(0);
+  const [visiveis, setVisiveis] = useState(POR_PAGINA);
   const [novo, setNovo] = useState(false);
   const [editandoId, setEditandoId] = useState(null);
   const [estoqueId, setEstoqueId] = useState(null);
@@ -80,8 +80,8 @@ export default function ListaProdutos(props) {
       });
   }, [products, busca, situacao, categoriasFiltro, fornecedor, soAlerta, chip, insumosPorId]);
 
-  const pagina = linhas.slice(offset, offset + POR_PAGINA);
-  const mudarFiltro = (fn) => (e) => { fn(e.target.type === 'checkbox' ? e.target.checked : e.target.value); setOffset(0); };
+  const pagina = linhas.slice(0, visiveis);
+  const mudarFiltro = (fn) => (e) => { fn(e.target.type === 'checkbox' ? e.target.checked : e.target.value); setVisiveis(POR_PAGINA); };
   const produtoEstoque = products.find((p) => p.id === estoqueId);
 
   function abrirEstoque(p) {
@@ -119,7 +119,7 @@ export default function ListaProdutos(props) {
       <div className="es-chips" role="group" aria-label="Situação do estoque">
         {CHIPS.map(([id, nome]) => (
           <button key={id} type="button" className={`es-chip ${chip === id ? 'on' : ''}`} aria-pressed={chip === id}
-            onClick={() => { setChip(id); setOffset(0); }}>{nome}</button>
+            onClick={() => { setChip(id); setVisiveis(POR_PAGINA); }}>{nome}</button>
         ))}
       </div>
 
@@ -178,7 +178,13 @@ export default function ListaProdutos(props) {
         {carregado && linhas.length === 0 && (
           <Vazio>{products.length === 0 ? 'Nenhum produto cadastrado ainda. Clique em "+ Novo produto".' : 'Nenhum produto encontrado.'}</Vazio>
         )}
-        <Paginacao total={linhas.length} limit={POR_PAGINA} offset={offset} onChange={setOffset} />
+        {linhas.length > 0 && (
+          <div className="paginacao">
+            <span>Mostrando {pagina.length} de {linhas.length} produto(s)</span>
+            {linhas.length > visiveis && <button type="button" className="btn-link" onClick={() => setVisiveis(visiveis + POR_PAGINA)}>Mostrar mais</button>}
+            {visiveis > POR_PAGINA && pagina.length >= linhas.length && <button type="button" className="btn-link" onClick={() => setVisiveis(POR_PAGINA)}>Mostrar menos</button>}
+          </div>
+        )}
       </div>
 
       {novo && <FormProduto {...props} onClose={() => setNovo(false)} onSalvo={() => setNovo(false)} />}

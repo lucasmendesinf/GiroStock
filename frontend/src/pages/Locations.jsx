@@ -61,6 +61,15 @@ export default function Locations() {
     executar(() => api.patch(`/locations/${l.id}`, { ativo: !l.ativo }), l.ativo ? 'Loja desativada.' : 'Loja reativada.');
   }
 
+  async function excluirLoja(l) {
+    if (!(await confirmar({
+      titulo: `Excluir a loja "${l.nome}"?`,
+      mensagem: 'Os PDVs dela também serão excluídos. Só é possível se a loja nunca teve movimentação de estoque, vendas ou caixa; se já teve, use Desativar.',
+      confirmar: 'Excluir loja', perigo: true,
+    }))) return;
+    executar(() => api.del(`/locations/${l.id}`), 'Loja excluída.');
+  }
+
   async function alternarTerminal(t) {
     if (t.ativo && !(await confirmar({ titulo: `Desativar o PDV "${t.nome}"?`, confirmar: 'Desativar PDV', perigo: true }))) return;
     executar(() => api.patch(`/terminals/${t.id}`, { ativo: !t.ativo }), t.ativo ? 'PDV desativado.' : 'PDV reativado.');
@@ -111,7 +120,10 @@ export default function Locations() {
                 {campoNome('locations', l)}
                 {!l.ativo && <span className="badge-inativo">Inativa</span>}
               </span>
-              <button className={`btn-link ${l.ativo ? 'perigo' : ''}`} onClick={() => alternarLoja(l)}>{l.ativo ? 'Desativar loja' : 'Reativar loja'}</button>
+              <span className="row-actions">
+                <button className={`btn-link ${l.ativo ? 'perigo' : ''}`} onClick={() => alternarLoja(l)}>{l.ativo ? 'Desativar loja' : 'Reativar loja'}</button>
+                <button className="btn-link perigo" onClick={() => excluirLoja(l)}>Excluir loja</button>
+              </span>
             </div>
 
             {daLoja.map((t) => (

@@ -84,6 +84,53 @@ router.patch('/locations/:id', requireArea('Configuracoes'), async (req, res) =>
   }
 });
 
+// Uma loja so pode ser excluida se nunca teve movimentacao: sem saldo, sem entradas/saidas/transferencias
+// (produtos e insumos), sem vendas, sem caixa e sem usuarios vinculados. Caso contrario, so desativar.
+async function motivoParaNaoExcluir(db, id, tenantId) {
+  const { rows } = await db.query(
+    `SELECT
+       EXISTS(SELECT 1 FROM stock_movements WHERE tenant_id = $2 AND (location_origem_id = $1 OR location_destino_id = $1)) AS mov_produtos,
+       EXISTS(SELECT 1 FROM stock_balances WHERE tenant_id = $2 AND location_id = $1 AND saldo <> 0) AS saldo_produtos,
+       EXISTS(SELECT 1 FROM ingredient_balances WHERE tenant_id = $2 AND location_id = $1 AND saldo <> 0) AS saldo_insumos,
+       EXISTS(SELECT 1 FROM audit_logs WHERE tenant_id = $2 AND recurso = 'ingredients' AND detalhes::text LIKE '%' || $1::text || '%') AS mov_insumos,
+       EXISTS(SELECT 1 FROM ingredient_consumptions WHERE location_id = $1) AS consumo_insumos,
+       EXISTS(SELECT 1 FROM sales WHERE tenant_id = $2 AND location_id = $1) AS vendas,
+       EXISTS(SELECT 1 FROM cash_sessions cs JOIN cash_registers cr ON cr.id = cs.cash_register_id
+              JOIN terminals t ON t.id = cr.terminal_id WHERE t.location_id = $1 AND cs.tenant_id = $2) AS caixas,
+       EXISTS(SELECT 1 FROM users WHERE tenant_id = $2 AND location_id = $1) AS usuarios`,
+    [id, tenantId]
+  );
+  const r = rows[0];
+  if (r.usuarios) return 'há usuários vinculados a esta loja; mude a loja deles antes de excluir';
+  if (r.saldo_produtos || r.saldo_insumos) return 'esta loja ainda tem estoque; só é possível desativar depois de zerar';
+  if (r.mov_produtos || r.mov_insumos || r.consumo_insumos || r.vendas || r.caixas) return 'esta loja já tem movimentação (estoque, vendas ou caixa), então só pode ser desativada';
+  return null;
+}
+
+router.delete('/locations/:id', requireArea('Configuracoes'), async (req, res) => {
+  const atual = await getOwned(pool, 'locations', req.params.id, req.user.tenantId, { columns: 'id, nome, ativo' });
+  const motivo = await motivoParaNaoExcluir(pool, req.params.id, req.user.tenantId);
+  if (motivo) throw new HttpError(409, motivo);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`DELETE FROM stock_balances WHERE location_id = $1 AND tenant_id = $2`, [req.params.id, req.user.tenantId]);
+    await client.query(`DELETE FROM ingredient_balances WHERE location_id = $1 AND tenant_id = $2`, [req.params.id, req.user.tenantId]);
+    await client.query(`DELETE FROM cash_registers WHERE tenant_id = $2 AND terminal_id IN (SELECT id FROM terminals WHERE location_id = $1)`, [req.params.id, req.user.tenantId]);
+    await client.query(`DELETE FROM terminals WHERE location_id = $1 AND tenant_id = $2`, [req.params.id, req.user.tenantId]);
+    await client.query(`DELETE FROM locations WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.user.tenantId]);
+    await logAudit(client, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'excluir', recurso: 'locations', recursoId: req.params.id, detalhes: { nome: atual.nome } });
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    if (err.code === '23503') throw new HttpError(409, 'esta loja já tem movimentação, então só pode ser desativada');
+    throw err;
+  } finally {
+    client.release();
+  }
+});
+
 // Usuario vinculado a um local so enxerga os terminais (PDVs) daquele local.
 router.get('/terminals', async (req, res) => {
   const params = [req.user.tenantId];

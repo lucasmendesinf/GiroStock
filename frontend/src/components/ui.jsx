@@ -27,7 +27,7 @@ export function Modal({ titulo, subtitulo, onClose, largura = 'normal', children
   }, [onClose]);
   return (
     <div ref={ref} className="modal" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget && onClose) onClose(); }}>
-      <div className={`modal-content ${largura === 'larga' ? 'wide' : ''} ${largura === 'extra' ? 'extra-wide' : ''}`}>
+      <div className={`modal-content ${largura === 'larga' ? 'wide' : ''} ${largura === 'extra' ? 'extra-wide' : ''} ${largura === 'xml' ? 'xml-wide' : ''}`}>
         <div className="modal-header">
           <div>
             <h3>{titulo}</h3>

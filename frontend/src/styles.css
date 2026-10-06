@@ -840,7 +840,7 @@ button.es-btn-ghost:disabled { opacity: 0.45; cursor: not-allowed; }
 /* ===== Importacao de NF-e (XML) ===== */
 .xml-secao { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; background: var(--panel-alt); display: flex; flex-direction: column; gap: 12px; }
 .xml-secao-titulo { font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-.xml-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; align-items: start; }
+.xml-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px 16px; align-items: start; }
 .xml-grid .field { flex: none; min-width: 0; }
 .xml-itens { display: flex; flex-direction: column; gap: 12px; }
 .xml-item { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
@@ -853,3 +853,8 @@ button.es-btn-ghost:disabled { opacity: 0.45; cursor: not-allowed; }
 .xml-vinculado b { color: var(--ivory); }
 .xml-totais { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 .xml-item .segmentado button { padding: 6px 12px; }
+.modal-content.xml-wide { width: 1180px; }
+.xml-grid .span2 { grid-column: span 2; }
+@media (max-width: 700px) { .xml-grid .span2 { grid-column: auto; } }
+.xml-calculo { font-size: 13px; color: var(--muted); }
+.xml-calculo b { color: var(--gold-light); }

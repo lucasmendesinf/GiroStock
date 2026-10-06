@@ -14,6 +14,17 @@ const MODOS = [
   { id: 'ignorar', label: 'Ignorar' },
 ];
 
+// Tenta descobrir quantas unidades vem na caixa pela descricao ("6UN", "CX20", "FARDO 12", "C/12", "FL 06").
+function unidadesNaCaixa(nome, unidade) {
+  if (!/^(CX|CAIXA|FD|FARDO|PCT|PC)/i.test(unidade || '')) return 1;
+  const t = String(nome || '').toUpperCase();
+  const m = t.match(/(\d+)\s*(?:UN|UND|UNID|UNIDADES)\b/) || t.match(/\bCX\s*0*(\d+)\b/) || t.match(/\bC\/\s*(\d+)\b/)
+    || t.match(/\bFARDO\s*(\d+)\b/) || t.match(/\bFL\s*0*(\d+)\b/);
+  const n = m ? Number(m[1]) : 1;
+  return n >= 1 && n <= 1000 ? n : 1;
+}
+const precoSugerido = (custoUn) => (Math.ceil(custoUn * MARGEM_PADRAO * 100) / 100).toFixed(2).replace('.', ',');
+
 const soDigitos = (v) => String(v || '').replace(/\D/g, '');
 const eanValido = (v) => { const d = soDigitos(v); return d.length >= 8 && d.length <= 14 ? d : ''; };
 const paraCampo = (n) => String(Math.round(n * 10000) / 10000).replace('.', ',');
@@ -85,8 +96,9 @@ export default function ImportarXml({ products, suppliers, locations, categories
           ...l, chave: `${l.eans[0] || 'cod'}:${l.cProd}`,
           achadoPorEan: !!p, modo: p ? 'vincular' : 'novo', produtoId: p ? p.id : '',
           qtdTxt: paraCampo(l.quantidade), custoTxt: paraCampo(l.custo),
-          barcode: l.eans[0] || '', nomeNovo: l.nome,
-          vendaTxt: (Math.ceil(l.custo * MARGEM_PADRAO * 100) / 100).toFixed(2).replace('.', ','),
+          barcode: l.eans[0] || '', nomeNovo: l.nome, vendaEditada: false,
+          porCaixaTxt: String(unidadesNaCaixa(l.nome, l.unidade)),
+          vendaTxt: precoSugerido(l.custo / unidadesNaCaixa(l.nome, l.unidade)),
         };
       }));
       setNota(n);
@@ -102,6 +114,15 @@ export default function ImportarXml({ products, suppliers, locations, categories
   const novos = linhas.filter((l) => l.modo === 'novo');
   const ignorados = linhas.length - lancaveis.length;
   const total = lancaveis.reduce((s, l) => s + (parseNumero(l.qtdTxt) > 0 ? parseNumero(l.qtdTxt) * parseNumero(l.custoTxt) : 0), 0);
+  const porCaixa = (l) => { const n = parseNumero(l.porCaixaTxt); return n >= 1 ? n : 1; };
+  const qtdFinal = (l) => parseNumero(l.qtdTxt) * porCaixa(l);
+  const custoFinal = (l) => parseNumero(l.custoTxt) / porCaixa(l);
+  // Mudou caixa/custo: reajusta o preco de venda sugerido (se voce ainda nao mexeu nele).
+  const mudar = (i, campos) => {
+    const l = { ...linhas[i], ...campos };
+    if (!l.vendaEditada && ('custoTxt' in campos || 'porCaixaTxt' in campos)) l.vendaTxt = precoSugerido(parseNumero(l.custoTxt) / porCaixa(l));
+    atualizar(i, l);
+  };
   const produtoDe = (id) => elegiveis.find((p) => p.id === id);
 
   function problema() {
@@ -110,9 +131,10 @@ export default function ImportarXml({ products, suppliers, locations, categories
     if (novos.length > 0 && !categoriaId) return 'Escolha a categoria dos produtos novos.';
     for (const l of lancaveis) {
       if (!(parseNumero(l.qtdTxt) > 0) || !(parseNumero(l.custoTxt) >= 0)) return `Confira a quantidade e o custo de "${l.nome}".`;
+      if (!(parseNumero(l.porCaixaTxt) >= 1) || !Number.isInteger(parseNumero(l.porCaixaTxt))) return `"${l.nome}": unidades por caixa deve ser um número inteiro (1 se não vem em caixa).`;
       if (l.modo === 'vincular' && !l.produtoId) return `Escolha o produto para vincular a "${l.nome}" (ou cadastre como novo / ignore).`;
       if (l.modo === 'novo') {
-        const custo = parseNumero(l.custoTxt);
+        const custo = custoFinal(l);
         if (l.nomeNovo.trim().length < 3) return 'O nome do produto novo precisa ter ao menos 3 caracteres.';
         if (!eanValido(l.barcode)) return `Informe o código de barras (8 a 14 dígitos) de "${l.nomeNovo}".`;
         if (!(custo > 0)) return `"${l.nomeNovo}": o custo precisa ser maior que zero para cadastrar o produto.`;
@@ -145,15 +167,15 @@ export default function ImportarXml({ products, suppliers, locations, categories
         let productId = l.modo === 'vincular' ? l.produtoId : criados.current.produtos[l.chave];
         if (!productId) {
           const p = await api.post('/products', {
-            nome: l.nomeNovo.trim(), categoria_id: categoriaId, unidade: unidadeDoProduto(l.unidade),
-            barcode: eanValido(l.barcode), preco_custo: parseNumero(l.custoTxt), preco_venda: parseNumero(l.vendaTxt),
+            nome: l.nomeNovo.trim(), categoria_id: categoriaId, unidade: porCaixa(l) > 1 ? 'UN' : unidadeDoProduto(l.unidade),
+            barcode: eanValido(l.barcode), preco_custo: Math.round(custoFinal(l) * 100) / 100, preco_venda: parseNumero(l.vendaTxt),
             supplier_id: supplierId || null, supplier_ids: [], ficha_tecnica: [],
           });
           productId = p.id;
           criados.current.produtos[l.chave] = p.id;
         }
-        const q = parseNumero(l.qtdTxt);
-        const c = parseNumero(l.custoTxt);
+        const q = qtdFinal(l);
+        const c = custoFinal(l);
         const ja = porProduto.get(productId);
         if (ja) {
           ja.custo_unitario = (ja.quantidade * ja.custo_unitario + q * c) / (ja.quantidade + q);
@@ -178,7 +200,7 @@ export default function ImportarXml({ products, suppliers, locations, categories
       <input ref={inputRef} type="file" accept=".xml,text/xml,application/xml" onChange={abrir} style={{ display: 'none' }} />
       <button type="button" className="es-btn-ghost" onClick={() => inputRef.current.click()} title="Importar o XML da nota fiscal (NF-e)">Importar XML da NF-e</button>
       {nota && (
-        <Modal titulo="Conferir importação da NF-e" subtitulo={`Nota ${nota.numero || '—'} · ${nota.emitente || 'emitente não informado'}`} onClose={() => setNota(null)} largura="extra">
+        <Modal titulo="Conferir importação da NF-e" subtitulo={`Nota ${nota.numero || '—'} · ${nota.emitente || 'emitente não informado'}`} onClose={() => setNota(null)} largura="xml">
           <div className="form-stack" onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault(); }}>
             <div className="es-resumo">
               O <b>GTIN/EAN</b> de cada item é usado para achar o produto no cadastro. Itens não encontrados podem ser <b>vinculados</b> a um produto existente ou <b>cadastrados como novos</b>. Nada é gravado até você confirmar.
@@ -262,18 +284,24 @@ export default function ImportarXml({ products, suppliers, locations, categories
 
                     {l.modo === 'novo' && (
                       <div className="xml-grid">
-                        <Field label="Nome do produto novo *"><input value={l.nomeNovo} onChange={(e) => atualizar(i, { nomeNovo: e.target.value })} /></Field>
+                        <Field label="Nome do produto novo *" className="span2"><input value={l.nomeNovo} onChange={(e) => atualizar(i, { nomeNovo: e.target.value })} /></Field>
                         <Field label="Código de barras *"><input inputMode="numeric" value={l.barcode} placeholder="8 a 14 dígitos" onChange={(e) => atualizar(i, { barcode: e.target.value })} /></Field>
-                        <Field label="Preço de venda (R$) *" hint="Sugerido: custo + 30%"><input inputMode="decimal" value={l.vendaTxt} onChange={(e) => atualizar(i, { vendaTxt: e.target.value })} /></Field>
+                        <Field label="Preço de venda por unidade (R$) *" hint="Sugerido: custo + 30%"><input inputMode="decimal" value={l.vendaTxt} onChange={(e) => atualizar(i, { vendaTxt: e.target.value, vendaEditada: true })} /></Field>
                       </div>
                     )}
 
                     {ativo && (
-                      <div className="xml-grid">
-                        <Field label={`Quantidade (${l.unidade || 'un'})`}><input inputMode="decimal" value={l.qtdTxt} onChange={(e) => atualizar(i, { qtdTxt: e.target.value })} /></Field>
-                        <Field label="Custo unitário (R$)"><input inputMode="decimal" value={l.custoTxt} onChange={(e) => atualizar(i, { custoTxt: e.target.value })} /></Field>
-                        <Field label="Subtotal"><div style={{ padding: '10px 0', fontWeight: 700 }}>{parseNumero(l.qtdTxt) > 0 ? brl(parseNumero(l.qtdTxt) * parseNumero(l.custoTxt)) : '—'}</div></Field>
-                      </div>
+                      <>
+                        <div className="xml-grid">
+                          <Field label={`Quantidade comprada (${l.unidade || 'un'}) *`}><input inputMode="decimal" value={l.qtdTxt} onChange={(e) => mudar(i, { qtdTxt: e.target.value })} /></Field>
+                          <Field label="Unidades por caixa" hint="1 se o item não vem em caixa"><input inputMode="numeric" value={l.porCaixaTxt} onChange={(e) => mudar(i, { porCaixaTxt: e.target.value })} /></Field>
+                          <Field label={`Custo por ${l.unidade || 'item'} da nota (R$) *`}><input inputMode="decimal" value={l.custoTxt} onChange={(e) => mudar(i, { custoTxt: e.target.value })} /></Field>
+                          <Field label="Subtotal"><div style={{ padding: '10px 0', fontWeight: 700 }}>{parseNumero(l.qtdTxt) > 0 ? brl(parseNumero(l.qtdTxt) * parseNumero(l.custoTxt)) : '—'}</div></Field>
+                        </div>
+                        {porCaixa(l) > 1 && qtdFinal(l) > 0 && (
+                          <div className="xml-calculo">Entram <b>{qtdFinal(l)} unidades</b> no estoque, a <b>{brl(custoFinal(l))}</b> cada.</div>
+                        )}
+                      </>
                     )}
                   </div>
                 );

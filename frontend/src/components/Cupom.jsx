@@ -92,10 +92,18 @@ export function ComandaCozinha({ venda, config }) {
       </div>
       <Pedido numero={venda.numero_pedido} tamanho={k.tamanho_pedido} />
       {venda.numero_pedido === null || venda.numero_pedido === undefined ? <div className="cupom-centro">Venda nº {venda.numero}</div> : null}
+      {venda.pedido && (
+        <div className="cupom-centro">
+          <strong>{venda.pedido.origem} · {venda.pedido.tipo === 'entrega' ? 'ENTREGA' : 'RETIRADA'}</strong>
+          {venda.pedido.cliente && <div>{venda.pedido.cliente}{venda.pedido.telefone ? ` · ${venda.pedido.telefone}` : ''}</div>}
+          {venda.pedido.tipo === 'entrega' && venda.pedido.endereco && <div className="cupom-texto">{venda.pedido.endereco}</div>}
+        </div>
+      )}
       {k.mostrar_data && <div className="cupom-centro">{dataHora(venda.criado_em)}</div>}
       {k.mostrar_operador && <div className="cupom-centro">Operador: {venda.operador_nome}</div>}
       <div className="cupom-linha" />
       {itens.length === 0 && <div className="cupom-centro">Sem itens para preparar</div>}
+      {venda.pedido && venda.pedido.observacao && <div className="cupom-obs cupom-obs-cozinha" style={{ paddingLeft: 0 }}>Obs.: {venda.pedido.observacao}</div>}
       {itens.map((i) => (
         <div key={i.id} className="cupom-item cupom-item-cozinha">
           <strong>{qtd(i.quantidade, i.unidade)}{i.unidade && i.unidade !== 'UN' ? ` ${i.unidade}` : 'x'}</strong> {i.product_nome}

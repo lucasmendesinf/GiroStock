@@ -939,3 +939,98 @@ button.es-btn-ghost:disabled { opacity: 0.45; cursor: not-allowed; }
 .carrinho-obs textarea { width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ivory); font: inherit; font-size: 13px; resize: none; min-height: 36px; }
 .carrinho-obs textarea:focus { border-color: var(--gold-light); outline: none; }
 .carrinho-obs .btn-link { align-self: flex-start; font-size: 12px; }
+
+/* ===== Pedidos (quadro, lista, gaveta e formulario) ===== */
+.ped-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.ped-head h2 { margin: 0 auto 0 0; }
+.ped-kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 16px; }
+.ped-kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+.ped-kpi small { display: block; color: var(--muted-2); font-size: 10px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; }
+.ped-kpi b { font-size: 26px; font-weight: 800; }
+.ped-kpi.hero { background: var(--accent-soft); border-color: var(--accent-line); }
+.ped-kpi.hero b { color: var(--gold-light); }
+.ped-kpi.pulse b { animation: ped-pulso 1.2s infinite; }
+@keyframes ped-pulso { 50% { opacity: .45; } }
+.ped-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+.ped-busca { max-width: 260px; }
+button.ped-chip { border: 1px solid var(--line); background: none; color: var(--muted); border-radius: 999px; padding: 7px 13px; font-size: 12px; font-weight: 700; cursor: pointer; text-transform: none; letter-spacing: 0; }
+button.ped-chip.on { background: var(--accent-soft); border-color: var(--gold-light); color: var(--gold-light); }
+.ped-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-left: auto; }
+.ped-seg button { border: none; background: none; color: var(--muted); padding: 8px 14px; font-weight: 700; font-size: 12px; cursor: pointer; text-transform: none; letter-spacing: 0; }
+.ped-seg button.on { background: var(--gold-light); color: var(--btn-text); }
+.ped-board { display: grid; grid-template-columns: repeat(5, minmax(210px, 1fr)); gap: 12px; overflow-x: auto; align-items: start; }
+.ped-col { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px; min-height: 260px; }
+.ped-col h4 { margin: 2px 4px 10px; display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; color: var(--muted); }
+.ped-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted-2); display: inline-block; flex: none; }
+.ped-dot.novo { background: var(--gold-light); }
+.ped-dot.prep { background: var(--warn); }
+.ped-dot.pronto { background: var(--ok); }
+.ped-dot.rota { background: none; border: 2px solid var(--muted); }
+.ped-cnt { margin-left: auto; background: var(--panel-alt); border-radius: 999px; padding: 1px 9px; font-size: 11px; color: var(--muted); }
+.ped-card { background: var(--panel-alt); border: 1px solid var(--line); border-left: 3px solid transparent; border-radius: 12px; padding: 11px 12px; margin-bottom: 9px; cursor: pointer; }
+.ped-card:hover { background: var(--hover); }
+.ped-card.late { border-left-color: var(--warn); }
+.ped-r1 { display: flex; align-items: center; gap: 8px; }
+.ped-num { font-weight: 800; }
+.ped-tm { margin-left: auto; font-size: 12px; color: var(--muted-2); font-weight: 700; }
+.ped-tm.late { color: var(--warn); }
+.ped-cli { font-weight: 700; margin: 6px 0 2px; }
+.ped-its { font-size: 12px; color: var(--muted); line-height: 1.4; }
+.ped-r3 { display: flex; align-items: center; gap: 6px; margin-top: 9px; flex-wrap: wrap; }
+.ped-tag { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--panel); color: var(--muted); border: 1px solid var(--line); }
+.ped-tot { margin-left: auto; font-weight: 800; color: var(--gold-light); }
+.ped-pill { font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; border: 1px solid; }
+.ped-pill.ok { color: var(--ok); border-color: var(--ok); }
+.ped-pill.warn { color: var(--warn); border-color: var(--warn); }
+.ped-act { margin-top: 9px; display: flex; gap: 6px; }
+button.ped-act-btn, .ped-act button { flex: 1; padding: 8px; font-size: 11.5px; border-radius: 10px; border: none; background: var(--gold-light); color: var(--btn-text); font-weight: 800; cursor: pointer; text-transform: uppercase; letter-spacing: .3px; }
+.ped-vazio { color: var(--muted-2); font-size: 12px; text-align: center; padding: 24px 0; }
+.ped-ov { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); display: flex; z-index: 60; }
+.ped-drawer { margin-left: auto; width: min(460px, 100%); height: 100%; background: var(--panel); border-left: 1px solid var(--line); padding: 22px; overflow: auto; }
+.ped-drawer h3 { margin: 0 0 14px; font-size: 20px; }
+.ped-nota { background: var(--panel-alt); border: 1px dashed var(--line); border-radius: 12px; padding: 10px 12px; margin-top: 12px; color: var(--muted); font-size: 13px; }
+.ped-sec { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 6px; }
+.ped-rotulo { display: block; font-size: 11px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--muted-2); margin: 8px 0 4px; }
+.ped-tl { list-style: none; margin: 6px 0 0; padding: 0; }
+.ped-tl li { display: flex; gap: 10px; padding: 6px 0; color: var(--muted-2); font-size: 13px; align-items: center; }
+.ped-tl li.done { color: var(--ivory); }
+.ped-tl li.done .ped-dot { background: var(--ok); }
+.ped-tl li.cur { color: var(--gold-light); font-weight: 700; }
+.ped-tl li.cur .ped-dot { background: var(--gold-light); box-shadow: 0 0 0 4px var(--accent-soft); }
+.ped-tl small { margin-left: auto; color: var(--muted-2); }
+.ped-linha { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; gap: 12px; }
+.ped-total { font-weight: 800; font-size: 16px; border-top: 1px solid var(--line); margin-top: 6px; padding-top: 10px; }
+.ped-total b { color: var(--gold-light); }
+.ped-botoes { display: flex; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
+.ped-botoes .perigo { background: none; border: 1px solid var(--err); color: var(--err); }
+.ped-item { border-bottom: 1px solid var(--line); padding: 7px 0; }
+.ped-item-linha { display: flex; align-items: center; gap: 10px; }
+.ped-item-nome { flex: 1; }
+.ped-item-valor { flex: 0 0 90px; text-align: right; font-weight: 700; }
+.ped-item-obs { margin-top: 6px; }
+.ped-item-obsv { font-size: 12px; color: var(--muted); padding: 2px 0 4px 14px; }
+.ped-qtd { display: inline-flex; align-items: center; gap: 8px; }
+.ped-qtd button { width: 28px; height: 28px; padding: 0; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-alt); color: var(--ivory); cursor: pointer; }
+.ped-seg2 { display: flex; gap: 8px; }
+.ped-seg2 button { flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: none; color: var(--muted); font-weight: 700; cursor: pointer; text-transform: none; letter-spacing: 0; }
+.ped-seg2 button.on { border-color: var(--gold-light); background: var(--accent-soft); color: var(--gold-light); }
+.ped-busca-wrap, .ped-busca { position: relative; }
+.ped-res { border: 1px solid var(--line); border-radius: 10px; margin-top: 6px; max-height: 190px; overflow: auto; background: var(--panel-alt); }
+.ped-res button { display: flex; justify-content: space-between; width: 100%; padding: 9px 12px; border: none; background: none; color: var(--ivory); cursor: pointer; text-align: left; text-transform: none; letter-spacing: 0; font-weight: 600; }
+.ped-res button:hover:not(:disabled) { background: var(--hover); }
+.ped-res button:disabled { opacity: .5; cursor: not-allowed; }
+.ped-res small { color: var(--muted-2); font-weight: 500; }
+.pedido-pdv-tipo { display: flex; gap: 8px; margin-top: 12px; }
+.pedido-pdv-tipo button { flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: none; color: var(--muted); font-weight: 700; cursor: pointer; text-transform: none; letter-spacing: 0; }
+.pedido-pdv-tipo button.on { border-color: var(--gold-light); background: var(--accent-soft); color: var(--gold-light); }
+.pedido-pdv-aviso { background: var(--panel-alt); border: 1px dashed var(--line); border-radius: 12px; padding: 10px 12px; margin-top: 12px; font-size: 12px; color: var(--muted); }
+.pedido-pdv-aviso b { color: var(--ivory); }
+@media (max-width: 900px) { .ped-kpis { grid-template-columns: repeat(2, 1fr); } }
+
+.ped-bar input.ped-busca, .ped-head select, .ped-item-obs { padding: 10px 13px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--panel-alt); color: var(--ivory); font-size: 14px; font-family: inherit; }
+.ped-bar input.ped-busca { flex: 1 1 220px; max-width: 300px; }
+.ped-bar input.ped-busca:focus, .ped-head select:focus { outline: none; border-color: var(--gold-light); }
+.ped-item-obs { width: 100%; box-sizing: border-box; }
+
+.ped-botoes button:not(.btn-primario):not(.perigo) { padding: 10px 16px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-alt); color: var(--ivory); font-weight: 700; cursor: pointer; text-transform: none; letter-spacing: 0; }
+.ped-botoes .perigo { padding: 10px 16px; border-radius: 10px; cursor: pointer; font-weight: 700; text-transform: none; }

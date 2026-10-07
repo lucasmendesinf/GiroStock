@@ -3,6 +3,7 @@
 export const TELAS = [
   { path: '/inicio', label: 'Início', area: null, paraPerfis: ['Administrador', 'Gerente', 'Financeiro', 'Estoque', 'Lanchonete/Cozinha'] },
   { path: '/pdv', label: 'PDV', area: 'Vendas' },
+  { path: '/pedidos', label: 'Pedidos', area: 'Pedidos', requer: 'usaPedidos' },
   { path: '/produtos', label: 'Produtos & Estoque', area: 'Estoque' },
   { path: '/fornecedores', label: 'Fornecedores', area: 'Estoque' },
   { path: '/lojas', label: 'Lojas & PDVs', area: 'Configuracoes' },
@@ -17,7 +18,7 @@ export function podeAcessar(user, area) {
 }
 
 export function telasDoUsuario(user) {
-  return TELAS.filter((t) => podeAcessar(user, t.area) && (!t.paraPerfis || t.paraPerfis.includes(user.perfil)));
+  return TELAS.filter((t) => podeAcessar(user, t.area) && (!t.requer || user[t.requer]) && (!t.paraPerfis || t.paraPerfis.includes(user.perfil)));
 }
 
 // Tela inicial apos o login: caixa vai direto ao PDV, estoque aos produtos, etc.

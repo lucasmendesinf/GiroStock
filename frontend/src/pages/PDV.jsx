@@ -5,6 +5,7 @@ import { brl, qtd, parseNumero, dataHora, UNIDADES_INTEIRAS, FORMA_PAGAMENTO } f
 import { useToast, useConfirm } from '../context/UiContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { podeAcessar } from '../utils/permissions';
+import PedidoForm, { ORIGENS, vendaDoPedido } from '../components/PedidoForm.jsx';
 import { Field, Modal } from '../components/ui.jsx';
 import Cupom, { imprimirCupom as abrirImpressao, modoAutomatico, configDaVenda } from '../components/Cupom.jsx';
 
@@ -316,6 +317,29 @@ export default function PDV() {
 
   const subtotal = Number(cart.reduce((acc, i) => acc + i.preco_venda * i.quantidade, 0).toFixed(2));
 
+  // ---------- pedido (lanchonete): o carrinho vira pedido em vez de venda imediata ----------
+  const [lojas, setLojas] = useState([]);
+  const [tipoPdv, setTipoPdv] = useState('venda'); // venda | pedido
+  const [origemPdv, setOrigemPdv] = useState('balcao');
+  const [pedidoModal, setPedidoModal] = useState(false);
+  useEffect(() => { api.get('/locations').then(setLojas).catch(() => {}); }, []);
+  const lojaDoTerminal = lojas.find((l) => terminal && l.id === terminal.location_id);
+  const usaPedidos = !!(lojaDoTerminal && lojaDoTerminal.usa_pedidos) && podeAcessar(user, 'Pedidos');
+  const temPreparo = cart.some((i) => i.tem_ficha_tecnica);
+  // Regra de ouro: produto com receita (insumos) so pode virar pedido; o carrinho misto vira pedido inteiro.
+  const modoPedido = usaPedidos && (temPreparo || tipoPdv === 'pedido');
+  useEffect(() => { if (cart.length === 0) setTipoPdv('venda'); }, [cart.length]);
+
+  async function pedidoCriado(pedido) {
+    setPedidoModal(false);
+    setCart([]);
+    setTipoPdv('venda');
+    toast.sucesso(`Pedido #${pedido.numero} gerado · estoque reservado`);
+    const cfg = configDaVenda(pedido);
+    if (cfg.cozinha.ativo && cfg.cozinha.imprimir_automatico) abrirImpressao(setCupom, vendaDoPedido(pedido), 'cozinha', (m) => toast.sucesso(m));
+    focarBusca();
+  }
+
   // ---------- pagamento ----------
   const [pagamentoAberto, setPagamentoAberto] = useState(false);
   const [formaPagamento, setFormaPagamento] = useState(null);
@@ -338,6 +362,7 @@ export default function PDV() {
 
   function abrirPagamento() {
     if (cart.length === 0) return;
+    if (modoPedido) { setPedidoModal(true); return; }
     setFormaPagamento(null);
     setValorRecebido('');
     setDescontoTexto('');
@@ -431,7 +456,7 @@ export default function PDV() {
   }
 
   // ---------- atalhos de teclado ----------
-  const algumModal = pagamentoAberto || !!sucesso || movModalAberto || fecharAberto;
+  const algumModal = pagamentoAberto || !!sucesso || movModalAberto || fecharAberto || pedidoModal;
   useEffect(() => {
     if (!session) return undefined;
     function onKey(e) {
@@ -631,9 +656,32 @@ export default function PDV() {
             <span>Total</span>
             <strong>{brl(subtotal)}</strong>
           </div>
-          <button className="btn-finalizar" disabled={cart.length === 0} onClick={abrirPagamento}>Finalizar venda <kbd>F2</kbd></button>
+          {usaPedidos && !temPreparo && cart.length > 0 && (
+            <div className="pedido-pdv-tipo" role="group" aria-label="Venda ou pedido">
+              <button type="button" className={tipoPdv === 'venda' ? 'on' : ''} onClick={() => setTipoPdv('venda')}>Venda</button>
+              <button type="button" className={tipoPdv === 'pedido' ? 'on' : ''} onClick={() => setTipoPdv('pedido')}>Pedido</button>
+            </div>
+          )}
+          {modoPedido && (
+            <>
+              {temPreparo && <div className="pedido-pdv-aviso"><b>Produto com preparo (insumos).</b> Este carrinho só pode virar <b>pedido</b>: a cozinha recebe, o estoque dos insumos é reservado.</div>}
+              <div className="pedido-pdv-aviso" style={{ border: 'none', background: 'none', padding: '8px 0 0' }}>
+                <span className="field-label">Origem do pedido</span>
+                <div className="ped-seg2" style={{ marginTop: 6 }}>
+                  {ORIGENS.map((o) => <button type="button" key={o.id} className={origemPdv === o.id ? 'on' : ''} onClick={() => setOrigemPdv(o.id)}>{o.nome}</button>)}
+                </div>
+                <div style={{ marginTop: 6 }}>O estoque é reservado ao gerar o pedido.</div>
+              </div>
+            </>
+          )}
+          <button className="btn-finalizar" disabled={cart.length === 0} onClick={abrirPagamento}>{modoPedido ? 'Gerar pedido' : 'Finalizar venda'} <kbd>F2</kbd></button>
         </div>
       </div>
+
+      {pedidoModal && terminal && (
+        <PedidoForm lojaId={terminal.location_id} origemInicial={origemPdv} titulo="Gerar pedido" onClose={() => setPedidoModal(false)} onCriado={pedidoCriado}
+          itensIniciais={cart.map((i) => ({ product_id: i.id, nome: i.nome, unidade: i.unidade, preco: i.preco_venda, quantidade: i.quantidade, observacao: i.tem_ficha_tecnica ? (i.observacao || '').trim() : '', tem_ficha: !!i.tem_ficha_tecnica, limite: i.limite }))} />
+      )}
 
       {pagamentoAberto && (
         <Modal titulo="Pagamento" subtitulo={`${cart.length} ${cart.length === 1 ? 'item' : 'itens'} · subtotal ${brl(subtotal)}`} onClose={() => setPagamentoAberto(false)}>

@@ -12,6 +12,7 @@ export default function Locations() {
   const [terminals, setTerminals] = useState([]);
   const [novaLoja, setNovaLoja] = useState('');
   const [novaComanda, setNovaComanda] = useState(false);
+  const [novaPedidos, setNovaPedidos] = useState(false);
   const [configurando, setConfigurando] = useState(null);
   const [novoTerminal, setNovoTerminal] = useState({});
   const [renomeando, setRenomeando] = useState({});
@@ -34,7 +35,7 @@ export default function Locations() {
 
   function criarLoja(e) {
     e.preventDefault();
-    executar(async () => { await api.post('/locations', { nome: novaLoja, usa_comanda: novaComanda }); setNovaLoja(''); setNovaComanda(false); }, 'Loja criada.');
+    executar(async () => { await api.post('/locations', { nome: novaLoja, usa_comanda: novaComanda, usa_pedidos: novaPedidos }); setNovaLoja(''); setNovaComanda(false); setNovaPedidos(false); }, 'Loja criada.');
   }
 
   function criarTerminal(locationId) {
@@ -53,6 +54,11 @@ export default function Locations() {
       await api.patch(`/${tipo}/${id}`, { nome });
       setRenomeando({ ...renomeando, [id]: undefined });
     }, 'Nome atualizado.');
+  }
+
+  function alternarPedidos(l) {
+    executar(() => api.patch(`/locations/${l.id}`, { usa_pedidos: !l.usa_pedidos }),
+      l.usa_pedidos ? 'Pedidos desligados nesta loja.' : 'Pedidos ligados nesta loja: aparecem no menu Pedidos e no PDV.');
   }
 
   function alternarComanda(l) {
@@ -115,6 +121,9 @@ export default function Locations() {
           <label className="check" style={{ alignSelf: 'center' }}>
             <input type="checkbox" checked={novaComanda} onChange={(e) => setNovaComanda(e.target.checked)} /> Usar número de pedido (comanda)
           </label>
+          <label className="check" style={{ alignSelf: 'center' }}>
+            <input type="checkbox" checked={novaPedidos} onChange={(e) => setNovaPedidos(e.target.checked)} /> Usar pedidos (lanchonete)
+          </label>
           <button type="submit" className="btn-primario">Criar loja</button>
         </form>
         <p className="form-hint" style={{ marginTop: '10px' }}>
@@ -142,6 +151,11 @@ export default function Locations() {
                 <input type="checkbox" checked={!!l.usa_comanda} onChange={() => alternarComanda(l)} /> Usar número de pedido (comanda) — recomeça do 1 quando o caixa abre num novo turno
               </label>
               <button className="btn-link" onClick={() => setConfigurando(l)}>Configurar cupom e comanda</button>
+            </div>
+            <div className="loja-config-linha">
+              <label className="check">
+                <input type="checkbox" checked={!!l.usa_pedidos} onChange={() => alternarPedidos(l)} /> Usar pedidos — o cliente pede, a cozinha prepara e só depois sai a venda (reserva o estoque ao gerar o pedido)
+              </label>
             </div>
 
             {daLoja.map((t) => (

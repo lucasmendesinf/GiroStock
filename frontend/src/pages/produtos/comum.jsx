@@ -4,6 +4,11 @@ export const UNIDADES_PRODUTO = ['UN', 'KG', 'L', 'CX'];
 export const UNIDADES_INSUMO = ['G', 'KG', 'ML', 'L', 'UN', 'Fatia'];
 
 // Insumos ativos no formato de "produto" para os seletores de movimentacao/entrada (id com prefixo ins:).
+// Entrada/balanco de insumo que deixa o custo de algum produto >= preco de venda: abre o popup de aviso.
+export function avisarCustoAcimaVenda(toast, resposta) {
+  const lista = resposta && resposta.produtos_custo_acima_venda;
+  if (lista && lista.length) toast.custoAcimaVenda(lista);
+}
 export const ehInsumo = (id) => String(id || '').startsWith('ins:');
 export const idDoInsumo = (id) => String(id).slice(4);
 export function insumosComoItens(ingredients) {

@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import { Field, Paginacao, Vazio } from '../../components/ui.jsx';
 import ProdutoPicker from '../../components/ProdutoPicker.jsx';
 import { brl, dataHora, parseNumero, qtd } from '../../utils/format';
-import { stepDaUnidade, TIPO_MOV, lembrarLoja, insumosComoItens, ehInsumo, idDoInsumo } from './comum.jsx';
+import { stepDaUnidade, TIPO_MOV, lembrarLoja, avisarCustoAcimaVenda, insumosComoItens, ehInsumo, idDoInsumo } from './comum.jsx';
 
 const LIMITE = 30;
 
@@ -49,7 +49,7 @@ export default function Movimentacoes({ products, ingredients = [], locations, s
         if (tipo === 'entrada') {
           const body = { quantidade: q, location_id: form.location_destino_id, documento_fiscal: form.documento_fiscal || undefined };
           if (form.custo_unitario !== '') body.custo_total = parseNumero(form.custo_unitario);
-          await api.post(`${base}/stock-entries`, body);
+          avisarCustoAcimaVenda(toast, await api.post(`${base}/stock-entries`, body));
         } else if (tipo === 'saida') {
           await api.post(`${base}/stock-exits`, { quantidade: q, location_id: form.location_origem_id, motivo: form.motivo });
         } else {

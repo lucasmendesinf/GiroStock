@@ -6,6 +6,7 @@ const UiContext = createContext(null);
 export function UiProvider({ children }) {
   const [toasts, setToasts] = useState([]);
   const [confirmacao, setConfirmacao] = useState(null);
+  const [alertaCusto, setAlertaCusto] = useState(null);
   const proximoId = useRef(1);
 
   const remover = useCallback((id) => setToasts((t) => t.filter((x) => x.id !== id)), []);
@@ -19,6 +20,7 @@ export function UiProvider({ children }) {
 
   const toast = useRef({});
   toast.current.sucesso = (m) => mostrar('ok', m);
+  toast.current.custoAcimaVenda = (lista) => setAlertaCusto(lista);
   toast.current.erro = (m) => mostrar('erro', m instanceof Error ? m.message : m);
 
   // confirmar({ titulo, mensagem, confirmar: 'Desativar', perigo: true }) => Promise<boolean>
@@ -39,8 +41,41 @@ export function UiProvider({ children }) {
           <div key={t.id} className={`toast toast-${t.tipo}`} onClick={() => remover(t.id)}>{t.mensagem}</div>
         ))}
       </div>
+      {alertaCusto && <AlertaCusto lista={alertaCusto} onFechar={() => setAlertaCusto(null)} />}
       {confirmacao && <ConfirmDialog {...confirmacao} onResponder={responder} />}
     </UiContext.Provider>
+  );
+}
+
+// Popup: produtos cujo custo (soma dos insumos) ficou igual ou acima do preco de venda.
+function AlertaCusto({ lista, onFechar }) {
+  useEffect(() => {
+    function onKey(e) { if (e.key === 'Escape') onFechar(); }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onFechar]);
+  const brl = (v) => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  return (
+    <div className="modal" role="alertdialog" aria-modal="true" style={{ zIndex: 90 }} onMouseDown={(e) => { if (e.target === e.currentTarget) onFechar(); }}>
+      <div className="modal-content wide">
+        <div className="modal-header">
+          <div>
+            <h3>Custo acima do preço de venda</h3>
+            <div className="modal-subtitle">O custo foi atualizado pela última entrada, mas estes produtos passaram a vender abaixo do custo.</div>
+          </div>
+          <button type="button" className="modal-close" aria-label="Fechar aviso" onClick={onFechar}>×</button>
+        </div>
+        <ul className="lista-simples">
+          {lista.map((p) => (
+            <li key={p.nome}>
+              <strong>{p.nome}</strong>
+              <span>custo {brl(p.preco_custo)} · venda {brl(p.preco_venda)}</span>
+            </li>
+          ))}
+        </ul>
+        <div className="modal-actions"><button type="button" onClick={onFechar}>Entendi</button></div>
+      </div>
+    </div>
   );
 }
 

@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import { Field, Vazio } from '../../components/ui.jsx';
 import ProdutoPicker from '../../components/ProdutoPicker.jsx';
 import { brl, parseNumero } from '../../utils/format';
-import { stepDaUnidade, lojaPadrao, lembrarLoja, insumosComoItens, ehInsumo, idDoInsumo } from './comum.jsx';
+import { stepDaUnidade, lojaPadrao, lembrarLoja, avisarCustoAcimaVenda, insumosComoItens, ehInsumo, idDoInsumo } from './comum.jsx';
 import FormProduto from './FormProduto.jsx';
 import ImportarXml from './ImportarXml.jsx';
 
@@ -81,10 +81,10 @@ export default function EntradaNota({ products, locations, suppliers, categories
       for (const i of itensInsumo) {
         const q = parseNumero(i.quantidade);
         const c = i.custo_unitario === '' ? null : parseNumero(i.custo_unitario); // insumo: valor total da compra
-        await api.post(`/ingredients/${idDoInsumo(i.product_id)}/stock-entries`, {
+        avisarCustoAcimaVenda(toast, await api.post(`/ingredients/${idDoInsumo(i.product_id)}/stock-entries`, {
           quantidade: q, location_id: cab.location_id, custo_total: c === null ? undefined : c,
           documento_fiscal: cab.documento_fiscal || undefined, supplier_id: cab.supplier_id || undefined,
-        });
+        }));
         valorInsumos += c === null ? 0 : c;
       }
       lembrarLoja(cab.location_id);

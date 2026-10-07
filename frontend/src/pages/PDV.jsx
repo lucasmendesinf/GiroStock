@@ -106,6 +106,7 @@ export default function PDV() {
   const listaAtual = useRef(null); // termo da lista completa em exibicao (null = busca normal)
   const buscaRef = useRef(null);
   const qtdRefs = useRef({});
+  const proximaLinha = useRef(1);
   const [editandoQtd, setEditandoQtd] = useState({});
   const timerBusca = useRef(null);
 
@@ -169,26 +170,30 @@ export default function PDV() {
       return false;
     }
     const limite = limiteDe(product);
-    const noCarrinho = cart.find((i) => i.id === product.id);
-    const novaQtd = (noCarrinho ? noCarrinho.quantidade : 0) + quantidade;
+    // O limite vale para o total do produto (somando as linhas com observacoes diferentes).
+    // Uma nova unidade entra na linha do produto que ainda nao tem observacao; senao abre uma linha nova.
+    const doProduto = cart.filter((i) => i.id === product.id);
+    const noCarrinho = doProduto.find((i) => !i.observacao);
+    const novaQtd = doProduto.reduce((s, i) => s + i.quantidade, 0) + quantidade;
     if (novaQtd > limite) {
       toast.erro(msgSemEstoque(product, limite));
       return false;
     }
+    const chave = noCarrinho ? noCarrinho.key : (doProduto.length === 0 ? product.id : `${product.id}#${proximaLinha.current++}`);
     setCart((prev) => {
-      if (prev.some((i) => i.id === product.id)) {
-        return prev.map((i) => (i.id === product.id ? { ...i, quantidade: novaQtd } : i));
+      if (noCarrinho) {
+        return prev.map((i) => (i.key === noCarrinho.key ? { ...i, quantidade: noCarrinho.quantidade + quantidade } : i));
       }
       return [...prev, {
-        id: product.id, nome: product.nome, unidade: product.unidade, preco_venda: Number(product.preco_venda),
-        quantidade, limite, tem_ficha_tecnica: product.tem_ficha_tecnica, insumo_limitante: product.insumo_limitante,
+        key: chave, id: product.id, nome: product.nome, unidade: product.unidade, preco_venda: Number(product.preco_venda),
+        quantidade, limite, tem_ficha_tecnica: product.tem_ficha_tecnica, insumo_limitante: product.insumo_limitante, observacao: '',
       }];
     });
     // Produto por peso/volume adicionado sem quantidade: abre o campo para digitar o peso.
     if (fracionado && quantidadeInformada === null && !noCarrinho) {
       setTimeout(() => {
-        setEditandoQtd((e) => ({ ...e, [product.id]: '1' }));
-        setTimeout(() => qtdRefs.current[product.id]?.select(), 30);
+        setEditandoQtd((e) => ({ ...e, [chave]: '1' }));
+        setTimeout(() => qtdRefs.current[chave]?.select(), 30);
       }, 0);
       return true;
     }
@@ -256,21 +261,22 @@ export default function PDV() {
 
   function setQuantidade(item, valor) {
     const nova = parseNumero(valor);
-    if (!(nova > 0)) { removeItem(item.id); return; }
+    if (!(nova > 0)) { removeItem(item.key); return; }
     if (UNIDADES_INTEIRAS.includes(item.unidade) && !Number.isInteger(nova)) {
       toast.erro(`"${item.nome}" só aceita quantidade inteira.`);
       return;
     }
-    if (nova > item.limite) {
+    const outras = cart.filter((i) => i.id === item.id && i.key !== item.key).reduce((s, i) => s + i.quantidade, 0);
+    if (outras + nova > item.limite) {
       toast.erro(msgSemEstoque(item, item.limite));
       return;
     }
-    setCart((prev) => prev.map((i) => (i.id === item.id ? { ...i, quantidade: nova } : i)));
+    setCart((prev) => prev.map((i) => (i.key === item.key ? { ...i, quantidade: nova } : i)));
   }
 
   function confirmarQtdDigitada(item) {
-    const valor = editandoQtd[item.id];
-    setEditandoQtd((e) => { const c = { ...e }; delete c[item.id]; return c; });
+    const valor = editandoQtd[item.key];
+    setEditandoQtd((e) => { const c = { ...e }; delete c[item.key]; return c; });
     if (valor !== undefined) setQuantidade(item, valor);
     focarBusca();
   }
@@ -279,9 +285,25 @@ export default function PDV() {
     setQuantidade(item, item.quantidade + delta);
   }
 
-  function removeItem(id) {
-    setCart((prev) => prev.filter((i) => i.id !== id));
+  function removeItem(key) {
+    setCart((prev) => prev.filter((i) => i.key !== key));
     focarBusca();
+  }
+
+  function observar(key, texto) {
+    setCart((prev) => prev.map((i) => (i.key === key ? { ...i, observacao: texto } : i)));
+  }
+
+  // Separa uma unidade numa linha propria (para dar uma observacao diferente a ela).
+  function separarUnidade(item) {
+    if (item.quantidade <= 1) return;
+    const nova = { ...item, key: `${item.id}#${proximaLinha.current++}`, quantidade: 1, observacao: '' };
+    setCart((prev) => {
+      const pos = prev.findIndex((i) => i.key === item.key);
+      const copia = prev.map((i) => (i.key === item.key ? { ...i, quantidade: i.quantidade - 1 } : i));
+      copia.splice(pos + 1, 0, nova);
+      return copia;
+    });
   }
 
   async function cancelarVendaAtual() {
@@ -335,7 +357,7 @@ export default function PDV() {
     try {
       const payload = {
         terminal_id: terminalId,
-        itens: cart.map((i) => ({ product_id: i.id, quantidade: i.quantidade })),
+        itens: cart.map((i) => ({ product_id: i.id, quantidade: i.quantidade, observacao: i.tem_ficha_tecnica ? (i.observacao || '').trim() : undefined })),
         forma_pagamento: formaPagamento,
         desconto,
       };
@@ -572,7 +594,7 @@ export default function PDV() {
           {cart.length === 0 && <p className="muted">Passe um produto no leitor ou digite o nome.</p>}
           <div className="carrinho-lista">
             {cart.map((i) => (
-              <div key={i.id} className="carrinho-item">
+              <div key={i.key} className="carrinho-item">
                 <div className="carrinho-info">
                   <span className="carrinho-nome">{i.nome}</span>
                   <span className="muted">{qtd(i.quantidade, i.unidade)} {i.unidade} × {brl(i.preco_venda)}</span>
@@ -580,19 +602,27 @@ export default function PDV() {
                 <div className="carrinho-qtd">
                   <button type="button" aria-label="Diminuir" onClick={() => changeQty(i, -1)} disabled={!UNIDADES_INTEIRAS.includes(i.unidade) && i.quantidade <= 1}>−</button>
                   <input
-                    ref={(el) => { qtdRefs.current[i.id] = el; }}
+                    ref={(el) => { qtdRefs.current[i.key] = el; }}
                     inputMode="decimal"
                     aria-label={`Quantidade de ${i.nome}`}
-                    value={editandoQtd[i.id] ?? qtd(i.quantidade, i.unidade)}
-                    onFocus={(e) => { setEditandoQtd((x) => ({ ...x, [i.id]: qtd(i.quantidade, i.unidade) })); setTimeout(() => e.target.select(), 0); }}
-                    onChange={(e) => setEditandoQtd((x) => ({ ...x, [i.id]: e.target.value }))}
+                    value={editandoQtd[i.key] ?? qtd(i.quantidade, i.unidade)}
+                    onFocus={(e) => { setEditandoQtd((x) => ({ ...x, [i.key]: qtd(i.quantidade, i.unidade) })); setTimeout(() => e.target.select(), 0); }}
+                    onChange={(e) => setEditandoQtd((x) => ({ ...x, [i.key]: e.target.value }))}
                     onBlur={() => confirmarQtdDigitada(i)}
                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } }}
                   />
                   <button type="button" aria-label="Aumentar" onClick={() => changeQty(i, 1)}>+</button>
                 </div>
                 <span className="carrinho-subtotal">{brl(i.preco_venda * i.quantidade)}</span>
-                <button type="button" className="carrinho-remover" aria-label={`Remover ${i.nome}`} onClick={() => removeItem(i.id)}>×</button>
+                <button type="button" className="carrinho-remover" aria-label={`Remover ${i.nome}`} onClick={() => removeItem(i.key)}>×</button>
+                {i.tem_ficha_tecnica && (
+                  <div className="carrinho-obs">
+                    <textarea rows={1} maxLength={200} aria-label={`Observação de ${i.nome}`} placeholder="Observação do pedido (ex.: sem milho, sem cebola)"
+                      value={i.observacao || ''} onChange={(e) => observar(i.key, e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focarBusca(); } }} />
+                    {i.quantidade > 1 && <button type="button" className="btn-link" onClick={() => separarUnidade(i)}>Separar 1 un. com outra observação</button>}
+                  </div>
+                )}
               </div>
             ))}
           </div>

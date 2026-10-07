@@ -11,7 +11,7 @@ function vendaExemplo(loja) {
     numero: 1234, numero_pedido: loja.usa_comanda ? 27 : null, criado_em: new Date().toISOString(), status: 'concluida',
     subtotal: 38.9, desconto: 3.9, total: 35, forma_pagamento: 'dinheiro', valor_recebido: 50, troco: 15,
     itens: [
-      { id: 1, product_nome: 'X-Tudo', codigo_interno: 'PRD-0005', quantidade: 2, unidade: 'UN', preco_unitario: 15.9, subtotal: 31.8, preparo: true },
+      { id: 1, product_nome: 'X-Tudo', codigo_interno: 'PRD-0005', quantidade: 2, unidade: 'UN', preco_unitario: 15.9, subtotal: 31.8, preparo: true, observacao: 'sem milho' },
       { id: 2, product_nome: 'Coca Cola 350ml', codigo_interno: 'PRD-0003', quantidade: 2, unidade: 'UN', preco_unitario: 3.55, subtotal: 7.1, preparo: false },
     ],
   };
@@ -97,6 +97,7 @@ export default function ConfigCupom({ loja, onClose, onSalvo }) {
                   <Opcao rotulo="PDV (terminal)" valor={c.mostrar_terminal} onChange={(v) => setC({ mostrar_terminal: v })} />
                   <Opcao rotulo="Operador" valor={c.mostrar_operador} onChange={(v) => setC({ mostrar_operador: v })} />
                   <Opcao rotulo="Código dos produtos" valor={c.mostrar_codigo_produto} onChange={(v) => setC({ mostrar_codigo_produto: v })} />
+                  <Opcao rotulo="Observação do pedido (ex.: sem milho)" valor={c.mostrar_observacao} onChange={(v) => setC({ mostrar_observacao: v })} />
                   <Opcao rotulo="Desconto" valor={c.mostrar_desconto} onChange={(v) => setC({ mostrar_desconto: v })} />
                   <Opcao rotulo="Forma de pagamento" valor={c.mostrar_forma_pagamento} onChange={(v) => setC({ mostrar_forma_pagamento: v })} />
                   <Opcao rotulo="Valor recebido e troco" valor={c.mostrar_troco} onChange={(v) => setC({ mostrar_troco: v })} />

@@ -41,6 +41,8 @@ router.post('/sales', requireArea('Vendas'), async (req, res) => {
     return res.status(400).json({ erro: 'forma_pagamento inválida' });
   }
   const itensAgrupados = agruparItens(itens);
+  // Linhas como vieram do PDV (mesmo produto com observacoes diferentes vira linhas separadas).
+  const linhas = itens.map((i) => ({ product_id: i.product_id, quantidade: Number(i.quantidade), observacao: String(i.observacao || '').trim().slice(0, 200) }));
 
   const client = await pool.connect();
   try {
@@ -96,7 +98,12 @@ router.post('/sales', requireArea('Vendas'), async (req, res) => {
       subtotalVenda += subtotal;
       return { ...item, preco_unitario: precoUnitario, custo_unitario: Number(produto.preco_custo), subtotal };
     });
-    subtotalVenda = Number(subtotalVenda.toFixed(2));
+    // O subtotal e o gravado por linha (cada linha vira um item da venda, com a sua observacao).
+    const linhasComPreco = linhas.map((l) => {
+      const base = itemsComPreco.find((i) => i.product_id === l.product_id);
+      return { ...l, preco_unitario: base.preco_unitario, custo_unitario: base.custo_unitario, subtotal: Number((base.preco_unitario * l.quantidade).toFixed(2)) };
+    });
+    subtotalVenda = Number(linhasComPreco.reduce((s, l) => s + l.subtotal, 0).toFixed(2));
     const desconto = Number(descontoInformado.toFixed(2));
     if (desconto >= subtotalVenda) {
       throw new HttpError(400, `desconto (${desconto}) deve ser menor que o subtotal da venda (${subtotalVenda})`);
@@ -203,14 +210,15 @@ router.post('/sales', requireArea('Vendas'), async (req, res) => {
     );
     const saleId = sale.rows[0].id;
 
-    for (const item of itemsComPreco) {
+    for (const item of linhasComPreco) {
+      const ficha = fichaPorProduto.get(item.product_id);
+      // Observacao so existe para produto com receita (lanche).
       const saleItem = await client.query(
-        `INSERT INTO sale_items (tenant_id, sale_id, product_id, quantidade, preco_unitario, custo_unitario, subtotal)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-        [req.user.tenantId, saleId, item.product_id, item.quantidade, item.preco_unitario, item.custo_unitario, item.subtotal]
+        `INSERT INTO sale_items (tenant_id, sale_id, product_id, quantidade, preco_unitario, custo_unitario, subtotal, observacao)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+        [req.user.tenantId, saleId, item.product_id, item.quantidade, item.preco_unitario, item.custo_unitario, item.subtotal, ficha && item.observacao ? item.observacao : null]
       );
 
-      const ficha = fichaPorProduto.get(item.product_id);
       if (!ficha) {
         await client.query(
           `UPDATE stock_balances SET saldo = saldo - $1 WHERE product_id = $2 AND location_id = $3 AND tenant_id = $4`,
@@ -448,11 +456,11 @@ router.get('/sales/:id', async (req, res) => {
 
   const itens = await pool.query(
     `SELECT si.id, si.product_id, p.nome AS product_nome, p.codigo_interno, si.quantidade,
-            p.unidade, si.preco_unitario, si.custo_unitario, si.subtotal,
+            p.unidade, si.preco_unitario, si.custo_unitario, si.subtotal, si.observacao,
             EXISTS(SELECT 1 FROM product_ingredients pi WHERE pi.product_id = p.id AND pi.tenant_id = p.tenant_id) AS preparo
      FROM sale_items si JOIN products p ON p.id = si.product_id
      WHERE si.sale_id = $1 AND si.tenant_id = $2
-     ORDER BY p.nome`,
+     ORDER BY p.nome, si.id`,
     [req.params.id, req.user.tenantId]
   );
   const { cupom_config: cfgSalva, ...resto } = v;

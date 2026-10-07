@@ -5,7 +5,7 @@ export const CONFIG_PADRAO = {
   cliente: {
     largura_mm: 80, cabecalho: '', rodape: 'Obrigado pela preferência!',
     mostrar_empresa: true, mostrar_loja: true, mostrar_data: true, mostrar_numero_venda: true, mostrar_terminal: true,
-    mostrar_operador: true, mostrar_codigo_produto: false, mostrar_desconto: true, mostrar_forma_pagamento: true, mostrar_troco: true,
+    mostrar_operador: true, mostrar_codigo_produto: false, mostrar_observacao: true, mostrar_desconto: true, mostrar_forma_pagamento: true, mostrar_troco: true,
     tamanho_pedido: 'grande', vias: 1, imprimir_automatico: false,
   },
   cozinha: {
@@ -53,6 +53,7 @@ export function CupomCliente({ venda, config }) {
         <div key={i.id} className="cupom-item">
           <div>{c.mostrar_codigo_produto && i.codigo_interno ? `${i.codigo_interno} ` : ''}{i.product_nome}</div>
           <div className="cupom-dir">{qtd(i.quantidade, i.unidade)} {i.unidade} x {brl(i.preco_unitario)} = {brl(i.subtotal)}</div>
+          {c.mostrar_observacao && i.observacao && <div className="cupom-obs">Obs: {i.observacao}</div>}
         </div>
       ))}
       <div className="cupom-linha" />
@@ -87,6 +88,7 @@ export function ComandaCozinha({ venda, config }) {
         <div key={i.id} className="cupom-item cupom-item-cozinha">
           <strong>{qtd(i.quantidade, i.unidade)}{i.unidade && i.unidade !== 'UN' ? ` ${i.unidade}` : 'x'}</strong> {i.product_nome}
           {k.mostrar_valores && <span className="cupom-dir"> {brl(i.subtotal)}</span>}
+          {i.observacao && <div className="cupom-obs cupom-obs-cozinha">» {i.observacao}</div>}
         </div>
       ))}
       <div className="cupom-linha" />

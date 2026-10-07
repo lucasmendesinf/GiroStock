@@ -881,3 +881,29 @@ button.es-btn-ghost:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .card-titulo-acoes { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 .card-titulo-acoes h3 { margin: 0; }
+
+/* ===== PDV: resultados da busca em lista (uma linha por produto) ===== */
+.resultados-lista { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); overflow: hidden; margin-top: 12px; }
+.resultados-lista .resultados { display: block; max-height: 52vh; overflow-y: auto; gap: 0; grid-template-columns: none; }
+.resultados-cab, .resultados-lista .resultados li {
+  display: grid; grid-template-columns: 22px minmax(180px, 3fr) minmax(90px, 1.2fr) minmax(90px, 1.2fr) minmax(110px, 1.3fr) minmax(90px, 1fr);
+  align-items: center; gap: 12px;
+}
+.resultados-cab { padding: 8px 16px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); border-bottom: 1px solid var(--line); background: var(--panel-alt); }
+.resultados-lista .resultados li { flex-direction: unset; padding: 12px 16px; border: none; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; font-weight: 600; }
+.resultados-lista .resultados li:last-child { border-bottom: none; }
+.resultados-lista .resultados li.selecionado { background: var(--accent-soft); box-shadow: inset 4px 0 0 var(--gold-light); }
+.resultados-lista .resultado-seta { color: var(--gold-light); font-size: 12px; }
+.resultados-lista .resultado-nome { overflow-wrap: anywhere; }
+.resultados-lista .resultado-codigo { display: flex; flex-direction: column; font-size: 13px; }
+.resultados-lista .resultado-codigo small { color: var(--muted); font-size: 11px; font-weight: 500; }
+.resultados-lista .resultado-cat { font-size: 13px; color: var(--muted); font-weight: 500; }
+.resultados-lista .num, .resultados-cab .num { text-align: right; }
+.resultados-lista .saldo-pdv { font-size: 13px; }
+.resultados-lista .resultado-preco { font-size: 16px; }
+@media (max-width: 760px) {
+  .resultados-cab { display: none; }
+  .resultados-lista .resultados li { grid-template-columns: 18px 1fr auto; row-gap: 2px; }
+  .resultados-lista .resultado-codigo, .resultados-lista .resultado-cat { display: none; }
+  .resultados-lista .saldo-pdv { grid-column: 2; text-align: left; }
+}

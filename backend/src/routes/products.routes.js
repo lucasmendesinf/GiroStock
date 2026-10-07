@@ -195,7 +195,8 @@ router.get('/products/search', async (req, res) => {
 
   const { rows } = await pool.query(
     `SELECT * FROM (
-       SELECT p.id, p.nome, p.barcode, p.preco_venda, p.unidade,
+       SELECT p.id, p.nome, p.barcode, p.codigo_interno, p.preco_venda, p.unidade,
+              (SELECT c.nome FROM categories c WHERE c.id = p.categoria_id) AS categoria,
               EXISTS(SELECT 1 FROM product_ingredients pi WHERE pi.product_id = p.id AND pi.tenant_id = p.tenant_id) AS tem_ficha_tecnica,
               CASE WHEN $2::uuid IS NULL THEN NULL
                    WHEN EXISTS(SELECT 1 FROM product_ingredients pi WHERE pi.product_id = p.id AND pi.tenant_id = p.tenant_id)

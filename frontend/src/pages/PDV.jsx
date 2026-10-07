@@ -92,12 +92,18 @@ export default function PDV() {
   const [busca, setBusca] = useState('');
   const [results, setResults] = useState([]);
   const [selecionado, setSelecionado] = useState(0);
+  const itemSelecionadoRef = useRef(null);
   const buscaRef = useRef(null);
   const qtdRefs = useRef({});
   const [editandoQtd, setEditandoQtd] = useState({});
   const timerBusca = useRef(null);
 
   const focarBusca = useCallback(() => setTimeout(() => buscaRef.current?.focus(), 0), []);
+
+  // A seta para baixo/cima acompanha o item escolhido com a rolagem da lista.
+  useEffect(() => {
+    if (itemSelecionadoRef.current) itemSelecionadoRef.current.scrollIntoView({ block: 'nearest' });
+  }, [selecionado, results]);
 
   function limiteDe(product) {
     return product.saldo === null || product.saldo === undefined ? Infinity : Number(product.saldo);
@@ -458,19 +464,38 @@ export default function PDV() {
             autoFocus
             aria-label="Buscar produto"
           />
-          <ul className="resultados" role="listbox">
-            {results.map((p, i) => (
-              <li key={p.id} role="option" aria-selected={i === selecionado} className={`${i === selecionado ? 'selecionado' : ''} ${Number(p.saldo) <= 0 ? 'sem-estoque' : ''}`}
-                onMouseEnter={() => setSelecionado(i)} onClick={() => { if (addToCart(p)) { setBusca(''); setResults([]); } }}>
-                <span className="resultado-nome">{p.nome}</span>
-                <span className="resultado-preco">{brl(p.preco_venda)}{p.unidade !== 'UN' ? ` / ${p.unidade}` : ''}</span>
-                <span className="saldo-pdv">{Number(p.saldo) <= 0 ? (p.tem_ficha_tecnica ? `sem estoque: falta ${p.insumo_limitante || 'insumo'}` : `sem estoque nesta loja${p.em_outras_lojas ? ' (há em outra loja)' : ''}`) : p.tem_ficha_tecnica ? `dá para ${p.saldo} un.` : `estoque: ${qtd(p.saldo, p.unidade)}`}</span>
-              </li>
-            ))}
-          </ul>
+          {results.length > 0 && (
+            <div className="resultados-lista">
+              <div className="resultados-cab" aria-hidden="true">
+                <span />
+                <span>Produto</span>
+                <span>Código</span>
+                <span>Categoria</span>
+                <span className="num">Estoque</span>
+                <span className="num">Preço</span>
+              </div>
+              <ul className="resultados" role="listbox" aria-label="Produtos encontrados">
+                {results.map((p, i) => {
+                  const semEstoque = Number(p.saldo) <= 0;
+                  return (
+                    <li key={p.id} ref={i === selecionado ? itemSelecionadoRef : null} role="option" aria-selected={i === selecionado}
+                      className={`${i === selecionado ? 'selecionado' : ''} ${semEstoque ? 'sem-estoque' : ''}`}
+                      onMouseMove={() => { if (i !== selecionado) setSelecionado(i); }} onClick={() => { if (addToCart(p)) { setBusca(''); setResults([]); } }}>
+                      <span className="resultado-seta">{i === selecionado ? '▶' : ''}</span>
+                      <span className="resultado-nome">{p.nome}</span>
+                      <span className="resultado-codigo">{p.codigo_interno}<small>{p.barcode}</small></span>
+                      <span className="resultado-cat">{p.categoria || '—'}</span>
+                      <span className="saldo-pdv num">{semEstoque ? (p.tem_ficha_tecnica ? `sem estoque: falta ${p.insumo_limitante || 'insumo'}` : `sem estoque${p.em_outras_lojas ? ' (há em outra loja)' : ''}`) : p.tem_ficha_tecnica ? `dá para ${p.saldo} un.` : qtd(p.saldo, p.unidade)}</span>
+                      <span className="resultado-preco num">{brl(p.preco_venda)}{p.unidade !== 'UN' ? ` / ${p.unidade}` : ''}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
           <div className="atalhos">
             <span><kbd>Enter</kbd> adiciona</span>
-            <span><kbd>↑</kbd><kbd>↓</kbd> escolhe</span>
+            <span><kbd>↑</kbd><kbd>↓</kbd> percorre a lista</span>
             <span><kbd>3*</kbd> quantidade</span>
             <span><kbd>Del</kbd> tira o último</span>
             <span><kbd>F2</kbd> pagamento</span>

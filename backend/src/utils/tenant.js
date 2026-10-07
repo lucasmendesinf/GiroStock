@@ -12,6 +12,8 @@ const LABELS = {
   terminals: 'terminal',
   users: 'usuário',
   sales: 'venda',
+  orders: 'pedido',
+  couriers: 'entregador',
 };
 
 function isUuid(id) {

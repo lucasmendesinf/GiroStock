@@ -195,25 +195,41 @@ router.get('/products/search', async (req, res) => {
     where += ` AND p.nome ILIKE $${params.length}`;
   }
 
+  // Disponivel = saldo da loja menos o que esta reservado por pedidos em aberto (produto simples: itens; receita: insumos).
   const { rows } = await pool.query(
-    `SELECT * FROM (
+    `WITH res_prod AS (
+       SELECT oi.product_id, SUM(oi.quantidade) AS q
+       FROM order_items oi JOIN orders o ON o.id = oi.order_id
+       WHERE o.tenant_id = $1 AND o.location_id = $2::uuid AND o.status NOT IN ('finalizado', 'cancelado')
+         AND NOT EXISTS (SELECT 1 FROM product_ingredients pi0 WHERE pi0.product_id = oi.product_id)
+       GROUP BY oi.product_id
+     ), res_ing AS (
+       SELECT pi.ingredient_id, SUM(pi.quantidade_por_unidade * oi.quantidade) AS q
+       FROM order_items oi JOIN orders o ON o.id = oi.order_id JOIN product_ingredients pi ON pi.product_id = oi.product_id
+       WHERE o.tenant_id = $1 AND o.location_id = $2::uuid AND o.status NOT IN ('finalizado', 'cancelado')
+       GROUP BY pi.ingredient_id
+     )
+     SELECT * FROM (
        SELECT p.id, p.nome, p.barcode, p.codigo_interno, p.preco_venda, p.unidade,
               (SELECT c.nome FROM categories c WHERE c.id = p.categoria_id) AS categoria,
               EXISTS(SELECT 1 FROM product_ingredients pi WHERE pi.product_id = p.id AND pi.tenant_id = p.tenant_id) AS tem_ficha_tecnica,
               CASE WHEN $2::uuid IS NULL THEN NULL
                    WHEN EXISTS(SELECT 1 FROM product_ingredients pi WHERE pi.product_id = p.id AND pi.tenant_id = p.tenant_id)
-                     THEN (SELECT MIN(FLOOR(COALESCE(ib.saldo, 0) / pi.quantidade_por_unidade))
+                     THEN (SELECT MIN(FLOOR((COALESCE(ib.saldo, 0) - COALESCE(ri.q, 0)) / pi.quantidade_por_unidade))
                            FROM product_ingredients pi
                            LEFT JOIN ingredient_balances ib ON ib.ingredient_id = pi.ingredient_id AND ib.location_id = $2::uuid AND ib.tenant_id = pi.tenant_id
+                           LEFT JOIN res_ing ri ON ri.ingredient_id = pi.ingredient_id
                            WHERE pi.product_id = p.id AND pi.tenant_id = p.tenant_id)
                    ELSE COALESCE((SELECT sb.saldo FROM stock_balances sb
                                   WHERE sb.product_id = p.id AND sb.location_id = $2::uuid AND sb.tenant_id = p.tenant_id), 0)
+                        - COALESCE((SELECT rp.q FROM res_prod rp WHERE rp.product_id = p.id), 0)
               END AS saldo,
               (SELECT i.nome FROM product_ingredients pi
                JOIN ingredients i ON i.id = pi.ingredient_id
                LEFT JOIN ingredient_balances ib ON ib.ingredient_id = pi.ingredient_id AND ib.location_id = $2::uuid AND ib.tenant_id = pi.tenant_id
+               LEFT JOIN res_ing ri ON ri.ingredient_id = pi.ingredient_id
                WHERE pi.product_id = p.id AND pi.tenant_id = p.tenant_id AND $2::uuid IS NOT NULL
-               ORDER BY FLOOR(COALESCE(ib.saldo, 0) / pi.quantidade_por_unidade), i.nome LIMIT 1) AS insumo_limitante,
+               ORDER BY FLOOR((COALESCE(ib.saldo, 0) - COALESCE(ri.q, 0)) / pi.quantidade_por_unidade), i.nome LIMIT 1) AS insumo_limitante,
               EXISTS(SELECT 1 FROM stock_balances sb2
                      WHERE sb2.product_id = p.id AND sb2.tenant_id = p.tenant_id AND sb2.saldo > 0
                        AND ($2::uuid IS NULL OR sb2.location_id <> $2::uuid)) AS em_outras_lojas

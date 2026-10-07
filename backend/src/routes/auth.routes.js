@@ -9,6 +9,16 @@ const { HttpError } = require('../utils/http');
 
 const router = express.Router();
 
+// A loja do usuario (ou qualquer loja, para quem nao e restrito) usa pedidos? Controla o item Pedidos do menu.
+async function usaPedidos(tenantId, locationIds, perfil) {
+  const restrito = perfil !== 'Administrador' && locationIds.length > 0;
+  const { rows } = await pool.query(
+    `SELECT EXISTS(SELECT 1 FROM locations WHERE tenant_id = $1 AND ativo AND usa_pedidos AND ($2::boolean = false OR id = ANY($3::uuid[]))) AS ok`,
+    [tenantId, restrito, locationIds]
+  );
+  return rows[0].ok;
+}
+
 // Lojas adicionais do usuario (alem da principal), com nome.
 async function lojasExtras(userId) {
   const { rows } = await pool.query(
@@ -54,6 +64,7 @@ router.post('/login', async (req, res) => {
   );
 
   user.extras = await lojasExtras(user.id);
+  user.usa_pedidos = await usaPedidos(user.tenant_id, [user.location_id, ...user.extras.map((e) => e.id)].filter(Boolean), user.perfil);
   res.json({
     token,
     usuario: dadosDoUsuario(user),
@@ -70,6 +81,7 @@ function dadosDoUsuario(user) {
     perfil: user.perfil,
     locationId: user.location_id,
     locationIds: [user.location_id, ...(user.extras || []).map((e) => e.id)].filter(Boolean),
+    usaPedidos: !!user.usa_pedidos,
     locationNome: [user.location_nome, ...(user.extras || []).map((e) => e.nome)].filter(Boolean).join(', ') || null,
     empresaNome: user.empresa_nome,
     areas: areasEfetivas(user.perfil, user.permissoes),
@@ -86,6 +98,7 @@ router.get('/me', authRequired, async (req, res) => {
     [req.user.id]
   );
   rows[0].extras = await lojasExtras(req.user.id);
+  rows[0].usa_pedidos = await usaPedidos(req.user.tenantId, req.user.locationIds, req.user.perfil);
   res.json(dadosDoUsuario(rows[0]));
 });
 

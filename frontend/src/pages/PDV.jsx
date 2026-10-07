@@ -370,7 +370,7 @@ export default function PDV() {
       api.get(`/sales/${venda.id}`).then((completa) => {
         setSucessoCompleta(completa);
         const modo = modoAutomatico(completa);
-        if (modo) abrirImpressao(setCupom, completa, modo);
+        if (modo) abrirImpressao(setCupom, completa, modo, (m) => toast.sucesso(m));
       }).catch(() => {});
       setCart([]);
       setPagamentoAberto(false);
@@ -389,7 +389,7 @@ export default function PDV() {
 
   async function imprimirCupom(vendaId, modo = 'cliente') {
     try {
-      abrirImpressao(setCupom, await api.get(`/sales/${vendaId}`), modo);
+      abrirImpressao(setCupom, await api.get(`/sales/${vendaId}`), modo, (m) => toast.sucesso(m));
     } catch (err) { toast.erro(err); }
   }
 
@@ -439,6 +439,7 @@ export default function PDV() {
         if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); novaVenda(); }
         if (e.key.toLowerCase() === 'p' || e.key === 'F9') { e.preventDefault(); imprimirCupom(sucesso.id); }
         if (e.key.toLowerCase() === 'c' && sucessoCompleta && configDaVenda(sucessoCompleta).cozinha.ativo) { e.preventDefault(); imprimirCupom(sucesso.id, 'cozinha'); }
+        if (e.key.toLowerCase() === 's' && sucessoCompleta && configDaVenda(sucessoCompleta).senha.ativo) { e.preventDefault(); imprimirCupom(sucesso.id, 'senha'); }
         return;
       }
       if (pagamentoAberto) {
@@ -703,6 +704,9 @@ export default function PDV() {
             <button type="button" onClick={() => imprimirCupom(sucesso.id)}>Imprimir cupom <kbd>P</kbd></button>
             {sucessoCompleta && configDaVenda(sucessoCompleta).cozinha.ativo && (
               <button type="button" onClick={() => imprimirCupom(sucesso.id, 'cozinha')}>Comanda da cozinha <kbd>C</kbd></button>
+            )}
+            {sucessoCompleta && configDaVenda(sucessoCompleta).senha.ativo && (
+              <button type="button" onClick={() => imprimirCupom(sucesso.id, 'senha')}>Senha do cliente <kbd>S</kbd></button>
             )}
             <button type="button" autoFocus onClick={novaVenda}>Nova venda <kbd>Enter</kbd></button>
           </div>

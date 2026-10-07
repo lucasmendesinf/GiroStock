@@ -120,7 +120,7 @@ export default function Reports() {
       {aba === 'caixas' && <AbaCaixas query={query} />}
 
       {vendaId && (
-        <DetalheVenda id={vendaId} onClose={() => setVendaId(null)} onImprimir={(v, modo) => imprimirCupom(setCupom, v, modo)}
+        <DetalheVenda id={vendaId} onClose={() => setVendaId(null)} onImprimir={(v, modo) => imprimirCupom(setCupom, v, modo, (m) => toast.sucesso(m))}
           onCancelada={() => { setVendaId(null); setFiltros({ ...filtros }); }} />
       )}
       {cupom && <Cupom venda={cupom} />}
@@ -378,6 +378,7 @@ function DetalheVenda({ id, onClose, onImprimir, onCancelada }) {
         <button type="button" onClick={onClose}>Fechar</button>
         <button type="button" onClick={() => onImprimir(venda, 'cliente')}>Imprimir cupom</button>
         {configDaVenda(venda).cozinha.ativo && <button type="button" onClick={() => onImprimir(venda, 'cozinha')}>Comanda da cozinha</button>}
+        {configDaVenda(venda).senha.ativo && <button type="button" onClick={() => onImprimir(venda, 'senha')}>Senha do cliente</button>}
       </div>
     </Modal>
   );

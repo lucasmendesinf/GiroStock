@@ -2,22 +2,34 @@ import { brl, dataHora, qtd, FORMA_PAGAMENTO } from '../utils/format';
 
 // Padrao da configuracao (igual ao do backend: backend/src/utils/cupom.js).
 export const CONFIG_PADRAO = {
+  geral: { impressao_separada: false },
   cliente: {
-    largura_mm: 80, cabecalho: '', rodape: 'Obrigado pela preferência!',
+    largura_mm: 80, impressora: '', cabecalho: '', rodape: 'Obrigado pela preferência!',
     mostrar_empresa: true, mostrar_loja: true, mostrar_data: true, mostrar_numero_venda: true, mostrar_terminal: true,
     mostrar_operador: true, mostrar_codigo_produto: false, mostrar_observacao: true, mostrar_desconto: true, mostrar_forma_pagamento: true, mostrar_troco: true,
     tamanho_pedido: 'grande', vias: 1, imprimir_automatico: false,
   },
   cozinha: {
-    ativo: false, largura_mm: 80, cabecalho: 'COMANDA DA COZINHA', itens: 'preparo',
+    ativo: false, largura_mm: 80, impressora: '', cabecalho: 'COMANDA DA COZINHA', itens: 'preparo',
     mostrar_loja: true, mostrar_data: true, mostrar_operador: false, mostrar_valores: false, tamanho_pedido: 'grande', imprimir_automatico: false,
+  },
+  senha: {
+    ativo: false, largura_mm: 80, impressora: '', titulo: 'SENHA DO PEDIDO', mensagem: 'Apresente esta senha para retirar o seu pedido.',
+    mostrar_itens: true, mostrar_loja: true, mostrar_data: true, tamanho_pedido: 'gigante', imprimir_automatico: false,
   },
 };
 
 export function configDaVenda(venda) {
   const c = (venda && venda.cupom_config) || {};
-  return { cliente: { ...CONFIG_PADRAO.cliente, ...(c.cliente || {}) }, cozinha: { ...CONFIG_PADRAO.cozinha, ...(c.cozinha || {}) } };
+  return {
+    geral: { ...CONFIG_PADRAO.geral, ...(c.geral || {}) },
+    cliente: { ...CONFIG_PADRAO.cliente, ...(c.cliente || {}) },
+    cozinha: { ...CONFIG_PADRAO.cozinha, ...(c.cozinha || {}) },
+    senha: { ...CONFIG_PADRAO.senha, ...(c.senha || {}) },
+  };
 }
+
+const larguraDoc = (mm) => `${mm === 58 ? 52 : 72}mm`;
 
 function Pedido({ numero, tamanho }) {
   if (numero === null || numero === undefined) return null;
@@ -33,7 +45,7 @@ function Pedido({ numero, tamanho }) {
 export function CupomCliente({ venda, config }) {
   const c = config.cliente;
   return (
-    <div className="cupom-doc" style={{ width: `${c.largura_mm === 58 ? 52 : 72}mm` }}>
+    <div className="cupom-doc" style={{ width: larguraDoc(c.largura_mm) }}>
       <div className="cupom-centro">
         {c.mostrar_empresa && <strong>{venda.empresa_nome}</strong>}
         {c.mostrar_loja && <div>{venda.location_nome}</div>}
@@ -73,7 +85,7 @@ export function ComandaCozinha({ venda, config }) {
   const k = config.cozinha;
   const itens = k.itens === 'todos' ? venda.itens : venda.itens.filter((i) => i.preparo);
   return (
-    <div className="cupom-doc" style={{ width: `${k.largura_mm === 58 ? 52 : 72}mm` }}>
+    <div className="cupom-doc" style={{ width: larguraDoc(k.largura_mm) }}>
       <div className="cupom-centro">
         {k.cabecalho && <strong className="cupom-texto">{k.cabecalho}</strong>}
         {k.mostrar_loja && <div>{venda.location_nome}</div>}
@@ -96,15 +108,55 @@ export function ComandaCozinha({ venda, config }) {
   );
 }
 
-// Area de impressao (so aparece no print). modo: 'cliente' | 'cozinha' | 'ambos'.
+// Senha do cliente: papel que o cliente guarda e apresenta quando o pedido sai (sem valores).
+export function SenhaCliente({ venda, config }) {
+  const s = config.senha;
+  return (
+    <div className="cupom-doc" style={{ width: larguraDoc(s.largura_mm) }}>
+      <div className="cupom-centro">
+        {s.titulo && <strong className="cupom-texto">{s.titulo}</strong>}
+        {s.mostrar_loja && <div>{venda.location_nome}</div>}
+      </div>
+      <Pedido numero={venda.numero_pedido} tamanho={s.tamanho_pedido} />
+      {venda.numero_pedido === null || venda.numero_pedido === undefined ? <div className="cupom-centro">Venda nº {venda.numero}</div> : null}
+      {s.mostrar_data && <div className="cupom-centro">{dataHora(venda.criado_em)}</div>}
+      {s.mostrar_itens && (
+        <>
+          <div className="cupom-linha" />
+          {venda.itens.map((i) => (
+            <div key={i.id} className="cupom-item">
+              <div>{qtd(i.quantidade, i.unidade)}{i.unidade && i.unidade !== 'UN' ? ` ${i.unidade}` : 'x'} {i.product_nome}</div>
+              {i.observacao && <div className="cupom-obs">Obs: {i.observacao}</div>}
+            </div>
+          ))}
+        </>
+      )}
+      {s.mensagem && (<><div className="cupom-linha" /><div className="cupom-centro cupom-texto">{s.mensagem}</div></>)}
+    </div>
+  );
+}
+
+const ORDEM = ['cliente', 'cozinha', 'senha'];
+
+// Aceita 'cliente' | 'cozinha' | 'senha' | 'ambos' (cliente + cozinha) | 'todos' | lista deles.
+function modosDe(modo) {
+  const lista = Array.isArray(modo) ? modo : modo === 'ambos' ? ['cliente', 'cozinha'] : modo === 'todos' ? ORDEM : [modo || 'cliente'];
+  return ORDEM.filter((m) => lista.includes(m));
+}
+
+// Area de impressao (so aparece no print).
 export default function Cupom({ venda }) {
   const config = configDaVenda(venda);
-  const modo = venda.modo || 'cliente';
+  const modos = modosDe(venda.modo);
   const vias = Math.max(1, Number(config.cliente.vias) || 1);
   const docs = [];
-  if (modo === 'cliente' || modo === 'ambos') for (let v = 0; v < vias; v += 1) docs.push(<CupomCliente key={`c${v}`} venda={venda} config={config} />);
-  if (modo === 'cozinha' || modo === 'ambos') docs.push(<ComandaCozinha key="k" venda={venda} config={config} />);
-  const largura = (modo === 'cozinha' ? config.cozinha.largura_mm : config.cliente.largura_mm) === 58 ? 58 : 80;
+  for (const m of modos) {
+    if (m === 'cliente') for (let v = 0; v < vias; v += 1) docs.push(<CupomCliente key={`c${v}`} venda={venda} config={config} />);
+    if (m === 'cozinha') docs.push(<ComandaCozinha key="k" venda={venda} config={config} />);
+    if (m === 'senha') docs.push(<SenhaCliente key="s" venda={venda} config={config} />);
+  }
+  const primeiro = modos[0] || 'cliente';
+  const largura = config[primeiro].largura_mm === 58 ? 58 : 80;
   return (
     <div className="cupom-print" aria-hidden="true">
       <style>{`@media print { @page { size: ${largura}mm auto; margin: 0; } }`}</style>
@@ -113,20 +165,47 @@ export default function Cupom({ venda }) {
   );
 }
 
-// Renderiza o cupom e abre a janela de impressao do navegador.
-// Para impressora termica, basta escolhe-la na janela (80 mm ou 58 mm conforme a configuracao da loja).
-export function imprimirCupom(setCupom, venda, modo = 'cliente') {
-  setCupom({ ...venda, modo });
-  setTimeout(() => window.print(), 150);
+const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
+const NOME_DOC = { cliente: 'cupom do cliente', cozinha: 'comanda da cozinha', senha: 'senha do cliente' };
+
+// Renderiza os documentos e abre a janela de impressao do navegador.
+// Por padrao sai um unico trabalho de impressao, com uma pagina (corte) por documento. Se a loja marcou
+// "uma impressao para cada via", cada documento abre a sua propria impressao (da para mandar cada um
+// para uma impressora diferente, ex.: caixa e cozinha).
+// O navegador nao deixa o site escolher a impressora: se a loja informou qual impressora cada documento usa,
+// o sistema mostra um aviso (por "avisar") dizendo qual escolher na janela de impressao.
+export async function imprimirCupom(setCupom, venda, modo = 'cliente', avisar = null) {
+  const modos = modosDe(modo);
+  const config = configDaVenda(venda);
+  const lembrete = (lista) => {
+    if (!avisar) return;
+    const partes = lista.filter((m) => config[m].impressora).map((m) => `${NOME_DOC[m]} → ${config[m].impressora}`);
+    if (partes.length > 0) avisar(`Escolha a impressora na janela: ${partes.join(' · ')}`);
+  };
+  if (config.geral.impressao_separada && modos.length > 1) {
+    for (const m of modos) {
+      setCupom({ ...venda, modo: [m] });
+      lembrete([m]);
+      await esperar(200);
+      window.print();
+      await esperar(300);
+    }
+    return;
+  }
+  const impressoras = new Set(modos.map((m) => config[m].impressora).filter(Boolean));
+  if (impressoras.size > 1 && avisar) avisar('Os documentos saem numa única impressão. Para usar impressoras diferentes, marque "uma impressão para cada via" nas configurações da loja.');
+  else lembrete(modos);
+  setCupom({ ...venda, modo: modos });
+  await esperar(150);
+  window.print();
 }
 
-// Impressao automatica configurada na loja: devolve 'cliente', 'cozinha', 'ambos' ou null.
+// Impressao automatica configurada na loja: devolve a lista de documentos ou null.
 export function modoAutomatico(venda) {
   const c = configDaVenda(venda);
-  const cliente = !!c.cliente.imprimir_automatico;
-  const cozinha = !!(c.cozinha.ativo && c.cozinha.imprimir_automatico);
-  if (cliente && cozinha) return 'ambos';
-  if (cliente) return 'cliente';
-  if (cozinha) return 'cozinha';
-  return null;
+  const modos = [];
+  if (c.cliente.imprimir_automatico) modos.push('cliente');
+  if (c.cozinha.ativo && c.cozinha.imprimir_automatico) modos.push('cozinha');
+  if (c.senha.ativo && c.senha.imprimir_automatico) modos.push('senha');
+  return modos.length > 0 ? modos : null;
 }

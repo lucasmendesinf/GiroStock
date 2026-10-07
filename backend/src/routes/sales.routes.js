@@ -6,6 +6,7 @@ const { getOwned, isUuid } = require('../utils/tenant');
 const { assertLocationAccess, filtroLocais, canCancelSales } = require('../utils/access');
 const { isQuantidadeValidaParaUnidade } = require('../utils/validators');
 const { HttpError } = require('../utils/http');
+const { configEfetiva } = require('../utils/cupom');
 
 const router = express.Router();
 const FORMAS_PAGAMENTO = ['pix', 'cartao_credito', 'cartao_debito', 'dinheiro'];
@@ -180,13 +181,25 @@ router.post('/sales', requireArea('Vendas'), async (req, res) => {
       [req.user.tenantId]
     );
     const numero = proximo.rows[0].numero;
+    // Numero do pedido (comanda) da loja: so quando a loja usa comanda. O UPSERT trava a linha do contador
+    // e serializa pedidos simultaneos; o contador reinicia na abertura do caixa de um novo turno.
+    let numeroPedido = null;
+    const lojaComanda = await client.query(`SELECT usa_comanda FROM locations WHERE id = $1`, [locationId]);
+    if (lojaComanda.rows[0] && lojaComanda.rows[0].usa_comanda) {
+      const cont = await client.query(
+        `INSERT INTO location_order_counters (location_id, tenant_id, ultimo) VALUES ($1, $2, 1)
+         ON CONFLICT (location_id) DO UPDATE SET ultimo = location_order_counters.ultimo + 1 RETURNING ultimo`,
+        [locationId, req.user.tenantId]
+      );
+      numeroPedido = cont.rows[0].ultimo;
+    }
     const sale = await client.query(
       `INSERT INTO sales (tenant_id, numero, location_id, terminal_id, cash_session_id, operador_id, forma_pagamento,
-                          valor_recebido, troco, subtotal, desconto, total, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'concluida')
+                          valor_recebido, troco, subtotal, desconto, total, status, numero_pedido)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'concluida', $13)
        RETURNING id, numero, subtotal, desconto, total, troco, forma_pagamento, criado_em`,
       [req.user.tenantId, numero, locationId, terminal_id, cashSessionId, req.user.id, forma_pagamento,
-        valorRecebidoFinal, troco, subtotalVenda, desconto, total]
+        valorRecebidoFinal, troco, subtotalVenda, desconto, total, numeroPedido]
     );
     const saleId = sale.rows[0].id;
 
@@ -231,13 +244,14 @@ router.post('/sales', requireArea('Vendas'), async (req, res) => {
       acao: 'venda',
       recurso: 'sales',
       recursoId: saleId,
-      detalhes: { numero, subtotal: subtotalVenda, desconto, total, forma_pagamento },
+      detalhes: { numero, numero_pedido: numeroPedido, subtotal: subtotalVenda, desconto, total, forma_pagamento },
     });
 
     await client.query('COMMIT');
     res.status(201).json({
       id: saleId,
       numero,
+      numero_pedido: numeroPedido,
       subtotal: subtotalVenda,
       desconto,
       total,
@@ -414,8 +428,8 @@ router.get('/sales/:id', async (req, res) => {
   }
   await getOwned(pool, 'sales', req.params.id, req.user.tenantId);
   const venda = await pool.query(
-    `SELECT s.id, s.numero, s.criado_em, s.status, s.forma_pagamento, s.valor_recebido, s.troco, s.subtotal, s.desconto, s.total,
-            tn.nome AS empresa_nome,
+    `SELECT s.id, s.numero, s.numero_pedido, s.criado_em, s.status, s.forma_pagamento, s.valor_recebido, s.troco, s.subtotal, s.desconto, s.total,
+            tn.nome AS empresa_nome, l.usa_comanda, l.cupom_config,
             s.location_id, l.nome AS location_nome, t.nome AS terminal_nome, u.nome AS operador_nome,
             s.cash_session_id, cs.fechado_em IS NULL AS caixa_aberto,
             s.cancelado_em, s.motivo_cancelamento, uc.nome AS cancelado_por_nome
@@ -434,13 +448,15 @@ router.get('/sales/:id', async (req, res) => {
 
   const itens = await pool.query(
     `SELECT si.id, si.product_id, p.nome AS product_nome, p.codigo_interno, si.quantidade,
-            p.unidade, si.preco_unitario, si.custo_unitario, si.subtotal
+            p.unidade, si.preco_unitario, si.custo_unitario, si.subtotal,
+            EXISTS(SELECT 1 FROM product_ingredients pi WHERE pi.product_id = p.id AND pi.tenant_id = p.tenant_id) AS preparo
      FROM sale_items si JOIN products p ON p.id = si.product_id
      WHERE si.sale_id = $1 AND si.tenant_id = $2
      ORDER BY p.nome`,
     [req.params.id, req.user.tenantId]
   );
-  res.json({ ...v, pode_cancelar: v.status === 'concluida' && v.caixa_aberto && canCancelSales(req.user), itens: itens.rows });
+  const { cupom_config: cfgSalva, ...resto } = v;
+  res.json({ ...resto, cupom_config: configEfetiva(cfgSalva), pode_cancelar: v.status === 'concluida' && v.caixa_aberto && canCancelSales(req.user), itens: itens.rows });
 });
 
 module.exports = router;

@@ -3,7 +3,7 @@ import { api } from '../api/client';
 import { useToast, useConfirm } from '../context/UiContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { Field, Modal, Paginacao, Vazio } from '../components/ui.jsx';
-import Cupom, { imprimirCupom } from '../components/Cupom.jsx';
+import Cupom, { imprimirCupom, configDaVenda } from '../components/Cupom.jsx';
 import { brl, dataHora, isoLocal, pct, qtd, FORMA_PAGAMENTO } from '../utils/format';
 import { baixarCsv, numeroCsv } from '../utils/csv';
 
@@ -120,7 +120,7 @@ export default function Reports() {
       {aba === 'caixas' && <AbaCaixas query={query} />}
 
       {vendaId && (
-        <DetalheVenda id={vendaId} onClose={() => setVendaId(null)} onImprimir={(v) => imprimirCupom(setCupom, v)}
+        <DetalheVenda id={vendaId} onClose={() => setVendaId(null)} onImprimir={(v, modo) => imprimirCupom(setCupom, v, modo)}
           onCancelada={() => { setVendaId(null); setFiltros({ ...filtros }); }} />
       )}
       {cupom && <Cupom venda={cupom} />}
@@ -171,8 +171,8 @@ function AbaVendas({ query, onAbrirVenda }) {
         if (r.itens.length === 0) break;
       } while (offset < total);
       baixarCsv(nomeCsv('vendas', query),
-        ['Nº', 'Data/hora', 'Operador', 'Loja', 'PDV', 'Pagamento', 'Desconto (R$)', 'Total (R$)', 'Situação', 'Motivo do cancelamento'],
-        todas.map((h) => [h.numero, dataHora(h.criado_em), h.operador_nome, h.location_nome, h.terminal_nome, FORMA_PAGAMENTO[h.forma_pagamento] || h.forma_pagamento,
+        ['Nº', 'Pedido', 'Data/hora', 'Operador', 'Loja', 'PDV', 'Pagamento', 'Desconto (R$)', 'Total (R$)', 'Situação', 'Motivo do cancelamento'],
+        todas.map((h) => [h.numero, h.numero_pedido ?? '', dataHora(h.criado_em), h.operador_nome, h.location_nome, h.terminal_nome, FORMA_PAGAMENTO[h.forma_pagamento] || h.forma_pagamento,
           numeroCsv(h.desconto), numeroCsv(h.total), h.status === 'cancelada' ? 'Cancelada' : 'Concluída', h.motivo_cancelamento || '']));
       toast.sucesso(`${todas.length} venda(s) exportada(s).`);
     } catch (err) { toast.erro(err); } finally { setExportando(false); }
@@ -234,7 +234,7 @@ function AbaVendas({ query, onAbrirVenda }) {
               {hist.itens.map((h) => (
                 <tr key={h.id} className={`clicavel ${h.status === 'cancelada' ? 'row-inativa' : ''}`} onClick={() => onAbrirVenda(h.id)} tabIndex={0}
                   onKeyDown={(e) => { if (e.key === 'Enter') onAbrirVenda(h.id); }}>
-                  <td><strong>{h.numero}</strong></td>
+                  <td><strong>{h.numero}</strong>{h.numero_pedido !== null && h.numero_pedido !== undefined && <div className="celula-sub">pedido {h.numero_pedido}</div>}</td>
                   <td>{dataHora(h.criado_em)}</td>
                   <td className="col-opcional">{h.operador_nome}</td>
                   <td className="col-opcional">{h.location_nome}<div className="celula-sub">{h.terminal_nome}</div></td>
@@ -337,7 +337,7 @@ function DetalheVenda({ id, onClose, onImprimir, onCancelada }) {
 
   if (!venda) return null;
   return (
-    <Modal titulo={`Venda nº ${venda.numero}`} subtitulo={`${dataHora(venda.criado_em)} · ${venda.location_nome} · ${venda.terminal_nome} · ${venda.operador_nome}`} onClose={onClose} largura="larga">
+    <Modal titulo={`Venda nº ${venda.numero}${venda.numero_pedido !== null && venda.numero_pedido !== undefined ? ` · pedido ${venda.numero_pedido}` : ''}`} subtitulo={`${dataHora(venda.criado_em)} · ${venda.location_nome} · ${venda.terminal_nome} · ${venda.operador_nome}`} onClose={onClose} largura="larga">
       <div className="tabela-wrap">
         <table>
           <thead><tr><th>Produto</th><th className="num">Qtd</th><th className="num">Preço</th><th className="num">Subtotal</th></tr></thead>
@@ -376,7 +376,8 @@ function DetalheVenda({ id, onClose, onImprimir, onCancelada }) {
 
       <div className="modal-actions">
         <button type="button" onClick={onClose}>Fechar</button>
-        <button type="button" onClick={() => onImprimir(venda)}>Imprimir cupom</button>
+        <button type="button" onClick={() => onImprimir(venda, 'cliente')}>Imprimir cupom</button>
+        {configDaVenda(venda).cozinha.ativo && <button type="button" onClick={() => onImprimir(venda, 'cozinha')}>Comanda da cozinha</button>}
       </div>
     </Modal>
   );

@@ -6,7 +6,7 @@ import { useToast, useConfirm } from '../context/UiContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { podeAcessar } from '../utils/permissions';
 import { Field, Modal } from '../components/ui.jsx';
-import Cupom, { imprimirCupom as abrirImpressao } from '../components/Cupom.jsx';
+import Cupom, { imprimirCupom as abrirImpressao, modoAutomatico, configDaVenda } from '../components/Cupom.jsx';
 
 const TROCOS_RAPIDOS = [10, 20, 50, 100, 200];
 const FORMAS = ['pix', 'cartao_credito', 'cartao_debito', 'dinheiro'];
@@ -342,7 +342,14 @@ export default function PDV() {
       if (formaPagamento === 'dinheiro') payload.valor_recebido = recebido;
       const venda = await api.post('/sales', payload);
       setSucesso(venda);
+      setSucessoCompleta(null);
       setUltimaVendaId(venda.id);
+      // Dados completos (config do cupom da loja) para imprimir; imprime sozinho se a loja configurou.
+      api.get(`/sales/${venda.id}`).then((completa) => {
+        setSucessoCompleta(completa);
+        const modo = modoAutomatico(completa);
+        if (modo) abrirImpressao(setCupom, completa, modo);
+      }).catch(() => {});
       setCart([]);
       setPagamentoAberto(false);
     } catch (err) {
@@ -354,12 +361,13 @@ export default function PDV() {
 
   // ---------- venda concluida e cupom ----------
   const [sucesso, setSucesso] = useState(null);
+  const [sucessoCompleta, setSucessoCompleta] = useState(null);
   const [ultimaVendaId, setUltimaVendaId] = useState(null);
   const [cupom, setCupom] = useState(null);
 
-  async function imprimirCupom(vendaId) {
+  async function imprimirCupom(vendaId, modo = 'cliente') {
     try {
-      abrirImpressao(setCupom, await api.get(`/sales/${vendaId}`));
+      abrirImpressao(setCupom, await api.get(`/sales/${vendaId}`), modo);
     } catch (err) { toast.erro(err); }
   }
 
@@ -408,6 +416,7 @@ export default function PDV() {
       if (sucesso) {
         if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); novaVenda(); }
         if (e.key.toLowerCase() === 'p' || e.key === 'F9') { e.preventDefault(); imprimirCupom(sucesso.id); }
+        if (e.key.toLowerCase() === 'c' && sucessoCompleta && configDaVenda(sucessoCompleta).cozinha.ativo) { e.preventDefault(); imprimirCupom(sucesso.id, 'cozinha'); }
         return;
       }
       if (pagamentoAberto) {
@@ -651,6 +660,9 @@ export default function PDV() {
 
       {sucesso && (
         <Modal titulo={`Venda nº ${sucesso.numero} concluída`} onClose={novaVenda}>
+          {sucesso.numero_pedido !== null && sucesso.numero_pedido !== undefined && (
+            <div className="pedido-destaque"><span>PEDIDO</span><strong>Nº {sucesso.numero_pedido}</strong></div>
+          )}
           <div className="pagamento-resumo">
             <div><span>Forma</span><span>{FORMA_PAGAMENTO[sucesso.forma_pagamento]}</span></div>
             {Number(sucesso.desconto) > 0 && <div><span>Desconto</span><span>− {brl(sucesso.desconto)}</span></div>}
@@ -659,6 +671,9 @@ export default function PDV() {
           </div>
           <div className="modal-actions">
             <button type="button" onClick={() => imprimirCupom(sucesso.id)}>Imprimir cupom <kbd>P</kbd></button>
+            {sucessoCompleta && configDaVenda(sucessoCompleta).cozinha.ativo && (
+              <button type="button" onClick={() => imprimirCupom(sucesso.id, 'cozinha')}>Comanda da cozinha <kbd>C</kbd></button>
+            )}
             <button type="button" autoFocus onClick={novaVenda}>Nova venda <kbd>Enter</kbd></button>
           </div>
         </Modal>

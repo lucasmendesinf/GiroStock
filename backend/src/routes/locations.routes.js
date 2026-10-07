@@ -5,25 +5,26 @@ const { logAudit } = require('../utils/audit');
 const { getOwned, getOwnedLocation } = require('../utils/tenant');
 const { filtroLocais } = require('../utils/access');
 const { HttpError } = require('../utils/http');
+const { configEfetiva } = require('../utils/cupom');
 
 const router = express.Router();
 
 router.get('/locations', async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT l.id, l.nome, l.ativo,
+    `SELECT l.id, l.nome, l.ativo, l.usa_comanda, l.cupom_config,
             (SELECT COUNT(*)::int FROM terminals t WHERE t.location_id = l.id AND t.tenant_id = l.tenant_id) AS terminal_count
      FROM locations l WHERE l.tenant_id = $1 ORDER BY l.ativo DESC, l.nome`,
     [req.user.tenantId]
   );
-  res.json(rows);
+  res.json(rows.map((l) => ({ ...l, cupom_config: configEfetiva(l.cupom_config) })));
 });
 
 router.post('/locations', requireArea('Configuracoes'), async (req, res) => {
   const nome = String((req.body && req.body.nome) || '').trim();
   if (!nome) return res.status(400).json({ erro: 'nome é obrigatório' });
   const { rows } = await pool.query(
-    `INSERT INTO locations (tenant_id, nome) VALUES ($1, $2) RETURNING id, nome, ativo`,
-    [req.user.tenantId, nome]
+    `INSERT INTO locations (tenant_id, nome, usa_comanda) VALUES ($1, $2, $3) RETURNING id, nome, ativo, usa_comanda`,
+    [req.user.tenantId, nome, !!(req.body && req.body.usa_comanda)]
   );
   res.status(201).json(rows[0]);
 });
@@ -32,7 +33,9 @@ router.post('/locations', requireArea('Configuracoes'), async (req, res) => {
 // saldo de produtos/insumos nem caixa aberto (transfira o estoque antes).
 router.patch('/locations/:id', requireArea('Configuracoes'), async (req, res) => {
   const body = req.body || {};
-  const atual = await getOwned(pool, 'locations', req.params.id, req.user.tenantId, { columns: 'id, nome, ativo' });
+  const atual = await getOwned(pool, 'locations', req.params.id, req.user.tenantId, { columns: 'id, nome, ativo, usa_comanda, cupom_config' });
+  const usaComanda = body.usa_comanda !== undefined ? !!body.usa_comanda : atual.usa_comanda;
+  const cupomConfig = body.cupom_config !== undefined ? configEfetiva(body.cupom_config) : atual.cupom_config;
   const nome = body.nome !== undefined ? String(body.nome).trim() : atual.nome;
   if (!nome) throw new HttpError(400, 'nome é obrigatório');
   const ativo = body.ativo !== undefined ? !!body.ativo : atual.ativo;
@@ -60,8 +63,8 @@ router.patch('/locations/:id', requireArea('Configuracoes'), async (req, res) =>
   try {
     await client.query('BEGIN');
     const { rows } = await client.query(
-      `UPDATE locations SET nome = $1, ativo = $2 WHERE id = $3 AND tenant_id = $4 RETURNING id, nome, ativo`,
-      [nome, ativo, req.params.id, req.user.tenantId]
+      `UPDATE locations SET nome = $1, ativo = $2, usa_comanda = $5, cupom_config = $6 WHERE id = $3 AND tenant_id = $4 RETURNING id, nome, ativo, usa_comanda, cupom_config`,
+      [nome, ativo, req.params.id, req.user.tenantId, usaComanda, cupomConfig ? JSON.stringify(cupomConfig) : null]
     );
     if (atual.ativo && !ativo) {
       await client.query(`UPDATE terminals SET ativo = false WHERE location_id = $1 AND tenant_id = $2`, [req.params.id, req.user.tenantId]);
@@ -72,10 +75,10 @@ router.patch('/locations/:id', requireArea('Configuracoes'), async (req, res) =>
       acao: 'editar',
       recurso: 'locations',
       recursoId: req.params.id,
-      detalhes: { antes: atual, depois: rows[0] },
+      detalhes: { antes: { nome: atual.nome, ativo: atual.ativo, usa_comanda: atual.usa_comanda }, depois: { nome: rows[0].nome, ativo: rows[0].ativo, usa_comanda: rows[0].usa_comanda } },
     });
     await client.query('COMMIT');
-    res.json(rows[0]);
+    res.json({ ...rows[0], cupom_config: configEfetiva(rows[0].cupom_config) });
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

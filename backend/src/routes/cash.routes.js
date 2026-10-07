@@ -109,6 +109,20 @@ router.post('/cash-sessions', requireArea('Vendas'), async (req, res) => {
       return res.status(409).json({ erro: 'já existe uma sessão de caixa aberta para este terminal' });
     }
 
+    // Novo turno: se nao ha nenhum outro caixa aberto nesta loja, o numero do pedido recomeca do 1.
+    const outros = await client.query(
+      `SELECT 1 FROM cash_sessions cs JOIN cash_registers cr ON cr.id = cs.cash_register_id JOIN terminals t ON t.id = cr.terminal_id
+       WHERE t.location_id = $1 AND cs.tenant_id = $2 AND cs.fechado_em IS NULL LIMIT 1`,
+      [terminal.location_id, req.user.tenantId]
+    );
+    if (outros.rows.length === 0) {
+      await client.query(
+        `INSERT INTO location_order_counters (location_id, tenant_id, ultimo) VALUES ($1, $2, 0)
+         ON CONFLICT (location_id) DO UPDATE SET ultimo = 0`,
+        [terminal.location_id, req.user.tenantId]
+      );
+    }
+
     const { rows } = await client.query(
       `INSERT INTO cash_sessions (tenant_id, cash_register_id, usuario_abertura_id, valor_inicial)
        VALUES ($1, $2, $3, $4)

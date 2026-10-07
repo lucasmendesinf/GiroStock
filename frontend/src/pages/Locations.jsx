@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { api } from '../api/client';
 import { useToast, useConfirm } from '../context/UiContext.jsx';
 import { Field } from '../components/ui.jsx';
+import ConfigCupom from './ConfigCupom.jsx';
 
 // Lojas/locais de estoque e os PDVs (terminais com caixa) de cada uma.
 export default function Locations() {
@@ -10,6 +11,8 @@ export default function Locations() {
   const [locations, setLocations] = useState([]);
   const [terminals, setTerminals] = useState([]);
   const [novaLoja, setNovaLoja] = useState('');
+  const [novaComanda, setNovaComanda] = useState(false);
+  const [configurando, setConfigurando] = useState(null);
   const [novoTerminal, setNovoTerminal] = useState({});
   const [renomeando, setRenomeando] = useState({});
 
@@ -31,7 +34,7 @@ export default function Locations() {
 
   function criarLoja(e) {
     e.preventDefault();
-    executar(async () => { await api.post('/locations', { nome: novaLoja }); setNovaLoja(''); }, 'Loja criada.');
+    executar(async () => { await api.post('/locations', { nome: novaLoja, usa_comanda: novaComanda }); setNovaLoja(''); setNovaComanda(false); }, 'Loja criada.');
   }
 
   function criarTerminal(locationId) {
@@ -50,6 +53,11 @@ export default function Locations() {
       await api.patch(`/${tipo}/${id}`, { nome });
       setRenomeando({ ...renomeando, [id]: undefined });
     }, 'Nome atualizado.');
+  }
+
+  function alternarComanda(l) {
+    executar(() => api.patch(`/locations/${l.id}`, { usa_comanda: !l.usa_comanda }),
+      l.usa_comanda ? 'Número de pedido desligado nesta loja.' : 'Número de pedido ligado nesta loja.');
   }
 
   async function alternarLoja(l) {
@@ -104,6 +112,9 @@ export default function Locations() {
           <Field label="Nova loja / local de estoque" style={{ flex: '1 1 320px' }}>
             <input placeholder="Ex: Loja Centro, Depósito, Evento Sábado" value={novaLoja} onChange={(e) => setNovaLoja(e.target.value)} required />
           </Field>
+          <label className="check" style={{ alignSelf: 'center' }}>
+            <input type="checkbox" checked={novaComanda} onChange={(e) => setNovaComanda(e.target.checked)} /> Usar número de pedido (comanda)
+          </label>
           <button type="submit" className="btn-primario">Criar loja</button>
         </form>
         <p className="form-hint" style={{ marginTop: '10px' }}>
@@ -124,6 +135,13 @@ export default function Locations() {
                 <button className={`btn-link ${l.ativo ? 'perigo' : ''}`} onClick={() => alternarLoja(l)}>{l.ativo ? 'Desativar loja' : 'Reativar loja'}</button>
                 <button className="btn-link perigo" onClick={() => excluirLoja(l)}>Excluir loja</button>
               </span>
+            </div>
+
+            <div className="loja-config-linha">
+              <label className="check">
+                <input type="checkbox" checked={!!l.usa_comanda} onChange={() => alternarComanda(l)} /> Usar número de pedido (comanda) — recomeça do 1 quando o caixa abre num novo turno
+              </label>
+              <button className="btn-link" onClick={() => setConfigurando(l)}>Configurar cupom e comanda</button>
             </div>
 
             {daLoja.map((t) => (
@@ -152,6 +170,7 @@ export default function Locations() {
           </div>
         );
       })}
+      {configurando && <ConfigCupom loja={locations.find((x) => x.id === configurando.id) || configurando} onClose={() => setConfigurando(null)} onSalvo={() => { setConfigurando(null); reload(); }} />}
     </div>
   );
 }

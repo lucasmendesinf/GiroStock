@@ -878,3 +878,6 @@ button.es-btn-ghost:disabled { opacity: 0.45; cursor: not-allowed; }
 @media (max-width: 700px) { .xml-grid .span2 { grid-column: auto; } }
 .xml-calculo { font-size: 13px; color: var(--muted); }
 .xml-calculo b { color: var(--gold-light); }
+
+.card-titulo-acoes { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.card-titulo-acoes h3 { margin: 0; }

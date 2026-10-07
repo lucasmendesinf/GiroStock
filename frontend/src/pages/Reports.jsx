@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { Field, Modal, Paginacao, Vazio } from '../components/ui.jsx';
 import Cupom, { imprimirCupom } from '../components/Cupom.jsx';
 import { brl, dataHora, isoLocal, pct, qtd, FORMA_PAGAMENTO } from '../utils/format';
+import { baixarCsv, numeroCsv } from '../utils/csv';
 
 const LIMITE = 30;
 
@@ -23,6 +24,13 @@ function periodo(tipo) {
   }
 }
 const PERIODOS = [['hoje', 'Hoje'], ['ontem', 'Ontem'], ['7dias', '7 dias'], ['mes', 'Este mês'], ['mes_passado', 'Mês passado'], ['personalizado', 'Período...']];
+
+// Nome do arquivo com o periodo filtrado, ex.: vendas_2026-10-01_a_2026-10-07.csv
+function nomeCsv(base, query) {
+  const ini = query.get('data_inicio');
+  const fim = query.get('data_fim');
+  return `${base}${ini || fim ? `_${ini || 'inicio'}_a_${fim || 'hoje'}` : ''}.csv`;
+}
 
 export default function Reports() {
   const toast = useToast();
@@ -122,6 +130,7 @@ export default function Reports() {
 
 function AbaVendas({ query, onAbrirVenda }) {
   const toast = useToast();
+  const [exportando, setExportando] = useState(false);
   const [resumo, setResumo] = useState(null);
   const [top, setTop] = useState([]);
   const [hist, setHist] = useState({ itens: [], total: 0, offset: 0 });
@@ -143,6 +152,36 @@ function AbaVendas({ query, onAbrirVenda }) {
       .catch((err) => toast.erro(err));
     carregarHistorico(0);
   }, [query, carregarHistorico, toast]);
+
+  // Exporta TODAS as vendas do filtro atual (busca em paginas de 500), nao so a pagina da tela.
+  async function exportarVendas() {
+    setExportando(true);
+    try {
+      const todas = [];
+      let offset = 0;
+      let total = 0;
+      do {
+        const p = new URLSearchParams(query);
+        p.set('limit', '500');
+        p.set('offset', String(offset));
+        const r = await api.get(`/reports/sales-history?${p}`);
+        total = r.total;
+        todas.push(...r.itens);
+        offset += 500;
+        if (r.itens.length === 0) break;
+      } while (offset < total);
+      baixarCsv(nomeCsv('vendas', query),
+        ['Nº', 'Data/hora', 'Operador', 'Loja', 'PDV', 'Pagamento', 'Desconto (R$)', 'Total (R$)', 'Situação', 'Motivo do cancelamento'],
+        todas.map((h) => [h.numero, dataHora(h.criado_em), h.operador_nome, h.location_nome, h.terminal_nome, FORMA_PAGAMENTO[h.forma_pagamento] || h.forma_pagamento,
+          numeroCsv(h.desconto), numeroCsv(h.total), h.status === 'cancelada' ? 'Cancelada' : 'Concluída', h.motivo_cancelamento || '']));
+      toast.sucesso(`${todas.length} venda(s) exportada(s).`);
+    } catch (err) { toast.erro(err); } finally { setExportando(false); }
+  }
+
+  function exportarTop() {
+    baixarCsv(nomeCsv('produtos_mais_vendidos', query), ['Posição', 'Produto', 'Unidade', 'Quantidade', 'Faturamento (R$)', 'Lucro (R$)'],
+      top.map((t, i) => [i + 1, t.nome, t.unidade, numeroCsv(t.quantidade), numeroCsv(t.faturamento), numeroCsv(t.lucro)]));
+  }
 
   return (
     <>
@@ -173,7 +212,7 @@ function AbaVendas({ query, onAbrirVenda }) {
           </ul>
         </div>
         <div className="card">
-          <h3>Produtos mais vendidos</h3>
+          <div className="card-titulo-acoes"><h3>Produtos mais vendidos</h3>{top.length > 0 && <button type="button" className="btn-link" onClick={exportarTop}>Exportar CSV</button>}</div>
           {top.length === 0 && <Vazio>Sem vendas no período.</Vazio>}
           <ul className="lista-simples">
             {top.map((t, i) => (
@@ -187,7 +226,7 @@ function AbaVendas({ query, onAbrirVenda }) {
       </div>
 
       <div className="card">
-        <h3>Histórico de vendas</h3>
+        <div className="card-titulo-acoes"><h3>Histórico de vendas</h3><button type="button" className="btn-link" disabled={exportando || hist.total === 0} onClick={exportarVendas}>{exportando ? 'Gerando...' : `Exportar CSV (${hist.total})`}</button></div>
         <div className="tabela-wrap">
           <table>
             <thead><tr><th>Nº</th><th>Data/hora</th><th className="col-opcional">Operador</th><th className="col-opcional">Loja / PDV</th><th className="col-opcional">Pagamento</th><th className="num">Total</th><th>Situação</th></tr></thead>
@@ -217,6 +256,15 @@ function AbaVendas({ query, onAbrirVenda }) {
 function AbaCaixas({ query }) {
   const toast = useToast();
   const [sessoes, setSessoes] = useState([]);
+
+  function exportarCaixas() {
+    baixarCsv(nomeCsv('fechamentos_de_caixa', query),
+      ['Loja', 'PDV', 'Aberto por', 'Abertura', 'Fechamento', 'Vendas (qtd)', 'Total vendido (R$)', 'Dinheiro (R$)', 'Pix (R$)', 'Cartão crédito (R$)', 'Cartão débito (R$)',
+        'Sangrias (R$)', 'Suprimentos (R$)', 'Esperado (R$)', 'Contado (R$)', 'Diferença (R$)'],
+      sessoes.map((s) => [s.location_nome, s.terminal_nome, s.aberto_por, dataHora(s.aberto_em), s.fechado_em ? dataHora(s.fechado_em) : 'aberto', s.vendas,
+        numeroCsv(s.total_vendido), numeroCsv(s.dinheiro), numeroCsv(s.pix), numeroCsv(s.cartao_credito), numeroCsv(s.cartao_debito), numeroCsv(s.sangrias), numeroCsv(s.suprimentos),
+        s.fechado_em ? numeroCsv(s.valor_esperado_fechamento) : '', s.fechado_em ? numeroCsv(s.valor_informado_fechamento) : '', s.diferenca === null ? '' : numeroCsv(s.diferenca)]));
+  }
   useEffect(() => {
     const p = new URLSearchParams();
     for (const k of ['location_id', 'data_inicio', 'data_fim']) if (query.get(k)) p.set(k, query.get(k));
@@ -225,7 +273,7 @@ function AbaCaixas({ query }) {
 
   return (
     <div className="card">
-      <h3>Fechamentos de caixa</h3>
+      <div className="card-titulo-acoes"><h3>Fechamentos de caixa</h3>{sessoes.length > 0 && <button type="button" className="btn-link" onClick={exportarCaixas}>Exportar CSV</button>}</div>
       <div className="tabela-wrap">
         <table>
           <thead>

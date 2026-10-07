@@ -26,6 +26,9 @@ function agruparItens(itens) {
 router.post('/sales', requireArea('Vendas'), async (req, res) => {
   const { terminal_id, itens, forma_pagamento, valor_recebido } = req.body || {};
   const descontoInformado = Number((req.body && req.body.desconto) || 0);
+  if (descontoInformado > 0 && !(req.user.areas && req.user.areas.Desconto)) {
+    return res.status(403).json({ erro: 'Seu usuário não tem permissão para dar desconto' });
+  }
   if (!(descontoInformado >= 0)) {
     return res.status(400).json({ erro: 'desconto deve ser um valor em reais (0 ou mais)' });
   }

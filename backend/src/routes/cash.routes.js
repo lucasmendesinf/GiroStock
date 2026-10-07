@@ -135,7 +135,7 @@ router.post('/cash-sessions', requireArea('Vendas'), async (req, res) => {
   }
 });
 
-router.post('/cash-sessions/:id/movements', requireArea('Vendas'), async (req, res) => {
+router.post('/cash-sessions/:id/movements', requireArea('Vendas'), requireArea('SangriaSuprimento'), async (req, res) => {
   const { tipo, valor, motivo } = req.body || {};
   const val = Number(valor);
   if (!['sangria', 'suprimento'].includes(tipo) || !(val > 0) || !motivo) {
@@ -184,7 +184,7 @@ router.post('/cash-sessions/:id/movements', requireArea('Vendas'), async (req, r
   }
 });
 
-router.post('/cash-sessions/:id/close', requireArea('Vendas'), async (req, res) => {
+router.post('/cash-sessions/:id/close', requireArea('Vendas'), requireArea('FecharCaixa'), async (req, res) => {
   const { valor_informado } = req.body || {};
   const informado = Number(valor_informado);
   if (!(informado >= 0)) return res.status(400).json({ erro: 'valor_informado (>=0) é obrigatório' });

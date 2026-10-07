@@ -1,17 +1,20 @@
 // Permissoes: cada perfil tem um padrao (MATRIX) e cada usuario pode ter ajustes
 // individuais (users.permissoes) que liberam ou bloqueiam permissoes especificas.
 const MATRIX = {
-  'Administrador':        { Vendas: true,  Estoque: true,  Financeiro: true,  Relatorios: true,  Configuracoes: true,  CancelarVendas: true },
-  'Gerente':              { Vendas: true,  Estoque: true,  Financeiro: false, Relatorios: true,  Configuracoes: false, CancelarVendas: true },
-  'Caixa/Operador':       { Vendas: true,  Estoque: false, Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false },
-  'Estoque':              { Vendas: false, Estoque: true,  Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false },
-  'Lanchonete/Cozinha':   { Vendas: true,  Estoque: true,  Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false },
-  'Financeiro':           { Vendas: false, Estoque: false, Financeiro: true,  Relatorios: true,  Configuracoes: false, CancelarVendas: false },
+  'Administrador':        { Vendas: true,  Estoque: true,  Financeiro: true,  Relatorios: true,  Configuracoes: true,  CancelarVendas: true,  SangriaSuprimento: true,  Desconto: true,  FecharCaixa: true },
+  'Gerente':              { Vendas: true,  Estoque: true,  Financeiro: false, Relatorios: true,  Configuracoes: false, CancelarVendas: true,  SangriaSuprimento: true,  Desconto: true,  FecharCaixa: true },
+  'Caixa/Operador':       { Vendas: true,  Estoque: false, Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: true },
+  'Estoque':              { Vendas: false, Estoque: true,  Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: false },
+  'Lanchonete/Cozinha':   { Vendas: true,  Estoque: true,  Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: true },
+  'Financeiro':           { Vendas: false, Estoque: false, Financeiro: true,  Relatorios: true,  Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: false },
 };
 
 // Permissoes que podem ser ajustadas por usuario (Financeiro ainda nao tem tela).
 const PERMISSOES = {
-  Vendas: 'PDV: vender, sangria/suprimento e fechar caixa',
+  Vendas: 'PDV: abrir o caixa e vender',
+  SangriaSuprimento: 'PDV: fazer sangria e suprimento',
+  Desconto: 'PDV: dar desconto na venda',
+  FecharCaixa: 'PDV: fechar o caixa',
   Estoque: 'Produtos, fornecedores, insumos, entradas e transferências',
   Relatorios: 'Relatórios e histórico de vendas',
   Configuracoes: 'Usuários, lojas e PDVs',
@@ -35,7 +38,9 @@ function normalizarOverrides(perfil, entrada) {
   const padrao = MATRIX[perfil] || {};
   const resultado = {};
   for (const [chave, valor] of Object.entries(entrada)) {
-    if (!(chave in PERMISSOES) || typeof valor !== 'boolean') return false;
+    // Chaves do padrao do perfil que nao sao ajustaveis (ex.: Financeiro) sao ignoradas.
+    if (!(chave in PERMISSOES)) { if (chave in padrao && typeof valor === 'boolean') continue; return false; }
+    if (typeof valor !== 'boolean') return false;
     if (padrao[chave] !== valor) resultado[chave] = valor;
   }
   return Object.keys(resultado).length > 0 ? resultado : null;

@@ -85,6 +85,11 @@ export default function Users() {
   );
 }
 
+// So as permissoes ajustaveis (a matriz do perfil traz chaves extras, como Financeiro).
+function soListadas(matriz, permissoes) {
+  return Object.fromEntries(Object.keys(matriz.permissoes).map((k) => [k, !!(permissoes || {})[k]]));
+}
+
 // Permissoes efetivas de um usuario: padrao do perfil + ajustes individuais.
 function efetivas(matriz, perfil, ajustes) {
   return { ...(matriz.padrao[perfil] || {}), ...(ajustes || {}) };
@@ -148,7 +153,7 @@ function NovoUsuario({ matriz, locations, onClose, onSalvo }) {
     if (form.senha !== form.confirmarSenha) { toast.erro('As senhas não conferem.'); return; }
     if (form.perfil === 'Administrador' && !(await confirmar({ titulo: 'Criar um Administrador?', mensagem: 'Administradores têm acesso total ao sistema.', confirmar: 'Criar administrador' }))) return;
     try {
-      await api.post('/users', { nome: form.nome, email: form.email, senha: form.senha, perfil: form.perfil, location_id: form.location_id || null, location_ids: form.location_id ? form.location_ids : [], permissoes: form.permissoes });
+      await api.post('/users', { nome: form.nome, email: form.email, senha: form.senha, perfil: form.perfil, location_id: form.location_id || null, location_ids: form.location_id ? form.location_ids : [], permissoes: soListadas(matriz, form.permissoes) });
       toast.sucesso('Usuário cadastrado.');
       onSalvo();
     } catch (err) { toast.erro(err); }
@@ -191,7 +196,7 @@ function EditarUsuario({ usuario, matriz, locations, souEu, onClose, onSalvo }) 
       confirmar: 'Confirmar',
     }))) return;
     try {
-      await api.patch(`/users/${usuario.id}`, { nome: form.nome, perfil: form.perfil, location_id: form.location_id || null, location_ids: form.location_id ? form.location_ids : [], permissoes: form.permissoes });
+      await api.patch(`/users/${usuario.id}`, { nome: form.nome, perfil: form.perfil, location_id: form.location_id || null, location_ids: form.location_id ? form.location_ids : [], permissoes: soListadas(matriz, form.permissoes) });
       toast.sucesso('Usuário atualizado.');
       onSalvo();
     } catch (err) { toast.erro(err); }

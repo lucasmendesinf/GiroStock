@@ -3,6 +3,8 @@ import { api } from '../api/client';
 import { requestFullscreen, isFullscreen as checkIsFullscreen } from '../utils/fullscreen';
 import { brl, qtd, parseNumero, dataHora, UNIDADES_INTEIRAS, FORMA_PAGAMENTO } from '../utils/format';
 import { useToast, useConfirm } from '../context/UiContext.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
+import { podeAcessar } from '../utils/permissions';
 import { Field, Modal } from '../components/ui.jsx';
 import Cupom, { imprimirCupom as abrirImpressao } from '../components/Cupom.jsx';
 
@@ -18,6 +20,10 @@ function ehCodigoDeBarras(texto) {
 export default function PDV() {
   const toast = useToast();
   const confirmar = useConfirm();
+  const { user } = useAuth();
+  const podeSangria = podeAcessar(user, 'SangriaSuprimento');
+  const podeDesconto = podeAcessar(user, 'Desconto');
+  const podeFechar = podeAcessar(user, 'FecharCaixa');
 
   // ---------- tela cheia ----------
   const [mostrarDicaEsc, setMostrarDicaEsc] = useState(false);
@@ -376,9 +382,9 @@ export default function PDV() {
       }
       if (algumModal) return;
       if (e.key === 'F2') { e.preventDefault(); abrirPagamento(); }
-      if (e.key === 'F4') { e.preventDefault(); setMovModalAberto(true); }
+      if (e.key === 'F4') { e.preventDefault(); if (podeSangria) setMovModalAberto(true); }
       if (e.key === 'F6') { e.preventDefault(); cancelarVendaAtual(); }
-      if (e.key === 'F8') { e.preventDefault(); setFecharAberto(true); }
+      if (e.key === 'F8') { e.preventDefault(); if (podeFechar) setFecharAberto(true); }
       if (e.key === 'F9' && ultimaVendaId) { e.preventDefault(); imprimirCupom(ultimaVendaId); }
     }
     window.addEventListener('keydown', onKey);
@@ -446,9 +452,9 @@ export default function PDV() {
         </select>
         <span className="pdv-caixa-info">Caixa aberto às {dataHora(session.aberto_em).slice(-5)}</span>
         <div className="pdv-header-acoes">
-          <button onClick={() => setMovModalAberto(true)}>Sangria/Suprimento <kbd>F4</kbd></button>
+          {podeSangria && <button onClick={() => setMovModalAberto(true)}>Sangria/Suprimento <kbd>F4</kbd></button>}
           {ultimaVendaId && <button onClick={() => imprimirCupom(ultimaVendaId)}>Reimprimir cupom <kbd>F9</kbd></button>}
-          <button onClick={() => setFecharAberto(true)}>Fechar caixa <kbd>F8</kbd></button>
+          {podeFechar && <button onClick={() => setFecharAberto(true)}>Fechar caixa <kbd>F8</kbd></button>}
         </div>
       </div>
 
@@ -554,7 +560,7 @@ export default function PDV() {
           </div>
 
           <div className="form-grid">
-            <Field label="Desconto">
+            {podeDesconto && <Field label="Desconto">
               <div className="input-com-seletor">
                 <input inputMode="decimal" placeholder="0" value={descontoTexto} onChange={(e) => setDescontoTexto(e.target.value)} />
                 <select value={descontoTipo} onChange={(e) => setDescontoTipo(e.target.value)} aria-label="Tipo de desconto">
@@ -562,7 +568,7 @@ export default function PDV() {
                   <option value="percentual">%</option>
                 </select>
               </div>
-            </Field>
+            </Field>}
             {formaPagamento === 'dinheiro' && (
               <Field label="Valor recebido">
                 <input ref={recebidoRef} inputMode="decimal" placeholder="0,00" value={valorRecebido} onChange={(e) => setValorRecebido(e.target.value)} />

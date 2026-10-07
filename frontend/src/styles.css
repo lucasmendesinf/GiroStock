@@ -907,3 +907,5 @@ button.es-btn-ghost:disabled { opacity: 0.45; cursor: not-allowed; }
   .resultados-lista .resultado-codigo, .resultados-lista .resultado-cat { display: none; }
   .resultados-lista .saldo-pdv { grid-column: 2; text-align: left; }
 }
+
+.resultados-lista .resultados li.resultados-rodape { display: block; text-align: center; font-size: 12px; color: var(--muted); cursor: default; font-weight: 500; padding: 10px 16px; }

@@ -174,6 +174,8 @@ router.get('/products', async (req, res) => {
 // na busca por codigo de barras, o produto volta mesmo sem saldo para o PDV avisar.
 router.get('/products/search', async (req, res) => {
   const { q, barcode, terminal_id } = req.query;
+  const limite = Math.min(Math.max(parseInt(req.query.limit, 10) || 30, 1), 100);
+  const deslocamento = Math.max(parseInt(req.query.offset, 10) || 0, 0);
   let locationId = req.query.location_id || null;
   if (terminal_id) {
     const terminal = await getOwned(pool, 'terminals', terminal_id, req.user.tenantId, { columns: 'id, location_id' });
@@ -218,7 +220,7 @@ router.get('/products/search', async (req, res) => {
        FROM products p
        WHERE ${where}
      ) x
-     ORDER BY (COALESCE(x.saldo, 1) > 0) DESC, x.nome LIMIT 30`,
+     ORDER BY (COALESCE(x.saldo, 1) > 0) DESC, x.nome, x.id LIMIT ${limite} OFFSET ${deslocamento}`,
     params
   );
   res.json(rows);

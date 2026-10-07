@@ -99,6 +99,11 @@ export default function PDV() {
   const [results, setResults] = useState([]);
   const [selecionado, setSelecionado] = useState(0);
   const itemSelecionadoRef = useRef(null);
+  // Lista completa (busca iniciada por *): carrega em lotes conforme a rolagem.
+  const LOTE = 30;
+  const [temMais, setTemMais] = useState(false);
+  const [carregandoMais, setCarregandoMais] = useState(false);
+  const listaAtual = useRef(null); // termo da lista completa em exibicao (null = busca normal)
   const buscaRef = useRef(null);
   const qtdRefs = useRef({});
   const [editandoQtd, setEditandoQtd] = useState({});
@@ -128,6 +133,23 @@ export default function PDV() {
     setBusca(texto);
     setSelecionado(0);
     clearTimeout(timerBusca.current);
+    // "*" lista todos os produtos; "*texto" lista os que combinam com o texto. A lista carrega em lotes ao rolar.
+    if (texto.trim().startsWith('*')) {
+      const filtro = texto.trim().slice(1).trim();
+      listaAtual.current = filtro;
+      setTemMais(false);
+      timerBusca.current = setTimeout(async () => {
+        try {
+          const lote = await api.get(`/products/search?q=${encodeURIComponent(filtro)}&limit=${LOTE}&offset=0&terminal_id=${terminalId}`);
+          if (listaAtual.current !== filtro) return;
+          setResults(lote);
+          setTemMais(lote.length === LOTE);
+        } catch (err) { toast.erro(err); }
+      }, 180);
+      return;
+    }
+    listaAtual.current = null;
+    setTemMais(false);
     const termo = (texto.match(RE_QTD) || [null, null, texto])[2].trim();
     // Codigo numerico so e buscado no Enter (leitor de codigo de barras envia Enter no final).
     if (termo.length < 2 || /^\d+$/.test(termo)) { setResults([]); return; }
@@ -174,10 +196,27 @@ export default function PDV() {
     return true;
   }
 
+  async function carregarMais() {
+    const filtro = listaAtual.current;
+    if (filtro === null || !temMais || carregandoMais) return;
+    setCarregandoMais(true);
+    try {
+      const lote = await api.get(`/products/search?q=${encodeURIComponent(filtro)}&limit=${LOTE}&offset=${results.length}&terminal_id=${terminalId}`);
+      if (listaAtual.current !== filtro) return;
+      setResults((atual) => [...atual, ...lote.filter((n) => !atual.some((a) => a.id === n.id))]);
+      setTemMais(lote.length === LOTE);
+    } catch (err) { toast.erro(err); } finally { setCarregandoMais(false); }
+  }
+
   async function onBuscaKeyDown(e) {
-    if (e.key === 'ArrowDown') { e.preventDefault(); setSelecionado((s) => Math.min(s + 1, results.length - 1)); return; }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelecionado((s) => Math.min(s + 1, results.length - 1));
+      if (selecionado >= results.length - 3) carregarMais();
+      return;
+    }
     if (e.key === 'ArrowUp') { e.preventDefault(); setSelecionado((s) => Math.max(s - 1, 0)); return; }
-    if (e.key === 'Escape') { setBusca(''); setResults([]); return; }
+    if (e.key === 'Escape') { setBusca(''); setResults([]); listaAtual.current = null; setTemMais(false); return; }
     if (e.key === 'Delete' && busca === '' && cart.length > 0) {
       e.preventDefault();
       setCart((prev) => prev.slice(0, -1));
@@ -463,7 +502,7 @@ export default function PDV() {
           <input
             ref={buscaRef}
             className="pdv-campo"
-            placeholder="Código de barras ou nome do produto  ·  3*código para quantidade"
+            placeholder="Código de barras ou nome do produto  ·  3*código para quantidade  ·  * lista todos"
             value={busca}
             onChange={(e) => onBuscaChange(e.target.value)}
             onKeyDown={onBuscaKeyDown}
@@ -480,7 +519,8 @@ export default function PDV() {
                 <span className="num">Estoque</span>
                 <span className="num">Preço</span>
               </div>
-              <ul className="resultados" role="listbox" aria-label="Produtos encontrados">
+              <ul className="resultados" role="listbox" aria-label="Produtos encontrados"
+                onScroll={(e) => { const el = e.currentTarget; if (el.scrollTop + el.clientHeight >= el.scrollHeight - 60) carregarMais(); }}>
                 {results.map((p, i) => {
                   const semEstoque = Number(p.saldo) <= 0;
                   return (
@@ -496,6 +536,11 @@ export default function PDV() {
                     </li>
                   );
                 })}
+                {listaAtual.current !== null && (
+                  <li className="resultados-rodape" aria-hidden="true">
+                    {carregandoMais ? 'Carregando mais produtos...' : temMais ? 'Role ou use ↓ para carregar mais' : `Fim da lista · ${results.length} produto(s)`}
+                  </li>
+                )}
               </ul>
             </div>
           )}
@@ -503,6 +548,7 @@ export default function PDV() {
             <span><kbd>Enter</kbd> adiciona</span>
             <span><kbd>↑</kbd><kbd>↓</kbd> percorre a lista</span>
             <span><kbd>3*</kbd> quantidade</span>
+            <span><kbd>*</kbd> lista todos os produtos</span>
             <span><kbd>Del</kbd> tira o último</span>
             <span><kbd>F2</kbd> pagamento</span>
             <span><kbd>F6</kbd> cancelar venda</span>

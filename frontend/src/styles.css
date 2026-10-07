@@ -804,8 +804,8 @@ button.es-chip.on { border-color: var(--gold-light); color: var(--gold-light); b
 .es-legenda { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin: 0 0 12px; }
 .es-legenda i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
 
-table.es-tabela tbody tr.es-row-warn td { background: var(--warn-soft); }
-table.es-tabela tbody tr.es-row-err td { background: var(--err-soft); }
+table.es-tabela tbody tr.es-row-warn td { background: color-mix(in srgb, var(--warn) 6%, transparent); }
+table.es-tabela tbody tr.es-row-err td { background: color-mix(in srgb, var(--err) 6%, transparent); }
 table.es-tabela tbody tr.es-row-ok td:first-child { box-shadow: inset 4px 0 0 var(--ok); }
 table.es-tabela tbody tr.es-row-warn td:first-child { box-shadow: inset 4px 0 0 var(--warn); }
 table.es-tabela tbody tr.es-row-err td:first-child { box-shadow: inset 4px 0 0 var(--err); }

@@ -59,6 +59,7 @@ export default function Movimentacoes({ products, ingredients = [], locations, s
         toast.sucesso(`${TIPO_MOV(tipo)} de insumo registrada.`);
         setForm({ ...VAZIO, location_origem_id: form.location_origem_id, location_destino_id: form.location_destino_id });
         await reload();
+        carregarHistorico(0);
         return;
       }
       const payload = { product_id: form.product_id, tipo, quantidade: parseNumero(form.quantidade), motivo: form.motivo };
@@ -153,7 +154,8 @@ export default function Movimentacoes({ products, ingredients = [], locations, s
         <div className="filtros" style={{ margin: '12px 0' }}>
           <select value={filtros.product_id} onChange={mudarFiltro('product_id')} aria-label="Produto">
             <option value="">Todos os produtos</option>
-            {products.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+            <optgroup label="Produtos">{products.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}</optgroup>
+            {ingredients.length > 0 && <optgroup label="Insumos">{ingredients.map((i) => <option key={i.id} value={i.id}>{i.nome} (insumo)</option>)}</optgroup>}
           </select>
           <select value={filtros.location_id} onChange={mudarFiltro('location_id')} aria-label="Loja">
             <option value="">Todas as lojas</option>
@@ -171,17 +173,17 @@ export default function Movimentacoes({ products, ingredients = [], locations, s
         </div>
         <div className="tabela-wrap">
           <table>
-            <thead><tr><th>Data</th><th>Tipo</th><th>Produto</th><th className="num">Qtd</th><th className="col-opcional">Local</th><th className="col-opcional">Detalhe</th><th className="col-opcional">Usuário</th></tr></thead>
+            <thead><tr><th>Data</th><th>Tipo</th><th>Produto / insumo</th><th className="num">Qtd</th><th className="col-opcional">Local</th><th className="col-opcional">Detalhe</th><th className="col-opcional">Usuário</th></tr></thead>
             <tbody>
               {hist.itens.map((m) => (
                 <tr key={m.id}>
                   <td>{dataHora(m.criado_em)}</td>
                   <td><span className={`tipo-${m.tipo}`}>{TIPO_MOV(m.tipo)}</span></td>
-                  <td>{m.product_nome}</td>
+                  <td>{m.origem === 'insumo' && <span className="xml-etiqueta" style={{ marginLeft: 0, marginRight: 6 }}>insumo</span>}{m.product_nome}</td>
                   <td className="num">{qtd(m.quantidade, m.unidade)}</td>
                   <td className="col-opcional">{m.tipo === 'balanco' ? (m.location_destino_nome || m.location_origem_nome) : m.location_origem_nome && m.location_destino_nome ? `${m.location_origem_nome} → ${m.location_destino_nome}` : (m.location_origem_nome || m.location_destino_nome)}</td>
                   <td className="col-opcional">
-                    {m.sale_numero ? `${m.tipo === 'entrada' ? 'Estorno da venda' : 'Venda'} nº ${m.sale_numero}` : m.tipo === 'balanco' ? `${m.motivo} (de ${qtd(m.saldo_anterior, m.unidade)} para ${qtd(m.saldo_novo, m.unidade)})` : m.motivo}
+                    {m.sale_numero ? `${m.tipo === 'entrada' ? 'Estorno da venda' : m.origem === 'insumo' ? 'Consumo na venda' : 'Venda'} nº ${m.sale_numero}` : m.tipo === 'balanco' ? `${m.motivo} (de ${qtd(m.saldo_anterior, m.unidade)} para ${qtd(m.saldo_novo, m.unidade)})` : m.motivo}
                     {(m.supplier_nome || m.documento_fiscal || m.custo_unitario) && (
                       <div className="celula-sub">{[m.supplier_nome, m.custo_unitario ? `${brl(m.custo_unitario)}/un` : null, m.documento_fiscal ? `NF ${m.documento_fiscal}` : null].filter(Boolean).join(' · ')}</div>
                     )}

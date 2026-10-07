@@ -371,46 +371,85 @@ router.post('/stock-entries', requireArea('Estoque'), async (req, res) => {
 router.get('/stock-movements', requireArea('Estoque'), async (req, res) => {
   const { product_id, location_id, supplier_id, tipo } = req.query;
   const params = [req.user.tenantId];
-  let where = 'sm.tenant_id = $1';
+  let where = 'TRUE';
   if (product_id) {
     params.push(product_id);
-    where += ` AND sm.product_id = $${params.length}`;
+    where += ` AND m.item_id = $${params.length}::text`;
   }
   if (supplier_id) {
     params.push(supplier_id);
-    where += ` AND sm.supplier_id = $${params.length}`;
+    where += ` AND m.supplier_id = $${params.length}`;
   }
   if (tipo) {
     params.push(tipo);
-    where += ` AND sm.tipo = $${params.length}`;
+    where += ` AND m.tipo = $${params.length}`;
   }
   // Usuario vinculado a um local so ve as movimentacoes que tocam o local dele.
   const local = restrictedLocation(req.user) || location_id;
   if (local) {
     params.push(local);
-    where += ` AND (sm.location_origem_id = $${params.length} OR sm.location_destino_id = $${params.length})`;
+    where += ` AND (m.location_origem_id = $${params.length} OR m.location_destino_id = $${params.length})`;
   }
-  where += filtroPeriodo('sm.criado_em', req.query, params);
+  where += filtroPeriodo('m.criado_em', req.query, params);
   const { limit, offset } = paginacao(req.query, 50, 500);
 
-  const total = await pool.query(`SELECT COUNT(*)::int AS total FROM stock_movements sm WHERE ${where}`, params);
+  // Movimentacoes de produtos (stock_movements) + de insumos (entradas/saidas/transferencias/balancos
+  // gravados na auditoria e o consumo por vendas), numa lista unica.
+  const base = `
+    WITH m AS (
+      SELECT sm.id::text AS id, 'produto' AS origem, sm.product_id::text AS item_id, p.nome AS item_nome, p.unidade,
+             sm.tipo::text AS tipo, sm.quantidade, sm.location_origem_id, sm.location_destino_id, sm.motivo,
+             sm.usuario_id, sm.supplier_id, sm.custo_unitario, sm.documento_fiscal, sm.sale_id,
+             sm.saldo_anterior, sm.saldo_novo, sm.criado_em
+      FROM stock_movements sm JOIN products p ON p.id = sm.product_id
+      WHERE sm.tenant_id = $1
+      UNION ALL
+      SELECT al.id::text, 'insumo', al.recurso_id::text, i.nome, i.unidade,
+             CASE al.acao WHEN 'entrada_estoque' THEN 'entrada' WHEN 'saida_estoque' THEN 'saida'
+                          WHEN 'transferencia' THEN 'transferencia' ELSE 'balanco' END,
+             CASE WHEN al.acao = 'balanco_estoque' THEN abs((al.detalhes->>'diferenca')::numeric)
+                  ELSE (al.detalhes->>'quantidade')::numeric END,
+             CASE al.acao WHEN 'saida_estoque' THEN NULLIF(al.detalhes->>'location_id', '')::uuid
+                          WHEN 'transferencia' THEN NULLIF(al.detalhes->>'location_origem_id', '')::uuid END,
+             CASE al.acao WHEN 'entrada_estoque' THEN NULLIF(al.detalhes->>'location_id', '')::uuid
+                          WHEN 'balanco_estoque' THEN NULLIF(al.detalhes->>'location_id', '')::uuid
+                          WHEN 'transferencia' THEN NULLIF(al.detalhes->>'location_destino_id', '')::uuid END,
+             COALESCE(al.detalhes->>'motivo', CASE al.acao WHEN 'entrada_estoque' THEN 'Entrada de insumo' END),
+             al.usuario_id, NULLIF(al.detalhes->>'supplier_id', '')::uuid,
+             CASE WHEN al.acao = 'entrada_estoque' AND COALESCE((al.detalhes->>'custo_total')::numeric, 0) > 0
+                  THEN (al.detalhes->>'custo_total')::numeric / NULLIF((al.detalhes->>'quantidade')::numeric, 0) END,
+             NULLIF(al.detalhes->>'documento_fiscal', ''), NULL::uuid,
+             (al.detalhes->>'saldo_anterior')::numeric, (al.detalhes->>'saldo_novo')::numeric, al.criado_em
+      FROM audit_logs al JOIN ingredients i ON i.id = al.recurso_id
+      WHERE al.tenant_id = $1 AND al.recurso = 'ingredients'
+        AND al.acao IN ('entrada_estoque', 'saida_estoque', 'transferencia', 'balanco_estoque')
+      UNION ALL
+      SELECT ic.id::text, 'insumo', ic.ingredient_id::text, i.nome, i.unidade, 'saida', ic.quantidade_consumida,
+             ic.location_id, NULL::uuid, 'Consumo em venda', sa.operador_id, NULL::uuid, NULL::numeric, NULL,
+             sa.id, NULL::numeric, NULL::numeric, ic.criado_em
+      FROM ingredient_consumptions ic
+      JOIN ingredients i ON i.id = ic.ingredient_id
+      JOIN sale_items si ON si.id = ic.sale_item_id
+      JOIN sales sa ON sa.id = si.sale_id
+      WHERE ic.tenant_id = $1
+    )`;
+  const total = await pool.query(`${base} SELECT COUNT(*)::int AS total FROM m WHERE ${where}`, params);
   const { rows } = await pool.query(
-    `SELECT sm.id, sm.product_id, p.nome AS product_nome, p.unidade, sm.tipo, sm.quantidade,
-            sm.location_origem_id, lo.nome AS location_origem_nome,
-            sm.location_destino_id, ld.nome AS location_destino_nome,
-            sm.motivo, sm.usuario_id, u.nome AS usuario_nome,
-            sm.supplier_id, s.nome AS supplier_nome, sm.custo_unitario, sm.documento_fiscal,
-            sm.sale_id, sa.numero AS sale_numero,
-            sm.saldo_anterior, sm.saldo_novo,
-            sm.criado_em
-     FROM stock_movements sm
-     JOIN products p ON p.id = sm.product_id
-     LEFT JOIN users u ON u.id = sm.usuario_id
-     LEFT JOIN suppliers s ON s.id = sm.supplier_id
-     LEFT JOIN sales sa ON sa.id = sm.sale_id
-     LEFT JOIN locations lo ON lo.id = sm.location_origem_id
-     LEFT JOIN locations ld ON ld.id = sm.location_destino_id
-     WHERE ${where} ORDER BY sm.criado_em DESC, sm.id
+    `${base}
+     SELECT m.id, m.origem, m.item_id AS product_id, m.item_nome AS product_nome, m.unidade, m.tipo, m.quantidade,
+            m.location_origem_id, lo.nome AS location_origem_nome,
+            m.location_destino_id, ld.nome AS location_destino_nome,
+            m.motivo, m.usuario_id, u.nome AS usuario_nome,
+            m.supplier_id, s.nome AS supplier_nome, m.custo_unitario, m.documento_fiscal,
+            m.sale_id, sa.numero AS sale_numero,
+            m.saldo_anterior, m.saldo_novo, m.criado_em
+     FROM m
+     LEFT JOIN users u ON u.id = m.usuario_id
+     LEFT JOIN suppliers s ON s.id = m.supplier_id
+     LEFT JOIN sales sa ON sa.id = m.sale_id
+     LEFT JOIN locations lo ON lo.id = m.location_origem_id
+     LEFT JOIN locations ld ON ld.id = m.location_destino_id
+     WHERE ${where} ORDER BY m.criado_em DESC, m.id
      LIMIT ${limit} OFFSET ${offset}`,
     params
   );

@@ -1,7 +1,7 @@
 const express = require('express');
 const pool = require('../db/pool');
 const { requireArea } = require('../middleware/permissions');
-const { restrictedLocation } = require('../utils/access');
+const { filtroLocais } = require('../utils/access');
 const { filtroPeriodo, paginacao } = require('../utils/query');
 
 const router = express.Router();
@@ -20,10 +20,10 @@ function filtros(req, { incluirStatus }) {
   } else {
     where += ` AND s.status = 'concluida'`;
   }
-  const local = restrictedLocation(req.user) || location_id;
-  if (local) {
-    params.push(local);
-    where += ` AND s.location_id = $${params.length}`;
+  const locais = filtroLocais(req.user, location_id);
+  if (locais) {
+    params.push(locais);
+    where += ` AND s.location_id = ANY($${params.length}::uuid[])`;
   }
   if (operador_id) {
     params.push(operador_id);
@@ -150,10 +150,10 @@ router.get('/reports/top-products', requireArea('Relatorios'), async (req, res) 
 router.get('/reports/cash-sessions', requireArea('Relatorios'), async (req, res) => {
   const params = [req.user.tenantId];
   let where = 'cs.tenant_id = $1';
-  const local = restrictedLocation(req.user) || req.query.location_id;
-  if (local) {
-    params.push(local);
-    where += ` AND t.location_id = $${params.length}`;
+  const locais = filtroLocais(req.user, req.query.location_id);
+  if (locais) {
+    params.push(locais);
+    where += ` AND t.location_id = ANY($${params.length}::uuid[])`;
   }
   where += filtroPeriodo('cs.aberto_em', req.query, params);
   const { limit, offset } = paginacao(req.query, 30, 200);

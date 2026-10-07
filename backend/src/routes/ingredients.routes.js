@@ -3,7 +3,7 @@ const pool = require('../db/pool');
 const { requireArea } = require('../middleware/permissions');
 const { logAudit } = require('../utils/audit');
 const { getOwned, getOwnedLocation } = require('../utils/tenant');
-const { assertLocationAccess, restrictedLocation } = require('../utils/access');
+const { assertLocationAccess, filtroLocais } = require('../utils/access');
 const { HttpError } = require('../utils/http');
 
 const router = express.Router();
@@ -448,10 +448,10 @@ router.get('/ingredients/:id/consumption-history', requireArea('Estoque'), async
 router.get('/consumption-feed', requireArea('Estoque'), async (req, res) => {
   const params = [req.user.tenantId];
   let filtro = '';
-  const local = restrictedLocation(req.user);
-  if (local) {
-    params.push(local);
-    filtro = ` AND ic.location_id = $${params.length}`;
+  const locais = filtroLocais(req.user, null);
+  if (locais) {
+    params.push(locais);
+    filtro = ` AND ic.location_id = ANY($${params.length}::uuid[])`;
   }
   const { rows } = await pool.query(
     `SELECT si.id AS sale_item_id, si.quantidade AS quantidade_vendida, p.nome AS product_nome,

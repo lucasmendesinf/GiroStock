@@ -13,7 +13,7 @@ const DESCRICAO_PERFIL = {
   'Financeiro': 'Relatórios e financeiro.',
   'Lanchonete/Cozinha': 'PDV e estoque/insumos da lanchonete (ajuste abaixo se precisar).',
 };
-const FORM_VAZIO = { nome: '', email: '', senha: '', confirmarSenha: '', perfil: 'Caixa/Operador', location_id: '' };
+const FORM_VAZIO = { nome: '', email: '', senha: '', confirmarSenha: '', perfil: 'Caixa/Operador', location_id: '', location_ids: [] };
 
 export default function Users() {
   const toast = useToast();
@@ -61,7 +61,7 @@ export default function Users() {
                 <tr key={u.id} className={u.ativo ? '' : 'row-inativa'}>
                   <td><div className="celula-principal">{u.nome}{u.id === eu.id ? ' (você)' : ''}</div><div className="celula-sub">{u.email}</div></td>
                   <td><span className="badge">{u.perfil}</span>{u.permissoes && Object.keys(u.permissoes).length > 0 && <span className="badge-inativo" title="Permissões ajustadas em relação ao padrão do perfil" style={{ marginLeft: 6 }}>personalizado</span>}</td>
-                  <td className="col-opcional">{u.location_id ? nomeLocal(u.location_id) : <span className="muted">Todas as lojas</span>}</td>
+                  <td className="col-opcional">{u.location_id ? [nomeLocal(u.location_id), ...(u.location_ids || []).map(nomeLocal)].filter(Boolean).join(', ') : <span className="muted">Todas as lojas</span>}</td>
                   <td className="col-opcional">{u.ativo ? 'Ativo' : <span className="badge-inativo">Inativo</span>}</td>
                   <td>
                     <div className="row-actions">
@@ -115,12 +115,26 @@ function CamposPerfilLoja({ form, setForm, locations, matriz }) {
         </div>
         {ajustado && <button type="button" className="btn-link" onClick={() => setForm({ ...form, permissoes: { ...padrao } })}>Restaurar o padrão do perfil</button>}
       </Field>
-      <Field label="Loja de atuação" hint="Com uma loja, o usuário só vende, movimenta estoque e vê relatórios dela. Administradores veem todas.">
-        <select value={form.location_id || ''} onChange={(e) => setForm({ ...form, location_id: e.target.value })}>
+      <Field label="Loja principal" hint="Com uma loja, o usuário só vende, movimenta estoque e vê relatórios dela. Administradores veem todas.">
+        <select value={form.location_id || ''} onChange={(e) => setForm({ ...form, location_id: e.target.value, location_ids: (form.location_ids || []).filter((id) => id !== e.target.value) })}>
           <option value="">Todas as lojas</option>
           {locations.filter((l) => l.ativo || l.id === form.location_id).map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
         </select>
       </Field>
+      {form.location_id && (
+        <Field label="Também atua em outras lojas" hint="Marque as lojas extras em que esta pessoa também pode vender, movimentar estoque e ver relatórios.">
+          <div className="permissoes-lista">
+            {locations.filter((l) => l.id !== form.location_id && (l.ativo || (form.location_ids || []).includes(l.id))).map((l) => (
+              <label key={l.id} className="permissao-item">
+                <input type="checkbox" checked={(form.location_ids || []).includes(l.id)}
+                  onChange={(e) => setForm({ ...form, location_ids: e.target.checked ? [...(form.location_ids || []), l.id] : (form.location_ids || []).filter((id) => id !== l.id) })} />
+                <span>{l.nome}</span>
+              </label>
+            ))}
+            {locations.filter((l) => l.id !== form.location_id && l.ativo).length === 0 && <span className="muted">Não há outras lojas ativas.</span>}
+          </div>
+        </Field>
+      )}
     </>
   );
 }
@@ -134,7 +148,7 @@ function NovoUsuario({ matriz, locations, onClose, onSalvo }) {
     if (form.senha !== form.confirmarSenha) { toast.erro('As senhas não conferem.'); return; }
     if (form.perfil === 'Administrador' && !(await confirmar({ titulo: 'Criar um Administrador?', mensagem: 'Administradores têm acesso total ao sistema.', confirmar: 'Criar administrador' }))) return;
     try {
-      await api.post('/users', { nome: form.nome, email: form.email, senha: form.senha, perfil: form.perfil, location_id: form.location_id || null, permissoes: form.permissoes });
+      await api.post('/users', { nome: form.nome, email: form.email, senha: form.senha, perfil: form.perfil, location_id: form.location_id || null, location_ids: form.location_id ? form.location_ids : [], permissoes: form.permissoes });
       toast.sucesso('Usuário cadastrado.');
       onSalvo();
     } catch (err) { toast.erro(err); }
@@ -164,19 +178,20 @@ function EditarUsuario({ usuario, matriz, locations, souEu, onClose, onSalvo }) 
   const toast = useToast();
   const confirmar = useConfirm();
   const inicial = efetivas(matriz, usuario.perfil, usuario.permissoes);
-  const [form, setForm] = useState({ nome: usuario.nome, perfil: usuario.perfil, location_id: usuario.location_id || '', permissoes: inicial });
+  const [form, setForm] = useState({ nome: usuario.nome, perfil: usuario.perfil, location_id: usuario.location_id || '', location_ids: usuario.location_ids || [], permissoes: inicial });
   async function salvar(e) {
     e.preventDefault();
     const mudouPerfil = form.perfil !== usuario.perfil;
-    const mudouLoja = (form.location_id || null) !== (usuario.location_id || null);
+    const mudouLoja = (form.location_id || null) !== (usuario.location_id || null)
+      || [...(form.location_ids || [])].sort().join() !== [...(usuario.location_ids || [])].sort().join();
     const mudouPermissoes = Object.keys(matriz.permissoes).some((k) => !!form.permissoes[k] !== !!inicial[k]);
     if ((mudouPerfil || mudouLoja || mudouPermissoes) && !(await confirmar({
       titulo: 'Confirmar mudança de acesso?',
-      mensagem: `${usuario.nome} passa a ter o perfil "${form.perfil}"${mudouPermissoes ? ' com permissões ajustadas' : ''}${form.location_id ? ', restrito a uma loja' : ', em todas as lojas'}. Vale imediatamente.`,
+      mensagem: `${usuario.nome} passa a ter o perfil "${form.perfil}"${mudouPermissoes ? ' com permissões ajustadas' : ''}${form.location_id ? (form.location_ids && form.location_ids.length ? `, atuando em ${1 + form.location_ids.length} lojas` : ', restrito a uma loja') : ', em todas as lojas'}. Vale imediatamente.`,
       confirmar: 'Confirmar',
     }))) return;
     try {
-      await api.patch(`/users/${usuario.id}`, { nome: form.nome, perfil: form.perfil, location_id: form.location_id || null, permissoes: form.permissoes });
+      await api.patch(`/users/${usuario.id}`, { nome: form.nome, perfil: form.perfil, location_id: form.location_id || null, location_ids: form.location_id ? form.location_ids : [], permissoes: form.permissoes });
       toast.sucesso('Usuário atualizado.');
       onSalvo();
     } catch (err) { toast.erro(err); }

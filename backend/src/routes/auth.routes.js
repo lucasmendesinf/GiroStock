@@ -9,6 +9,15 @@ const { HttpError } = require('../utils/http');
 
 const router = express.Router();
 
+// Lojas adicionais do usuario (alem da principal), com nome.
+async function lojasExtras(userId) {
+  const { rows } = await pool.query(
+    `SELECT l.id, l.nome FROM user_locations ul JOIN locations l ON l.id = ul.location_id WHERE ul.user_id = $1 ORDER BY l.nome`,
+    [userId]
+  );
+  return rows;
+}
+
 router.post('/login', async (req, res) => {
   const { email, senha } = req.body || {};
   if (!email || !senha) {
@@ -44,6 +53,7 @@ router.post('/login', async (req, res) => {
     { expiresIn: process.env.JWT_EXPIRES_IN || '8h' }
   );
 
+  user.extras = await lojasExtras(user.id);
   res.json({
     token,
     usuario: dadosDoUsuario(user),
@@ -59,7 +69,8 @@ function dadosDoUsuario(user) {
     email: user.email,
     perfil: user.perfil,
     locationId: user.location_id,
-    locationNome: user.location_nome || null,
+    locationIds: [user.location_id, ...(user.extras || []).map((e) => e.id)].filter(Boolean),
+    locationNome: [user.location_nome, ...(user.extras || []).map((e) => e.nome)].filter(Boolean).join(', ') || null,
     empresaNome: user.empresa_nome,
     areas: areasEfetivas(user.perfil, user.permissoes),
   };
@@ -74,6 +85,7 @@ router.get('/me', authRequired, async (req, res) => {
      WHERE u.id = $1`,
     [req.user.id]
   );
+  rows[0].extras = await lojasExtras(req.user.id);
   res.json(dadosDoUsuario(rows[0]));
 });
 

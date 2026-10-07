@@ -15,10 +15,27 @@ router.get('/users/permissoes', requireArea('Configuracoes'), (req, res) => {
   res.json({ permissoes: PERMISSOES, padrao: MATRIX });
 });
 
+// Valida a lista de lojas adicionais (ids de lojas da empresa, sem repetir a principal).
+async function lojasAdicionais(db, tenantId, ids, principal) {
+  if (ids === undefined) return undefined;
+  if (!Array.isArray(ids)) throw new HttpError(400, 'location_ids deve ser uma lista');
+  const unicos = [...new Set(ids.filter(Boolean))].filter((id) => id !== principal);
+  for (const id of unicos) await getOwnedLocation(db, id, tenantId);
+  return unicos;
+}
+
+async function gravarLojasAdicionais(client, tenantId, userId, ids) {
+  await client.query(`DELETE FROM user_locations WHERE user_id = $1`, [userId]);
+  for (const id of ids) {
+    await client.query(`INSERT INTO user_locations (user_id, location_id, tenant_id) VALUES ($1, $2, $3)`, [userId, id, tenantId]);
+  }
+}
+
 router.get('/users', requireArea('Configuracoes'), async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT id, nome, email, perfil, location_id, ativo, criado_em, permissoes
-     FROM users WHERE tenant_id = $1 ORDER BY nome`,
+    `SELECT u.id, u.nome, u.email, u.perfil, u.location_id, u.ativo, u.criado_em, u.permissoes,
+            COALESCE((SELECT json_agg(ul.location_id) FROM user_locations ul WHERE ul.user_id = u.id), '[]') AS location_ids
+     FROM users u WHERE u.tenant_id = $1 ORDER BY u.nome`,
     [req.user.tenantId]
   );
   res.json(rows);
@@ -43,6 +60,8 @@ router.post('/users', requireArea('Configuracoes'), async (req, res) => {
   }
 
   if (location_id) await getOwnedLocation(pool, location_id, req.user.tenantId);
+  const extras = (await lojasAdicionais(pool, req.user.tenantId, (req.body || {}).location_ids, location_id || null)) || [];
+  if (extras.length > 0 && !location_id) throw new HttpError(400, 'escolha a loja principal antes de adicionar outras lojas');
 
   // E-mail e unico no sistema todo: o login nao informa a empresa.
   const existing = await pool.query(`SELECT 1 FROM users WHERE email = $1`, [email]);
@@ -60,6 +79,7 @@ router.post('/users', requireArea('Configuracoes'), async (req, res) => {
        RETURNING id, nome, email, perfil, location_id, ativo, permissoes`,
       [req.user.tenantId, nome, email, senhaHash, perfil, location_id || null, permissoes ? JSON.stringify(permissoes) : null]
     );
+    await gravarLojasAdicionais(client, req.user.tenantId, rows[0].id, extras);
     await logAudit(client, {
       tenantId: req.user.tenantId,
       usuarioId: req.user.id,
@@ -69,7 +89,7 @@ router.post('/users', requireArea('Configuracoes'), async (req, res) => {
       detalhes: { perfil, permissoes },
     });
     await client.query('COMMIT');
-    res.status(201).json(rows[0]);
+    res.status(201).json({ ...rows[0], location_ids: extras });
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -97,6 +117,13 @@ router.patch('/users/:id', requireArea('Configuracoes'), async (req, res) => {
     locationId = body.location_id || null;
     if (locationId) await getOwnedLocation(pool, locationId, req.user.tenantId);
   }
+  let extras = await lojasAdicionais(pool, req.user.tenantId, body.location_ids, locationId);
+  // Sem loja principal (todas as lojas) nao existem lojas adicionais; mudar a principal tira ela da lista.
+  if (!locationId) extras = [];
+  if (extras === undefined && body.location_id !== undefined) {
+    const ja = await pool.query(`SELECT location_id FROM user_locations WHERE user_id = $1`, [req.params.id]);
+    extras = locationId ? ja.rows.map((r) => r.location_id).filter((id) => id !== locationId) : [];
+  }
   // Ajustes individuais: se vierem no corpo, valem; se o perfil mudou sem ajustes, voltam ao padrao.
   let permissoes = atual.permissoes;
   if (body.permissoes !== undefined) {
@@ -120,16 +147,17 @@ router.patch('/users/:id', requireArea('Configuracoes'), async (req, res) => {
        RETURNING id, nome, email, perfil, location_id, ativo, permissoes`,
       [perfil, locationId, req.params.id, req.user.tenantId, nome, permissoes ? JSON.stringify(permissoes) : null]
     );
+    if (extras !== undefined) await gravarLojasAdicionais(client, req.user.tenantId, req.params.id, extras);
     await logAudit(client, {
       tenantId: req.user.tenantId,
       usuarioId: req.user.id,
       acao: 'alterar_permissao',
       recurso: 'users',
       recursoId: req.params.id,
-      detalhes: { perfil_anterior: atual.perfil, perfil, permissoes_anteriores: atual.permissoes, permissoes, location_anterior: atual.location_id, location_id: locationId },
+      detalhes: { perfil_anterior: atual.perfil, perfil, permissoes_anteriores: atual.permissoes, permissoes, location_anterior: atual.location_id, location_id: locationId, location_ids: extras },
     });
     await client.query('COMMIT');
-    res.json(rows[0]);
+    res.json({ ...rows[0], location_ids: extras });
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

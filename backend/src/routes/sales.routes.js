@@ -3,7 +3,7 @@ const pool = require('../db/pool');
 const { requireArea } = require('../middleware/permissions');
 const { logAudit } = require('../utils/audit');
 const { getOwned, isUuid } = require('../utils/tenant');
-const { assertLocationAccess, restrictedLocation, canCancelSales } = require('../utils/access');
+const { assertLocationAccess, filtroLocais, canCancelSales } = require('../utils/access');
 const { isQuantidadeValidaParaUnidade } = require('../utils/validators');
 const { HttpError } = require('../utils/http');
 
@@ -368,10 +368,10 @@ function filtrosVendas(req) {
   const { location_id, operador_id, forma_pagamento, status } = req.query;
   const params = [req.user.tenantId];
   let where = 's.tenant_id = $1';
-  const local = restrictedLocation(req.user) || location_id;
-  if (local) {
-    params.push(local);
-    where += ` AND s.location_id = $${params.length}`;
+  const locais = filtroLocais(req.user, location_id);
+  if (locais) {
+    params.push(locais);
+    where += ` AND s.location_id = ANY($${params.length}::uuid[])`;
   }
   if (operador_id) {
     params.push(operador_id);

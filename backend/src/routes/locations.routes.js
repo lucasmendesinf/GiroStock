@@ -3,7 +3,7 @@ const pool = require('../db/pool');
 const { requireArea } = require('../middleware/permissions');
 const { logAudit } = require('../utils/audit');
 const { getOwned, getOwnedLocation } = require('../utils/tenant');
-const { restrictedLocation } = require('../utils/access');
+const { filtroLocais } = require('../utils/access');
 const { HttpError } = require('../utils/http');
 
 const router = express.Router();
@@ -135,10 +135,10 @@ router.delete('/locations/:id', requireArea('Configuracoes'), async (req, res) =
 router.get('/terminals', async (req, res) => {
   const params = [req.user.tenantId];
   let where = 't.tenant_id = $1';
-  const local = restrictedLocation(req.user);
-  if (local) {
-    params.push(local);
-    where += ` AND t.location_id = $${params.length}`;
+  const locais = filtroLocais(req.user, null);
+  if (locais) {
+    params.push(locais);
+    where += ` AND t.location_id = ANY($${params.length}::uuid[])`;
   }
   const { rows } = await pool.query(
     `SELECT t.id, t.nome, t.location_id, l.nome AS location_nome, t.ativo,

@@ -25,11 +25,14 @@ async function authRequired(req, res, next) {
   if (!user || !user.ativo || user.tenant_id !== payload.tenantId) {
     return res.status(401).json({ erro: 'Usuário inativo ou inexistente' });
   }
+  const extras = await pool.query(`SELECT location_id FROM user_locations WHERE user_id = $1`, [user.id]);
+  const locationIds = [user.location_id, ...extras.rows.map((r) => r.location_id)].filter(Boolean);
   req.user = {
     id: user.id,
     tenantId: user.tenant_id,
     perfil: user.perfil,
     locationId: user.location_id,
+    locationIds,
     areas: areasEfetivas(user.perfil, user.permissoes),
   };
   next();

@@ -3,7 +3,7 @@ const pool = require('../db/pool');
 const { requireArea } = require('../middleware/permissions');
 const { logAudit } = require('../utils/audit');
 const { getOwned, getOwnedLocation } = require('../utils/tenant');
-const { assertLocationAccess, restrictedLocation } = require('../utils/access');
+const { assertLocationAccess, filtroLocais } = require('../utils/access');
 const { isQuantidadeValidaParaUnidade } = require('../utils/validators');
 const { HttpError } = require('../utils/http');
 const { filtroPeriodo, paginacao } = require('../utils/query');
@@ -385,10 +385,10 @@ router.get('/stock-movements', requireArea('Estoque'), async (req, res) => {
     where += ` AND m.tipo = $${params.length}`;
   }
   // Usuario vinculado a um local so ve as movimentacoes que tocam o local dele.
-  const local = restrictedLocation(req.user) || location_id;
-  if (local) {
-    params.push(local);
-    where += ` AND (m.location_origem_id = $${params.length} OR m.location_destino_id = $${params.length})`;
+  const locais = filtroLocais(req.user, location_id);
+  if (locais) {
+    params.push(locais);
+    where += ` AND (m.location_origem_id = ANY($${params.length}::uuid[]) OR m.location_destino_id = ANY($${params.length}::uuid[]))`;
   }
   where += filtroPeriodo('m.criado_em', req.query, params);
   const { limit, offset } = paginacao(req.query, 50, 500);
@@ -461,11 +461,11 @@ router.get('/stock/alerts', requireArea('Estoque'), async (req, res) => {
   const params = [req.user.tenantId];
   let filtroProduto = '';
   let filtroInsumo = '';
-  const local = restrictedLocation(req.user) || req.query.location_id;
-  if (local) {
-    params.push(local);
-    filtroProduto = ` AND sb.location_id = $${params.length}`;
-    filtroInsumo = ` AND ib.location_id = $${params.length}`;
+  const locais = filtroLocais(req.user, req.query.location_id);
+  if (locais) {
+    params.push(locais);
+    filtroProduto = ` AND sb.location_id = ANY($${params.length}::uuid[])`;
+    filtroInsumo = ` AND ib.location_id = ANY($${params.length}::uuid[])`;
   }
   const produtos = await pool.query(
     `SELECT 'produto' AS tipo, p.id, p.nome, p.unidade, l.id AS location_id, l.nome AS location_nome,

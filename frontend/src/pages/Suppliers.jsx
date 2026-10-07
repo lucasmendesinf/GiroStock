@@ -116,7 +116,7 @@ export default function Suppliers() {
 
       {detalhe && (
         <Modal titulo={detalhe.nome} subtitulo={`${formatarDocumento(detalhe.documento)} · ${detalhe.categoria}${detalhe.prazo_medio_dias !== null ? ` · prazo médio ${detalhe.prazo_medio_dias} dias` : ''}`}
-          onClose={() => setDetalhe(null)} largura="larga">
+          onClose={() => setDetalhe(null)} largura="extra">
           <div className="detail-section">
             <span className="detail-section-title">Produtos fornecidos ({detalhe.produtos.length})</span>
             {detalhe.produtos.length === 0 && <span className="muted">Nenhum produto vinculado.</span>}

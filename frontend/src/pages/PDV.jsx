@@ -333,12 +333,14 @@ export default function PDV() {
   // (inclusive misto, com bebida) vira pedido inteiro. Produto de pronta entrega sai sempre como venda direta.
   const modoPedido = usaPedidos && temPreparo;
   const rapido = modoPedido && origemPdv === 'balcao';
+  const telefoneNovo = clienteTel.replace(/\D/g, '').length >= 10 && !clienteInfo;
 
   // Cliente (so existe com produto de preparo no carrinho): telefone digitado, cadastro localizado e nome para chamar.
   const [clienteTel, setClienteTel] = useState('');
   const [clienteInfo, setClienteInfo] = useState(null);
   const [nomeChamar, setNomeChamar] = useState('');
   const [mesaRapida, setMesaRapida] = useState('');
+  const [cadastrarCliente, setCadastrarCliente] = useState(true);
   const [destinoRapido, setDestinoRapido] = useState('retirada');
   const [enderecoRapido, setEnderecoRapido] = useState('');
   const [taxaRapida, setTaxaRapida] = useState('5,00');
@@ -392,7 +394,7 @@ export default function PDV() {
     setCart([]);
     setClienteTel('');
     setClienteInfo(null);
-    setNomeChamar('');
+    setNomeChamar(''); setCadastrarCliente(true);
     setMesaRapida('');
     setDestinoRapido('retirada');
     setEnderecoRapido('');
@@ -412,8 +414,8 @@ export default function PDV() {
       const pedido = await api.post('/orders', {
         location_id: terminal.location_id, origem: 'balcao', tipo: destinoRapido,
         endereco: destinoRapido === 'mesa' ? 'Mesa ' + mesaRapida.trim().replace(/^mesa\s*/i, '') : destinoRapido === 'entrega' ? enderecoRapido.trim() : '',
-        taxa_entrega: destinoRapido === 'entrega' ? Math.max(0, parseNumero(taxaRapida) || 0) : 0, cadastrar_cliente: false,
-        cliente_nome: nomeChamar.trim() || (clienteInfo ? clienteInfo.nome : ''), cliente_telefone: clienteInfo ? clienteInfo.telefone : '',
+        taxa_entrega: destinoRapido === 'entrega' ? Math.max(0, parseNumero(taxaRapida) || 0) : 0, cadastrar_cliente: cadastrarCliente,
+        cliente_nome: nomeChamar.trim() || (clienteInfo ? clienteInfo.nome : ''), cliente_telefone: clienteInfo ? clienteInfo.telefone : clienteTel.replace(/\D/g, ''),
         forma_pagamento_prevista: 'dinheiro', pago: false,
         itens: cart.map((i) => ({ product_id: i.id, quantidade: i.quantidade, observacao: i.tem_ficha_tecnica ? (i.observacao || '').trim() : '' })),
       });
@@ -769,7 +771,10 @@ export default function PDV() {
             <div className="cli-pdv">
               <ClienteTelefone telefone={clienteTel} onTelefone={setClienteTel} cliente={clienteInfo} onCliente={setClienteInfo}
                 dica={rapido ? 'O pedido sai no nome deste cliente.' : 'Nome e endereço serão preenchidos no pedido.'}
-                textoNovo={rapido ? 'Telefone não cadastrado: o pedido rápido sai sem cadastro. Use Telefone ou WhatsApp para cadastrar.' : undefined} />
+                textoNovo="Telefone não cadastrado: será criado ao gerar o pedido, com o nome e o endereço informados." />
+              {rapido && telefoneNovo && (
+                <label className="cli-check"><input type="checkbox" checked={cadastrarCliente} onChange={(e) => setCadastrarCliente(e.target.checked)} /> Cadastrar este cliente</label>
+              )}
               {rapido && (
                 <div className="field"><span className="field-label">Destino</span>
                   <div className="ped-seg2">

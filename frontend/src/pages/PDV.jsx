@@ -6,7 +6,7 @@ import { useToast, useConfirm } from '../context/UiContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { podeAcessar, telasDoUsuario } from '../utils/permissions';
-import PedidoForm, { ORIGENS, NOME_ORIGEM, vendaDoPedido } from '../components/PedidoForm.jsx';
+import PedidoForm, { ORIGENS, NOME_ORIGEM, PAGAMENTOS, vendaDoPedido } from '../components/PedidoForm.jsx';
 import { Field, Modal } from '../components/ui.jsx';
 import ClienteTelefone from '../components/ClienteTelefone.jsx';
 import Cupom, { imprimirCupom as abrirImpressao, modoAutomatico, configDaVenda } from '../components/Cupom.jsx';
@@ -341,13 +341,16 @@ export default function PDV() {
   const [nomeChamar, setNomeChamar] = useState('');
   const [mesaRapida, setMesaRapida] = useState('');
   const [cadastrarCliente, setCadastrarCliente] = useState(true);
+  const [formaPed, setFormaPed] = useState('dinheiro');
+  const [jaPagoPed, setJaPagoPed] = useState(false);
+  const [recebidoPed, setRecebidoPed] = useState('');
   const [destinoRapido, setDestinoRapido] = useState('retirada');
   const [enderecoRapido, setEnderecoRapido] = useState('');
   const [taxaRapida, setTaxaRapida] = useState('5,00');
   const [comanda, setComanda] = useState(null);
   const [gerando, setGerando] = useState(false);
   useEffect(() => {
-    if (!temPreparo) { setClienteTel(''); setClienteInfo(null); setNomeChamar(''); setMesaRapida(''); setDestinoRapido('retirada'); setEnderecoRapido(''); }
+    if (!temPreparo) { setClienteTel(''); setClienteInfo(null); setNomeChamar(''); setMesaRapida(''); setDestinoRapido('retirada'); setEnderecoRapido(''); setFormaPed('dinheiro'); setJaPagoPed(false); setRecebidoPed(''); }
   }, [temPreparo]);
 
   useEffect(() => {
@@ -398,25 +401,33 @@ export default function PDV() {
     setMesaRapida('');
     setDestinoRapido('retirada');
     setEnderecoRapido('');
+    setFormaPed('dinheiro');
+    setJaPagoPed(false);
+    setRecebidoPed('');
     toast.sucesso(`Pedido #${pedido.numero} gerado · estoque reservado${pedido.cliente_novo ? ' · cliente novo cadastrado' : ''}`);
     const cfg = configDaVenda(pedido);
     if (cfg.cozinha.ativo && cfg.cozinha.imprimir_automatico) abrirImpressao(setCupom, vendaDoPedido(pedido), 'cozinha', (m) => toast.sucesso(m));
     setComanda(pedido);
   }
 
-  // Pedido rapido (origem Balcao): sem modal; retirada, a pagar no balcao. Telefone cadastrado vincula o cliente.
+  // Gera o pedido direto do carrinho (sem modal), com destino, cliente e pagamento. Telefone cadastrado vincula o cliente.
+  const taxaPed = destinoRapido === 'entrega' ? Math.max(0, parseNumero(taxaRapida) || 0) : 0;
+  const totalPed = subtotal + taxaPed;
+  const recebidoNum = parseNumero(recebidoPed);
+  const trocoPed = Number.isFinite(recebidoNum) ? recebidoNum - totalPed : null;
   async function gerarPedidoRapido() {
     if (cart.length === 0 || gerando) return;
     if (destinoRapido === 'mesa' && !mesaRapida.trim()) { toast.erro('Informe a mesa.'); return; }
     if (destinoRapido === 'entrega' && enderecoRapido.trim().length < 3) { toast.erro('Informe o endereço da entrega.'); return; }
+    if (jaPagoPed && formaPed === 'dinheiro' && !(recebidoNum >= totalPed)) { toast.erro('Informe o valor recebido (igual ou maior que o total).'); return; }
     setGerando(true);
     try {
       const pedido = await api.post('/orders', {
-        location_id: terminal.location_id, origem: 'balcao', tipo: destinoRapido,
+        location_id: terminal.location_id, origem: origemPdv, tipo: destinoRapido,
         endereco: destinoRapido === 'mesa' ? 'Mesa ' + mesaRapida.trim().replace(/^mesa\s*/i, '') : destinoRapido === 'entrega' ? enderecoRapido.trim() : '',
         taxa_entrega: destinoRapido === 'entrega' ? Math.max(0, parseNumero(taxaRapida) || 0) : 0, cadastrar_cliente: cadastrarCliente,
         cliente_nome: nomeChamar.trim() || (clienteInfo ? clienteInfo.nome : ''), cliente_telefone: clienteInfo ? clienteInfo.telefone : clienteTel.replace(/\D/g, ''),
-        forma_pagamento_prevista: 'dinheiro', pago: false,
+        forma_pagamento_prevista: formaPed, pago: jaPagoPed, valor_recebido: jaPagoPed && formaPed === 'dinheiro' ? recebidoNum : undefined,
         itens: cart.map((i) => ({ product_id: i.id, quantidade: i.quantidade, observacao: i.tem_ficha_tecnica ? (i.observacao || '').trim() : '' })),
       });
       await pedidoCriado(pedido);
@@ -454,8 +465,7 @@ export default function PDV() {
 
   function abrirPagamento() {
     if (cart.length === 0) return;
-    if (rapido) { gerarPedidoRapido(); return; }
-    if (modoPedido) { setPedidoModal(true); return; }
+    if (modoPedido) { gerarPedidoRapido(); return; }
     setFormaPagamento(null);
     setValorRecebido('');
     setDescontoTexto('');
@@ -813,11 +823,28 @@ export default function PDV() {
                 <div className="ped-seg2" style={{ marginTop: 6 }}>
                   {ORIGENS.map((o) => <button type="button" key={o.id} className={origemPdv === o.id ? 'on' : ''} onClick={() => setOrigemPdv(o.id)}>{o.nome}</button>)}
                 </div>
-                <div style={{ marginTop: 6 }}>{rapido ? <><b>Pedido rápido:</b> a pagar na retirada/entrega ou no salão. F2 fecha o pedido, reserva o estoque e mostra a comanda.</> : 'O estoque é reservado ao gerar o pedido.'}</div>
+                <div style={{ marginTop: 6 }}>F2 gera o pedido, reserva o estoque e mostra a comanda.</div>
               </div>
             </>
           )}
-          <button className="btn-finalizar" disabled={cart.length === 0 || gerando} onClick={abrirPagamento}>{rapido ? 'Gerar pedido rápido' : modoPedido ? 'Gerar pedido' : 'Finalizar venda'} <kbd>F2</kbd></button>
+          {modoPedido && (
+            <div className="cli-pdv">
+              <label className="field"><span className="field-label">Pagamento</span>
+                <select value={formaPed} onChange={(e) => setFormaPed(e.target.value)}>{PAGAMENTOS.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}</select>
+              </label>
+              <label className="cli-check"><input type="checkbox" checked={jaPagoPed} onChange={(e) => setJaPagoPed(e.target.checked)} /> Já pago (pagamento antecipado)</label>
+              {jaPagoPed && formaPed === 'dinheiro' && (
+                <>
+                  <label className="field"><span className="field-label">Valor recebido (R$)</span>
+                    <input value={recebidoPed} onChange={(e) => setRecebidoPed(e.target.value)} inputMode="decimal" placeholder="0,00" /></label>
+                  <div className="ped-linha"><span>Troco</span><b style={{ color: trocoPed !== null && trocoPed >= 0 ? 'var(--ok)' : 'var(--err)' }}>{trocoPed === null ? '—' : trocoPed >= 0 ? brl(trocoPed) : 'valor insuficiente'}</b></div>
+                </>
+              )}
+              {taxaPed > 0 && <div className="ped-linha"><span>Taxa de entrega</span><span>{brl(taxaPed)}</span></div>}
+              {taxaPed > 0 && <div className="ped-linha ped-total"><span>Total do pedido</span><b>{brl(totalPed)}</b></div>}
+            </div>
+          )}
+          <button className="btn-finalizar" disabled={cart.length === 0 || gerando} onClick={abrirPagamento}>{modoPedido ? 'Gerar pedido' : 'Finalizar venda'} <kbd>F2</kbd></button>
         </div>
       </div>
 

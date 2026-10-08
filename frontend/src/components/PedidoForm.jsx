@@ -26,7 +26,7 @@ export function vendaDoPedido(p) {
   };
 }
 
-const PAGAMENTOS = [
+export const PAGAMENTOS = [
   { id: 'dinheiro', nome: 'Pagar Dinheiro', forma: 'dinheiro' },
   { id: 'cartao_debito', nome: 'Pagar Cartão-Débito', forma: 'cartao_debito' },
   { id: 'cartao_credito', nome: 'Pagar Cartão-Crédito', forma: 'cartao_credito' },

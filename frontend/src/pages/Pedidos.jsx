@@ -43,6 +43,7 @@ export default function Pedidos() {
   const [receber, setReceber] = useState(null);
   const [cancelar, setCancelar] = useState(null);
   const [destino, setDestino] = useState(null);
+  const [limiteFinalizados, setLimiteFinalizados] = useState(5); // coluna Finalizado: ultimos 5, "mostrar mais" soma 5
   const [escolherEntregador, setEscolherEntregador] = useState(null);
   const [entregadoresAberto, setEntregadoresAberto] = useState(false);
   const [entregadores, setEntregadores] = useState([]);
@@ -219,11 +220,18 @@ export default function Pedidos() {
         <div className="ped-board">
           {COLUNAS.map(([status, nome, ponto]) => {
             const lista = noQuadro(status);
+            const visiveis = status === 'finalizado' ? lista.slice(0, limiteFinalizados) : lista;
             return (
               <div className="ped-col" key={status}>
                 <h4><span className={`ped-dot ${ponto}`} />{nome}<span className="ped-cnt">{lista.length}</span></h4>
-                {lista.map((p) => <Card key={p.id} p={p} />)}
+                {visiveis.map((p) => <Card key={p.id} p={p} />)}
                 {lista.length === 0 && <div className="ped-vazio">Nenhum pedido</div>}
+                {status === 'finalizado' && lista.length > limiteFinalizados && (
+                  <button type="button" className="btn-link" style={{ width: '100%', marginTop: 8 }} onClick={() => setLimiteFinalizados((n) => n + 5)}>Mostrar mais ({lista.length - limiteFinalizados} restantes)</button>
+                )}
+                {status === 'finalizado' && limiteFinalizados > 5 && lista.length <= limiteFinalizados && lista.length > 5 && (
+                  <button type="button" className="btn-link" style={{ width: '100%', marginTop: 8 }} onClick={() => setLimiteFinalizados(5)}>Mostrar menos</button>
+                )}
               </div>
             );
           })}

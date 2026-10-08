@@ -67,7 +67,7 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
     const padrao = cadastrado.enderecos.find((e) => e.padrao) || cadastrado.enderecos[0];
     if (padrao) setEndereco((e) => e || padrao.endereco);
   }, [cadastrado]);
-  const telefoneNovo = telefone.replace(/D/g, '').length >= 10 && !cadastrado;
+  const telefoneNovo = telefone.replace(/\D/g, '').length >= 10 && !cadastrado;
 
   const taxa = tipo === 'entrega' ? Math.max(0, parseNumero(taxaTxt) || 0) : 0;
   const subtotal = itens.reduce((s, i) => s + i.preco * i.quantidade, 0);
@@ -150,7 +150,7 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
     setSalvando(true);
     try {
       const pedido = await api.post('/orders', {
-        location_id: lojaId, origem, cliente_nome: cliente, cliente_telefone: telefone.replace(/D/g, ''), cadastrar_cliente: cadastrar, tipo, endereco: tipo === 'mesa' ? `Mesa ${mesa.trim().replace(/^mesa\s*/i, '')}` : endereco, taxa_entrega: taxa,
+        location_id: lojaId, origem, cliente_nome: cliente, cliente_telefone: telefone.replace(/\D/g, ''), cadastrar_cliente: cadastrar, tipo, endereco: tipo === 'mesa' ? `Mesa ${mesa.trim().replace(/^mesa\s*/i, '')}` : endereco, taxa_entrega: taxa,
         observacao, forma_pagamento_prevista: pag.forma, pago: jaPago, valor_recebido: jaPago && pag.forma === 'dinheiro' ? recebido : undefined,
         itens: itens.map((i) => ({ product_id: i.product_id, quantidade: i.quantidade, observacao: i.observacao || '' })),
       });

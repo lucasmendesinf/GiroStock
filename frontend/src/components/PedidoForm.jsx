@@ -194,17 +194,6 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
           </div>
         )}
 
-        <label className="field"><span className="field-label">Pagamento</span>
-          <select value={pagamento} onChange={(e) => setPagamento(e.target.value)}>{PAGAMENTOS.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}</select>
-        </label>
-        <label className="cli-check"><input type="checkbox" checked={jaPago} onChange={(e) => setJaPago(e.target.checked)} /> Já pago (pagamento antecipado)</label>
-        {jaPago && pagamento === 'dinheiro' && (
-          <div className="form-grid">
-            <label className="field"><span className="field-label">Valor recebido (R$)</span><input value={recebidoTxt} onChange={(e) => setRecebidoTxt(e.target.value)} inputMode="decimal" placeholder="0,00" /></label>
-            <div className="field"><span className="field-label">Troco</span><b style={{ padding: '10px 0', color: troco !== null && troco >= 0 ? 'var(--ok)' : 'var(--err)' }}>{troco === null ? '—' : troco >= 0 ? brl(troco) : 'valor insuficiente'}</b></div>
-          </div>
-        )}
-
         <div className="ped-sec">
           <span className="ped-rotulo">Itens (estoque reservado ao confirmar)</span>
           {permitirBusca && (
@@ -252,6 +241,19 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
           </label>
           {taxa > 0 && <div className="ped-linha"><span>Taxa de entrega</span><span>{brl(taxa)}</span></div>}
           <div className="ped-linha ped-total"><span>Total</span><b>{brl(subtotal + taxa)}</b></div>
+        </div>
+
+        <div className="ped-sec">
+          <label className="field"><span className="field-label">Pagamento</span>
+            <select value={pagamento} onChange={(e) => setPagamento(e.target.value)}>{PAGAMENTOS.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}</select>
+          </label>
+          <label className="cli-check"><input type="checkbox" checked={jaPago} onChange={(e) => setJaPago(e.target.checked)} /> Já pago (pagamento antecipado)</label>
+          {jaPago && pagamento === 'dinheiro' && (
+            <div className="form-grid">
+              <label className="field"><span className="field-label">Valor recebido (R$)</span><input value={recebidoTxt} onChange={(e) => setRecebidoTxt(e.target.value)} inputMode="decimal" placeholder="0,00" /></label>
+              <div className="field"><span className="field-label">Troco</span><b style={{ padding: '10px 0', color: troco !== null && troco >= 0 ? 'var(--ok)' : 'var(--err)' }}>{troco === null ? '—' : troco >= 0 ? brl(troco) : 'valor insuficiente'}</b></div>
+            </div>
+          )}
         </div>
 
         <div className="modal-actions">

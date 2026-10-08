@@ -11,6 +11,7 @@ import Login from './pages/Login.jsx';
 import Home from './pages/Home.jsx';
 import PDV from './pages/PDV.jsx';
 import Pedidos from './pages/Pedidos.jsx';
+import Clientes from './pages/Clientes.jsx';
 import Products from './pages/Products.jsx';
 import Users from './pages/Users.jsx';
 import Suppliers from './pages/Suppliers.jsx';
@@ -149,6 +150,7 @@ export default function App() {
       <Route path="/inicio" element={<Private><Home /></Private>} />
       <Route path="/pdv" element={<Private area="Vendas"><PDV /></Private>} />
       <Route path="/pedidos" element={<Private area="Pedidos"><Pedidos /></Private>} />
+      <Route path="/clientes" element={<Private area="Clientes"><Clientes /></Private>} />
       <Route path="/produtos" element={<Private area="Estoque"><Products /></Private>} />
       <Route path="/insumos" element={<Navigate to="/produtos" replace />} />
       <Route path="/fornecedores" element={<Private area="Estoque"><Suppliers /></Private>} />

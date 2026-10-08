@@ -4,6 +4,7 @@ export const TELAS = [
   { path: '/inicio', label: 'Início', area: null, paraPerfis: ['Administrador', 'Gerente', 'Financeiro', 'Estoque', 'Lanchonete/Cozinha'] },
   { path: '/pdv', label: 'PDV', area: 'Vendas' },
   { path: '/pedidos', label: 'Pedidos', area: 'Pedidos', requer: 'usaPedidos' },
+  { path: '/clientes', label: 'Clientes', area: 'Clientes' },
   { path: '/produtos', label: 'Produtos & Estoque', area: 'Estoque' },
   { path: '/fornecedores', label: 'Fornecedores', area: 'Estoque' },
   { path: '/lojas', label: 'Lojas & PDVs', area: 'Configuracoes' },

@@ -293,7 +293,7 @@ tbody tr:hover { background: var(--panel-alt); }
 }
 .pdv-carrinho button:disabled { opacity: 0.45; }
 
-.modal { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.65); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 24px; }
+.modal { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.65); display: flex; align-items: center; justify-content: center; z-index: 70; padding: 24px; }
 .modal-content {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -1077,3 +1077,29 @@ button.ped-act-btn, .ped-act button { flex: 1; padding: 8px; font-size: 11.5px; 
 .pdv-carrinho .cli-sug button:hover:not(.carrinho-item button) { background: var(--hover); }
 .pdv-carrinho .ped-seg2 button:not(.carrinho-item button) { margin-top: 0; padding: 10px; width: auto; flex: 1; background: none; color: var(--muted); border: 1px solid var(--line); font-weight: 700; text-transform: none; letter-spacing: 0; }
 .pdv-carrinho .ped-seg2 button.on:not(.carrinho-item button) { border-color: var(--gold-light); background: var(--accent-soft); color: var(--gold-light); }
+
+/* ---------- tela Clientes ---------- */
+.cl-banner { display: flex; align-items: center; gap: 12px; background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: 14px; padding: 12px 16px; margin-bottom: 16px; }
+.cl-banner b { color: var(--gold-light); }
+.cl-sub { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
+.ped-kpi .cl-sub { font-size: 11px; }
+.cl-n { font-style: normal; margin-left: 4px; opacity: .75; }
+.cl-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
+.cl-stats div { background: var(--panel-alt); border-radius: 12px; padding: 10px 12px; }
+.cl-stats small { display: block; font-size: 10px; color: var(--muted-2); text-transform: uppercase; letter-spacing: .6px; font-weight: 700; }
+.cl-stats b { font-size: 17px; }
+.cl-row { display: flex; align-items: center; gap: 10px; padding: 9px 4px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.cl-row input[type=checkbox] { width: auto; }
+.cl-linha-btn { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
+.cl-form-end { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.cl-msg { background: var(--panel-alt); border: 1px solid var(--line); border-radius: 14px; padding: 14px; white-space: pre-wrap; line-height: 1.5; font-size: 13px; }
+.cl-sw { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.cl-sw button { width: 40px; height: 22px; min-width: 40px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel-alt); position: relative; padding: 0; cursor: pointer; }
+.cl-sw button::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--muted-2); transition: .15s; }
+.cl-sw button.on { background: var(--accent-soft); border-color: var(--gold-light); }
+.cl-sw button.on::after { left: 20px; background: var(--gold-light); }
+.cl-sw button:disabled { opacity: .45; cursor: not-allowed; }
+.cl-msg + .x { display: none; }
+@media (max-width: 900px) { .ped-kpis { grid-template-columns: repeat(2, 1fr); } }
+.ped-drawer textarea, .ped-drawer input, .ped-drawer select { box-sizing: border-box; padding: 9px 11px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-alt); color: var(--ivory); font: inherit; }
+.ped-drawer textarea:focus, .ped-drawer input:focus { border-color: var(--gold-light); outline: none; }

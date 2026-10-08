@@ -352,6 +352,7 @@ export default function PDV() {
     repetido.current = true;
     (async () => {
       try {
+        if (rep.itens.length === 0) { if (rep.telefone) setClienteTel(rep.telefone); navigate('/pdv', { replace: true, state: null }); return; }
         const ids = rep.itens.map((i) => i.product_id).join(',');
         const prods = await api.get(`/products/search?ids=${ids}&terminal_id=${terminalId}`);
         const linhas = [];
@@ -767,7 +768,7 @@ export default function PDV() {
                 <div className="ped-seg2" style={{ marginTop: 6 }}>
                   {ORIGENS.map((o) => <button type="button" key={o.id} className={origemPdv === o.id ? 'on' : ''} onClick={() => setOrigemPdv(o.id)}>{o.nome}</button>)}
                 </div>
-                <div style={{ marginTop: 6 }}>{rapido ? <><b>Pedido rápido:</b> sem dados do cliente. F2 fecha o pedido, reserva o estoque e mostra a comanda.</> : 'O estoque é reservado ao gerar o pedido.'}</div>
+                <div style={{ marginTop: 6 }}>{rapido ? <><b>Pedido rápido:</b> retirada, a pagar no balcão. F2 fecha o pedido, reserva o estoque e mostra a comanda.</> : 'O estoque é reservado ao gerar o pedido.'}</div>
               </div>
             </>
           )}

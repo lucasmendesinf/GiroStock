@@ -4,7 +4,8 @@ import { requestFullscreen, isFullscreen as checkIsFullscreen } from '../utils/f
 import { brl, qtd, parseNumero, dataHora, UNIDADES_INTEIRAS, FORMA_PAGAMENTO } from '../utils/format';
 import { useToast, useConfirm } from '../context/UiContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
-import { podeAcessar } from '../utils/permissions';
+import { useNavigate } from 'react-router-dom';
+import { podeAcessar, telasDoUsuario } from '../utils/permissions';
 import PedidoForm, { ORIGENS, vendaDoPedido } from '../components/PedidoForm.jsx';
 import { Field, Modal } from '../components/ui.jsx';
 import Cupom, { imprimirCupom as abrirImpressao, modoAutomatico, configDaVenda } from '../components/Cupom.jsx';
@@ -22,6 +23,7 @@ export default function PDV() {
   const toast = useToast();
   const confirmar = useConfirm();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const podeSangria = podeAcessar(user, 'SangriaSuprimento');
   const podeDesconto = podeAcessar(user, 'Desconto');
   const podeFechar = podeAcessar(user, 'FecharCaixa');
@@ -453,6 +455,13 @@ export default function PDV() {
     } catch (err) { toast.erro(err); }
   }
 
+  // Sai do modo PDV (a mesma saida do botao "Sair do PDV"); com itens no carrinho pede confirmacao.
+  async function sairDoPdv() {
+    if (cart.length > 0 && !(await confirmar({ titulo: 'Sair do PDV?', mensagem: 'O carrinho tem itens que serão perdidos.', confirmar: 'Sair do PDV', perigo: true }))) { focarBusca(); return; }
+    const destino = telasDoUsuario(user).filter((t) => t.path !== '/pdv')[0];
+    navigate(destino ? destino.path : '/inicio');
+  }
+
   // ---------- atalhos de teclado ----------
   const algumModal = pagamentoAberto || !!sucesso || movModalAberto || fecharAberto || pedidoModal;
   useEffect(() => {
@@ -480,6 +489,11 @@ export default function PDV() {
       if (e.key === 'F6') { e.preventDefault(); cancelarVendaAtual(); }
       if (e.key === 'F8') { e.preventDefault(); if (podeFechar) setFecharAberto(true); }
       if (e.key === 'F9' && ultimaVendaId) { e.preventDefault(); imprimirCupom(ultimaVendaId); }
+      // Esc: limpa a busca; com a busca ja vazia, sai do modo PDV.
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (busca || results.length > 0) { setBusca(''); setResults([]); listaAtual.current = null; setTemMais(false); } else sairDoPdv();
+      }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -607,6 +621,7 @@ export default function PDV() {
             <span><kbd>Del</kbd> tira o último</span>
             <span><kbd>F2</kbd> pagamento</span>
             <span><kbd>F6</kbd> cancelar venda</span>
+            <span><kbd>Esc</kbd> limpa a busca / sai do PDV</span>
           </div>
         </div>
 

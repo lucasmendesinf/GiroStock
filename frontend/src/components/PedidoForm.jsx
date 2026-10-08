@@ -159,7 +159,7 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
   }
 
   return (
-    <Modal titulo={<>{titulo} <span className="ped-tag">{NOME_ORIGEM[origem]}</span></>} onClose={onClose} largura="larga">
+    <Modal titulo={<>{titulo} <span className="ped-tag">{NOME_ORIGEM[origem]}</span></>} onClose={onClose} largura="extra">
       <div className="form-stack">
         <div className="form-grid">
           {mostrarOrigem && (

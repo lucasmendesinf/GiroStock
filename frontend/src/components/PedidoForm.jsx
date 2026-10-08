@@ -4,6 +4,8 @@ import { useToast } from '../context/UiContext.jsx';
 import { Modal } from './ui.jsx';
 import { brl, parseNumero, qtd } from '../utils/format';
 
+const LOTE = 30;
+
 export const ORIGENS = [
   { id: 'balcao', nome: 'Balcão' },
   { id: 'telefone', nome: 'Telefone' },
@@ -44,22 +46,62 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
   const [itens, setItens] = useState(itensIniciais);
   const [busca, setBusca] = useState('');
   const [achados, setAchados] = useState([]);
+  const [temMais, setTemMais] = useState(false);
+  const [sel, setSel] = useState(0);
+  const [carregandoMais, setCarregandoMais] = useState(false);
+  const listaRef = useRef(null);
   const [salvando, setSalvando] = useState(false);
   const timer = useRef(null);
 
   const taxa = tipo === 'entrega' ? Math.max(0, parseNumero(taxaTxt) || 0) : 0;
   const subtotal = itens.reduce((s, i) => s + i.preco * i.quantidade, 0);
 
+  // "*" lista todos os produtos (ou "*texto" filtra); a lista carrega em lotes ao rolar. Sem "*", busca a partir de 2 letras.
+  const modoLista = busca.trim().startsWith('*');
+  const termoBusca = modoLista ? busca.trim().slice(1).trim() : busca.trim();
   useEffect(() => {
     clearTimeout(timer.current);
-    if (!permitirBusca || busca.trim().length < 2) { setAchados([]); return undefined; }
+    if (!permitirBusca || (!modoLista && termoBusca.length < 2)) { setAchados([]); setTemMais(false); return undefined; }
     timer.current = setTimeout(async () => {
       try {
-        setAchados(await api.get(`/products/search?q=${encodeURIComponent(busca.trim())}&location_id=${lojaId}&limit=8`));
+        const lote = await api.get(`/products/search?q=${encodeURIComponent(termoBusca)}&location_id=${lojaId}&limit=${LOTE}&offset=0`);
+        setAchados(lote);
+        setTemMais(lote.length === LOTE);
+        setSel(0);
       } catch (err) { toast.erro(err); }
     }, 200);
     return () => clearTimeout(timer.current);
-  }, [busca, lojaId, permitirBusca, toast]);
+  }, [termoBusca, modoLista, lojaId, permitirBusca, toast]);
+
+  async function carregarMais() {
+    if (!temMais || carregandoMais) return;
+    setCarregandoMais(true);
+    try {
+      const lote = await api.get(`/products/search?q=${encodeURIComponent(termoBusca)}&location_id=${lojaId}&limit=${LOTE}&offset=${achados.length}`);
+      setAchados((atual) => [...atual, ...lote.filter((n) => !atual.some((a) => a.id === n.id))]);
+      setTemMais(lote.length === LOTE);
+    } catch (err) { toast.erro(err); } finally { setCarregandoMais(false); }
+  }
+
+  // Setas percorrem a lista, Enter adiciona o item escolhido.
+  function teclasBusca(e) {
+    if (achados.length === 0) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSel((s) => Math.min(s + 1, achados.length - 1));
+      if (sel >= achados.length - 3) carregarMais();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSel((s) => Math.max(s - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (achados[sel]) adicionar(achados[sel]);
+    }
+  }
+  useEffect(() => {
+    const el = listaRef.current && listaRef.current.querySelector('button.sel');
+    if (el) el.scrollIntoView({ block: 'nearest' });
+  }, [sel, achados]);
 
   function adicionar(p) {
     const disponivel = Number(p.saldo);
@@ -67,8 +109,8 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
     if ((existente ? existente.quantidade : 0) + 1 > disponivel) { toast.erro(`Sem estoque disponível de ${p.nome}`); return; }
     if (existente) setItens(itens.map((i) => (i.product_id === p.id ? { ...i, quantidade: i.quantidade + 1 } : i)));
     else setItens([...itens, { product_id: p.id, nome: p.nome, unidade: p.unidade, preco: Number(p.preco_venda), quantidade: 1, observacao: '', tem_ficha: !!p.tem_ficha_tecnica, limite: disponivel }]);
-    setBusca('');
-    setAchados([]);
+    // Navegando pela lista completa (*), mantem a lista aberta para adicionar varios itens.
+    if (!modoLista) { setBusca(''); setAchados([]); }
   }
 
   function mudarQtd(id, delta) {
@@ -130,18 +172,19 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
           <span className="ped-rotulo">Itens (estoque reservado ao confirmar)</span>
           {permitirBusca && (
             <div className="ped-busca">
-              <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome ou código…" />
+              <input value={busca} onChange={(e) => setBusca(e.target.value)} onKeyDown={teclasBusca} placeholder="Buscar por nome ou código · * lista todos os produtos" />
               {achados.length > 0 && (
-                <div className="ped-res">
-                  {achados.map((p) => {
+                <div className="ped-res" ref={listaRef} onScroll={(e) => { const el = e.currentTarget; if (el.scrollTop + el.clientHeight >= el.scrollHeight - 40) carregarMais(); }}>
+                  {achados.map((p, idx) => {
                     const d = Number(p.saldo);
                     return (
-                      <button type="button" key={p.id} disabled={d <= 0} onClick={() => adicionar(p)}>
-                        <span>{p.nome} <small>· disponível {qtd(d, p.unidade)}</small></span>
+                      <button type="button" key={p.id} className={idx === sel ? 'sel' : ''} disabled={d <= 0} onClick={() => adicionar(p)} onMouseMove={() => { if (idx !== sel) setSel(idx); }}>
+                        <span>{p.nome} <small>· {p.categoria || 'sem categoria'} · disponível {qtd(d, p.unidade)}</small></span>
                         <b>{brl(p.preco_venda)}</b>
                       </button>
                     );
                   })}
+                  {modoLista && <div className="ped-res-rodape">{carregandoMais ? 'Carregando mais produtos...' : temMais ? 'Role para carregar mais' : `Fim da lista · ${achados.length} produto(s)`}</div>}
                 </div>
               )}
             </div>

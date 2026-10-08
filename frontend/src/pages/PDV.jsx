@@ -782,6 +782,12 @@ export default function PDV() {
               <ClienteTelefone telefone={clienteTel} onTelefone={setClienteTel} cliente={clienteInfo} onCliente={setClienteInfo}
                 dica={rapido ? 'O pedido sai no nome deste cliente.' : 'Nome e endereço serão preenchidos no pedido.'}
                 textoNovo="Telefone não cadastrado: será criado ao gerar o pedido, com o nome e o endereço informados." />
+              {!clienteInfo && (
+                <label className="field"><span className="field-label">{rapido ? 'Nome para chamar (opcional)' : 'Nome do cliente (opcional)'}</span>
+                  <input value={nomeChamar} maxLength={60} onChange={(e) => setNomeChamar(e.target.value)} placeholder="Ex.: João"
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } }} />
+                </label>
+              )}
               {telefoneNovo && (
                 <label className="cli-check"><input type="checkbox" checked={cadastrarCliente} onChange={(e) => setCadastrarCliente(e.target.checked)} /> Cadastrar este cliente</label>
               )}
@@ -807,12 +813,6 @@ export default function PDV() {
                   <label className="field"><span className="field-label">Taxa de entrega (R$)</span>
                     <input value={taxaRapida} onChange={(e) => setTaxaRapida(e.target.value)} inputMode="decimal" /></label>
                 </>
-              )}
-              {!clienteInfo && (
-                <label className="field"><span className="field-label">{rapido ? 'Nome para chamar (opcional)' : 'Nome do cliente (opcional)'}</span>
-                  <input value={nomeChamar} maxLength={60} onChange={(e) => setNomeChamar(e.target.value)} placeholder="Ex.: João"
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } }} />
-                </label>
               )}
             </div>
           )}

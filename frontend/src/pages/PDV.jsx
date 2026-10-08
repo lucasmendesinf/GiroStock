@@ -333,11 +333,11 @@ export default function PDV() {
   // (inclusive misto, com bebida) vira pedido inteiro. Produto de pronta entrega sai sempre como venda direta.
   const modoPedido = usaPedidos && temPreparo;
   const rapido = modoPedido && origemPdv === 'balcao';
-  const telefoneNovo = clienteTel.replace(/\D/g, '').length >= 10 && !clienteInfo;
 
   // Cliente (so existe com produto de preparo no carrinho): telefone digitado, cadastro localizado e nome para chamar.
   const [clienteTel, setClienteTel] = useState('');
   const [clienteInfo, setClienteInfo] = useState(null);
+  const telefoneNovo = clienteTel.replace(/\D/g, '').length >= 10 && !clienteInfo;
   const [nomeChamar, setNomeChamar] = useState('');
   const [mesaRapida, setMesaRapida] = useState('');
   const [cadastrarCliente, setCadastrarCliente] = useState(true);

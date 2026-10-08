@@ -182,13 +182,13 @@ async function registrarVenda(client, user, dados) {
       [user.tenantId]
     );
     const numero = proximo.rows[0].numero;
-    // Numero do pedido (comanda) da loja: so quando a loja usa comanda. O UPSERT trava a linha do contador
+    // Numero do pedido (comanda) da loja: so quando a loja usa comanda e a venda tem produto com ficha tecnica (lanche). O UPSERT trava a linha do contador
     // e serializa pedidos simultaneos; o contador reinicia na abertura do caixa de um novo turno.
     let numeroPedido = null;
     const lojaComanda = await client.query(`SELECT usa_comanda FROM locations WHERE id = $1`, [locationId]);
     if (dados.numero_pedido) {
       numeroPedido = Number(dados.numero_pedido);
-    } else if (lojaComanda.rows[0] && lojaComanda.rows[0].usa_comanda) {
+    } else if (lojaComanda.rows[0] && lojaComanda.rows[0].usa_comanda && fichaPorProduto.size > 0) {
       const cont = await client.query(
         `INSERT INTO location_order_counters (location_id, tenant_id, ultimo) VALUES ($1, $2, 1)
          ON CONFLICT (location_id) DO UPDATE SET ultimo = location_order_counters.ultimo + 1 RETURNING ultimo`,

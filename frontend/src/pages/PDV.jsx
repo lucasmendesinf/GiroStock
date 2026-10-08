@@ -339,11 +339,21 @@ export default function PDV() {
   const [clienteInfo, setClienteInfo] = useState(null);
   const [nomeChamar, setNomeChamar] = useState('');
   const [mesaRapida, setMesaRapida] = useState('');
+  const [destinoRapido, setDestinoRapido] = useState('retirada');
+  const [enderecoRapido, setEnderecoRapido] = useState('');
+  const [taxaRapida, setTaxaRapida] = useState('5,00');
   const [comanda, setComanda] = useState(null);
   const [gerando, setGerando] = useState(false);
   useEffect(() => {
-    if (!temPreparo) { setClienteTel(''); setClienteInfo(null); setNomeChamar(''); setMesaRapida(''); }
+    if (!temPreparo) { setClienteTel(''); setClienteInfo(null); setNomeChamar(''); setMesaRapida(''); setDestinoRapido('retirada'); setEnderecoRapido(''); }
   }, [temPreparo]);
+
+  useEffect(() => {
+    if (destinoRapido === 'entrega' && clienteInfo && clienteInfo.enderecos.length > 0) {
+      const padrao = clienteInfo.enderecos.find((e) => e.padrao) || clienteInfo.enderecos[0];
+      setEnderecoRapido((atual) => atual || padrao.endereco);
+    }
+  }, [destinoRapido, clienteInfo]);
 
   // "Repetir ultimo pedido" (tela Clientes): carrinho e telefone chegam pela navegacao.
   const repetido = useRef(false);
@@ -384,6 +394,8 @@ export default function PDV() {
     setClienteInfo(null);
     setNomeChamar('');
     setMesaRapida('');
+    setDestinoRapido('retirada');
+    setEnderecoRapido('');
     toast.sucesso(`Pedido #${pedido.numero} gerado · estoque reservado${pedido.cliente_novo ? ' · cliente novo cadastrado' : ''}`);
     const cfg = configDaVenda(pedido);
     if (cfg.cozinha.ativo && cfg.cozinha.imprimir_automatico) abrirImpressao(setCupom, vendaDoPedido(pedido), 'cozinha', (m) => toast.sucesso(m));
@@ -393,10 +405,14 @@ export default function PDV() {
   // Pedido rapido (origem Balcao): sem modal; retirada, a pagar no balcao. Telefone cadastrado vincula o cliente.
   async function gerarPedidoRapido() {
     if (cart.length === 0 || gerando) return;
+    if (destinoRapido === 'mesa' && !mesaRapida.trim()) { toast.erro('Informe a mesa.'); return; }
+    if (destinoRapido === 'entrega' && enderecoRapido.trim().length < 3) { toast.erro('Informe o endereço da entrega.'); return; }
     setGerando(true);
     try {
       const pedido = await api.post('/orders', {
-        location_id: terminal.location_id, origem: 'balcao', tipo: mesaRapida.trim() ? 'mesa' : 'retirada', endereco: mesaRapida.trim() ? 'Mesa ' + mesaRapida.trim().replace(/^mesas*/i, '') : '', cadastrar_cliente: false,
+        location_id: terminal.location_id, origem: 'balcao', tipo: destinoRapido,
+        endereco: destinoRapido === 'mesa' ? 'Mesa ' + mesaRapida.trim().replace(/^mesa\s*/i, '') : destinoRapido === 'entrega' ? enderecoRapido.trim() : '',
+        taxa_entrega: destinoRapido === 'entrega' ? Math.max(0, parseNumero(taxaRapida) || 0) : 0, cadastrar_cliente: false,
         cliente_nome: nomeChamar.trim() || (clienteInfo ? clienteInfo.nome : ''), cliente_telefone: clienteInfo ? clienteInfo.telefone : '',
         forma_pagamento_prevista: 'dinheiro', pago: false,
         itens: cart.map((i) => ({ product_id: i.id, quantidade: i.quantidade, observacao: i.tem_ficha_tecnica ? (i.observacao || '').trim() : '' })),
@@ -755,10 +771,27 @@ export default function PDV() {
                 dica={rapido ? 'O pedido sai no nome deste cliente.' : 'Nome e endereço serão preenchidos no pedido.'}
                 textoNovo={rapido ? 'Telefone não cadastrado: o pedido rápido sai sem cadastro. Use Telefone ou WhatsApp para cadastrar.' : undefined} />
               {rapido && (
-                <label className="field"><span className="field-label">Mesa (opcional — atendimento no salão)</span>
-                  <input value={mesaRapida} maxLength={30} onChange={(e) => setMesaRapida(e.target.value)} placeholder="Ex.: 5"
+                <div className="field"><span className="field-label">Destino</span>
+                  <div className="ped-seg2">
+                    <button type="button" className={destinoRapido === 'retirada' ? 'on' : ''} onClick={() => setDestinoRapido('retirada')}>🛍 Retirada</button>
+                    <button type="button" className={destinoRapido === 'entrega' ? 'on' : ''} onClick={() => setDestinoRapido('entrega')}>🛵 Entrega</button>
+                    <button type="button" className={destinoRapido === 'mesa' ? 'on' : ''} onClick={() => setDestinoRapido('mesa')}>🍽 Mesa</button>
+                  </div>
+                </div>
+              )}
+              {rapido && destinoRapido === 'mesa' && (
+                <label className="field"><span className="field-label">Mesa</span>
+                  <input value={mesaRapida} maxLength={30} onChange={(e) => setMesaRapida(e.target.value)} placeholder="Número ou nome da mesa"
                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } }} />
                 </label>
+              )}
+              {rapido && destinoRapido === 'entrega' && (
+                <>
+                  <label className="field"><span className="field-label">Endereço da entrega</span>
+                    <input value={enderecoRapido} maxLength={300} onChange={(e) => setEnderecoRapido(e.target.value)} placeholder="Rua, nº, bairro" /></label>
+                  <label className="field"><span className="field-label">Taxa de entrega (R$)</span>
+                    <input value={taxaRapida} onChange={(e) => setTaxaRapida(e.target.value)} inputMode="decimal" /></label>
+                </>
               )}
               {rapido && !clienteInfo && (
                 <label className="field"><span className="field-label">Nome para chamar (opcional)</span>
@@ -776,7 +809,7 @@ export default function PDV() {
                 <div className="ped-seg2" style={{ marginTop: 6 }}>
                   {ORIGENS.map((o) => <button type="button" key={o.id} className={origemPdv === o.id ? 'on' : ''} onClick={() => setOrigemPdv(o.id)}>{o.nome}</button>)}
                 </div>
-                <div style={{ marginTop: 6 }}>{rapido ? <><b>Pedido rápido:</b> retirada, a pagar no balcão. F2 fecha o pedido, reserva o estoque e mostra a comanda.</> : 'O estoque é reservado ao gerar o pedido.'}</div>
+                <div style={{ marginTop: 6 }}>{rapido ? <><b>Pedido rápido:</b> a pagar na retirada/entrega ou no salão. F2 fecha o pedido, reserva o estoque e mostra a comanda.</> : 'O estoque é reservado ao gerar o pedido.'}</div>
               </div>
             </>
           )}

@@ -42,6 +42,7 @@ export default function Pedidos() {
   const [novoAberto, setNovoAberto] = useState(false);
   const [receber, setReceber] = useState(null);
   const [cancelar, setCancelar] = useState(null);
+  const [destino, setDestino] = useState(null);
   const [escolherEntregador, setEscolherEntregador] = useState(null);
   const [entregadoresAberto, setEntregadoresAberto] = useState(false);
   const [entregadores, setEntregadores] = useState([]);
@@ -259,7 +260,7 @@ export default function Pedidos() {
       {aberta && detalhe && detalhe.id === aberta && (
         <Gaveta pedido={detalhe} entregadores={entregadores.filter((e) => e.ativo || e.id === detalhe.entregador_id)} agoraMin={minutos}
           onClose={() => { setAberta(null); setDetalhe(null); }}
-          onAvancar={() => avancar(detalhe)} onCancelar={() => setCancelar(detalhe)} onImprimir={() => imprimir(detalhe.id)}
+          onAvancar={() => avancar(detalhe)} onCancelar={() => setCancelar(detalhe)} onDestino={() => setDestino(detalhe)} onImprimir={() => imprimir(detalhe.id)}
           onEntregador={(id) => executar(api.put(`/orders/${detalhe.id}/entregador`, { entregador_id: id || null }))}
           pedidoLista={pedidos.find((p) => p.id === aberta)} />
       )}
@@ -269,6 +270,11 @@ export default function Pedidos() {
       )}
 
       {receber && <ReceberModal pedido={receber} onClose={() => setReceber(null)} onConfirmar={(dados) => { const p = receber; setReceber(null); avancar(p, dados); }} />}
+      {destino && <DestinoModal pedido={destino} onClose={() => setDestino(null)} onConfirmar={async (dados) => {
+        const p = destino;
+        const ok = await executar(api.put(`/orders/${p.id}/destino`, dados), (r) => `Pedido #${r.numero} agora é ${r.tipo === 'entrega' ? 'entrega' : r.tipo === 'mesa' ? r.endereco : 'retirada'}`);
+        if (ok) setDestino(null);
+      }} />}
       {cancelar && <CancelarModal pedido={cancelar} onClose={() => setCancelar(null)} onConfirmar={async (motivo) => {
         const p = cancelar;
         setCancelar(null);
@@ -287,7 +293,7 @@ export default function Pedidos() {
 }
 
 // ---------- gaveta de detalhe ----------
-function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, onClose, onAvancar, onCancelar, onImprimir, onEntregador }) {
+function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, onClose, onAvancar, onCancelar, onDestino, onImprimir, onEntregador }) {
   const entrega = p.tipo === 'entrega';
   const fluxo = entrega ? COLUNAS : COLUNAS.filter(([s]) => s !== 'saiu_entrega');
   const idx = fluxo.findIndex(([s]) => s === p.status);
@@ -352,6 +358,7 @@ function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, onClose, onAva
         <div className="ped-botoes">
           {a && aberto(p) && <button type="button" className="btn-primario" style={{ flex: 1 }} onClick={onAvancar}>{a}</button>}
           <button type="button" onClick={onImprimir}>🖨 Imprimir comanda</button>
+          {aberto(p) && p.status !== 'saiu_entrega' && <button type="button" onClick={onDestino}>Alterar destino</button>}
           {aberto(p) && <button type="button" className="perigo" onClick={onCancelar}>Cancelar</button>}
         </div>
       </aside>
@@ -387,6 +394,44 @@ function ReceberModal({ pedido, onClose, onConfirmar }) {
         <div className="modal-actions">
           <button type="button" onClick={onClose}>Voltar</button>
           <button type="submit" disabled={!ok}>Receber e finalizar</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function DestinoModal({ pedido, onClose, onConfirmar }) {
+  const [tipo, setTipo] = useState(pedido.tipo);
+  const [endereco, setEndereco] = useState(pedido.tipo === 'entrega' ? pedido.endereco : '');
+  const [mesa, setMesa] = useState(pedido.tipo === 'mesa' ? String(pedido.endereco || '').replace(/^mesa\s*/i, '') : '');
+  const [taxaTxt, setTaxaTxt] = useState(Number(pedido.taxa_entrega) > 0 ? String(Number(pedido.taxa_entrega)).replace('.', ',') : '5,00');
+  const taxa = tipo === 'entrega' ? Math.max(0, parseNumero(taxaTxt) || 0) : 0;
+  const subtotal = pedido.itens.reduce((s, i) => s + Number(i.subtotal), 0);
+  const ok = tipo === 'retirada' || (tipo === 'entrega' && endereco.trim().length >= 3) || (tipo === 'mesa' && mesa.trim().length >= 1);
+  function enviar(e) {
+    e.preventDefault();
+    if (!ok) return;
+    onConfirmar({ tipo, endereco: tipo === 'mesa' ? `Mesa ${mesa.trim()}` : endereco, taxa_entrega: taxa });
+  }
+  return (
+    <Modal titulo={`Alterar destino · pedido #${pedido.numero}`} subtitulo="O cliente mudou de ideia? Escolha o novo destino." onClose={onClose}>
+      <form className="form-stack" onSubmit={enviar}>
+        <div className="ped-seg2">
+          <button type="button" className={tipo === 'retirada' ? 'on' : ''} onClick={() => setTipo('retirada')}>🛍 Retirada</button>
+          <button type="button" className={tipo === 'entrega' ? 'on' : ''} onClick={() => setTipo('entrega')}>🛵 Entrega</button>
+          <button type="button" className={tipo === 'mesa' ? 'on' : ''} onClick={() => setTipo('mesa')}>🍽 Mesa</button>
+        </div>
+        {tipo === 'entrega' && (
+          <div className="form-grid">
+            <Field label="Endereço"><input autoFocus value={endereco} onChange={(e) => setEndereco(e.target.value)} placeholder="Rua, nº, bairro" /></Field>
+            <Field label="Taxa de entrega (R$)"><input value={taxaTxt} onChange={(e) => setTaxaTxt(e.target.value)} inputMode="decimal" /></Field>
+          </div>
+        )}
+        {tipo === 'mesa' && <Field label="Mesa"><input autoFocus value={mesa} onChange={(e) => setMesa(e.target.value)} maxLength={30} placeholder="Número ou nome da mesa" /></Field>}
+        <div className="ped-linha ped-total"><span>Novo total</span><b>{brl(subtotal + taxa)}</b></div>
+        <div className="modal-actions">
+          <button type="button" onClick={onClose}>Voltar</button>
+          <button type="submit" disabled={!ok}>Alterar destino</button>
         </div>
       </form>
     </Modal>

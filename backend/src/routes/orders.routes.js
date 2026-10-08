@@ -294,6 +294,30 @@ router.put('/orders/:id/entregador', async (req, res) => {
   res.json(await pedidoCompleto(pool, req.user.tenantId, req.params.id));
 });
 
+// ---------- destino (retirada / entrega / mesa) ----------
+// O cliente pode mudar de ideia enquanto o pedido esta aberto. Entrega exige endereco; mesa exige a mesa.
+router.put('/orders/:id/destino', async (req, res) => {
+  const pedido = await getOwned(pool, 'orders', req.params.id, req.user.tenantId, { columns: 'id, numero, location_id, status, tipo' });
+  assertLocationAccess(req.user, pedido.location_id, 'alterar pedidos desta loja');
+  if (['finalizado', 'cancelado'].includes(pedido.status)) throw new HttpError(400, 'pedido encerrado: não dá mais para mudar o destino');
+  if (pedido.status === 'saiu_entrega') throw new HttpError(400, 'o pedido já saiu para entrega');
+  const b = req.body || {};
+  const tipo = ['retirada', 'entrega', 'mesa'].includes(b.tipo) ? b.tipo : null;
+  if (!tipo) throw new HttpError(400, 'destino inválido');
+  const endereco = String(b.endereco || '').trim().slice(0, 300);
+  if (tipo === 'entrega' && endereco.length < 3) throw new HttpError(400, 'informe o endereço da entrega');
+  if (tipo === 'mesa' && endereco.length < 1) throw new HttpError(400, 'informe a mesa');
+  const taxa = tipo === 'entrega' ? Number(b.taxa_entrega || 0) : 0;
+  if (!(taxa >= 0)) throw new HttpError(400, 'taxa de entrega inválida');
+  await pool.query(
+    `UPDATE orders SET tipo = $1, endereco = $2, taxa_entrega = $3, entregador_id = CASE WHEN $1 = 'entrega' THEN entregador_id ELSE NULL END, atualizado_em = now()
+     WHERE id = $4 AND tenant_id = $5`,
+    [tipo, tipo === 'retirada' ? '' : endereco, taxa, req.params.id, req.user.tenantId]
+  );
+  await logAudit(pool, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'alterar_destino_pedido', recurso: 'orders', recursoId: req.params.id, detalhes: { numero: pedido.numero, de: pedido.tipo, para: tipo } });
+  res.json(await pedidoCompleto(pool, req.user.tenantId, req.params.id));
+});
+
 // ---------- avancar status ----------
 // novo -> em_preparo -> pronto -> (entrega: saiu_entrega -> finalizado | retirada: finalizado).
 // Finalizar converte a reserva em baixa definitiva: gera a venda (estoque/insumos baixam, entra no caixa).

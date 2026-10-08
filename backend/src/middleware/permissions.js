@@ -1,12 +1,12 @@
 // Permissoes: cada perfil tem um padrao (MATRIX) e cada usuario pode ter ajustes
 // individuais (users.permissoes) que liberam ou bloqueiam permissoes especificas.
 const MATRIX = {
-  'Administrador':        { Vendas: true,  Estoque: true,  Financeiro: true,  Relatorios: true,  Configuracoes: true,  CancelarVendas: true,  SangriaSuprimento: true,  Desconto: true,  FecharCaixa: true,  Pedidos: true },
-  'Gerente':              { Vendas: true,  Estoque: true,  Financeiro: false, Relatorios: true,  Configuracoes: false, CancelarVendas: true,  SangriaSuprimento: true,  Desconto: true,  FecharCaixa: true,  Pedidos: true },
-  'Caixa/Operador':       { Vendas: true,  Estoque: false, Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: true,  Pedidos: true },
-  'Estoque':              { Vendas: false, Estoque: true,  Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: false, Pedidos: false },
-  'Lanchonete/Cozinha':   { Vendas: true,  Estoque: true,  Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: true,  Pedidos: true },
-  'Financeiro':           { Vendas: false, Estoque: false, Financeiro: true,  Relatorios: true,  Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: false, Pedidos: false },
+  'Administrador':        { Vendas: true,  Estoque: true,  Financeiro: true,  Relatorios: true,  Configuracoes: true,  CancelarVendas: true,  SangriaSuprimento: true,  Desconto: true,  FecharCaixa: true,  Pedidos: true, Clientes: true },
+  'Gerente':              { Vendas: true,  Estoque: true,  Financeiro: false, Relatorios: true,  Configuracoes: false, CancelarVendas: true,  SangriaSuprimento: true,  Desconto: true,  FecharCaixa: true,  Pedidos: true, Clientes: true },
+  'Caixa/Operador':       { Vendas: true,  Estoque: false, Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: true,  Pedidos: true, Clientes: false },
+  'Estoque':              { Vendas: false, Estoque: true,  Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: false, Pedidos: false, Clientes: false },
+  'Lanchonete/Cozinha':   { Vendas: true,  Estoque: true,  Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: true,  Pedidos: true, Clientes: false },
+  'Financeiro':           { Vendas: false, Estoque: false, Financeiro: true,  Relatorios: true,  Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: false, Pedidos: false, Clientes: false },
 };
 
 // Permissoes que podem ser ajustadas por usuario (Financeiro ainda nao tem tela).
@@ -16,6 +16,7 @@ const PERMISSOES = {
   Desconto: 'PDV: dar desconto na venda',
   FecharCaixa: 'PDV: fechar o caixa',
   Pedidos: 'Pedidos da lanchonete: gerar no PDV, acompanhar e finalizar',
+  Clientes: 'Clientes: base de clientes, segmentos e mensagens',
   Estoque: 'Produtos, fornecedores, insumos, entradas e transferências',
   Relatorios: 'Relatórios e histórico de vendas',
   Configuracoes: 'Usuários, lojas e PDVs',

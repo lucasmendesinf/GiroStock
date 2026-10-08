@@ -14,6 +14,7 @@ const LABELS = {
   sales: 'venda',
   orders: 'pedido',
   couriers: 'entregador',
+  customers: 'cliente',
 };
 
 function isUuid(id) {

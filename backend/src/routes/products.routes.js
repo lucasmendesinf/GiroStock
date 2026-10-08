@@ -3,7 +3,7 @@ const pool = require('../db/pool');
 const { requireArea } = require('../middleware/permissions');
 const { isValidBarcode, UNIDADES_INTEIRAS, isQuantidadeValidaParaUnidade } = require('../utils/validators');
 const { logAudit } = require('../utils/audit');
-const { getOwned, getOwnedLocation } = require('../utils/tenant');
+const { getOwned, getOwnedLocation, isUuid } = require('../utils/tenant');
 const { assertLocationAccess } = require('../utils/access');
 const { HttpError } = require('../utils/http');
 
@@ -187,7 +187,11 @@ router.get('/products/search', async (req, res) => {
 
   const params = [req.user.tenantId, locationId];
   let where = 'p.tenant_id = $1 AND p.ativo = true';
-  if (barcode) {
+  if (req.query.ids) {
+    const lista = String(req.query.ids).split(',').filter(isUuid);
+    params.push(lista);
+    where += ` AND p.id = ANY($${params.length}::uuid[])`;
+  } else if (barcode) {
     params.push(barcode);
     where += ` AND p.barcode = $${params.length}`;
   } else {

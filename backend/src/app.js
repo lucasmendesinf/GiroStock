@@ -21,6 +21,7 @@ const cashRoutes = require('./routes/cash.routes');
 const salesRoutes = require('./routes/sales.routes');
 const reportsRoutes = require('./routes/reports.routes');
 const ordersRoutes = require('./routes/orders.routes');
+const customersRoutes = require('./routes/customers.routes');
 
 const app = express();
 
@@ -44,6 +45,7 @@ app.use('/api', authRequired, cashRoutes);
 app.use('/api', authRequired, salesRoutes);
 app.use('/api', authRequired, reportsRoutes);
 app.use('/api', authRequired, ordersRoutes);
+app.use('/api', authRequired, customersRoutes);
 
 // Serve o build do frontend (frontend/dist) quando presente, permitindo rodar
 // backend + frontend como um unico processo Node (ex: cPanel Node.js Selector,

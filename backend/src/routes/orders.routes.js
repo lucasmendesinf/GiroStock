@@ -10,6 +10,7 @@ const { configEfetiva } = require('../utils/cupom');
 const { reservadosDaLoja } = require('../utils/reservas');
 const { registrarVenda } = require('../services/vendas');
 const { FUSO } = require('../utils/query');
+const { inserirCliente, apenasDigitos } = require('./customers.routes');
 
 const router = express.Router();
 router.use(['/orders', '/couriers'], requireArea('Pedidos'));
@@ -36,7 +37,7 @@ async function proximoNumero(client, tenantId, locationId) {
 const SELECT_PEDIDO = `
   SELECT o.id, o.numero, o.location_id, l.nome AS location_nome, o.origem, o.origem_externa_id, o.cliente_nome, o.cliente_telefone,
          o.tipo, o.endereco, o.taxa_entrega, o.observacao, o.forma_pagamento_prevista, o.pago, o.status,
-         o.entregador_id, c.nome AS entregador_nome, o.sale_id, o.criado_por, u.nome AS criado_por_nome,
+         o.entregador_id, c.nome AS entregador_nome, o.sale_id, o.criado_por, u.nome AS criado_por_nome, o.customer_id,
          o.criado_em, o.atualizado_em, o.finalizado_em, o.cancelado_em, o.motivo_cancelamento,
          COALESCE((SELECT SUM(oi.subtotal) FROM order_items oi WHERE oi.order_id = o.id), 0) + o.taxa_entrega AS total,
          COALESCE((SELECT MAX(sl.criado_em) FROM order_status_log sl WHERE sl.order_id = o.id), o.criado_em) AS etapa_desde,
@@ -231,13 +232,29 @@ router.post('/orders', async (req, res) => {
       }
     }
 
+    // Cliente: o telefone (so digitos) e a chave. Cadastrado -> vincula; novo -> cria quando "cadastrar_cliente" (padrao: sim).
+    let customerId = null;
+    let clienteNovo = false;
+    const tel = apenasDigitos(b.cliente_telefone);
+    if (tel.length >= 10) {
+      const ex = await client.query(`SELECT id FROM customers WHERE tenant_id = $1 AND telefone = $2 AND ativo`, [req.user.tenantId, tel]);
+      if (ex.rows.length > 0) {
+        customerId = ex.rows[0].id;
+      } else if (b.cadastrar_cliente !== false) {
+        customerId = await inserirCliente(client, req.user.tenantId, {
+          nome: String(b.cliente_nome || '').trim() || 'Cliente', telefone: tel, endereco: tipo === 'entrega' ? endereco : '', aceita_mensagens: false,
+        });
+        clienteNovo = true;
+      }
+    }
+
     const numero = await proximoNumero(client, req.user.tenantId, locationId);
     const pedido = await client.query(
       `INSERT INTO orders (tenant_id, location_id, numero, origem, cliente_nome, cliente_telefone, tipo, endereco, taxa_entrega,
-                           observacao, forma_pagamento_prevista, pago, status, criado_por)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'novo', $13) RETURNING id`,
+                           observacao, forma_pagamento_prevista, pago, status, criado_por, customer_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'novo', $13, $14) RETURNING id`,
       [req.user.tenantId, locationId, numero, origem, String(b.cliente_nome || '').trim().slice(0, 120), String(b.cliente_telefone || '').trim().slice(0, 40),
-        tipo, tipo === 'entrega' ? endereco : '', taxa, String(b.observacao || '').trim().slice(0, 300), forma, pago, req.user.id]
+        tipo, tipo === 'entrega' ? endereco : '', taxa, String(b.observacao || '').trim().slice(0, 300), forma, pago, req.user.id, customerId]
     );
     const orderId = pedido.rows[0].id;
     for (const l of linhas) {
@@ -250,10 +267,10 @@ router.post('/orders', async (req, res) => {
     await client.query(`INSERT INTO order_status_log (order_id, de, para, usuario_id) VALUES ($1, NULL, 'novo', $2)`, [orderId, req.user.id]);
     await logAudit(client, {
       tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'criar_pedido', recurso: 'orders', recursoId: orderId,
-      detalhes: { numero, origem, tipo, itens: linhas.length },
+      detalhes: { numero, origem, tipo, itens: linhas.length, customer_id: customerId, cliente_novo: clienteNovo },
     });
     await client.query('COMMIT');
-    res.status(201).json(await pedidoCompleto(pool, req.user.tenantId, orderId));
+    res.status(201).json({ ...(await pedidoCompleto(pool, req.user.tenantId, orderId)), cliente_novo: clienteNovo });
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

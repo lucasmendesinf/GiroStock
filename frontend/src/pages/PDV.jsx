@@ -772,10 +772,10 @@ export default function PDV() {
               <ClienteTelefone telefone={clienteTel} onTelefone={setClienteTel} cliente={clienteInfo} onCliente={setClienteInfo}
                 dica={rapido ? 'O pedido sai no nome deste cliente.' : 'Nome e endereço serão preenchidos no pedido.'}
                 textoNovo="Telefone não cadastrado: será criado ao gerar o pedido, com o nome e o endereço informados." />
-              {rapido && telefoneNovo && (
+              {telefoneNovo && (
                 <label className="cli-check"><input type="checkbox" checked={cadastrarCliente} onChange={(e) => setCadastrarCliente(e.target.checked)} /> Cadastrar este cliente</label>
               )}
-              {rapido && (
+              {(
                 <div className="field"><span className="field-label">Destino</span>
                   <div className="ped-seg2">
                     <button type="button" className={destinoRapido === 'retirada' ? 'on' : ''} onClick={() => setDestinoRapido('retirada')}>🛍 Retirada</button>
@@ -784,13 +784,13 @@ export default function PDV() {
                   </div>
                 </div>
               )}
-              {rapido && destinoRapido === 'mesa' && (
+              {destinoRapido === 'mesa' && (
                 <label className="field"><span className="field-label">Mesa</span>
                   <input value={mesaRapida} maxLength={30} onChange={(e) => setMesaRapida(e.target.value)} placeholder="Número ou nome da mesa"
                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } }} />
                 </label>
               )}
-              {rapido && destinoRapido === 'entrega' && (
+              {destinoRapido === 'entrega' && (
                 <>
                   <label className="field"><span className="field-label">Endereço da entrega</span>
                     <input value={enderecoRapido} maxLength={300} onChange={(e) => setEnderecoRapido(e.target.value)} placeholder="Rua, nº, bairro" /></label>
@@ -798,8 +798,8 @@ export default function PDV() {
                     <input value={taxaRapida} onChange={(e) => setTaxaRapida(e.target.value)} inputMode="decimal" /></label>
                 </>
               )}
-              {rapido && !clienteInfo && (
-                <label className="field"><span className="field-label">Nome para chamar (opcional)</span>
+              {!clienteInfo && (
+                <label className="field"><span className="field-label">{rapido ? 'Nome para chamar (opcional)' : 'Nome do cliente (opcional)'}</span>
                   <input value={nomeChamar} maxLength={60} onChange={(e) => setNomeChamar(e.target.value)} placeholder="Ex.: João"
                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } }} />
                 </label>
@@ -822,7 +822,8 @@ export default function PDV() {
       </div>
 
       {pedidoModal && terminal && (
-        <PedidoForm lojaId={terminal.location_id} origemInicial={origemPdv} titulo="Gerar pedido" telefoneInicial={clienteTel} nomeInicial={clienteInfo ? clienteInfo.nome : ''} onClose={() => setPedidoModal(false)} onCriado={pedidoCriado}
+        <PedidoForm lojaId={terminal.location_id} origemInicial={origemPdv} titulo="Gerar pedido" telefoneInicial={clienteTel} nomeInicial={nomeChamar.trim() || (clienteInfo ? clienteInfo.nome : '')}
+          tipoInicial={destinoRapido} enderecoInicial={destinoRapido === 'entrega' ? enderecoRapido : ''} taxaInicial={taxaRapida} mesaInicial={mesaRapida} cadastrarInicial={cadastrarCliente} onClose={() => setPedidoModal(false)} onCriado={pedidoCriado}
           itensIniciais={cart.map((i) => ({ product_id: i.id, nome: i.nome, unidade: i.unidade, preco: i.preco_venda, quantidade: i.quantidade, observacao: i.tem_ficha_tecnica ? (i.observacao || '').trim() : '', tem_ficha: !!i.tem_ficha_tecnica, limite: i.limite }))} />
       )}
 

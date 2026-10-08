@@ -35,17 +35,17 @@ const PAGAMENTOS = [
 
 // Modal "Gerar pedido" / "Novo pedido": dados do cliente, retirada ou entrega, pagamento e itens.
 // No PDV os itens vem do carrinho (permitirBusca = false); na tela Pedidos o operador busca os produtos.
-export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensIniciais = [], permitirBusca = false, mostrarOrigem = false, titulo = 'Gerar pedido', telefoneInicial = '', nomeInicial = '', onClose, onCriado }) {
+export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensIniciais = [], permitirBusca = false, mostrarOrigem = false, titulo = 'Gerar pedido', telefoneInicial = '', nomeInicial = '', tipoInicial = 'retirada', enderecoInicial = '', taxaInicial = '5,00', mesaInicial = '', cadastrarInicial = true, onClose, onCriado }) {
   const toast = useToast();
   const [origem, setOrigem] = useState(origemInicial);
   const [cliente, setCliente] = useState(nomeInicial);
   const [telefone, setTelefone] = useState(telefoneInicial);
   const [cadastrado, setCadastrado] = useState(null);
-  const [cadastrar, setCadastrar] = useState(true);
-  const [tipo, setTipo] = useState('retirada');
-  const [endereco, setEndereco] = useState('');
-  const [mesa, setMesa] = useState('');
-  const [taxaTxt, setTaxaTxt] = useState('5,00');
+  const [cadastrar, setCadastrar] = useState(cadastrarInicial);
+  const [tipo, setTipo] = useState(tipoInicial);
+  const [endereco, setEndereco] = useState(enderecoInicial);
+  const [mesa, setMesa] = useState(mesaInicial);
+  const [taxaTxt, setTaxaTxt] = useState(taxaInicial);
   const [pagamento, setPagamento] = useState('dinheiro');
   const [jaPago, setJaPago] = useState(false);
   const [recebidoTxt, setRecebidoTxt] = useState('');

@@ -319,21 +319,19 @@ export default function PDV() {
 
   // ---------- pedido (lanchonete): o carrinho vira pedido em vez de venda imediata ----------
   const [lojas, setLojas] = useState([]);
-  const [tipoPdv, setTipoPdv] = useState('venda'); // venda | pedido
   const [origemPdv, setOrigemPdv] = useState('balcao');
   const [pedidoModal, setPedidoModal] = useState(false);
   useEffect(() => { api.get('/locations').then(setLojas).catch(() => {}); }, []);
   const lojaDoTerminal = lojas.find((l) => terminal && l.id === terminal.location_id);
   const usaPedidos = !!(lojaDoTerminal && lojaDoTerminal.usa_pedidos) && podeAcessar(user, 'Pedidos');
   const temPreparo = cart.some((i) => i.tem_ficha_tecnica);
-  // Regra de ouro: produto com receita (insumos) so pode virar pedido; o carrinho misto vira pedido inteiro.
-  const modoPedido = usaPedidos && (temPreparo || tipoPdv === 'pedido');
-  useEffect(() => { if (cart.length === 0) setTipoPdv('venda'); }, [cart.length]);
+  // O carrinho so vira pedido quando tem produto que depende de preparo (receita/insumos): lanches. Esse carrinho
+  // (inclusive misto, com bebida) vira pedido inteiro. Produto de pronta entrega sai sempre como venda direta.
+  const modoPedido = usaPedidos && temPreparo;
 
   async function pedidoCriado(pedido) {
     setPedidoModal(false);
     setCart([]);
-    setTipoPdv('venda');
     toast.sucesso(`Pedido #${pedido.numero} gerado · estoque reservado`);
     const cfg = configDaVenda(pedido);
     if (cfg.cozinha.ativo && cfg.cozinha.imprimir_automatico) abrirImpressao(setCupom, vendaDoPedido(pedido), 'cozinha', (m) => toast.sucesso(m));
@@ -656,12 +654,6 @@ export default function PDV() {
             <span>Total</span>
             <strong>{brl(subtotal)}</strong>
           </div>
-          {usaPedidos && !temPreparo && cart.length > 0 && (
-            <div className="pedido-pdv-tipo" role="group" aria-label="Venda ou pedido">
-              <button type="button" className={tipoPdv === 'venda' ? 'on' : ''} onClick={() => setTipoPdv('venda')}>Venda</button>
-              <button type="button" className={tipoPdv === 'pedido' ? 'on' : ''} onClick={() => setTipoPdv('pedido')}>Pedido</button>
-            </div>
-          )}
           {modoPedido && (
             <>
               {temPreparo && <div className="pedido-pdv-aviso"><b>Produto com preparo (insumos).</b> Este carrinho só pode virar <b>pedido</b>: a cozinha recebe, o estoque dos insumos é reservado.</div>}

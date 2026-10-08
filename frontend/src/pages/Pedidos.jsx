@@ -294,7 +294,8 @@ function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, onClose, onAva
   const quando = (status) => { const l = p.log.find((x) => x.para === status); return l ? dataHora(l.criado_em).slice(-5) : ''; };
   const a = textoAcao(p);
   const minutosEtapa = pedidoLista ? agoraMin(pedidoLista) : p.minutos_etapa;
-  const pagLabel = p.forma_pagamento_prevista === 'pix' ? 'Pix (já pago)' : p.forma_pagamento_prevista === 'cartao' ? 'Pagar na retirada/entrega (cartão)' : 'Pagar na retirada/entrega (dinheiro)';
+  const NOME_PAG = { dinheiro: 'Dinheiro', cartao: 'Cartão', cartao_debito: 'Cartão-Débito', cartao_credito: 'Cartão-Crédito', pix: 'Pix' };
+  const pagLabel = p.pago ? `${NOME_PAG[p.forma_pagamento_prevista] || 'Pix'} (já pago)` : `Pagar ${NOME_PAG[p.forma_pagamento_prevista] || 'Dinheiro'} na retirada/entrega`;
   const subtotal = p.itens.reduce((s, i) => s + Number(i.subtotal), 0);
   useEffect(() => {
     function onKey(e) { if (e.key === 'Escape') onClose(); }
@@ -361,7 +362,7 @@ function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, onClose, onAva
 // ---------- modais ----------
 function ReceberModal({ pedido, onClose, onConfirmar }) {
   const total = Number(pedido.total);
-  const [forma, setForma] = useState(pedido.forma_pagamento_prevista === 'cartao' ? 'cartao_credito' : 'dinheiro');
+  const [forma, setForma] = useState(['cartao_credito', 'cartao_debito', 'pix'].includes(pedido.forma_pagamento_prevista) ? pedido.forma_pagamento_prevista : pedido.forma_pagamento_prevista === 'cartao' ? 'cartao_credito' : 'dinheiro');
   const [recebido, setRecebido] = useState('');
   const valor = parseNumero(recebido);
   const troco = forma === 'dinheiro' && valor >= total ? valor - total : 0;

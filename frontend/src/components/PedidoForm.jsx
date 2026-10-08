@@ -27,9 +27,10 @@ export function vendaDoPedido(p) {
 }
 
 const PAGAMENTOS = [
-  { id: 'dinheiro', nome: 'Pagar na retirada/entrega (dinheiro)', forma: 'dinheiro', pago: false },
-  { id: 'cartao', nome: 'Pagar na retirada/entrega (cartão)', forma: 'cartao', pago: false },
-  { id: 'pix', nome: 'Pix (já pago)', forma: 'pix', pago: true },
+  { id: 'dinheiro', nome: 'Pagar Dinheiro', forma: 'dinheiro' },
+  { id: 'cartao_debito', nome: 'Pagar Cartão-Débito', forma: 'cartao_debito' },
+  { id: 'cartao_credito', nome: 'Pagar Cartão-Crédito', forma: 'cartao_credito' },
+  { id: 'pix', nome: 'Pagar no Pix', forma: 'pix' },
 ];
 
 // Modal "Gerar pedido" / "Novo pedido": dados do cliente, retirada ou entrega, pagamento e itens.
@@ -46,6 +47,7 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
   const [mesa, setMesa] = useState('');
   const [taxaTxt, setTaxaTxt] = useState('5,00');
   const [pagamento, setPagamento] = useState('dinheiro');
+  const [jaPago, setJaPago] = useState(false);
   const [observacao, setObservacao] = useState('');
   const [itens, setItens] = useState(itensIniciais);
   const [busca, setBusca] = useState('');
@@ -145,7 +147,7 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
     try {
       const pedido = await api.post('/orders', {
         location_id: lojaId, origem, cliente_nome: cliente, cliente_telefone: telefone.replace(/D/g, ''), cadastrar_cliente: cadastrar, tipo, endereco: tipo === 'mesa' ? `Mesa ${mesa.trim().replace(/^mesa\s*/i, '')}` : endereco, taxa_entrega: taxa,
-        observacao, forma_pagamento_prevista: pag.forma, pago: pag.pago,
+        observacao, forma_pagamento_prevista: pag.forma, pago: jaPago && pag.forma !== 'dinheiro',
         itens: itens.map((i) => ({ product_id: i.product_id, quantidade: i.quantidade, observacao: i.observacao || '' })),
       });
       onCriado(pedido);
@@ -191,6 +193,9 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
         <label className="field"><span className="field-label">Pagamento</span>
           <select value={pagamento} onChange={(e) => setPagamento(e.target.value)}>{PAGAMENTOS.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}</select>
         </label>
+        {pagamento !== 'dinheiro' && (
+          <label className="cli-check"><input type="checkbox" checked={jaPago} onChange={(e) => setJaPago(e.target.checked)} /> Já pago (pagamento antecipado)</label>
+        )}
 
         <div className="ped-sec">
           <span className="ped-rotulo">Itens (estoque reservado ao confirmar)</span>

@@ -16,7 +16,7 @@ const router = express.Router();
 router.use(['/orders', '/couriers'], requireArea('Pedidos'));
 
 const ORIGENS = ['balcao', 'telefone', 'whatsapp', 'ifood', '99food'];
-const FORMAS_PREVISTAS = ['dinheiro', 'cartao', 'pix'];
+const FORMAS_PREVISTAS = ['dinheiro', 'cartao', 'cartao_debito', 'cartao_credito', 'pix'];
 const FLUXO = {
   novo: ['em_preparo'],
   em_preparo: ['pronto'],
@@ -343,7 +343,10 @@ router.post('/orders/:id/status', async (req, res) => {
       }
       const itens = await client.query(`SELECT product_id, quantidade, observacao FROM order_items WHERE order_id = $1`, [o.id]);
       let forma = b.forma_pagamento;
-      if (o.pago) forma = o.forma_pagamento_prevista === 'cartao' ? (b.forma_pagamento || 'cartao_credito') : 'pix';
+      if (o.pago) {
+        const prev = o.forma_pagamento_prevista;
+        forma = prev === 'cartao' ? (b.forma_pagamento || 'cartao_credito') : ['cartao_credito', 'cartao_debito'].includes(prev) ? prev : 'pix';
+      }
       if (!forma) throw new HttpError(400, 'informe a forma de pagamento para finalizar');
       const venda = await registrarVenda(client, req.user, {
         terminal_id: terminalId,

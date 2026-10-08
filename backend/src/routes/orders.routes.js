@@ -37,7 +37,7 @@ async function proximoNumero(client, tenantId, locationId) {
 const SELECT_PEDIDO = `
   SELECT o.id, o.numero, o.location_id, l.nome AS location_nome, o.origem, o.origem_externa_id, o.cliente_nome, o.cliente_telefone,
          o.tipo, o.endereco, o.taxa_entrega, o.observacao, o.forma_pagamento_prevista, o.pago, o.status,
-         o.entregador_id, c.nome AS entregador_nome, o.sale_id, o.criado_por, u.nome AS criado_por_nome, o.customer_id,
+         o.entregador_id, c.nome AS entregador_nome, o.sale_id, o.criado_por, u.nome AS criado_por_nome, o.customer_id, o.valor_recebido,
          o.criado_em, o.atualizado_em, o.finalizado_em, o.cancelado_em, o.motivo_cancelamento,
          COALESCE((SELECT SUM(oi.subtotal) FROM order_items oi WHERE oi.order_id = o.id), 0) + o.taxa_entrega AS total,
          COALESCE((SELECT MAX(sl.criado_em) FROM order_status_log sl WHERE sl.order_id = o.id), o.criado_em) AS etapa_desde,
@@ -157,6 +157,8 @@ router.post('/orders', async (req, res) => {
   const forma = b.forma_pagamento_prevista === undefined || b.forma_pagamento_prevista === null ? null : String(b.forma_pagamento_prevista);
   if (forma !== null && !FORMAS_PREVISTAS.includes(forma)) throw new HttpError(400, 'forma de pagamento prevista inválida');
   const pago = !!b.pago;
+  const valorRecebido = pago && forma === 'dinheiro' && b.valor_recebido !== undefined && b.valor_recebido !== null && b.valor_recebido !== '' ? Number(b.valor_recebido) : null;
+  if (valorRecebido !== null && !(valorRecebido >= 0)) throw new HttpError(400, 'valor recebido inválido');
 
   const linhas = b.itens.map((i) => {
     if (!i || !isUuid(i.product_id) || !(Number(i.quantidade) > 0)) throw new HttpError(400, 'cada item precisa de product_id válido e quantidade (>0)');
@@ -252,10 +254,10 @@ router.post('/orders', async (req, res) => {
     const numero = await proximoNumero(client, req.user.tenantId, locationId);
     const pedido = await client.query(
       `INSERT INTO orders (tenant_id, location_id, numero, origem, cliente_nome, cliente_telefone, tipo, endereco, taxa_entrega,
-                           observacao, forma_pagamento_prevista, pago, status, criado_por, customer_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'novo', $13, $14) RETURNING id`,
+                           observacao, forma_pagamento_prevista, pago, status, criado_por, customer_id, valor_recebido)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'novo', $13, $14, $15) RETURNING id`,
       [req.user.tenantId, locationId, numero, origem, String(b.cliente_nome || '').trim().slice(0, 120), String(b.cliente_telefone || '').trim().slice(0, 40),
-        tipo, tipo === 'retirada' ? '' : endereco, taxa, String(b.observacao || '').trim().slice(0, 300), forma, pago, req.user.id, customerId]
+        tipo, tipo === 'retirada' ? '' : endereco, taxa, String(b.observacao || '').trim().slice(0, 300), forma, pago, req.user.id, customerId, valorRecebido]
     );
     const orderId = pedido.rows[0].id;
     for (const l of linhas) {
@@ -345,14 +347,14 @@ router.post('/orders/:id/status', async (req, res) => {
       let forma = b.forma_pagamento;
       if (o.pago) {
         const prev = o.forma_pagamento_prevista;
-        forma = prev === 'cartao' ? (b.forma_pagamento || 'cartao_credito') : ['cartao_credito', 'cartao_debito'].includes(prev) ? prev : 'pix';
+        forma = prev === 'dinheiro' ? 'dinheiro' : prev === 'cartao' ? (b.forma_pagamento || 'cartao_credito') : ['cartao_credito', 'cartao_debito'].includes(prev) ? prev : 'pix';
       }
       if (!forma) throw new HttpError(400, 'informe a forma de pagamento para finalizar');
       const venda = await registrarVenda(client, req.user, {
         terminal_id: terminalId,
         itens: itens.rows.map((i) => ({ product_id: i.product_id, quantidade: Number(i.quantidade), observacao: i.observacao })),
         forma_pagamento: forma,
-        valor_recebido: b.valor_recebido,
+        valor_recebido: o.pago && forma === 'dinheiro' ? (o.valor_recebido === null ? undefined : Number(o.valor_recebido)) : b.valor_recebido,
         desconto: 0,
         taxa_entrega: Number(o.taxa_entrega),
         numero_pedido: o.numero,

@@ -48,6 +48,7 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
   const [taxaTxt, setTaxaTxt] = useState('5,00');
   const [pagamento, setPagamento] = useState('dinheiro');
   const [jaPago, setJaPago] = useState(false);
+  const [recebidoTxt, setRecebidoTxt] = useState('');
   const [observacao, setObservacao] = useState('');
   const [itens, setItens] = useState(itensIniciais);
   const [busca, setBusca] = useState('');
@@ -70,6 +71,8 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
 
   const taxa = tipo === 'entrega' ? Math.max(0, parseNumero(taxaTxt) || 0) : 0;
   const subtotal = itens.reduce((s, i) => s + i.preco * i.quantidade, 0);
+  const recebido = parseNumero(recebidoTxt);
+  const troco = Number.isFinite(recebido) ? recebido - (subtotal + taxa) : null;
 
   // "*" lista todos os produtos (ou "*texto" filtra); a lista carrega em lotes ao rolar. Sem "*", busca a partir de 2 letras.
   const modoLista = busca.trim().startsWith('*');
@@ -143,11 +146,12 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
     if (tipo === 'entrega' && endereco.trim().length < 3) { toast.erro('Informe o endereço da entrega.'); return; }
     if (tipo === 'mesa' && !mesa.trim()) { toast.erro('Informe a mesa.'); return; }
     const pag = PAGAMENTOS.find((p) => p.id === pagamento);
+    if (jaPago && pag.forma === 'dinheiro' && !(recebido >= subtotal + taxa)) { toast.erro('Informe o valor recebido (igual ou maior que o total).'); return; }
     setSalvando(true);
     try {
       const pedido = await api.post('/orders', {
         location_id: lojaId, origem, cliente_nome: cliente, cliente_telefone: telefone.replace(/D/g, ''), cadastrar_cliente: cadastrar, tipo, endereco: tipo === 'mesa' ? `Mesa ${mesa.trim().replace(/^mesa\s*/i, '')}` : endereco, taxa_entrega: taxa,
-        observacao, forma_pagamento_prevista: pag.forma, pago: jaPago && pag.forma !== 'dinheiro',
+        observacao, forma_pagamento_prevista: pag.forma, pago: jaPago, valor_recebido: jaPago && pag.forma === 'dinheiro' ? recebido : undefined,
         itens: itens.map((i) => ({ product_id: i.product_id, quantidade: i.quantidade, observacao: i.observacao || '' })),
       });
       onCriado(pedido);
@@ -193,8 +197,12 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
         <label className="field"><span className="field-label">Pagamento</span>
           <select value={pagamento} onChange={(e) => setPagamento(e.target.value)}>{PAGAMENTOS.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}</select>
         </label>
-        {pagamento !== 'dinheiro' && (
-          <label className="cli-check"><input type="checkbox" checked={jaPago} onChange={(e) => setJaPago(e.target.checked)} /> Já pago (pagamento antecipado)</label>
+        <label className="cli-check"><input type="checkbox" checked={jaPago} onChange={(e) => setJaPago(e.target.checked)} /> Já pago (pagamento antecipado)</label>
+        {jaPago && pagamento === 'dinheiro' && (
+          <div className="form-grid">
+            <label className="field"><span className="field-label">Valor recebido (R$)</span><input value={recebidoTxt} onChange={(e) => setRecebidoTxt(e.target.value)} inputMode="decimal" placeholder="0,00" /></label>
+            <div className="field"><span className="field-label">Troco</span><b style={{ padding: '10px 0', color: troco !== null && troco >= 0 ? 'var(--ok)' : 'var(--err)' }}>{troco === null ? '—' : troco >= 0 ? brl(troco) : 'valor insuficiente'}</b></div>
+          </div>
         )}
 
         <div className="ped-sec">

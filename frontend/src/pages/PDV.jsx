@@ -803,7 +803,6 @@ export default function PDV() {
           )}
           {modoPedido && (
             <>
-              {temPreparo && <div className="pedido-pdv-aviso"><b>Produto com preparo (insumos).</b> Este carrinho só pode virar <b>pedido</b>: a cozinha recebe, o estoque dos insumos é reservado.</div>}
               <div className="pedido-pdv-aviso" style={{ border: 'none', background: 'none', padding: '8px 0 0' }}>
                 <span className="field-label">Origem do pedido</span>
                 <div className="ped-seg2" style={{ marginTop: 6 }}>

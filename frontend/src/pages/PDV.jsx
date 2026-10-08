@@ -4,10 +4,11 @@ import { requestFullscreen, isFullscreen as checkIsFullscreen } from '../utils/f
 import { brl, qtd, parseNumero, dataHora, UNIDADES_INTEIRAS, FORMA_PAGAMENTO } from '../utils/format';
 import { useToast, useConfirm } from '../context/UiContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { podeAcessar, telasDoUsuario } from '../utils/permissions';
-import PedidoForm, { ORIGENS, vendaDoPedido } from '../components/PedidoForm.jsx';
+import PedidoForm, { ORIGENS, NOME_ORIGEM, vendaDoPedido } from '../components/PedidoForm.jsx';
 import { Field, Modal } from '../components/ui.jsx';
+import ClienteTelefone from '../components/ClienteTelefone.jsx';
 import Cupom, { imprimirCupom as abrirImpressao, modoAutomatico, configDaVenda } from '../components/Cupom.jsx';
 
 const TROCOS_RAPIDOS = [10, 20, 50, 100, 200];
@@ -24,6 +25,7 @@ export default function PDV() {
   const confirmar = useConfirm();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const podeSangria = podeAcessar(user, 'SangriaSuprimento');
   const podeDesconto = podeAcessar(user, 'Desconto');
   const podeFechar = podeAcessar(user, 'FecharCaixa');
@@ -330,13 +332,82 @@ export default function PDV() {
   // O carrinho so vira pedido quando tem produto que depende de preparo (receita/insumos): lanches. Esse carrinho
   // (inclusive misto, com bebida) vira pedido inteiro. Produto de pronta entrega sai sempre como venda direta.
   const modoPedido = usaPedidos && temPreparo;
+  const rapido = modoPedido && origemPdv === 'balcao';
+
+  // Cliente (so existe com produto de preparo no carrinho): telefone digitado, cadastro localizado e nome para chamar.
+  const [clienteTel, setClienteTel] = useState('');
+  const [clienteInfo, setClienteInfo] = useState(null);
+  const [nomeChamar, setNomeChamar] = useState('');
+  const [comanda, setComanda] = useState(null);
+  const [gerando, setGerando] = useState(false);
+  useEffect(() => {
+    if (!temPreparo) { setClienteTel(''); setClienteInfo(null); setNomeChamar(''); }
+  }, [temPreparo]);
+
+  // "Repetir ultimo pedido" (tela Clientes): carrinho e telefone chegam pela navegacao.
+  const repetido = useRef(false);
+  useEffect(() => {
+    const rep = location.state && location.state.repetir;
+    if (!rep || repetido.current || !terminalId) return;
+    repetido.current = true;
+    (async () => {
+      try {
+        const ids = rep.itens.map((i) => i.product_id).join(',');
+        const prods = await api.get(`/products/search?ids=${ids}&terminal_id=${terminalId}`);
+        const linhas = [];
+        const faltou = [];
+        rep.itens.forEach((i, idx) => {
+          const p = prods.find((x) => x.id === i.product_id);
+          const disp = p ? Number(p.saldo) : 0;
+          const ja = linhas.filter((l) => l.id === i.product_id).reduce((t, l) => t + l.quantidade, 0);
+          if (!p || disp - ja < Number(i.quantidade)) { faltou.push(i.nome); return; }
+          linhas.push({
+            key: `${p.id}#r${idx}`, id: p.id, nome: p.nome, unidade: p.unidade, preco_venda: Number(p.preco_venda), quantidade: Number(i.quantidade),
+            limite: disp, tem_ficha_tecnica: p.tem_ficha_tecnica, insumo_limitante: p.insumo_limitante, observacao: i.observacao || '',
+          });
+        });
+        setCart(linhas);
+        if (rep.telefone) setClienteTel(rep.telefone);
+        if (faltou.length > 0) toast.erro(`Sem estoque disponível, ficaram de fora: ${faltou.join(', ')}`);
+        else toast.sucesso('Itens do último pedido no carrinho');
+      } catch (err) { toast.erro(err); }
+      navigate('/pdv', { replace: true, state: null });
+    })();
+  });
 
   async function pedidoCriado(pedido) {
     setPedidoModal(false);
     setCart([]);
-    toast.sucesso(`Pedido #${pedido.numero} gerado · estoque reservado`);
+    setClienteTel('');
+    setClienteInfo(null);
+    setNomeChamar('');
+    toast.sucesso(`Pedido #${pedido.numero} gerado · estoque reservado${pedido.cliente_novo ? ' · cliente novo cadastrado' : ''}`);
     const cfg = configDaVenda(pedido);
     if (cfg.cozinha.ativo && cfg.cozinha.imprimir_automatico) abrirImpressao(setCupom, vendaDoPedido(pedido), 'cozinha', (m) => toast.sucesso(m));
+    setComanda(pedido);
+  }
+
+  // Pedido rapido (origem Balcao): sem modal; retirada, a pagar no balcao. Telefone cadastrado vincula o cliente.
+  async function gerarPedidoRapido() {
+    if (cart.length === 0 || gerando) return;
+    setGerando(true);
+    try {
+      const pedido = await api.post('/orders', {
+        location_id: terminal.location_id, origem: 'balcao', tipo: 'retirada', cadastrar_cliente: false,
+        cliente_nome: nomeChamar.trim() || (clienteInfo ? clienteInfo.nome : ''), cliente_telefone: clienteInfo ? clienteInfo.telefone : '',
+        forma_pagamento_prevista: 'dinheiro', pago: false,
+        itens: cart.map((i) => ({ product_id: i.id, quantidade: i.quantidade, observacao: i.tem_ficha_tecnica ? (i.observacao || '').trim() : '' })),
+      });
+      await pedidoCriado(pedido);
+    } catch (err) { toast.erro(err); } finally { setGerando(false); }
+  }
+
+  function fecharComanda(imprimir) {
+    if (imprimir && comanda) {
+      const venda = vendaDoPedido(comanda);
+      abrirImpressao(setCupom, venda, configDaVenda(venda).cozinha.ativo ? 'cozinha' : 'cliente', (m) => toast.sucesso(m));
+    }
+    setComanda(null);
     focarBusca();
   }
 
@@ -362,6 +433,7 @@ export default function PDV() {
 
   function abrirPagamento() {
     if (cart.length === 0) return;
+    if (rapido) { gerarPedidoRapido(); return; }
     if (modoPedido) { setPedidoModal(true); return; }
     setFormaPagamento(null);
     setValorRecebido('');
@@ -463,10 +535,15 @@ export default function PDV() {
   }
 
   // ---------- atalhos de teclado ----------
-  const algumModal = pagamentoAberto || !!sucesso || movModalAberto || fecharAberto || pedidoModal;
+  const algumModal = pagamentoAberto || !!sucesso || movModalAberto || fecharAberto || pedidoModal || !!comanda;
   useEffect(() => {
     if (!session) return undefined;
     function onKey(e) {
+      if (comanda) {
+        if (e.key === 'Enter') { e.preventDefault(); fecharComanda(true); }
+        if (e.key === 'Escape') { e.preventDefault(); fecharComanda(false); }
+        return;
+      }
       if (sucesso) {
         if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); novaVenda(); }
         if (e.key.toLowerCase() === 'p' || e.key === 'F9') { e.preventDefault(); imprimirCupom(sucesso.id); }
@@ -669,6 +746,19 @@ export default function PDV() {
             <span>Total</span>
             <strong>{brl(subtotal)}</strong>
           </div>
+          {temPreparo && usaPedidos && (
+            <div className="cli-pdv">
+              <ClienteTelefone telefone={clienteTel} onTelefone={setClienteTel} cliente={clienteInfo} onCliente={setClienteInfo}
+                dica={rapido ? 'O pedido sai no nome deste cliente.' : 'Nome e endereço serão preenchidos no pedido.'}
+                textoNovo={rapido ? 'Telefone não cadastrado: o pedido rápido sai sem cadastro. Use Telefone ou WhatsApp para cadastrar.' : undefined} />
+              {rapido && !clienteInfo && (
+                <label className="field"><span className="field-label">Nome para chamar (opcional)</span>
+                  <input value={nomeChamar} maxLength={60} onChange={(e) => setNomeChamar(e.target.value)} placeholder="Ex.: João"
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } }} />
+                </label>
+              )}
+            </div>
+          )}
           {modoPedido && (
             <>
               {temPreparo && <div className="pedido-pdv-aviso"><b>Produto com preparo (insumos).</b> Este carrinho só pode virar <b>pedido</b>: a cozinha recebe, o estoque dos insumos é reservado.</div>}
@@ -677,17 +767,38 @@ export default function PDV() {
                 <div className="ped-seg2" style={{ marginTop: 6 }}>
                   {ORIGENS.map((o) => <button type="button" key={o.id} className={origemPdv === o.id ? 'on' : ''} onClick={() => setOrigemPdv(o.id)}>{o.nome}</button>)}
                 </div>
-                <div style={{ marginTop: 6 }}>O estoque é reservado ao gerar o pedido.</div>
+                <div style={{ marginTop: 6 }}>{rapido ? <><b>Pedido rápido:</b> sem dados do cliente. F2 fecha o pedido, reserva o estoque e mostra a comanda.</> : 'O estoque é reservado ao gerar o pedido.'}</div>
               </div>
             </>
           )}
-          <button className="btn-finalizar" disabled={cart.length === 0} onClick={abrirPagamento}>{modoPedido ? 'Gerar pedido' : 'Finalizar venda'} <kbd>F2</kbd></button>
+          <button className="btn-finalizar" disabled={cart.length === 0 || gerando} onClick={abrirPagamento}>{rapido ? 'Gerar pedido rápido' : modoPedido ? 'Gerar pedido' : 'Finalizar venda'} <kbd>F2</kbd></button>
         </div>
       </div>
 
       {pedidoModal && terminal && (
-        <PedidoForm lojaId={terminal.location_id} origemInicial={origemPdv} titulo="Gerar pedido" onClose={() => setPedidoModal(false)} onCriado={pedidoCriado}
+        <PedidoForm lojaId={terminal.location_id} origemInicial={origemPdv} titulo="Gerar pedido" telefoneInicial={clienteTel} nomeInicial={clienteInfo ? clienteInfo.nome : ''} onClose={() => setPedidoModal(false)} onCriado={pedidoCriado}
           itensIniciais={cart.map((i) => ({ product_id: i.id, nome: i.nome, unidade: i.unidade, preco: i.preco_venda, quantidade: i.quantidade, observacao: i.tem_ficha_tecnica ? (i.observacao || '').trim() : '', tem_ficha: !!i.tem_ficha_tecnica, limite: i.limite }))} />
+      )}
+
+      {comanda && (
+        <Modal titulo="Comanda gerada" subtitulo="Impressão para a cozinha e via do cliente" onClose={() => fecharComanda(false)}>
+          <div className="comanda-previa">
+            <div className="cp-loja">{comanda.location_nome || 'Lanchonete'}</div>
+            <div className="cp-numero">PEDIDO #{comanda.numero}</div>
+            <div className="cp-centro">{NOME_ORIGEM[comanda.origem] || comanda.origem}{comanda.cliente_nome ? ` · ${comanda.cliente_nome}` : ''}</div>
+            <div className="cp-centro cp-pequeno">{dataHora(comanda.criado_em)}</div>
+            <hr />
+            {comanda.itens.map((i) => <div key={i.id || i.product_id}>{qtd(i.quantidade, i.unidade)}x {i.product_nome || i.nome}{i.observacao ? <div className="cp-obs">Obs.: {i.observacao}</div> : null}</div>)}
+            {comanda.observacao && <div className="cp-obs" style={{ marginTop: 8 }}>OBS: {comanda.observacao}</div>}
+            <hr />
+            <div className="cp-total"><span>TOTAL</span><b>{brl(comanda.total)}</b></div>
+            <div className="cp-centro">{comanda.pago ? 'PAGO' : 'A PAGAR NA RETIRADA'}</div>
+          </div>
+          <div className="modal-actions">
+            <button type="button" onClick={() => { const n = comanda.id; setComanda(null); navigate('/pedidos', { state: { abrir: n } }); }}>Ver em Pedidos</button>
+            <button type="button" autoFocus onClick={() => fecharComanda(true)}>🖨 Imprimir e continuar vendendo <kbd>Enter</kbd></button>
+          </div>
+        </Modal>
       )}
 
       {pagamentoAberto && (

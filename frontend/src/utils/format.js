@@ -65,3 +65,12 @@ export const FORMA_PAGAMENTO = {
   cartao_debito: 'Cartão de débito',
   dinheiro: 'Dinheiro',
 };
+
+// Telefone so com digitos -> (11) 91234-5678.
+export function fmtTel(valor) {
+  const d = String(valor || '').replace(/\D/g, "").slice(0, 11);
+  if (d.length <= 2) return d;
+  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
+  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useToast } from '../context/UiContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -97,6 +98,14 @@ export default function Pedidos() {
     setAberta(id);
     try { setDetalhe(await api.get(`/orders/${id}`)); } catch (err) { toast.erro(err); setAberta(null); }
   }, [toast]);
+
+  // Vindo do PDV ("Ver em Pedidos"): abre direto a gaveta do pedido.
+  const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    const id = location.state && location.state.abrir;
+    if (id) { abrirDetalhe(id); navigate('/pedidos', { replace: true, state: null }); }
+  }, [location.state, navigate, abrirDetalhe]);
 
   async function executar(promessa, mensagem) {
     try {
@@ -297,7 +306,7 @@ function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, onClose, onAva
       <aside className="ped-drawer" role="dialog" aria-label={`Pedido ${p.numero}`}>
         <button type="button" className="modal-close" style={{ float: 'right' }} aria-label="Fechar" onClick={onClose}>×</button>
         <h3>Pedido #{p.numero} <span className="ped-tag">{NOME_ORIGEM[p.origem]}</span></h3>
-        <div className="muted">{p.cliente_nome || 'Cliente'}{p.cliente_telefone ? ` · ${p.cliente_telefone}` : ''}</div>
+        <div className="muted">{p.cliente_nome || 'Cliente'}{p.cliente_telefone ? ` · ${p.cliente_telefone}` : ''}{p.customer_id ? ' · 👤 cliente cadastrado' : ''}</div>
         <div className="muted" style={{ marginTop: 4 }}>{entrega ? `🛵 ${p.endereco}` : '🛍 Retirada no balcão'}</div>
         {p.observacao && <div className="ped-nota"><b>Obs.:</b> {p.observacao}</div>}
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { useToast } from '../context/UiContext.jsx';
 import { Modal } from './ui.jsx';
+import ClienteTelefone from './ClienteTelefone.jsx';
 import { brl, parseNumero, qtd } from '../utils/format';
 
 const LOTE = 30;
@@ -33,11 +34,13 @@ const PAGAMENTOS = [
 
 // Modal "Gerar pedido" / "Novo pedido": dados do cliente, retirada ou entrega, pagamento e itens.
 // No PDV os itens vem do carrinho (permitirBusca = false); na tela Pedidos o operador busca os produtos.
-export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensIniciais = [], permitirBusca = false, mostrarOrigem = false, titulo = 'Gerar pedido', onClose, onCriado }) {
+export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensIniciais = [], permitirBusca = false, mostrarOrigem = false, titulo = 'Gerar pedido', telefoneInicial = '', nomeInicial = '', onClose, onCriado }) {
   const toast = useToast();
   const [origem, setOrigem] = useState(origemInicial);
-  const [cliente, setCliente] = useState('');
-  const [telefone, setTelefone] = useState('');
+  const [cliente, setCliente] = useState(nomeInicial);
+  const [telefone, setTelefone] = useState(telefoneInicial);
+  const [cadastrado, setCadastrado] = useState(null);
+  const [cadastrar, setCadastrar] = useState(true);
   const [tipo, setTipo] = useState('retirada');
   const [endereco, setEndereco] = useState('');
   const [taxaTxt, setTaxaTxt] = useState('5,00');
@@ -52,6 +55,15 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
   const listaRef = useRef(null);
   const [salvando, setSalvando] = useState(false);
   const timer = useRef(null);
+
+  // Cliente cadastrado: nome e endereco padrao entram sozinhos (so se o campo ainda esta vazio).
+  useEffect(() => {
+    if (!cadastrado) return;
+    setCliente((n) => n || cadastrado.nome);
+    const padrao = cadastrado.enderecos.find((e) => e.padrao) || cadastrado.enderecos[0];
+    if (padrao) setEndereco((e) => e || padrao.endereco);
+  }, [cadastrado]);
+  const telefoneNovo = telefone.replace(/D/g, '').length >= 10 && !cadastrado;
 
   const taxa = tipo === 'entrega' ? Math.max(0, parseNumero(taxaTxt) || 0) : 0;
   const subtotal = itens.reduce((s, i) => s + i.preco * i.quantidade, 0);
@@ -130,7 +142,7 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
     setSalvando(true);
     try {
       const pedido = await api.post('/orders', {
-        location_id: lojaId, origem, cliente_nome: cliente, cliente_telefone: telefone, tipo, endereco, taxa_entrega: taxa,
+        location_id: lojaId, origem, cliente_nome: cliente, cliente_telefone: telefone.replace(/D/g, ''), cadastrar_cliente: cadastrar, tipo, endereco, taxa_entrega: taxa,
         observacao, forma_pagamento_prevista: pag.forma, pago: pag.pago,
         itens: itens.map((i) => ({ product_id: i.product_id, quantidade: i.quantidade, observacao: i.observacao || '' })),
       });
@@ -147,9 +159,12 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
               <select value={origem} onChange={(e) => setOrigem(e.target.value)}>{ORIGENS.map((o) => <option key={o.id} value={o.id}>{o.nome}</option>)}</select>
             </label>
           )}
-          <label className="field"><span className="field-label">Nome do cliente</span><input value={cliente} onChange={(e) => setCliente(e.target.value)} placeholder="Nome" autoFocus /></label>
-          <label className="field"><span className="field-label">Telefone</span><input value={telefone} onChange={(e) => setTelefone(e.target.value)} placeholder="(00) 00000-0000" inputMode="tel" /></label>
+          <ClienteTelefone telefone={telefone} onTelefone={setTelefone} cliente={cadastrado} onCliente={setCadastrado} rotulo="Telefone" autoFocus />
+          <label className="field"><span className="field-label">Nome do cliente</span><input value={cliente} onChange={(e) => setCliente(e.target.value)} placeholder="Nome" /></label>
         </div>
+        {telefoneNovo && (
+          <label className="cli-check"><input type="checkbox" checked={cadastrar} onChange={(e) => setCadastrar(e.target.checked)} /> Cadastrar este cliente</label>
+        )}
 
         <div className="field"><span className="field-label">Tipo</span>
           <div className="ped-seg2">
@@ -157,6 +172,9 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
             <button type="button" className={tipo === 'entrega' ? 'on' : ''} onClick={() => setTipo('entrega')}>🛵 Entrega</button>
           </div>
         </div>
+        {tipo === 'entrega' && cadastrado && cadastrado.enderecos.length > 1 && (
+          <div className="cli-chips">{cadastrado.enderecos.map((e) => <button type="button" key={e.id} className={endereco === e.endereco ? 'on' : ''} onClick={() => setEndereco(e.endereco)}>🏠 {e.rotulo}: {e.endereco}</button>)}</div>
+        )}
         {tipo === 'entrega' && (
           <div className="form-grid">
             <label className="field"><span className="field-label">Endereço</span><input value={endereco} onChange={(e) => setEndereco(e.target.value)} placeholder="Rua, nº, bairro" /></label>

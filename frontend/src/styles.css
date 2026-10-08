@@ -1043,3 +1043,37 @@ button.ped-act-btn, .ped-act button { flex: 1; padding: 8px; font-size: 11.5px; 
 .ped-res-rodape { text-align: center; font-size: 12px; color: var(--muted-2); padding: 8px; }
 
 .ped-sec .ped-busca { max-width: none; width: 100%; }
+
+/* ---------- cliente no PDV / pedido ---------- */
+.cli-tel { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.cli-pdv { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.cli-sug { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--panel-alt); }
+.cli-sug button { text-align: left; padding: 8px 12px; background: none; border: none; border-bottom: 1px solid var(--line); color: var(--ivory); cursor: pointer; text-transform: none; letter-spacing: 0; font-weight: 500; }
+.cli-sug button:last-child { border-bottom: none; }
+.cli-sug button:hover { background: var(--hover); }
+.cli-sug small { color: var(--muted); margin-left: 6px; }
+.cli-card { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 10px; font-size: 13px; border: 1px solid var(--accent-line); background: var(--accent-soft); }
+.cli-card.ok { border-color: var(--ok); background: var(--ok-soft); }
+.cli-card.ok > b:first-child { color: var(--ok); }
+.cli-card small { color: var(--muted); }
+.cli-card .cli-dica { margin-top: 4px; color: var(--ivory); }
+.cli-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); text-transform: none; letter-spacing: 0; }
+.cli-check input { width: auto; }
+.cli-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.cli-chips button { padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: none; color: var(--muted); font-size: 12px; cursor: pointer; text-transform: none; letter-spacing: 0; font-weight: 600; }
+.cli-chips button.on { border-color: var(--gold-light); background: var(--accent-soft); color: var(--gold-light); }
+
+/* ---------- comanda gerada (previa) ---------- */
+.comanda-previa { margin: 14px auto 0; max-width: 300px; padding: 14px; border-radius: 8px; background: #fff; color: #111; font-family: monospace; font-size: 13px; }
+.comanda-previa hr { border: none; border-top: 1px dashed #444; margin: 8px 0; }
+.comanda-previa .cp-loja { text-align: center; font-weight: 800; font-size: 15px; }
+.comanda-previa .cp-numero { text-align: center; font-weight: 800; font-size: 30px; margin: 6px 0; }
+.comanda-previa .cp-centro { text-align: center; }
+.comanda-previa .cp-pequeno { font-size: 11px; }
+.comanda-previa .cp-obs { font-weight: 700; }
+.comanda-previa .cp-total { display: flex; justify-content: space-between; font-size: 15px; }
+.cli-tel .field, .cli-pdv .field { flex: 0 0 auto; }
+.pdv-carrinho .cli-sug button:not(.carrinho-item button) { padding: 8px 12px; border-radius: 0; background: none; color: var(--ivory); width: 100%; margin-top: 0; font-weight: 500; text-transform: none; letter-spacing: 0; }
+.pdv-carrinho .cli-sug button:hover:not(.carrinho-item button) { background: var(--hover); }
+.pdv-carrinho .ped-seg2 button:not(.carrinho-item button) { margin-top: 0; padding: 10px; width: auto; flex: 1; background: none; color: var(--muted); border: 1px solid var(--line); font-weight: 700; text-transform: none; letter-spacing: 0; }
+.pdv-carrinho .ped-seg2 button.on:not(.carrinho-item button) { border-color: var(--gold-light); background: var(--accent-soft); color: var(--gold-light); }

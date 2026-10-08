@@ -6,7 +6,7 @@ const diasTxt = (d) => (d === null || d === undefined ? '' : d === 0 ? 'hoje' : 
 
 // Campo de telefone do cliente: 10+ digitos localiza o cadastro (cartao verde); 4-9 digitos sugere ate 3 clientes.
 // O pai guarda o telefone (so texto) e recebe o cliente localizado em onCliente (null quando nao ha cadastro).
-export default function ClienteTelefone({ telefone, onTelefone, cliente, onCliente, autoFocus = false, rotulo = 'Cliente (opcional) — digite o telefone', dica = '', textoNovo = 'Telefone não cadastrado: será criado ao gerar o pedido, com o nome e o endereço informados.' }) {
+export default function ClienteTelefone({ telefone, onTelefone, cliente, onCliente, autoFocus = false, solto = false, rotulo = 'Cliente (opcional) — digite o telefone', dica = '', textoNovo = 'Telefone não cadastrado: será criado ao gerar o pedido, com o nome e o endereço informados.' }) {
   const [sugestoes, setSugestoes] = useState([]);
   const [consultado, setConsultado] = useState(false);
   const timer = useRef(null);
@@ -34,7 +34,7 @@ export default function ClienteTelefone({ telefone, onTelefone, cliente, onClien
   }, [digitos]);
 
   return (
-    <div className="cli-tel">
+    <div className={`cli-tel ${solto ? 'solto' : ''}`}>
       <label className="field">
         <span className="field-label">{rotulo}</span>
         <input value={telefone} onChange={(e) => onTelefone(fmtTel(e.target.value))} placeholder="(00) 00000-0000" inputMode="tel" autoFocus={autoFocus} />

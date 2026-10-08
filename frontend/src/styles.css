@@ -1103,3 +1103,12 @@ button.ped-act-btn, .ped-act button { flex: 1; padding: 8px; font-size: 11.5px; 
 @media (max-width: 900px) { .ped-kpis { grid-template-columns: repeat(2, 1fr); } }
 .ped-drawer textarea, .ped-drawer input, .ped-drawer select { box-sizing: border-box; padding: 9px 11px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-alt); color: var(--ivory); font: inherit; }
 .ped-drawer textarea:focus, .ped-drawer input:focus { border-color: var(--gold-light); outline: none; }
+
+/* dados do cliente no pedido: origem, telefone e nome na mesma linha; cartao do cliente cadastrado abaixo, em largura total */
+.ped-cli-grid { display: grid; grid-template-columns: 1fr 1.2fr 1.4fr; gap: 14px; align-items: start; }
+.ped-cli-grid.sem-origem { grid-template-columns: 1fr 1.2fr; }
+.ped-cli-grid > .field, .ped-cli-grid .cli-tel.solto > .field { grid-row: 1; flex: none; }
+.cli-tel.solto { display: contents; }
+.ped-cli-grid .cli-tel.solto > .cli-sug, .ped-cli-grid .cli-tel.solto > .cli-card { grid-row: 2; grid-column: 1 / -1; }
+.ped-cli-grid .cli-card.ok { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
+@media (max-width: 700px) { .ped-cli-grid, .ped-cli-grid.sem-origem { grid-template-columns: 1fr; } .ped-cli-grid > .field, .ped-cli-grid .cli-tel.solto > .field { grid-row: auto; } .ped-cli-grid .cli-tel.solto > .cli-sug, .ped-cli-grid .cli-tel.solto > .cli-card { grid-row: auto; } }

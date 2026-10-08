@@ -161,13 +161,13 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
   return (
     <Modal titulo={<>{titulo} <span className="ped-tag">{NOME_ORIGEM[origem]}</span></>} onClose={onClose} largura="extra">
       <div className="form-stack">
-        <div className="form-grid">
+        <div className={`ped-cli-grid ${mostrarOrigem ? "" : "sem-origem"}`}>
           {mostrarOrigem && (
             <label className="field"><span className="field-label">Origem</span>
               <select value={origem} onChange={(e) => setOrigem(e.target.value)}>{ORIGENS.map((o) => <option key={o.id} value={o.id}>{o.nome}</option>)}</select>
             </label>
           )}
-          <ClienteTelefone telefone={telefone} onTelefone={setTelefone} cliente={cadastrado} onCliente={setCadastrado} rotulo="Telefone" autoFocus />
+          <ClienteTelefone solto telefone={telefone} onTelefone={setTelefone} cliente={cadastrado} onCliente={setCadastrado} rotulo="Telefone" autoFocus />
           <label className="field"><span className="field-label">Nome do cliente</span><input value={cliente} onChange={(e) => setCliente(e.target.value)} placeholder="Nome" /></label>
         </div>
         {telefoneNovo && (

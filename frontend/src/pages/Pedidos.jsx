@@ -414,7 +414,7 @@ function DestinoModal({ pedido, onClose, onConfirmar }) {
     onConfirmar({ tipo, endereco: tipo === 'mesa' ? `Mesa ${mesa.trim()}` : endereco, taxa_entrega: taxa });
   }
   return (
-    <Modal titulo={`Alterar destino · pedido #${pedido.numero}`} subtitulo="O cliente mudou de ideia? Escolha o novo destino." onClose={onClose}>
+    <Modal titulo={`Alterar destino · pedido #${pedido.numero}`} subtitulo="O cliente mudou de ideia? Escolha o novo destino." onClose={onClose} largura="larga">
       <form className="form-stack" onSubmit={enviar}>
         <div className="ped-seg2">
           <button type="button" className={tipo === 'retirada' ? 'on' : ''} onClick={() => setTipo('retirada')}>🛍 Retirada</button>

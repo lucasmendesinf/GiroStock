@@ -43,6 +43,7 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
   const [cadastrar, setCadastrar] = useState(true);
   const [tipo, setTipo] = useState('retirada');
   const [endereco, setEndereco] = useState('');
+  const [mesa, setMesa] = useState('');
   const [taxaTxt, setTaxaTxt] = useState('5,00');
   const [pagamento, setPagamento] = useState('dinheiro');
   const [observacao, setObservacao] = useState('');
@@ -138,11 +139,12 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
   async function criar() {
     if (itens.length === 0) { toast.erro('Adicione ao menos um item.'); return; }
     if (tipo === 'entrega' && endereco.trim().length < 3) { toast.erro('Informe o endereço da entrega.'); return; }
+    if (tipo === 'mesa' && !mesa.trim()) { toast.erro('Informe a mesa.'); return; }
     const pag = PAGAMENTOS.find((p) => p.id === pagamento);
     setSalvando(true);
     try {
       const pedido = await api.post('/orders', {
-        location_id: lojaId, origem, cliente_nome: cliente, cliente_telefone: telefone.replace(/D/g, ''), cadastrar_cliente: cadastrar, tipo, endereco, taxa_entrega: taxa,
+        location_id: lojaId, origem, cliente_nome: cliente, cliente_telefone: telefone.replace(/D/g, ''), cadastrar_cliente: cadastrar, tipo, endereco: tipo === 'mesa' ? `Mesa ${mesa.trim().replace(/^mesa\s*/i, '')}` : endereco, taxa_entrega: taxa,
         observacao, forma_pagamento_prevista: pag.forma, pago: pag.pago,
         itens: itens.map((i) => ({ product_id: i.product_id, quantidade: i.quantidade, observacao: i.observacao || '' })),
       });
@@ -170,8 +172,12 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
           <div className="ped-seg2">
             <button type="button" className={tipo === 'retirada' ? 'on' : ''} onClick={() => setTipo('retirada')}>🛍 Retirada</button>
             <button type="button" className={tipo === 'entrega' ? 'on' : ''} onClick={() => setTipo('entrega')}>🛵 Entrega</button>
+            <button type="button" className={tipo === 'mesa' ? 'on' : ''} onClick={() => setTipo('mesa')}>🍽 Mesa</button>
           </div>
         </div>
+        {tipo === 'mesa' && (
+          <label className="field"><span className="field-label">Mesa</span><input value={mesa} onChange={(e) => setMesa(e.target.value)} placeholder="Número ou nome da mesa" maxLength={30} /></label>
+        )}
         {tipo === 'entrega' && cadastrado && cadastrado.enderecos.length > 1 && (
           <div className="cli-chips">{cadastrado.enderecos.map((e) => <button type="button" key={e.id} className={endereco === e.endereco ? 'on' : ''} onClick={() => setEndereco(e.endereco)}>🏠 {e.rotulo}: {e.endereco}</button>)}</div>
         )}

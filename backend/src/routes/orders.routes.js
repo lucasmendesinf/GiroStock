@@ -147,10 +147,11 @@ router.post('/orders', async (req, res) => {
   if (!isUuid(locationId)) throw new HttpError(400, 'location_id (loja) é obrigatório');
   const origem = b.origem || 'balcao';
   if (!ORIGENS.includes(origem)) throw new HttpError(400, 'origem inválida');
-  const tipo = b.tipo === 'entrega' ? 'entrega' : 'retirada';
+  const tipo = ['entrega', 'mesa'].includes(b.tipo) ? b.tipo : 'retirada';
   if (!Array.isArray(b.itens) || b.itens.length === 0) throw new HttpError(400, 'adicione ao menos um item ao pedido');
   const endereco = String(b.endereco || '').trim().slice(0, 300);
   if (tipo === 'entrega' && endereco.length < 3) throw new HttpError(400, 'informe o endereço da entrega');
+  if (tipo === 'mesa' && endereco.length < 1) throw new HttpError(400, 'informe a mesa');
   const taxa = tipo === 'entrega' ? Number(b.taxa_entrega || 0) : 0;
   if (!(taxa >= 0)) throw new HttpError(400, 'taxa de entrega inválida');
   const forma = b.forma_pagamento_prevista === undefined || b.forma_pagamento_prevista === null ? null : String(b.forma_pagamento_prevista);
@@ -254,7 +255,7 @@ router.post('/orders', async (req, res) => {
                            observacao, forma_pagamento_prevista, pago, status, criado_por, customer_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'novo', $13, $14) RETURNING id`,
       [req.user.tenantId, locationId, numero, origem, String(b.cliente_nome || '').trim().slice(0, 120), String(b.cliente_telefone || '').trim().slice(0, 40),
-        tipo, tipo === 'entrega' ? endereco : '', taxa, String(b.observacao || '').trim().slice(0, 300), forma, pago, req.user.id, customerId]
+        tipo, tipo === 'retirada' ? '' : endereco, taxa, String(b.observacao || '').trim().slice(0, 300), forma, pago, req.user.id, customerId]
     );
     const orderId = pedido.rows[0].id;
     for (const l of linhas) {

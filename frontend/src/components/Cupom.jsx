@@ -94,9 +94,9 @@ export function ComandaCozinha({ venda, config }) {
       {venda.numero_pedido === null || venda.numero_pedido === undefined ? <div className="cupom-centro">Venda nº {venda.numero}</div> : null}
       {venda.pedido && (
         <div className="cupom-centro">
-          <strong>{venda.pedido.origem} · {venda.pedido.tipo === 'entrega' ? 'ENTREGA' : 'RETIRADA'}</strong>
+          <strong>{venda.pedido.origem} · {venda.pedido.tipo === 'entrega' ? 'ENTREGA' : venda.pedido.tipo === 'mesa' ? 'MESA' : 'RETIRADA'}</strong>
           {venda.pedido.cliente && <div>{venda.pedido.cliente}{venda.pedido.telefone ? ` · ${venda.pedido.telefone}` : ''}</div>}
-          {venda.pedido.tipo === 'entrega' && venda.pedido.endereco && <div className="cupom-texto">{venda.pedido.endereco}</div>}
+          {venda.pedido.tipo !== 'retirada' && venda.pedido.endereco && <div className="cupom-texto">{venda.pedido.endereco}</div>}
         </div>
       )}
       {k.mostrar_data && <div className="cupom-centro">{dataHora(venda.criado_em)}</div>}

@@ -167,7 +167,7 @@ export default function Pedidos() {
         <div className="ped-cli">{p.cliente_nome || 'Cliente'}</div>
         <div className="ped-its">{p.itens.map((i) => `${qtd(i.quantidade)}× ${i.product_nome}`).join(' · ')}</div>
         <div className="ped-r3">
-          <span className="ped-tag">{p.tipo === 'entrega' ? '🛵 Entrega' : '🛍 Retirada'}</span>
+          <span className="ped-tag">{p.tipo === 'entrega' ? '🛵 Entrega' : p.tipo === 'mesa' ? `🍽 ${p.endereco || 'Mesa'}` : '🛍 Retirada'}</span>
           <span className={`ped-pill ${p.pago ? 'ok' : 'warn'}`}>{p.pago ? 'Pago' : 'Receber'}</span>
           {aberto(p) && <span className="ped-tag">🔒 Reservado</span>}
           <span className="ped-tot">{brl(p.total)}</span>
@@ -238,7 +238,7 @@ export default function Pedidos() {
                     <td><b>#{p.numero}</b></td>
                     <td><span className="ped-tag">{NOME_ORIGEM[p.origem]}</span></td>
                     <td>{p.cliente_nome || 'Cliente'}</td>
-                    <td>{p.tipo === 'entrega' ? 'Entrega' : 'Retirada'}</td>
+                    <td>{p.tipo === 'entrega' ? 'Entrega' : p.tipo === 'mesa' ? (p.endereco || 'Mesa') : 'Retirada'}</td>
                     <td>{NOME_STATUS[p.status]}</td>
                     <td><span className={`ped-pill ${p.pago ? 'ok' : 'warn'}`}>{p.pago ? 'Pago' : 'Receber'}</span></td>
                     <td style={{ color: atrasado(p) ? 'var(--warn)' : 'var(--muted-2)' }}>{minutos(p)} min</td>
@@ -307,7 +307,7 @@ function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, onClose, onAva
         <button type="button" className="modal-close" style={{ float: 'right' }} aria-label="Fechar" onClick={onClose}>×</button>
         <h3>Pedido #{p.numero} <span className="ped-tag">{NOME_ORIGEM[p.origem]}</span></h3>
         <div className="muted">{p.cliente_nome || 'Cliente'}{p.cliente_telefone ? ` · ${p.cliente_telefone}` : ''}{p.customer_id ? ' · 👤 cliente cadastrado' : ''}</div>
-        <div className="muted" style={{ marginTop: 4 }}>{entrega ? `🛵 ${p.endereco}` : '🛍 Retirada no balcão'}</div>
+        <div className="muted" style={{ marginTop: 4 }}>{entrega ? `🛵 ${p.endereco}` : p.tipo === 'mesa' ? `🍽 ${p.endereco || 'Mesa'}` : '🛍 Retirada no balcão'}</div>
         {p.observacao && <div className="ped-nota"><b>Obs.:</b> {p.observacao}</div>}
 
         {p.status === 'cancelado' ? (

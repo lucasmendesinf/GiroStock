@@ -338,10 +338,11 @@ export default function PDV() {
   const [clienteTel, setClienteTel] = useState('');
   const [clienteInfo, setClienteInfo] = useState(null);
   const [nomeChamar, setNomeChamar] = useState('');
+  const [mesaRapida, setMesaRapida] = useState('');
   const [comanda, setComanda] = useState(null);
   const [gerando, setGerando] = useState(false);
   useEffect(() => {
-    if (!temPreparo) { setClienteTel(''); setClienteInfo(null); setNomeChamar(''); }
+    if (!temPreparo) { setClienteTel(''); setClienteInfo(null); setNomeChamar(''); setMesaRapida(''); }
   }, [temPreparo]);
 
   // "Repetir ultimo pedido" (tela Clientes): carrinho e telefone chegam pela navegacao.
@@ -382,6 +383,7 @@ export default function PDV() {
     setClienteTel('');
     setClienteInfo(null);
     setNomeChamar('');
+    setMesaRapida('');
     toast.sucesso(`Pedido #${pedido.numero} gerado · estoque reservado${pedido.cliente_novo ? ' · cliente novo cadastrado' : ''}`);
     const cfg = configDaVenda(pedido);
     if (cfg.cozinha.ativo && cfg.cozinha.imprimir_automatico) abrirImpressao(setCupom, vendaDoPedido(pedido), 'cozinha', (m) => toast.sucesso(m));
@@ -394,7 +396,7 @@ export default function PDV() {
     setGerando(true);
     try {
       const pedido = await api.post('/orders', {
-        location_id: terminal.location_id, origem: 'balcao', tipo: 'retirada', cadastrar_cliente: false,
+        location_id: terminal.location_id, origem: 'balcao', tipo: mesaRapida.trim() ? 'mesa' : 'retirada', endereco: mesaRapida.trim() ? 'Mesa ' + mesaRapida.trim().replace(/^mesas*/i, '') : '', cadastrar_cliente: false,
         cliente_nome: nomeChamar.trim() || (clienteInfo ? clienteInfo.nome : ''), cliente_telefone: clienteInfo ? clienteInfo.telefone : '',
         forma_pagamento_prevista: 'dinheiro', pago: false,
         itens: cart.map((i) => ({ product_id: i.id, quantidade: i.quantidade, observacao: i.tem_ficha_tecnica ? (i.observacao || '').trim() : '' })),
@@ -752,6 +754,12 @@ export default function PDV() {
               <ClienteTelefone telefone={clienteTel} onTelefone={setClienteTel} cliente={clienteInfo} onCliente={setClienteInfo}
                 dica={rapido ? 'O pedido sai no nome deste cliente.' : 'Nome e endereço serão preenchidos no pedido.'}
                 textoNovo={rapido ? 'Telefone não cadastrado: o pedido rápido sai sem cadastro. Use Telefone ou WhatsApp para cadastrar.' : undefined} />
+              {rapido && (
+                <label className="field"><span className="field-label">Mesa (opcional — atendimento no salão)</span>
+                  <input value={mesaRapida} maxLength={30} onChange={(e) => setMesaRapida(e.target.value)} placeholder="Ex.: 5"
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } }} />
+                </label>
+              )}
               {rapido && !clienteInfo && (
                 <label className="field"><span className="field-label">Nome para chamar (opcional)</span>
                   <input value={nomeChamar} maxLength={60} onChange={(e) => setNomeChamar(e.target.value)} placeholder="Ex.: João"

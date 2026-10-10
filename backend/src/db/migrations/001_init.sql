@@ -4,7 +4,13 @@
 -- Extensoes sao opcionais: gen_random_uuid() ja existe no PostgreSQL 13+; sem a extensao citext (hospedagem sem
 -- contrib) o tipo CITEXT vira TEXT e o sistema compara e-mails em minusculas (lower()).
 DO $$ BEGIN CREATE EXTENSION IF NOT EXISTS pgcrypto; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN CREATE EXTENSION IF NOT EXISTS citext; EXCEPTION WHEN OTHERS THEN CREATE DOMAIN citext AS TEXT; END $$;
+DO $ BEGIN CREATE EXTENSION IF NOT EXISTS citext; EXCEPTION WHEN OTHERS THEN CREATE DOMAIN citext AS TEXT; END $;
+-- PostgreSQL anterior ao 13 sem pgcrypto: cria gen_random_uuid() equivalente.
+DO $ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'gen_random_uuid') THEN
+    CREATE FUNCTION gen_random_uuid() RETURNS uuid AS $f$ SELECT md5(random()::text || clock_timestamp()::text || random()::text)::uuid $f$ LANGUAGE SQL VOLATILE;
+  END IF;
+END $;
 
 CREATE TABLE tenants (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

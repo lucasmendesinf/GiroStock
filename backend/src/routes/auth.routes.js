@@ -39,7 +39,7 @@ router.post('/login', async (req, res) => {
             t.nome AS empresa_nome, l.nome AS location_nome
      FROM users u JOIN tenants t ON t.id = u.tenant_id
      LEFT JOIN locations l ON l.id = u.location_id
-     WHERE u.email = $1`,
+     WHERE lower(u.email::text) = lower($1)`,
     [email]
   );
   const user = rows[0];

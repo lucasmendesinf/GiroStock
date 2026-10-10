@@ -64,7 +64,7 @@ router.post('/users', requireArea('Configuracoes'), async (req, res) => {
   if (extras.length > 0 && !location_id) throw new HttpError(400, 'escolha a loja principal antes de adicionar outras lojas');
 
   // E-mail e unico no sistema todo: o login nao informa a empresa.
-  const existing = await pool.query(`SELECT 1 FROM users WHERE email = $1`, [email]);
+  const existing = await pool.query(`SELECT 1 FROM users WHERE lower(email::text) = lower($1)`, [email]);
   if (existing.rows.length > 0) {
     return res.status(409).json({ erro: 'já existe um usuário com este email' });
   }

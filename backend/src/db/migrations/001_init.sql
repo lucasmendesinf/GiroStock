@@ -1,8 +1,10 @@
 -- GiroStock — Etapa 2: Estrutura Principal + PDV
 -- Schema multi-tenant. Toda tabela relevante carrega tenant_id.
 
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-CREATE EXTENSION IF NOT EXISTS citext;
+-- Extensoes sao opcionais: gen_random_uuid() ja existe no PostgreSQL 13+; sem a extensao citext (hospedagem sem
+-- contrib) o tipo CITEXT vira TEXT e o sistema compara e-mails em minusculas (lower()).
+DO $$ BEGIN CREATE EXTENSION IF NOT EXISTS pgcrypto; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN CREATE EXTENSION IF NOT EXISTS citext; EXCEPTION WHEN OTHERS THEN CREATE DOMAIN citext AS TEXT; END $$;
 
 CREATE TABLE tenants (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -42,9 +44,7 @@ CREATE TABLE users (
   ativo BOOLEAN NOT NULL DEFAULT true,
   criado_em TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE EXTENSION IF NOT EXISTS citext;
-CREATE EXTENSION IF NOT EXISTS citext;
-CREATE UNIQUE INDEX uq_users_tenant_email ON users(tenant_id, email);
+CREATE UNIQUE INDEX uq_users_tenant_email ON users(tenant_id, lower(email::text));
 CREATE INDEX idx_users_tenant ON users(tenant_id);
 
 CREATE TABLE suppliers (

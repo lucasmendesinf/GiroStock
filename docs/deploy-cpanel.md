@@ -44,6 +44,7 @@ cPanel → **Setup Node.js App** → Criar aplicação:
 - Variáveis de ambiente:
   - `NODE_ENV` = `production`
   - `DATABASE_URL` = `postgres://USUARIO:SENHA@127.0.0.1:5432/calutecc_girostock`
+  - `DATABASE_URL_TESTE` = (opcional) outro banco PostgreSQL, ex.: `calutecc_girostock_teste`, para o Modo teste. Sem ela (ou igual a `DATABASE_URL`) o modo teste fica indisponivel. Crie o banco no cPanel e associe o mesmo usuario; o `npm run migrate` passa a migrar os dois.
   - `JWT_SECRET` = (texto longo e aleatório)
   - `JWT_EXPIRES_IN` = `8h`
 - Clique em **Run NPM Install** e depois em **Restart**.

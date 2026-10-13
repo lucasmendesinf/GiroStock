@@ -80,3 +80,11 @@ O seed cria o administrador de teste (`admin@girostock.local` / `admin123`): **t
 
 ## Relógio do servidor (2FA)
 O 2FA por aplicativo (TOTP) depende de o relógio do servidor estar correto: mantenha o **NTP** ativo (no cPanel/WHM isso é do provedor). Relógio atrasado ou adiantado mais de ~30 s faz os códigos válidos serem recusados.
+
+## Backups e restauração (Painel Master)
+- **Pasta dos backups:** defina `BACKUP_DIR` com uma pasta **fora** do `public_html` e fora do código (ex.: `/home/calutecc/backups-girostock`). Sem a variável, usa `backend/backups` (já ignorada pelo git). A aba "Backups & dados" mostra o erro se a pasta não for gravável.
+- **Sem `pg_dump` no cPanel:** o sistema gera backups em formato próprio (`.gbk.gz`, feito em JavaScript). Com `pg_dump` disponível (ou `PG_BIN_DIR` apontando para a pasta dele), usa `pg_dump -Fc`.
+- **Rotina diária:** roda dentro do processo do app, todo dia depois da hora configurada em Configurações globais (padrão 03:00, hora do servidor), e guarda os automáticos por 30 dias (os manuais nunca são apagados sozinhos). Se o app ficar parado nessa hora, o backup sai assim que ele voltar a rodar no mesmo dia.
+- **Restaurar pela tela:** só vai para o **banco de teste**. Nunca toca na produção.
+- **Restaurar na produção (só pelo servidor):** `BACKUP_ARQUIVO=<nome do arquivo em BACKUP_DIR> npm run restaurar-backup` (script "restaurar-backup" em "Correr script JS"). Ele mostra a data do backup e quantos registros serão perdidos, pede para digitar `RESTAURAR PRODUCAO`, gera um backup de segurança antes, liga o modo manutenção, restaura numa única transação (se falhar, nada muda), registra a auditoria e desliga a manutenção. **Como o Terminal do cPanel pode estar indisponível, o script precisa de entrada digitada: rode-o por SSH ou peça apoio do suporte; não há botão na tela de propósito.**
+- **Migração nova:** `021_master_backups_config.sql` (rode `npm run migrate`; junto com 017–020).

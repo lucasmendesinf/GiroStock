@@ -37,3 +37,15 @@ export async function tokenDoMasterComDoisFatores(base, emailMaster, senhaMaster
   if (!ativ.j || !ativ.j.token) throw new Error('nao foi possivel ativar o 2FA do Master e2e: ' + ativ.s);
   return ativ.j.token;
 }
+
+// Como tokenDoMasterComDoisFatores, mas devolve tambem o segredo TOTP (so em memoria, para o teste gerar codigos).
+export async function masterComSegredo(base, emailMaster, senhaMaster) {
+  const rs = spawnSync('node', ['scripts/resetar-2fa.js'], { cwd: raiz, env: { ...process.env, RESET_EMAIL: emailMaster }, encoding: 'utf8' });
+  if (rs.status !== 0) throw new Error('resetar-2fa falhou: ' + rs.stderr);
+  const lg = await chamar(base, 'POST', '/auth/login', { email: emailMaster, senha: senhaMaster });
+  if (!lg.j || lg.j.mfa !== 'configurar') throw new Error('login do Master inesperado: ' + lg.s);
+  const prep = await chamar(base, 'POST', '/auth/2fa/preparar', null, lg.j.token_mfa);
+  const ativ = await chamar(base, 'POST', '/auth/2fa/ativar', { codigo: totpIndependente(prep.j.chave) }, lg.j.token_mfa);
+  if (!ativ.j || !ativ.j.token) throw new Error('nao foi possivel ativar o 2FA do Master e2e: ' + ativ.s);
+  return { token: ativ.j.token, segredo: prep.j.chave };
+}

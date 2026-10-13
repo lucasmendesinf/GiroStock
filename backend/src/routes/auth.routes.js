@@ -159,6 +159,10 @@ router.get('/me', authRequired, async (req, res) => {
   rows[0].usa_pedidos = await usaPedidos(req.user.tenantId, req.user.locationIds, req.user.perfil);
   rows[0].modoTeste = req.user.modoTeste;
   rows[0].areasEfetivas = req.user.areas;
+  if (req.user.suporte) {
+    // Sessao de suporte: o front ve o Master como Administrador da empresa acessada (mais o estado do suporte).
+    Object.assign(rows[0], { perfil: 'Administrador', location_id: null, location_nome: null, empresa_nome: req.user.suporte.empresaNome, extras: [], permissoes: null });
+  }
   if (req.user.modoTeste) {
     if (req.user.master) {
       const emp = await pool.query(`SELECT id, nome FROM tenants WHERE id = $1`, [req.user.empresaTeste]);
@@ -166,7 +170,7 @@ router.get('/me', authRequired, async (req, res) => {
     }
   }
   const manut = await config.obter('manutencao');
-  res.json({ ...dadosDoUsuario(rows[0]), parametros: await config.parametrosPublicos(), manutencao: manut.ativo && !req.user.master ? { ativo: true, mensagem: manut.mensagem || '' } : null });
+  res.json({ ...dadosDoUsuario(rows[0]), suporte: req.user.suporte ? { ativo: true, empresa: req.user.suporte.empresaNome, empresaId: req.user.suporte.empresaId, edicao: req.user.suporte.edicao, expiraEm: req.user.suporte.expiraEm } : null, parametros: await config.parametrosPublicos(), manutencao: manut.ativo && !req.user.master ? { ativo: true, mensagem: manut.mensagem || '' } : null });
 });
 
 // Troca da propria senha (exige a senha atual).
@@ -197,6 +201,7 @@ function assinar(user, extra = {}) {
 // Na primeira vez (teste ainda sem copia) a copia completa da producao e feita aqui, com confirmacao (confirmar_copia).
 router.post('/modo-teste', authRequired, async (req, res) => {
   const { ativo, empresa_id, confirmar_copia, anonimizar } = req.body || {};
+  if (req.user.suporte) throw new HttpError(409, 'saia da sessão de suporte antes de usar o modo teste');
   if (!req.user.areasProd.ModoTeste) throw new HttpError(403, 'Seu usuário não tem acesso ao modo teste');
   const { rows } = await db.query(`SELECT id, tenant_id, perfil, location_id FROM users WHERE id = $1`, [req.user.id]);
   const user = rows[0];
@@ -391,5 +396,15 @@ router.post('/2fa/codigos-recuperacao', authRequired, async (req, res) => {
   await logAudit(db, { tenantId: user.tenant_id, usuarioId: user.id, acao: 'gerar_codigos_recuperacao_2fa', recurso: 'users', recursoId: user.id });
   res.json({ codigos_recuperacao: codigos });
 });
+
+// Reautenticacao do Master (iniciar suporte): codigo TOTP recente. Mesma contagem de falhas/bloqueio do login; nao aceita codigo de recuperacao.
+router.reautenticarTotp = async (userId, codigo) => {
+  exigir2faDisponivel();
+  const user = await carregarUsuario2fa(userId);
+  if (!user || !user.totp_ativo) throw new HttpError(403, 'é preciso ter a verificação em duas etapas ativa para entrar como suporte');
+  bloqueado(user);
+  if (!(await conferirCodigo(user, String(codigo).trim()))) await falhaCodigo(user);
+  await db.query(`UPDATE users SET totp_falhas = 0, totp_bloqueado_ate = NULL WHERE id = $1`, [user.id]);
+};
 
 module.exports = router;

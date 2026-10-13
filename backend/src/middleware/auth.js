@@ -4,6 +4,9 @@ const { areasEfetivas, MATRIX } = require('./permissions');
 const modoTeste = require('../services/modoTeste');
 const { marcarAcesso } = require('../services/monitoramento');
 const config = require('../services/config');
+const suporte = require('../services/suporte');
+const contextoSuporte = require('../utils/contextoSuporte');
+const { verificar: verificarSuporte } = require('../config/suporteBloqueios');
 const { dadosDaEmpresa, efetivos, aplicarRecursos } = require('../utils/limites');
 
 // Valida o token e recarrega o usuario do banco a cada requisicao: assim um usuario
@@ -67,6 +70,28 @@ async function authRequired(req, res, next) {
     master: user.perfil === 'Master',
     modoTeste: false,
   };
+
+  // ---- Sessao de suporte: o Master age como Administrador da empresa acessada (so por tempo curto, a cada requisicao conferido no banco) ----
+  if (payload.suporte) {
+    if (!master || payload.modo) return res.status(401).json({ erro: 'Sessão de suporte inválida' });
+    let ativa;
+    try { ativa = await suporte.validarSessao(prod, payload.suporte.sessaoId, user, dadosDaEmpresa); } catch (err) { return res.status(err.status || 401).json({ erro: err.message, suporteEncerrado: true }); }
+    const { sessao, empresa: emp } = ativa;
+    const caminho = req.originalUrl.split('?')[0].replace(/^\/api/, '');
+    const bloqueio = verificarSuporte(req.method, caminho, sessao.edicao);
+    if (bloqueio) return res.status(403).json({ erro: bloqueio, suporte: true });
+    req.user = {
+      ...req.user,
+      tenantId: sessao.tenant_id,
+      perfil: 'Administrador',
+      locationId: null,
+      locationIds: [],
+      areas: aplicarRecursos({ ...MATRIX.Administrador, ModoTeste: false, Master: false }, efetivos(emp).recursos),
+      master: true,
+      suporte: { sessaoId: sessao.id, edicao: sessao.edicao, expiraEm: sessao.expira_em, empresaNome: emp.nome, empresaId: sessao.tenant_id },
+    };
+    return contextoSuporte.executar({ sessaoId: sessao.id, masterId: user.id }, () => next());
+  }
 
   if (payload.modo !== 'teste') return next();
 

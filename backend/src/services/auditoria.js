@@ -18,7 +18,9 @@ const TIPOS = [
 ];
 const OUTROS = { codigo: 'outros', rotulo: 'Outros' };
 
-function tipoDaAcao(acao) {
+function tipoDaAcao(acao, detalhes) {
+  // Tudo o que foi feito durante uma sessao de suporte (escritas marcadas por utils/audit.js) conta como suporte.
+  if (detalhes && detalhes.suporte === true) return TIPOS.find((t) => t.codigo === 'suporte');
   for (const t of TIPOS) {
     if ((t.acoes || []).includes(acao) || (t.prefixos || []).some((p) => String(acao).startsWith(p))) return t;
   }
@@ -33,13 +35,14 @@ function condicaoDoTipo(codigo, params) {
     for (const p of t.prefixos || []) { params.push(`${p}%`); partes.push(`a.acao LIKE $${params.length}`); }
     return partes;
   };
+  const marcaSuporte = `COALESCE(a.detalhes @> '{"suporte": true}'::jsonb, false)`;
   if (codigo === 'outros') {
-    const todas = TIPOS.flatMap(lista);
-    return todas.length ? `NOT (${todas.join(' OR ')})` : 'true';
+    const todas = [...TIPOS.flatMap(lista), marcaSuporte];
+    return `NOT (${todas.join(' OR ')})`;
   }
   const t = TIPOS.find((x) => x.codigo === codigo);
   if (!t) return 'false';
-  return `(${lista(t).join(' OR ')})`;
+  return `(${[...lista(t), ...(t.codigo === 'suporte' ? [marcaSuporte] : [])].join(' OR ')})`;
 }
 
 const CHAVE_SENSIVEL = /senha|password|passwd|token|segredo|secret|hash|totp|jwt|authorization|api[_-]?key|database_url/i;
@@ -76,7 +79,7 @@ function montarFiltro(q) {
 const DE = `FROM audit_logs a LEFT JOIN users u ON u.id = a.usuario_id LEFT JOIN tenants t ON t.id = a.tenant_id`;
 
 function linha(r) {
-  const tipo = tipoDaAcao(r.acao);
+  const tipo = tipoDaAcao(r.acao, r.detalhes);
   return {
     id: r.id, criado_em: r.criado_em, acao: r.acao, tipo: tipo.codigo, tipo_rotulo: tipo.rotulo, recurso: r.recurso, recurso_id: r.recurso_id,
     usuario_id: r.usuario_id, usuario_nome: r.usuario_nome, tenant_id: r.tenant_id, empresa_nome: r.empresa_nome,

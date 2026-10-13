@@ -23,6 +23,7 @@ const salesRoutes = require('./routes/sales.routes');
 const reportsRoutes = require('./routes/reports.routes');
 const ordersRoutes = require('./routes/orders.routes');
 const customersRoutes = require('./routes/customers.routes');
+const masterSuporteRoutes = require('./routes/master.suporte.routes');
 const masterRoutes = require('./routes/master.routes');
 const masterVisaoRoutes = require('./routes/master.visao.routes');
 const masterConfigRoutes = require('./routes/master.config.routes');
@@ -51,6 +52,7 @@ app.use('/api', authRequired, salesRoutes);
 app.use('/api', authRequired, reportsRoutes);
 app.use('/api', authRequired, ordersRoutes);
 app.use('/api', authRequired, customersRoutes);
+app.use('/api', authRequired, masterSuporteRoutes); // antes do masterRoutes: "encerrar suporte" precisa passar sem a area Master
 app.use('/api', authRequired, masterRoutes);
 app.use('/api', authRequired, masterVisaoRoutes);
 app.use('/api', authRequired, masterConfigRoutes);

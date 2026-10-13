@@ -20,6 +20,10 @@ async function authRequired(req, res, next) {
   } catch (err) {
     return res.status(401).json({ erro: 'Token inválido ou expirado' });
   }
+  // Token de 2FA pendente/configurar (emitido so depois da senha) NAO abre nenhuma rota de negocio.
+  if (payload.mfa) {
+    return res.status(401).json({ erro: 'Verificação em duas etapas pendente' });
+  }
 
   const prod = pool.producao;
   const { rows } = await prod.query(
@@ -86,4 +90,25 @@ async function authRequired(req, res, next) {
   return pool.executarEmTeste(() => next());
 }
 
-module.exports = { authRequired };
+// Rotas de ativacao do 2FA: aceitam o token completo OU o token_mfa de "configurar" (Master/exigido ainda sem 2FA).
+async function authOuMfaConfigurar(req, res, next) {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) return res.status(401).json({ erro: 'Token de autenticação ausente' });
+  let payload;
+  try {
+    payload = jwt.verify(token, process.env.JWT_SECRET);
+  } catch (err) {
+    return res.status(401).json({ erro: 'Token inválido ou expirado' });
+  }
+  if (!payload.mfa) return authRequired(req, res, next);
+  if (payload.mfa !== 'configurar') return res.status(401).json({ erro: 'Token de verificação não vale para esta rota' });
+  const { rows } = await pool.producao.query(`SELECT id, tenant_id, perfil, ativo FROM users WHERE id = $1`, [payload.sub]);
+  const user = rows[0];
+  if (!user || !user.ativo || user.tenant_id !== payload.tenantId) return res.status(401).json({ erro: 'Usuário inativo ou inexistente' });
+  req.user = { id: user.id, tenantId: user.tenant_id, perfil: user.perfil, master: user.perfil === 'Master', areas: {} };
+  req.mfaConfigurar = true;
+  return next();
+}
+
+module.exports = { authRequired, authOuMfaConfigurar };

@@ -2,7 +2,8 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const pool = require('../db/pool');
-const { authRequired } = require('../middleware/auth');
+const { authRequired, authOuMfaConfigurar } = require('../middleware/auth');
+const totp = require('../services/totp');
 const { areasEfetivas } = require('../middleware/permissions');
 const { logAudit } = require('../utils/audit');
 const { HttpError } = require('../utils/http');
@@ -32,20 +33,33 @@ async function lojasExtras(userId) {
   return rows;
 }
 
+const COLUNAS_LOGIN = `u.id, u.tenant_id, u.nome, u.email, u.senha_hash, u.perfil, u.location_id, u.ativo, u.permissoes, u.deve_trocar_senha,
+            u.totp_ativo, u.totp_exigido, u.totp_segredo_cript, u.totp_ultimo_passo, u.totp_falhas, u.totp_bloqueado_ate,
+            (SELECT COUNT(*)::int FROM user_recovery_codes rc WHERE rc.user_id = u.id AND rc.usado_em IS NULL) AS codigos_restantes,
+            t.nome AS empresa_nome, l.nome AS location_nome`;
+const DE_LOGIN = `FROM users u JOIN tenants t ON t.id = u.tenant_id LEFT JOIN locations l ON l.id = u.location_id`;
+
+// Conclui o login (senha ok e, se houver, 2FA ok): grava ultimo acesso e devolve { token, usuario }.
+async function concluirLogin(user, empresa) {
+  await db.query(`UPDATE users SET ultimo_login = now(), falhas_login = 0 WHERE id = $1`, [user.id]);
+  user.areasEfetivas = aplicarRecursos(areasEfetivas(user.perfil, user.permissoes), empresa ? efetivos(empresa).recursos : null);
+  user.extras = await lojasExtras(user.id);
+  user.usa_pedidos = await usaPedidos(user.tenant_id, [user.location_id, ...user.extras.map((e) => e.id)].filter(Boolean), user.perfil);
+  return { token: assinar(user), usuario: dadosDoUsuario(user) };
+}
+
+// Token curto do 2FA (nao abre rotas de negocio): 'pendente' (5 min) ou 'configurar' (15 min).
+function assinarMfa(user, tipo) {
+  return jwt.sign({ sub: user.id, tenantId: user.tenant_id, mfa: tipo }, process.env.JWT_SECRET, { expiresIn: tipo === 'pendente' ? '5m' : '15m' });
+}
+
 router.post('/login', async (req, res) => {
   const { email, senha } = req.body || {};
   if (!email || !senha) {
     return res.status(400).json({ erro: 'email e senha são obrigatórios' });
   }
 
-  const { rows } = await db.query(
-    `SELECT u.id, u.tenant_id, u.nome, u.email, u.senha_hash, u.perfil, u.location_id, u.ativo, u.permissoes, u.deve_trocar_senha,
-            t.nome AS empresa_nome, l.nome AS location_nome
-     FROM users u JOIN tenants t ON t.id = u.tenant_id
-     LEFT JOIN locations l ON l.id = u.location_id
-     WHERE lower(u.email::text) = lower($1)`,
-    [email]
-  );
+  const { rows } = await db.query(`SELECT ${COLUNAS_LOGIN} ${DE_LOGIN} WHERE lower(u.email::text) = lower($1)`, [email]);
   const user = rows[0];
   if (!user || !user.ativo) {
     return res.status(401).json({ erro: 'Credenciais invalidas' });
@@ -62,26 +76,18 @@ router.post('/login', async (req, res) => {
   if (empresa && empresa.status === 'suspensa') {
     return res.status(403).json({ erro: 'empresa suspensa', empresaSuspensa: true, motivo: empresa.suspenso_motivo || null });
   }
-  await db.query(`UPDATE users SET ultimo_login = now(), falhas_login = 0 WHERE id = $1`, [user.id]);
-  user.areasEfetivas = aplicarRecursos(areasEfetivas(user.perfil, user.permissoes), empresa ? efetivos(empresa).recursos : null);
 
-  const token = jwt.sign(
-    {
-      sub: user.id,
-      tenantId: user.tenant_id,
-      perfil: user.perfil,
-      locationId: user.location_id,
-    },
-    process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRES_IN || '8h' }
-  );
-
-  user.extras = await lojasExtras(user.id);
-  user.usa_pedidos = await usaPedidos(user.tenant_id, [user.location_id, ...user.extras.map((e) => e.id)].filter(Boolean), user.perfil);
-  res.json({
-    token,
-    usuario: dadosDoUsuario(user),
-  });
+  // Segundo fator: senha certa NAO devolve o token completo quando o usuario tem 2FA (ou e obrigado a ter).
+  if (user.totp_ativo) {
+    return res.json({ mfa: 'pendente', token_mfa: assinarMfa(user, 'pendente') });
+  }
+  if (user.perfil === 'Master' || user.totp_exigido) {
+    if (!totp.disponivel()) {
+      return res.status(503).json({ erro: 'Verificação em duas etapas indisponível: o servidor não tem a TOTP_ENC_KEY configurada.' });
+    }
+    return res.json({ mfa: 'configurar', token_mfa: assinarMfa(user, 'configurar') });
+  }
+  res.json(await concluirLogin(user, empresa));
 });
 
 // Dados publicos do usuario logado, incluindo as areas que o perfil acessa
@@ -102,6 +108,7 @@ function dadosDoUsuario(user) {
     usaPedidos: !!user.usa_pedidos,
     locationNome: [user.location_nome, ...(user.extras || []).map((e) => e.nome)].filter(Boolean).join(', ') || null,
     empresaNome: user.empresa_nome,
+    doisFatores: { ativo: !!user.totp_ativo, exigido: master || !!user.totp_exigido, codigosRestantes: user.codigos_restantes || 0 },
     areas: user.areasEfetivas || areasEfetivas(user.perfil, user.permissoes),
   };
 }
@@ -109,7 +116,9 @@ function dadosDoUsuario(user) {
 // Recarrega o usuario logado (perfil/loja podem ter mudado desde o login).
 router.get('/me', authRequired, async (req, res) => {
   const { rows } = await db.query(
-    `SELECT u.id, u.nome, u.email, u.perfil, u.location_id, u.permissoes, u.deve_trocar_senha, t.nome AS empresa_nome, l.nome AS location_nome
+    `SELECT u.id, u.nome, u.email, u.perfil, u.location_id, u.permissoes, u.deve_trocar_senha, u.totp_ativo, u.totp_exigido,
+            (SELECT COUNT(*)::int FROM user_recovery_codes rc WHERE rc.user_id = u.id AND rc.usado_em IS NULL) AS codigos_restantes,
+            t.nome AS empresa_nome, l.nome AS location_nome
      FROM users u JOIN tenants t ON t.id = u.tenant_id
      LEFT JOIN locations l ON l.id = u.location_id
      WHERE u.id = $1`,
@@ -187,6 +196,169 @@ router.post('/modo-teste', authRequired, async (req, res) => {
   }
   await logAudit(db, { tenantId: meuTenant, usuarioId: user.id, acao: 'ligar_modo_teste', recurso: 'modo_teste', detalhes: { empresa_teste: extra.empresaTeste || null } });
   res.json({ token: assinar(user, extra) });
+});
+
+// ================================================================ 2FA (TOTP)
+const MAX_FALHAS_2FA = 5;
+const BLOQUEIO_MIN = 15;
+
+function exigir2faDisponivel() {
+  if (!totp.disponivel()) throw new HttpError(503, 'Verificação em duas etapas indisponível: o servidor não tem a TOTP_ENC_KEY configurada.');
+}
+
+async function carregarUsuario2fa(id) {
+  const { rows } = await db.query(`SELECT ${COLUNAS_LOGIN} ${DE_LOGIN} WHERE u.id = $1`, [id]);
+  return rows[0];
+}
+
+function bloqueado(user) {
+  if (user.totp_bloqueado_ate && new Date(user.totp_bloqueado_ate) > new Date()) {
+    const min = Math.max(1, Math.ceil((new Date(user.totp_bloqueado_ate) - new Date()) / 60000));
+    throw Object.assign(new HttpError(429, `Muitas tentativas. Tente novamente em ${min} min.`), { minutos: min });
+  }
+}
+
+// Erro de codigo: conta a falha; a 5a bloqueia por 15 min (429). Mensagem generica.
+async function falhaCodigo(user) {
+  const { rows } = await db.query(`UPDATE users SET totp_falhas = totp_falhas + 1 WHERE id = $1 RETURNING totp_falhas`, [user.id]);
+  if (rows[0].totp_falhas >= MAX_FALHAS_2FA) {
+    await db.query(`UPDATE users SET totp_falhas = 0, totp_bloqueado_ate = now() + interval '${BLOQUEIO_MIN} minutes' WHERE id = $1`, [user.id]);
+    await logAudit(db, { tenantId: user.tenant_id, usuarioId: user.id, acao: 'bloquear_2fa', recurso: 'users', recursoId: user.id, detalhes: { minutos: BLOQUEIO_MIN } });
+    throw Object.assign(new HttpError(429, `Muitas tentativas. Tente novamente em ${BLOQUEIO_MIN} min.`), { minutos: BLOQUEIO_MIN });
+  }
+  throw new HttpError(400, 'código inválido');
+}
+
+// Confere TOTP (e, se permitido, codigo de recuperacao de uso unico). Devolve 'totp' | 'recuperacao' | null.
+async function conferirCodigo(user, codigo, { recuperacao = false } = {}) {
+  const segredo = totp.decifrar(user.totp_segredo_cript);
+  const passo = totp.verificar(segredo, codigo, user.totp_ultimo_passo);
+  if (passo !== null) {
+    // O UPDATE condicional impede que o MESMO codigo valha duas vezes, mesmo em requisicoes simultaneas.
+    const r = await db.query(`UPDATE users SET totp_ultimo_passo = $1 WHERE id = $2 AND (totp_ultimo_passo IS NULL OR totp_ultimo_passo < $1)`, [passo, user.id]);
+    if (r.rowCount === 1) return 'totp';
+    return null;
+  }
+  if (recuperacao && totp.pareceRecuperacao(codigo)) {
+    const { rows } = await db.query(`SELECT id, codigo_hash FROM user_recovery_codes WHERE user_id = $1 AND usado_em IS NULL`, [user.id]);
+    const norm = totp.normalizarRecuperacao(codigo);
+    for (const c of rows) {
+      if (await bcrypt.compare(norm, c.codigo_hash)) {
+        const r = await db.query(`UPDATE user_recovery_codes SET usado_em = now() WHERE id = $1 AND usado_em IS NULL`, [c.id]);
+        return r.rowCount === 1 ? 'recuperacao' : null;
+      }
+    }
+  }
+  return null;
+}
+
+async function novosCodigosRecuperacao(userId) {
+  const codigos = totp.gerarCodigosRecuperacao(10);
+  await db.query(`DELETE FROM user_recovery_codes WHERE user_id = $1`, [userId]);
+  for (const c of codigos) {
+    await db.query(`INSERT INTO user_recovery_codes (user_id, codigo_hash) VALUES ($1, $2)`, [userId, await totp.hashRecuperacao(c)]);
+  }
+  return codigos;
+}
+
+function tokenMfa(req, tipo) {
+  try {
+    const p = jwt.verify(String((req.body || {}).token_mfa || ''), process.env.JWT_SECRET);
+    if (p.mfa !== tipo) throw new Error('tipo');
+    return p;
+  } catch (err) {
+    throw new HttpError(401, 'Sessão de verificação expirada: entre novamente.');
+  }
+}
+
+// Segundo passo do login: codigo do app autenticador OU codigo de recuperacao.
+router.post('/2fa/verificar', async (req, res) => {
+  const p = tokenMfa(req, 'pendente');
+  const codigo = String((req.body || {}).codigo || '').trim();
+  if (!codigo) throw new HttpError(400, 'informe o código');
+  exigir2faDisponivel();
+  const user = await carregarUsuario2fa(p.sub);
+  if (!user || !user.ativo || !user.totp_ativo) throw new HttpError(401, 'Sessão de verificação inválida: entre novamente.');
+  bloqueado(user);
+  const empresa = user.perfil === 'Master' ? null : await dadosDaEmpresa(db, user.tenant_id);
+  if (empresa && empresa.status === 'suspensa') {
+    return res.status(403).json({ erro: 'empresa suspensa', empresaSuspensa: true, motivo: empresa.suspenso_motivo || null });
+  }
+  const tipo = await conferirCodigo(user, codigo, { recuperacao: true });
+  if (!tipo) await falhaCodigo(user);
+  await db.query(`UPDATE users SET totp_falhas = 0, totp_bloqueado_ate = NULL WHERE id = $1`, [user.id]);
+  const resp = await concluirLogin(user, empresa);
+  if (tipo === 'recuperacao') {
+    const restantes = Number((await db.query(`SELECT COUNT(*) AS n FROM user_recovery_codes WHERE user_id = $1 AND usado_em IS NULL`, [user.id])).rows[0].n);
+    await logAudit(db, { tenantId: user.tenant_id, usuarioId: user.id, acao: 'login_codigo_recuperacao', recurso: 'users', recursoId: user.id, detalhes: { restantes } });
+    resp.usuario.doisFatores.codigosRestantes = restantes;
+    resp.aviso = `Você entrou com um código de recuperação. Restam ${restantes}.`;
+  }
+  res.json(resp);
+});
+
+// Prepara a ativacao: segredo novo (ainda nao ativo), guardado CIFRADO; devolve QR (PNG), chave para digitar e URI.
+router.post('/2fa/preparar', authOuMfaConfigurar, async (req, res) => {
+  exigir2faDisponivel();
+  const user = await carregarUsuario2fa(req.user.id);
+  if (user.totp_ativo) throw new HttpError(409, 'a verificação em duas etapas já está ativa');
+  const segredo = totp.gerarSegredo();
+  await db.query(`UPDATE users SET totp_segredo_cript = $1, totp_ultimo_passo = NULL WHERE id = $2`, [totp.cifrar(segredo), user.id]);
+  const uri = totp.uriOtpauth(user.email, segredo);
+  res.json({ qr: await totp.qrDataUrl(uri), chave: segredo, uri });
+});
+
+// Confirma com um codigo do app, ativa e mostra os 10 codigos de recuperacao UMA unica vez.
+router.post('/2fa/ativar', authOuMfaConfigurar, async (req, res) => {
+  exigir2faDisponivel();
+  const user = await carregarUsuario2fa(req.user.id);
+  if (user.totp_ativo) throw new HttpError(409, 'a verificação em duas etapas já está ativa');
+  if (!user.totp_segredo_cript) throw new HttpError(400, 'gere o QR code primeiro');
+  const passo = totp.verificar(totp.decifrar(user.totp_segredo_cript), (req.body || {}).codigo, null);
+  if (passo === null) throw new HttpError(400, 'código inválido');
+  await db.query(`UPDATE users SET totp_ativo = true, totp_ativado_em = now(), totp_ultimo_passo = $1, totp_falhas = 0, totp_bloqueado_ate = NULL WHERE id = $2`, [passo, user.id]);
+  const codigos = await novosCodigosRecuperacao(user.id);
+  await logAudit(db, { tenantId: user.tenant_id, usuarioId: user.id, acao: 'ativar_2fa', recurso: 'users', recursoId: user.id });
+  const resp = { ativo: true, codigos_recuperacao: codigos };
+  if (req.mfaConfigurar) {
+    // Login concluido: Master/usuario com 2FA exigido ativou agora.
+    const empresa = user.perfil === 'Master' ? null : await dadosDaEmpresa(db, user.tenant_id);
+    const novo = await carregarUsuario2fa(user.id);
+    Object.assign(resp, await concluirLogin(novo, empresa));
+  }
+  res.json(resp);
+});
+
+async function conferirSenhaECodigo(req) {
+  exigir2faDisponivel();
+  const { senha, codigo } = req.body || {};
+  if (!senha || !codigo) throw new HttpError(400, 'informe a senha e o código atual');
+  const user = await carregarUsuario2fa(req.user.id);
+  if (!user.totp_ativo) throw new HttpError(409, 'a verificação em duas etapas não está ativa');
+  bloqueado(user);
+  if (!(await bcrypt.compare(String(senha), user.senha_hash))) throw new HttpError(400, 'senha incorreta');
+  if (!(await conferirCodigo(user, codigo))) await falhaCodigo(user);
+  return user;
+}
+
+router.post('/2fa/desativar', authRequired, async (req, res) => {
+  const atual = await carregarUsuario2fa(req.user.id);
+  if (atual.perfil === 'Master' || atual.totp_exigido) throw new HttpError(403, 'Este usuário é obrigado a manter a verificação em duas etapas.');
+  const user = await conferirSenhaECodigo(req);
+  await db.query(
+    `UPDATE users SET totp_ativo = false, totp_segredo_cript = NULL, totp_ativado_em = NULL, totp_ultimo_passo = NULL, totp_falhas = 0, totp_bloqueado_ate = NULL WHERE id = $1`,
+    [user.id]
+  );
+  await db.query(`DELETE FROM user_recovery_codes WHERE user_id = $1`, [user.id]);
+  await logAudit(db, { tenantId: user.tenant_id, usuarioId: user.id, acao: 'desativar_2fa', recurso: 'users', recursoId: user.id });
+  res.json({ ativo: false });
+});
+
+router.post('/2fa/codigos-recuperacao', authRequired, async (req, res) => {
+  const user = await conferirSenhaECodigo(req);
+  const codigos = await novosCodigosRecuperacao(user.id);
+  await logAudit(db, { tenantId: user.tenant_id, usuarioId: user.id, acao: 'gerar_codigos_recuperacao_2fa', recurso: 'users', recursoId: user.id });
+  res.json({ codigos_recuperacao: codigos });
 });
 
 module.exports = router;

@@ -24,7 +24,8 @@
     "helmet": "6.2.0",
     "jsonwebtoken": "^9.0.2",
     "pg": "8.11.3",
-    "pg-copy-streams": "^7.0.0"
+    "pg-copy-streams": "^7.0.0",
+    "qrcode": "^1.5.4"
   },
   "engines": {
     "node": ">=14.21"

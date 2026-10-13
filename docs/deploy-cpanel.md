@@ -47,6 +47,7 @@ cPanel → **Setup Node.js App** → Criar aplicação:
   - `DATABASE_URL_TESTE` = (opcional) outro banco PostgreSQL, ex.: `calutecc_girostock_teste`, para o Modo teste. Sem ela (ou igual a `DATABASE_URL`) o modo teste fica indisponivel. Crie o banco no cPanel e associe o mesmo usuario; o `npm run migrate` passa a migrar os dois.
   - `JWT_SECRET` = (texto longo e aleatório)
   - `JWT_EXPIRES_IN` = `8h`
+  - `TOTP_ENC_KEY` = chave do 2FA (32 bytes em base64 ou 64 hexadecimais). Gere com `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`, digite você mesmo no painel e **guarde uma cópia**: sem ela os 2FA ativos deixam de funcionar. Sem a variável, o 2FA fica indisponível (e o Master não consegue entrar, pois o 2FA dele é obrigatório).
 - Clique em **Run NPM Install** e depois em **Restart**.
 (A porta é definida pelo Passenger; o servidor lê `process.env.PORT`.)
 
@@ -75,3 +76,6 @@ O seed cria o administrador de teste (`admin@girostock.local` / `admin123`): **t
   3. **Remova as duas variáveis** e reinicie o app.
 - O Master de produção é criado com `npm run master` usando `MASTER_EMAIL`, `MASTER_PASSWORD` (mín. 8 caracteres) e `MASTER_NOME` digitados no ambiente; remova-as depois.
 - Use senhas fortes e únicas, guardadas em um gerenciador de senhas. Não coloque senhas em arquivos versionados nem em mensagens.
+
+## Relógio do servidor (2FA)
+O 2FA por aplicativo (TOTP) depende de o relógio do servidor estar correto: mantenha o **NTP** ativo (no cPanel/WHM isso é do provedor). Relógio atrasado ou adiantado mais de ~30 s faz os códigos válidos serem recusados.

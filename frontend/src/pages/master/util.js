@@ -22,3 +22,25 @@ export function quando(v) {
   if (dias === 1) return 'ontem';
   return `há ${dias} dias`;
 }
+
+export function bytes(n) {
+  if (n === null || n === undefined) return '—';
+  const u = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0; let v = Number(n);
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i += 1; }
+  return `${v.toFixed(v >= 100 || i === 0 ? 0 : 1).replace('.', ',')} ${u[i]}`;
+}
+
+// Baixa um arquivo protegido (precisa do token): busca com Authorization e entrega ao navegador.
+export async function baixarArquivo(url, nome) {
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${localStorage.getItem('girostock_token')}` } });
+  if (!res.ok) {
+    let msg = `Erro ${res.status}`;
+    try { msg = (await res.json()).erro || msg; } catch { /* sem corpo */ }
+    throw new Error(msg);
+  }
+  const href = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = href; a.download = nome; a.click();
+  URL.revokeObjectURL(href);
+}

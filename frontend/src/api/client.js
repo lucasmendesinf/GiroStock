@@ -32,6 +32,11 @@ async function request(path, { method = 'GET', body, token: tokenExplicito } = {
       clearSession();
       window.location.assign('/login');
     }
+    // Modo manutencao: o servidor responde 503 com a mensagem; a tela de manutencao assume (o Master nunca recebe isso).
+    if (res.status === 503 && data && data.manutencao && token && !path.startsWith('/auth/')) {
+      try { sessionStorage.setItem('girostock_manutencao', data.erro || ''); } catch { /* sem armazenamento */ }
+      window.location.assign('/manutencao');
+    }
     if (data && data.modoTesteRevogado && token) {
       clearSession();
       window.location.assign('/login');

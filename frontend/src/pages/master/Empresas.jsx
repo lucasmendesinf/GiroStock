@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../api/client';
 import { useToast } from '../../context/UiContext.jsx';
 import { Modal } from '../../components/ui.jsx';
-import { gerarSenha, quando } from './util.js';
+import { baixarArquivo, gerarSenha, quando } from './util.js';
 import SenhaUnicaModal from './SenhaUnicaModal.jsx';
 import NovoUsuarioModal from './NovoUsuarioModal.jsx';
 
@@ -26,6 +26,13 @@ export default function Empresas() {
   const abrir = useCallback(async (id) => {
     try { setFicha(await api.get(`/master/empresas/${id}`)); } catch (err) { toast.erro(err); }
   }, [toast]);
+  async function exportarDados(f) {
+    try {
+      const r = await api.post(`/master/empresas/${f.id}/exportar`);
+      await baixarArquivo(`/api/master/exportacoes/${r.arquivo}`, r.arquivo);
+      toast.sucesso(`Dados de ${f.nome} exportados (${Object.values(r.contagens).reduce((a, n) => a + n, 0)} registros).`);
+    } catch (err) { toast.erro(err); }
+  }
   async function atualizarFicha(id) { await carregar(); await abrir(id); }
 
   const lista = useMemo(() => {
@@ -144,7 +151,7 @@ export default function Empresas() {
 
             <div className="cl-linha-btn" style={{ justifyContent: 'flex-start', marginTop: 18, flexWrap: 'wrap' }}>
               <button type="button" className="btn-link" disabled title="Fase 4 — em breve">Entrar como suporte · em breve</button>
-              <button type="button" className="btn-link" disabled title="Fase 3 — em breve">Exportar dados · em breve</button>
+              <button type="button" className="btn-link" onClick={() => exportarDados(ficha)}>Exportar dados</button>
               {ficha.status === 'ativa'
                 ? <button type="button" className="btn-link perigo" onClick={() => setSuspender(ficha)}>Suspender</button>
                 : <button type="button" className="btn-link" onClick={reativar}>Reativar</button>}

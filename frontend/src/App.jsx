@@ -9,6 +9,8 @@ import { api } from './api/client';
 import { exitFullscreen } from './utils/fullscreen.js';
 import { podeAcessar, rotaInicial, telasDoUsuario } from './utils/permissions.js';
 import Login from './pages/Login.jsx';
+import Manutencao from './pages/Manutencao.jsx';
+import AvisoGlobal from './components/AvisoGlobal.jsx';
 import Home from './pages/Home.jsx';
 import PDV from './pages/PDV.jsx';
 import Pedidos from './pages/Pedidos.jsx';
@@ -134,6 +136,7 @@ function Layout({ children }) {
 
   return (
     <div className="app-shell">
+      <AvisoGlobal />
       <FaixaTeste />
       <header className="topbar">
         <div className="brand">GiroStock</div>
@@ -179,6 +182,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/manutencao" element={<Manutencao />} />
       <Route path="/master/*" element={<Private area="Master"><Master /></Private>} />
       <Route path="/inicio" element={<Private><Home /></Private>} />
       <Route path="/pdv" element={<Private area="Vendas"><PDV /></Private>} />

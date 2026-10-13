@@ -159,8 +159,9 @@ export default function VisaoGeral() {
         <div className="row-actions">
           <NavLink className="btn-link" to="/master/modo-teste">Modo teste</NavLink>
           <NavLink className="btn-link" to="/master/auditoria">Auditoria</NavLink>
-          <button type="button" className="btn-link" disabled title="Em breve">Gerar backup agora <small>(em breve)</small></button>
-          <button type="button" className="btn-link" disabled title="Em breve">Aviso a todos <small>(em breve)</small></button>
+          <NavLink className="btn-link" to="/master/backups">Gerar backup</NavLink>
+          <NavLink className="btn-link" to="/master/config">Aviso a todos</NavLink>
+          <NavLink className="btn-link" to="/master/config">Modo manutenção</NavLink>
         </div>
       </div>
 

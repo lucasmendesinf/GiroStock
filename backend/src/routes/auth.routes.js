@@ -7,6 +7,7 @@ const { areasEfetivas } = require('../middleware/permissions');
 const { logAudit } = require('../utils/audit');
 const { HttpError } = require('../utils/http');
 const modoTeste = require('../services/modoTeste');
+const { dadosDaEmpresa, efetivos, aplicarRecursos } = require('../utils/limites');
 
 const router = express.Router();
 // Login, /me, troca de senha e ativacao do modo teste usam SEMPRE a producao (usuarios e permissoes moram la).
@@ -38,7 +39,7 @@ router.post('/login', async (req, res) => {
   }
 
   const { rows } = await db.query(
-    `SELECT u.id, u.tenant_id, u.nome, u.email, u.senha_hash, u.perfil, u.location_id, u.ativo, u.permissoes,
+    `SELECT u.id, u.tenant_id, u.nome, u.email, u.senha_hash, u.perfil, u.location_id, u.ativo, u.permissoes, u.deve_trocar_senha,
             t.nome AS empresa_nome, l.nome AS location_nome
      FROM users u JOIN tenants t ON t.id = u.tenant_id
      LEFT JOIN locations l ON l.id = u.location_id
@@ -52,8 +53,17 @@ router.post('/login', async (req, res) => {
 
   const ok = await bcrypt.compare(senha, user.senha_hash);
   if (!ok) {
+    // Contagem de falhas (painel Master > Usuarios & seguranca): zera no login correto.
+    await db.query(`UPDATE users SET falhas_login = falhas_login + 1, ultima_falha_em = now() WHERE id = $1`, [user.id]);
     return res.status(401).json({ erro: 'Credenciais invalidas' });
   }
+  // Empresa suspensa: nao entra (o Master nunca e bloqueado).
+  const empresa = user.perfil === 'Master' ? null : await dadosDaEmpresa(db, user.tenant_id);
+  if (empresa && empresa.status === 'suspensa') {
+    return res.status(403).json({ erro: 'empresa suspensa', empresaSuspensa: true, motivo: empresa.suspenso_motivo || null });
+  }
+  await db.query(`UPDATE users SET ultimo_login = now(), falhas_login = 0 WHERE id = $1`, [user.id]);
+  user.areasEfetivas = aplicarRecursos(areasEfetivas(user.perfil, user.permissoes), empresa ? efetivos(empresa).recursos : null);
 
   const token = jwt.sign(
     {
@@ -79,6 +89,7 @@ router.post('/login', async (req, res) => {
 function dadosDoUsuario(user) {
   const master = user.perfil === 'Master';
   return {
+    deveTrocarSenha: !!user.deve_trocar_senha,
     master,
     modoTeste: !!user.modoTeste,
     empresaTeste: user.empresaTeste || null,
@@ -98,7 +109,7 @@ function dadosDoUsuario(user) {
 // Recarrega o usuario logado (perfil/loja podem ter mudado desde o login).
 router.get('/me', authRequired, async (req, res) => {
   const { rows } = await db.query(
-    `SELECT u.id, u.nome, u.email, u.perfil, u.location_id, u.permissoes, t.nome AS empresa_nome, l.nome AS location_nome
+    `SELECT u.id, u.nome, u.email, u.perfil, u.location_id, u.permissoes, u.deve_trocar_senha, t.nome AS empresa_nome, l.nome AS location_nome
      FROM users u JOIN tenants t ON t.id = u.tenant_id
      LEFT JOIN locations l ON l.id = u.location_id
      WHERE u.id = $1`,
@@ -108,8 +119,8 @@ router.get('/me', authRequired, async (req, res) => {
   // Em modo teste, o menu (Pedidos etc.) reflete o banco de teste: `pool` acompanha o contexto da requisicao.
   rows[0].usa_pedidos = await usaPedidos(req.user.tenantId, req.user.locationIds, req.user.perfil);
   rows[0].modoTeste = req.user.modoTeste;
+  rows[0].areasEfetivas = req.user.areas;
   if (req.user.modoTeste) {
-    rows[0].areasEfetivas = req.user.areas;
     if (req.user.master) {
       const emp = await pool.query(`SELECT id, nome FROM tenants WHERE id = $1`, [req.user.empresaTeste]);
       rows[0].empresaTeste = emp.rows[0] || null;
@@ -128,7 +139,7 @@ router.post('/change-password', authRequired, async (req, res) => {
     throw new HttpError(400, 'senha atual incorreta');
   }
   const hash = await bcrypt.hash(String(nova_senha), 10);
-  await db.query(`UPDATE users SET senha_hash = $1 WHERE id = $2`, [hash, req.user.id]);
+  await db.query(`UPDATE users SET senha_hash = $1, deve_trocar_senha = false WHERE id = $2`, [hash, req.user.id]);
   await logAudit(db, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'trocar_senha', recurso: 'users', recursoId: req.user.id });
   res.status(204).send();
 });

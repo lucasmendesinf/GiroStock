@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const pool = require('../db/pool');
 const { areasEfetivas, MATRIX } = require('./permissions');
 const modoTeste = require('../services/modoTeste');
+const { dadosDaEmpresa, efetivos, aplicarRecursos } = require('../utils/limites');
 
 // Valida o token e recarrega o usuario do banco a cada requisicao: assim um usuario
 // desativado perde o acesso na hora, e mudancas de perfil/local valem sem novo login.
@@ -22,16 +23,27 @@ async function authRequired(req, res, next) {
 
   const prod = pool.producao;
   const { rows } = await prod.query(
-    `SELECT id, tenant_id, perfil, location_id, ativo, permissoes FROM users WHERE id = $1`,
+    `SELECT id, tenant_id, perfil, location_id, ativo, permissoes, sessoes_validas_desde FROM users WHERE id = $1`,
     [payload.sub]
   );
   const user = rows[0];
   if (!user || !user.ativo || user.tenant_id !== payload.tenantId) {
     return res.status(401).json({ erro: 'Usuário inativo ou inexistente' });
   }
+  // Encerrar sessoes: tokens emitidos antes de sessoes_validas_desde deixam de valer (comparacao em segundos inteiros).
+  if (user.sessoes_validas_desde && payload.iat < Math.floor(new Date(user.sessoes_validas_desde).getTime() / 1000)) {
+    return res.status(401).json({ erro: 'Sessão encerrada: entre novamente' });
+  }
+  // Empresa suspensa: cai na hora, tambem para sessoes ja abertas (o Master nunca e bloqueado).
+  const master = user.perfil === 'Master';
+  const empresa = master ? null : await dadosDaEmpresa(prod, user.tenant_id);
+  if (empresa && empresa.status === 'suspensa') {
+    return res.status(403).json({ erro: 'empresa suspensa', empresaSuspensa: true, motivo: empresa.suspenso_motivo || null });
+  }
   const extras = await prod.query(`SELECT location_id FROM user_locations WHERE user_id = $1`, [user.id]);
   const locationIds = [user.location_id, ...extras.rows.map((r) => r.location_id)].filter(Boolean);
-  const areasProd = areasEfetivas(user.perfil, user.permissoes);
+  // Recursos da empresa (Pedidos/Clientes) valem para todos os usuarios dela, num ponto so.
+  const areasProd = aplicarRecursos(areasEfetivas(user.perfil, user.permissoes), empresa ? efetivos(empresa).recursos : null);
   req.user = {
     id: user.id,
     tenantId: user.tenant_id,
@@ -67,7 +79,9 @@ async function authRequired(req, res, next) {
     req.user.perfil = 'Administrador';
     req.user.locationId = null;
     req.user.locationIds = [];
-    req.user.areas = { ...MATRIX.Administrador, ModoTeste: true, Master: true };
+    // Simula a empresa escolhida: os recursos dela (Pedidos/Clientes) tambem valem.
+    const empTeste = await dadosDaEmpresa(prod, payload.empresaTeste);
+    req.user.areas = aplicarRecursos({ ...MATRIX.Administrador, ModoTeste: true, Master: true }, empTeste ? efetivos(empTeste).recursos : null);
   }
   return pool.executarEmTeste(() => next());
 }

@@ -6,6 +6,7 @@ const { getOwned, getOwnedLocation } = require('../utils/tenant');
 const { filtroLocais } = require('../utils/access');
 const { HttpError } = require('../utils/http');
 const { configEfetiva } = require('../utils/cupom');
+const { checarLimite } = require('../utils/limites');
 
 const router = express.Router();
 
@@ -22,6 +23,7 @@ router.get('/locations', async (req, res) => {
 router.post('/locations', requireArea('Configuracoes'), async (req, res) => {
   const nome = String((req.body && req.body.nome) || '').trim();
   if (!nome) return res.status(400).json({ erro: 'nome é obrigatório' });
+  await checarLimite(pool, req.user.tenantId, 'lojas');
   const { rows } = await pool.query(
     `INSERT INTO locations (tenant_id, nome, usa_comanda, usa_pedidos) VALUES ($1, $2, $3, $4) RETURNING id, nome, ativo, usa_comanda, usa_pedidos`,
     [req.user.tenantId, nome, !!(req.body && req.body.usa_comanda), !!(req.body && req.body.usa_pedidos)]
@@ -160,6 +162,7 @@ router.post('/terminals', requireArea('Configuracoes'), async (req, res) => {
   const nome = String((req.body && req.body.nome) || '').trim();
   if (!nome || !location_id) return res.status(400).json({ erro: 'nome e location_id são obrigatórios' });
   await getOwnedLocation(pool, location_id, req.user.tenantId);
+  await checarLimite(pool, req.user.tenantId, 'pdvs');
 
   const client = await pool.connect();
   try {

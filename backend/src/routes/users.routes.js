@@ -2,34 +2,17 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const pool = require('../db/pool');
 const { requireArea, MATRIX, PERMISSOES, areasEfetivas, normalizarOverrides } = require('../middleware/permissions');
-const { isValidEmail } = require('../utils/validators');
 const { logAudit } = require('../utils/audit');
 const { getOwnedLocation } = require('../utils/tenant');
 const { HttpError } = require('../utils/http');
+const { PERFIS, criarUsuario, lojasAdicionais, gravarLojasAdicionais } = require('../services/usuarios');
 
 const router = express.Router();
-const PERFIS = ['Administrador', 'Gerente', 'Caixa/Operador', 'Estoque', 'Lanchonete/Cozinha', 'Financeiro'];
 
 // Padrao de cada perfil e lista de permissoes ajustaveis (a tela de usuarios monta os checkboxes com isso).
 router.get('/users/permissoes', requireArea('Configuracoes'), (req, res) => {
   res.json({ permissoes: PERMISSOES, padrao: MATRIX });
 });
-
-// Valida a lista de lojas adicionais (ids de lojas da empresa, sem repetir a principal).
-async function lojasAdicionais(db, tenantId, ids, principal) {
-  if (ids === undefined) return undefined;
-  if (!Array.isArray(ids)) throw new HttpError(400, 'location_ids deve ser uma lista');
-  const unicos = [...new Set(ids.filter(Boolean))].filter((id) => id !== principal);
-  for (const id of unicos) await getOwnedLocation(db, id, tenantId);
-  return unicos;
-}
-
-async function gravarLojasAdicionais(client, tenantId, userId, ids) {
-  await client.query(`DELETE FROM user_locations WHERE user_id = $1`, [userId]);
-  for (const id of ids) {
-    await client.query(`INSERT INTO user_locations (user_id, location_id, tenant_id) VALUES ($1, $2, $3)`, [userId, id, tenantId]);
-  }
-}
 
 router.get('/users', requireArea('Configuracoes'), async (req, res) => {
   const { rows } = await pool.query(
@@ -47,50 +30,15 @@ router.post('/users', requireArea('Configuracoes'), async (req, res) => {
   const permissoes = normalizarOverrides(perfil, (req.body || {}).permissoes);
   if (permissoes === false) throw new HttpError(400, 'permissões inválidas');
 
-  if (!nome || !email || !senha || !perfil) {
-    return res.status(400).json({ erro: 'nome, email, senha e perfil são obrigatórios' });
-  }
-  if (!isValidEmail(email)) {
-    return res.status(400).json({ erro: 'email inválido' });
-  }
-  if (senha.length < 6) {
-    return res.status(400).json({ erro: 'senha deve ter no mínimo 6 caracteres' });
-  }
-  if (!PERFIS.includes(perfil)) {
-    return res.status(400).json({ erro: 'perfil inválido' });
-  }
-
-  if (location_id) await getOwnedLocation(pool, location_id, req.user.tenantId);
-  const extras = (await lojasAdicionais(pool, req.user.tenantId, (req.body || {}).location_ids, location_id || null)) || [];
-  if (extras.length > 0 && !location_id) throw new HttpError(400, 'escolha a loja principal antes de adicionar outras lojas');
-
-  // E-mail e unico no sistema todo: o login nao informa a empresa.
-  const existing = await pool.query(`SELECT 1 FROM users WHERE lower(email::text) = lower($1)`, [email]);
-  if (existing.rows.length > 0) {
-    return res.status(409).json({ erro: 'já existe um usuário com este email' });
-  }
-
-  const senhaHash = await bcrypt.hash(senha, 10);
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const { rows } = await client.query(
-      `INSERT INTO users (tenant_id, nome, email, senha_hash, perfil, location_id, permissoes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, nome, email, perfil, location_id, ativo, permissoes`,
-      [req.user.tenantId, nome, email, senhaHash, perfil, location_id || null, permissoes ? JSON.stringify(permissoes) : null]
-    );
-    await gravarLojasAdicionais(client, req.user.tenantId, rows[0].id, extras);
-    await logAudit(client, {
-      tenantId: req.user.tenantId,
-      usuarioId: req.user.id,
-      acao: 'criar',
-      recurso: 'users',
-      recursoId: rows[0].id,
-      detalhes: { perfil, permissoes },
+    const usuario = await criarUsuario(client, {
+      tenantId: req.user.tenantId, nome, email, senha, perfil, location_id, location_ids: (req.body || {}).location_ids, permissoes,
+      auditoria: { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'criar', detalhes: { perfil, permissoes } },
     });
     await client.query('COMMIT');
-    res.status(201).json({ ...rows[0], location_ids: extras });
+    res.status(201).json(usuario);
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

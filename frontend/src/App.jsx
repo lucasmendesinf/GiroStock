@@ -18,12 +18,15 @@ import Suppliers from './pages/Suppliers.jsx';
 import Reports from './pages/Reports.jsx';
 import Locations from './pages/Locations.jsx';
 import Master from './pages/Master.jsx';
+import TrocaObrigatoria from './pages/TrocaObrigatoria.jsx';
 import ModoTesteModal from './components/ModoTesteModal.jsx';
 
 // Tela protegida: exige login e, se informada, acesso a area do perfil.
 function Private({ area, children }) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
+  // Troca obrigatoria de senha (usuario criado pelo Master ou com troca forcada): nada abre antes dela.
+  if (user.deveTrocarSenha) return <TrocaObrigatoria />;
   if (!podeAcessar(user, area)) return <Layout><SemAcesso /></Layout>;
   return <Layout>{children}</Layout>;
 }
@@ -172,7 +175,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
-      <Route path="/master" element={<Private area="Master"><Master /></Private>} />
+      <Route path="/master/*" element={<Private area="Master"><Master /></Private>} />
       <Route path="/inicio" element={<Private><Home /></Private>} />
       <Route path="/pdv" element={<Private area="Vendas"><PDV /></Private>} />
       <Route path="/pedidos" element={<Private area="Pedidos"><Pedidos /></Private>} />

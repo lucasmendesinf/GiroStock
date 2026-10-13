@@ -25,6 +25,12 @@ async function request(path, { method = 'GET', body } = {}) {
       window.location.assign('/login');
     }
     // Permissao do modo teste retirada (ou modo teste indisponivel): o token de teste nao serve mais; volta ao login (producao).
+    // Empresa suspensa pelo Master: a sessao cai na hora; o login mostra o aviso.
+    if (data && data.empresaSuspensa && token) {
+      try { sessionStorage.setItem('girostock_aviso', data.motivo ? `Empresa suspensa: ${data.motivo}` : 'Empresa suspensa. Fale com o suporte.'); } catch { /* sem armazenamento */ }
+      clearSession();
+      window.location.assign('/login');
+    }
     if (data && data.modoTesteRevogado && token) {
       clearSession();
       window.location.assign('/login');

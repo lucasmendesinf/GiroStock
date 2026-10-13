@@ -1116,3 +1116,21 @@ button.ped-act-btn, .ped-act button { flex: 1; padding: 8px; font-size: 11.5px; 
 /* ---------- modo teste: faixa fixa no topo de todas as telas ---------- */
 .faixa-teste { position: sticky; top: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; padding: 8px 16px; background: var(--warn); color: #1a1100; font-weight: 800; font-size: 13px; letter-spacing: .3px; }
 .faixa-teste button { background: #1a1100; color: var(--warn); border: none; border-radius: 8px; padding: 6px 14px; font-weight: 800; cursor: pointer; text-transform: none; letter-spacing: 0; }
+
+/* ---------- painel Master: abas, barras de limite e passos ---------- */
+.mt-abas { display: flex; gap: 6px; flex-wrap: wrap; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+.mt-abas a, .mt-abas .mt-breve { padding: 9px 14px; border-radius: 10px 10px 0 0; font-size: 13px; font-weight: 700; color: var(--muted); text-decoration: none; border: 1px solid transparent; border-bottom: none; }
+.mt-abas a:hover { color: var(--ivory); background: var(--panel-alt); }
+.mt-abas a.active { color: var(--gold-light); background: var(--accent-soft); border-color: var(--accent-line); }
+.mt-abas .mt-breve { opacity: .5; cursor: not-allowed; }
+.mt-abas .mt-breve small { font-size: 10px; font-weight: 600; margin-left: 4px; text-transform: uppercase; letter-spacing: .4px; }
+.mt-barra { height: 7px; border-radius: 999px; background: var(--panel-alt); border: 1px solid var(--line); overflow: hidden; margin: 2px 0 10px; }
+.mt-barra i { display: block; height: 100%; background: var(--ok); }
+.mt-barra i.warn { background: var(--warn); }
+.mt-barra i.err { background: var(--err); }
+.mt-passos { display: flex; gap: 8px; margin: 4px 0 14px; font-size: 12px; font-weight: 700; }
+.mt-passos span { padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.mt-passos span.on { border-color: var(--gold-light); color: var(--gold-light); background: var(--accent-soft); }
+.mt-passos span.ok { color: var(--ok); border-color: var(--ok); }
+.mt-limite { border-color: var(--err); color: var(--err); }
+.mt-master-card { margin-bottom: 16px; }

@@ -23,6 +23,14 @@ export function AuthProvider({ children }) {
     return u;
   }, []);
 
+  // Recarrega o usuario (ex.: depois da troca obrigatoria de senha).
+  const recarregarUsuario = useCallback(async () => {
+    const u = await api.get('/auth/me');
+    updateStoredUser(u);
+    setUser(u);
+    return u;
+  }, []);
+
   const logout = useCallback(() => {
     clearSession();
     setUser(null);
@@ -37,7 +45,7 @@ export function AuthProvider({ children }) {
   }, [logout]);
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, alternarModoTeste }}>
+    <AuthContext.Provider value={{ user, login, logout, alternarModoTeste, recarregarUsuario }}>
       {children}
     </AuthContext.Provider>
   );

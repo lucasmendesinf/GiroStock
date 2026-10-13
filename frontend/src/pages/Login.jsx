@@ -9,7 +9,9 @@ export default function Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
-  const [erro, setErro] = useState(null);
+  const [erro, setErro] = useState(() => {
+    try { const a = sessionStorage.getItem('girostock_aviso'); sessionStorage.removeItem('girostock_aviso'); return a; } catch { return null; }
+  });
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e) {
@@ -20,7 +22,7 @@ export default function Login() {
       const usuario = await login(email.trim(), senha);
       navigate(rotaInicial(usuario));
     } catch (err) {
-      setErro(err.status === 401 ? 'E-mail ou senha incorretos.' : err.message);
+      setErro(err.status === 401 ? 'E-mail ou senha incorretos.' : err.status === 403 && err.dados && err.dados.empresaSuspensa ? `Empresa suspensa${err.dados.motivo ? `: ${err.dados.motivo}` : '.'} Fale com o suporte.` : err.message);
     } finally {
       setLoading(false);
     }

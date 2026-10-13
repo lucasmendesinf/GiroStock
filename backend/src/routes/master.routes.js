@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 const express = require('express');
 const { requireArea, normalizarOverrides } = require('../middleware/permissions');
 const { HttpError } = require('../utils/http');
@@ -295,6 +296,17 @@ router.post('/master/usuarios/:id/encerrar-sessoes', async (req, res) => {
   await db.query(`UPDATE users SET sessoes_validas_desde = now() WHERE id = $1`, [u.id]);
   await logAudit(db, { tenantId: u.tenant_id, usuarioId: req.user.id, acao: 'master_encerrar_sessoes', recurso: 'users', recursoId: u.id });
   res.json({ ok: true });
+});
+
+// Redefinir a senha de um usuario de empresa: o servidor GERA uma senha aleatoria, que aparece UMA vez na resposta (nunca em log
+// ou auditoria). Exige troca no proximo login e derruba as sessoes abertas do usuario. Nunca vale para o Master (so por script).
+router.post('/master/usuarios/:id/redefinir-senha', async (req, res) => {
+  const u = await alvoOuErro(req.params.id);
+  const senha = gerarSenha();
+  const hash = await bcrypt.hash(senha, 10);
+  await db.query(`UPDATE users SET senha_hash = $1, deve_trocar_senha = true, sessoes_validas_desde = now(), falhas_login = 0 WHERE id = $2`, [hash, u.id]);
+  await logAudit(db, { tenantId: u.tenant_id, usuarioId: req.user.id, acao: 'master_redefinir_senha', recurso: 'users', recursoId: u.id });
+  res.json({ senha_temporaria: senha });
 });
 
 // O Master pode resetar o 2FA de qualquer usuario (inclusive outro Master nao: so por script).

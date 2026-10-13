@@ -218,6 +218,23 @@ const tok = (await login(email('adm2'), novoAdm.j.senha_temporaria)).j.token;
 check('administrador de empresa: /users, /locations, /products continuam respondendo', (await api('GET', '/users', null, tok)).s === 200 && (await api('GET', '/locations', null, tok)).s === 200 && (await api('GET', '/products', null, tok)).s === 200);
 check('/auth/me do Master em producao: master=true e so area Master/ModoTeste', (await api('GET', '/auth/me', null, MAS)).j.areas.Master === true);
 
+// ---------- 11. Redefinir senha de usuario da empresa (gerador automatico) ----------
+console.log('\n# 11. Master redefine a senha de um usuario da empresa');
+const alvoRs = (await api('GET', `/master/usuarios?empresa_id=${A.id}&q=adm2`, null, MAS)).j.usuarios[0];
+const masterAlvoId = (await prod.query(`SELECT id FROM users WHERE perfil = 'Master' LIMIT 1`)).rows[0].id;
+check('administrador de empresa NAO redefine senha pelo painel Master (403)', (await api('POST', `/master/usuarios/${alvoRs.id}/redefinir-senha`, null, tok)).s === 403);
+check('o Master nao pode ser alvo (403)', (await api('POST', `/master/usuarios/${masterAlvoId}/redefinir-senha`, null, MAS)).s === 403);
+await espera(1200); // o corte de sessoes compara segundos inteiros
+const rsr = await api('POST', `/master/usuarios/${alvoRs.id}/redefinir-senha`, null, MAS);
+check('Master gera senha nova automática (8+ caracteres, mostrada só na resposta)', rsr.s === 200 && typeof rsr.j.senha_temporaria === 'string' && rsr.j.senha_temporaria.length >= 8, rsr.s);
+check('a senha antiga deixa de valer', (await login(email('adm2'), novoAdm.j.senha_temporaria)).s === 401);
+const lgRs = await login(email('adm2'), rsr.j.senha_temporaria);
+check('a senha gerada entra e exige troca no primeiro acesso', lgRs.s === 200 && lgRs.j.usuario.deveTrocarSenha === true, lgRs.j && lgRs.j.usuario);
+await espera(1200);
+check('sessão aberta do usuário cai (401)', (await api('GET', '/auth/me', null, tok)).s === 401);
+const audRs = (await prod.query(`SELECT detalhes::text AS d FROM audit_logs WHERE acao = 'master_redefinir_senha' AND recurso_id = $1 ORDER BY criado_em DESC LIMIT 1`, [alvoRs.id])).rows[0];
+check('auditado como master_redefinir_senha, sem a senha', !!audRs && !String(audRs.d || '').includes(rsr.j.senha_temporaria));
+
 // ---------- limpeza: empresas suspensas e usuarios inativos ----------
 await prod.query(`UPDATE users SET ativo = false WHERE lower(email::text) LIKE 'e2e.m1.%'`);
 await prod.query(`UPDATE tenants SET status = 'suspensa', suspenso_motivo = 'e2e', suspenso_em = now() WHERE nome LIKE 'E2E M1 %'`);

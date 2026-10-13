@@ -3,6 +3,7 @@ import { api } from '../../api/client';
 import { useToast, useConfirm } from '../../context/UiContext.jsx';
 import { quando } from './util.js';
 import NovoUsuarioModal from './NovoUsuarioModal.jsx';
+import SenhaUnicaModal from './SenhaUnicaModal.jsx';
 
 const SITUACOES = [['', 'Todas as situações'], ['ativos', 'Ativos'], ['inativos', 'Inativos'], ['falhas', '3+ falhas de login'], ['sem_login', 'Sem login há 30+ dias']];
 
@@ -16,6 +17,7 @@ export default function Usuarios() {
   const [situacao, setSituacao] = useState('');
   const [novo, setNovo] = useState(false);
   const [verTeste, setVerTeste] = useState(false);
+  const [novaSenha, setNovaSenha] = useState(null); // { usuario, senha } mostrada uma unica vez
 
   const carregar = useCallback(async () => {
     const qs = new URLSearchParams();
@@ -38,6 +40,14 @@ export default function Usuarios() {
   async function resetar2fa(u) {
     if (!(await confirmar({ titulo: `Resetar o 2FA de ${u.nome}?`, mensagem: 'O segredo e os códigos de recuperação são apagados e as sessões atuais caem. Ele terá de configurar o app de novo.', confirmar: 'Resetar 2FA', perigo: true }))) return;
     acao(api.post(`/master/usuarios/${u.id}/2fa/resetar`), `2FA de ${u.nome} resetado`);
+  }
+  async function redefinirSenha(u) {
+    if (!(await confirmar({ titulo: `Redefinir a senha de ${u.nome}?`, mensagem: 'Uma senha temporária será gerada e mostrada uma única vez. As sessões abertas dele caem e ele terá de trocar a senha ao entrar.', confirmar: 'Gerar nova senha', perigo: true }))) return;
+    try {
+      const r = await api.post(`/master/usuarios/${u.id}/redefinir-senha`);
+      setNovaSenha({ usuario: u, senha: r.senha_temporaria });
+      carregar();
+    } catch (err) { toast.erro(err); }
   }
   async function alternarAtivo(u) {
     if (u.ativo && !(await confirmar({ titulo: `Desativar ${u.nome}?`, mensagem: 'O acesso é cortado na hora.', confirmar: 'Desativar', perigo: true }))) return;
@@ -98,6 +108,7 @@ export default function Usuarios() {
                   <td>{u.totp_ativo ? <span className="ped-pill ok">Ativo</span> : <span className="cl-sub" style={{ margin: 0 }}>Não ativo</span>}{(u.totp_exigido || u.perfil === 'Master') && <span className="ped-tag" style={{ marginLeft: 6 }}>exigido</span>}</td>
                   <td><span className={`ped-pill ${u.ativo ? 'ok' : 'err'}`}>{u.ativo ? 'Ativo' : 'Inativo'}</span></td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    {u.perfil !== 'Master' && <button type="button" className="btn-link" onClick={() => redefinirSenha(u)}>Redefinir senha</button>}{' '}
                     <button type="button" className="btn-link" onClick={() => acao(api.post(`/master/usuarios/${u.id}/forcar-troca-senha`), `Troca de senha exigida no próximo login de ${u.nome}`)}>Forçar troca de senha</button>{' '}
                     <button type="button" className="btn-link" onClick={() => encerrar(u)}>Encerrar sessões</button>{' '}
                     {u.perfil !== 'Master' && <button type="button" className="btn-link" onClick={() => acao(api.patch(`/master/usuarios/${u.id}/exigir-2fa`, { exigido: !u.totp_exigido }), u.totp_exigido ? `2FA deixou de ser exigido de ${u.nome}` : `2FA exigido de ${u.nome} no próximo login`)}>{u.totp_exigido ? 'Dispensar 2FA' : 'Exigir 2FA'}</button>}{' '}
@@ -112,6 +123,7 @@ export default function Usuarios() {
         {dados && dados.usuarios.length === 0 && <div className="ped-vazio">Nenhum usuário neste filtro</div>}
       </div>
 
+      {novaSenha && <SenhaUnicaModal titulo="Senha redefinida" resumo={`${novaSenha.usuario.nome} (${novaSenha.usuario.email}) · informe esta senha ao usuário; ele troca no próximo login.`} senha={novaSenha.senha} onClose={() => setNovaSenha(null)} />}
       {novo && <NovoUsuarioModal onClose={() => setNovo(false)} onCriado={() => { setNovo(false); carregar(); }} />}
     </div>
   );

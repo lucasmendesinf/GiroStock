@@ -79,7 +79,7 @@ export default function Empresas() {
                   <td><span className="ped-tag">{e.plano_nome}</span></td>
                   <td><span className={`ped-pill ${e.status === 'ativa' ? 'ok' : 'err'}`}>{e.status === 'ativa' ? 'Ativa' : 'Suspensa'}</span></td>
                   <td className="num">{e.qtd_usuarios_ativos}</td>
-                  <td className="cl-sub" style={{ margin: 0 }}>{quando(e.ultimo_acesso)}</td>
+                  <td style={{ color: 'var(--muted)' }}>{quando(e.ultimo_acesso)}</td>
                   <td style={{ textAlign: 'right' }} onClick={(ev) => ev.stopPropagation()}>
                     <button type="button" className="btn-link" disabled title="Fase 4 — em breve">Entrar como suporte · em breve</button>
                   </td>

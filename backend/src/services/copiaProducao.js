@@ -13,6 +13,10 @@ const modoTeste = require('./modoTeste');
 const pipeline = promisify(stream.pipeline);
 const LOCK_CHAVE = 727001; // advisory lock: impede duas copias simultaneas (mesmo entre processos)
 const FORA_DA_COPIA = ['schema_migrations', 'teste_copias'];
+// Tabelas truncadas no teste mas NUNCA copiadas (segredos de 2FA ficam so na producao).
+const SEM_DADOS = ['user_recovery_codes'];
+// Colunas que viram valor neutro na copia: nenhum segredo TOTP chega ao banco de teste.
+const NEUTRAS = { users: { totp_segredo_cript: 'NULL', totp_ativo: 'false', totp_ativado_em: 'NULL', totp_ultimo_passo: 'NULL', totp_falhas: '0', totp_bloqueado_ate: 'NULL' } };
 
 // Tabelas de negocio do schema public, ordenadas pelas chaves estrangeiras (pais antes dos filhos).
 async function tabelasEmOrdem(db) {
@@ -41,6 +45,16 @@ async function tabelasEmOrdem(db) {
   const sobra = nomes.filter((n) => !feitas.has(n));
   if (sobra.length > 0) throw new Error('ciclo de chaves estrangeiras entre tabelas: ' + sobra.join(', '));
   return ordem;
+}
+
+// Lista de colunas do SELECT de origem (com valores neutros onde a coluna e sensivel) e do COPY de destino.
+async function colunasDaCopia(db, tabela) {
+  const nomes = (await colunas(db, tabela)).map((c) => c.replace(/"/g, ''));
+  const neutras = NEUTRAS[tabela] || {};
+  return {
+    origem: nomes.map((n) => (n in neutras ? `${neutras[n]} AS "${n}"` : `"${n}"`)).join(', '),
+    destino: nomes.map((n) => `"${n}"`).join(', '),
+  };
 }
 
 async function colunas(db, tabela) {
@@ -93,9 +107,10 @@ async function copiarProducao(opcoes) {
       const tabelas = await tabelasEmOrdem(leitura);
       await escrita.query(`TRUNCATE ${tabelas.map((t) => `"${t}"`).join(', ')} CASCADE`);
       for (const t of tabelas) {
-        const cols = (await colunas(leitura, t)).join(', ');
-        const origem = leitura.query(copyTo(`COPY (SELECT ${cols} FROM "${t}") TO STDOUT`));
-        const destino = escrita.query(copyFrom(`COPY "${t}" (${cols}) FROM STDIN`));
+        if (SEM_DADOS.includes(t)) continue;
+        const cols = await colunasDaCopia(leitura, t);
+        const origem = leitura.query(copyTo(`COPY (SELECT ${cols.origem} FROM "${t}") TO STDOUT`));
+        const destino = escrita.query(copyFrom(`COPY "${t}" (${cols.destino}) FROM STDIN`));
         await pipeline(origem, destino);
         if (falharNaTabela === t && process.env.NODE_ENV !== 'production') throw new Error(`falha simulada após copiar ${t}`);
       }

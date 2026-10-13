@@ -82,7 +82,8 @@ async function garantirUsuarioNoTeste(usuarioId) {
     ? (await teste.query(`SELECT 1 FROM locations WHERE id = $1`, [rows[0].location_id])).rows.length > 0
     : true;
   try {
-    await copiarLinha('users', usuarioId, lojaExiste ? {} : { location_id: null });
+    // Segredos de 2FA nunca vao para o banco de teste.
+    await copiarLinha('users', usuarioId, { ...(lojaExiste ? {} : { location_id: null }), totp_segredo_cript: null, totp_ativo: false, totp_ativado_em: null, totp_ultimo_passo: null, totp_falhas: 0, totp_bloqueado_ate: null });
   } catch (err) {
     if (err.code !== '23505' && err.code !== '23503') throw err; // e-mail ja usado no teste / loja ausente: segue
   }

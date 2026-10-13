@@ -35,7 +35,7 @@ router.get('/users', requireArea('Configuracoes'), async (req, res) => {
   const { rows } = await pool.query(
     `SELECT u.id, u.nome, u.email, u.perfil, u.location_id, u.ativo, u.criado_em, u.permissoes,
             COALESCE((SELECT json_agg(ul.location_id) FROM user_locations ul WHERE ul.user_id = u.id), '[]') AS location_ids
-     FROM users u WHERE u.tenant_id = $1 ORDER BY u.nome`,
+     FROM users u WHERE u.tenant_id = $1 AND u.perfil <> 'Master' ORDER BY u.nome`,
     [req.user.tenantId]
   );
   res.json(rows);
@@ -43,6 +43,7 @@ router.get('/users', requireArea('Configuracoes'), async (req, res) => {
 
 router.post('/users', requireArea('Configuracoes'), async (req, res) => {
   const { nome, email, senha, perfil, location_id } = req.body || {};
+  if (perfil === 'Master') throw new HttpError(403, 'o perfil Master só pode ser criado por script');
   const permissoes = normalizarOverrides(perfil, (req.body || {}).permissoes);
   if (permissoes === false) throw new HttpError(400, 'permissões inválidas');
 
@@ -101,12 +102,14 @@ router.post('/users', requireArea('Configuracoes'), async (req, res) => {
 // Altera perfil e/ou local de atuacao (location_id null = todos os locais).
 router.patch('/users/:id', requireArea('Configuracoes'), async (req, res) => {
   const body = req.body || {};
+  if (body.perfil === 'Master') throw new HttpError(403, 'o perfil Master só pode ser criado por script');
   const alvo = await pool.query(
     `SELECT id, perfil, location_id, permissoes FROM users WHERE id = $1 AND tenant_id = $2`,
     [req.params.id, req.user.tenantId]
   );
   if (alvo.rows.length === 0) return res.status(404).json({ erro: 'usuário não encontrado' });
   const atual = alvo.rows[0];
+  if (atual.perfil === 'Master') throw new HttpError(403, 'o usuário Master não pode ser alterado por aqui');
 
   const nome = body.nome !== undefined ? String(body.nome).trim() : null;
   if (nome !== null && nome.length < 2) throw new HttpError(400, 'nome deve ter no mínimo 2 caracteres');

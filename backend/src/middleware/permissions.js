@@ -1,15 +1,18 @@
 // Permissoes: cada perfil tem um padrao (MATRIX) e cada usuario pode ter ajustes
 // individuais (users.permissoes) que liberam ou bloqueiam permissoes especificas.
 const MATRIX = {
-  'Administrador':        { Vendas: true,  Estoque: true,  Financeiro: true,  Relatorios: true,  Configuracoes: true,  CancelarVendas: true,  SangriaSuprimento: true,  Desconto: true,  FecharCaixa: true,  Pedidos: true, Clientes: true },
-  'Gerente':              { Vendas: true,  Estoque: true,  Financeiro: false, Relatorios: true,  Configuracoes: false, CancelarVendas: true,  SangriaSuprimento: true,  Desconto: true,  FecharCaixa: true,  Pedidos: true, Clientes: true },
-  'Caixa/Operador':       { Vendas: true,  Estoque: false, Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: true,  Pedidos: true, Clientes: false },
-  'Estoque':              { Vendas: false, Estoque: true,  Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: false, Pedidos: false, Clientes: false },
-  'Lanchonete/Cozinha':   { Vendas: true,  Estoque: true,  Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: true,  Pedidos: true, Clientes: false },
-  'Financeiro':           { Vendas: false, Estoque: false, Financeiro: true,  Relatorios: true,  Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: false, Pedidos: false, Clientes: false },
+  'Administrador':        { Vendas: true,  Estoque: true,  Financeiro: true,  Relatorios: true,  Configuracoes: true,  CancelarVendas: true,  SangriaSuprimento: true,  Desconto: true,  FecharCaixa: true,  Pedidos: true, Clientes: true, ModoTeste: false, Master: false },
+  'Gerente':              { Vendas: true,  Estoque: true,  Financeiro: false, Relatorios: true,  Configuracoes: false, CancelarVendas: true,  SangriaSuprimento: true,  Desconto: true,  FecharCaixa: true,  Pedidos: true, Clientes: true, ModoTeste: false, Master: false },
+  'Caixa/Operador':       { Vendas: true,  Estoque: false, Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: true,  Pedidos: true, Clientes: false, ModoTeste: false, Master: false },
+  'Estoque':              { Vendas: false, Estoque: true,  Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: false, Pedidos: false, Clientes: false, ModoTeste: false, Master: false },
+  'Lanchonete/Cozinha':   { Vendas: true,  Estoque: true,  Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: true,  Pedidos: true, Clientes: false, ModoTeste: false, Master: false },
+  'Financeiro':           { Vendas: false, Estoque: false, Financeiro: true,  Relatorios: true,  Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: false, Pedidos: false, Clientes: false, ModoTeste: false, Master: false },
+  // Dono da plataforma: nenhuma area de empresa; so o painel Master e o modo teste.
+  'Master':               { Vendas: false, Estoque: false, Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: false, Pedidos: false, Clientes: false, ModoTeste: true,  Master: true },
 };
 
-// Permissoes que podem ser ajustadas por usuario (Financeiro ainda nao tem tela).
+// Permissoes que podem ser ajustadas por usuario (Financeiro ainda nao tem tela). 'Master' nao entra aqui:
+// o perfil Master so existe por script e nao pode ser concedido por ajuste individual.
 const PERMISSOES = {
   Vendas: 'PDV: abrir o caixa e vender',
   SangriaSuprimento: 'PDV: fazer sangria e suprimento',
@@ -17,6 +20,7 @@ const PERMISSOES = {
   FecharCaixa: 'PDV: fechar o caixa',
   Pedidos: 'Pedidos da lanchonete: gerar no PDV, acompanhar e finalizar',
   Clientes: 'Clientes: base de clientes, segmentos e mensagens',
+  ModoTeste: 'Modo teste: trabalhar em um banco de teste separado da produção',
   Estoque: 'Produtos, fornecedores, insumos, entradas e transferências',
   Relatorios: 'Relatórios e histórico de vendas',
   Configuracoes: 'Usuários, lojas e PDVs',
@@ -27,7 +31,7 @@ const PERMISSOES = {
 function areasEfetivas(perfil, overrides) {
   const base = { ...(MATRIX[perfil] || {}) };
   for (const [chave, valor] of Object.entries(overrides || {})) {
-    if (chave in base && typeof valor === 'boolean') base[chave] = valor;
+    if (chave !== 'Master' && chave in base && typeof valor === 'boolean') base[chave] = valor;
   }
   return base;
 }

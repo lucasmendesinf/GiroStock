@@ -66,3 +66,12 @@ O seed cria o administrador de teste (`admin@girostock.local` / `admin123`): **t
 ## Cuidados
 - Node 14 não recebe mais correções de segurança: mantenha o sistema atrás de senha forte e HTTPS.
 - Faça backup do banco com frequência (cPanel → **Backup** ou `pg_dump`).
+
+## Senhas na produção (regra)
+- **Nenhuma senha vem do ambiente local.** Local e produção são bancos separados: usuários e senhas de um nunca valem no outro.
+- O `npm run seed` cria `admin@girostock.local` com a senha pública `admin123`. **Troque na hora**, antes de qualquer uso:
+  1. No app (Setup Node.js App), adicione as variáveis `RESET_EMAIL` e `RESET_PASSWORD` (a senha nova é digitada por quem administra).
+  2. Rode o script `usuarios` (`npm run usuarios`): redefine a senha desse e-mail. Sem as variáveis, ele só lista os usuários (sem senhas).
+  3. **Remova as duas variáveis** e reinicie o app.
+- O Master de produção é criado com `npm run master` usando `MASTER_EMAIL`, `MASTER_PASSWORD` (mín. 8 caracteres) e `MASTER_NOME` digitados no ambiente; remova-as depois.
+- Use senhas fortes e únicas, guardadas em um gerenciador de senhas. Não coloque senhas em arquivos versionados nem em mensagens.

@@ -1154,3 +1154,31 @@ button.ped-act-btn, .ped-act button { flex: 1; padding: 8px; font-size: 11.5px; 
 .login-card .btn-primario:disabled, .form-stack .btn-primario:disabled { opacity: 0.5; cursor: not-allowed; }
 .login-card .btn-link { background: none; border: 1px solid var(--line); color: var(--ivory); border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 700; text-transform: none; letter-spacing: normal; margin: 0; cursor: pointer; }
 .login-card .modal-actions button { margin: 0; }
+
+/* Painel Master: Visao geral e Auditoria */
+.vg-grid { display: grid; gap: 12px; margin-bottom: 12px; }
+.vg-g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.vg-g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 900px) { .vg-g4, .vg-g3 { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 560px) { .vg-g4, .vg-g3 { grid-template-columns: 1fr; } }
+.vg-card { margin-bottom: 0; }
+.vg-grid .card { margin-bottom: 0; }
+.vg-titulo { display: block; color: var(--muted-2); font-size: 10px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; margin-bottom: 6px; }
+.vg-estado { display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 800; color: var(--ivory); }
+.vg-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted-2); flex: none; }
+.vg-dot.ok { background: var(--ok); }
+.vg-dot.atencao { background: var(--warn); }
+.vg-dot.erro { background: var(--err); }
+.vg-linha { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; padding: 4px 0; color: var(--muted); }
+.vg-linha b { color: var(--ivory); }
+.vg-recurso { margin-bottom: 6px; }
+.vg-barra { height: 7px; border-radius: 999px; background: var(--panel-alt); border: 1px solid var(--line); overflow: hidden; }
+.vg-barra i { display: block; height: 100%; background: var(--ok); }
+.vg-barra i.atencao { background: var(--warn); }
+.vg-barra i.erro { background: var(--err); }
+.vg-grande { font-size: 30px; font-weight: 800; color: var(--ivory); }
+.vg-grafico { display: flex; align-items: flex-end; gap: 3px; height: 70px; margin: 8px 0 6px; }
+.vg-grafico span { flex: 1; background: var(--muted-2); border-radius: 3px 3px 0 0; min-height: 3px; }
+.vg-grafico span.alto { background: var(--err); }
+.vg-paginacao { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding-top: 12px; }
+.ped-pill.err { color: var(--err); border-color: var(--err); }

@@ -63,6 +63,8 @@ async function novaEmpresa(rotulo, extra = {}) {
 const A = await novaEmpresa('Alfa');
 const Bm = await novaEmpresa('Beta');
 const C = await novaEmpresa('Gama');
+// A empresa Alfa passa a ter 2FA ativo (so a marca: o codigo exigido e o do Master); Beta e Gama nao tem.
+await prod.query(`UPDATE users SET totp_ativo = true WHERE lower(email::text) = $1`, [email('alfa')]);
 const lojaA = (await prod.query(`SELECT id FROM locations WHERE tenant_id = $1 LIMIT 1`, [A.id])).rows[0].id;
 // gerente da empresa A (nao administrador)
 const ger = await api('POST', '/master/usuarios', { empresa_id: A.id, nome: 'Gerente A', email: email('gerente'), perfil: 'Gerente', location_id: lojaA }, MAS);
@@ -85,7 +87,11 @@ check('administrador de empresa -> 403', (await api('POST', `/master/empresas/${
 check('sem motivo -> 400', (await iniciar(A.id, { motivo: '' })).s === 400);
 check('motivo curto (< 10) -> 400', (await iniciar(A.id, { motivo: 'curto' })).s === 400);
 check('motivo longo demais (> 300) -> 400', (await iniciar(A.id, { motivo: 'x'.repeat(301) })).s === 400);
-check('sem o código do 2FA -> 400', (await iniciar(A.id, { codigo: undefined })).s === 400);
+check('empresa COM 2FA: sem o código -> 400', (await iniciar(A.id, { codigo: undefined })).s === 400);
+const semDois = await api('POST', `/master/empresas/${Bm.id}/suporte`, { motivo: 'Chamado 321: empresa sem 2FA (e2e)', avisar: false }, MAS);
+check('empresa SEM 2FA: entra sem pedir código (201)', semDois.s === 201, semDois);
+await api('POST', '/master/suporte/encerrar', null, semDois.j.token);
+check('a lista de empresas informa quem usa 2FA (cliente_2fa)', (await api('GET', '/master/empresas', null, MAS)).j.empresas.filter((e) => [A.id, Bm.id].includes(e.id)).every((e) => e.cliente_2fa === (e.id === A.id)));
 const errado = await iniciar(A.id, { codigo: '000000' });
 check('código do 2FA errado -> 400 (e nenhuma sessão aberta)', errado.s === 400 && Number((await prod.query(`SELECT count(*) AS n FROM sessoes_suporte WHERE master_id = $1 AND encerrada_em IS NULL`, [master.id])).rows[0].n) === 0, errado);
 check('empresa inexistente -> 404', (await iniciar(crypto.randomUUID())).s === 404);

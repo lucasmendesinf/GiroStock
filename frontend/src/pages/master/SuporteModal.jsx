@@ -13,13 +13,14 @@ export default function SuporteModal({ empresa, onClose }) {
   const [avisar, setAvisar] = useState(true);
   const [edicao, setEdicao] = useState(false);
   const [enviando, setEnviando] = useState(false);
+  const pedeCodigo = empresa.cliente_2fa !== false; // so quando a empresa usa 2FA (sem a informacao, pede por seguranca)
   const [erro, setErro] = useState(null);
 
   async function enviar(e) {
     e.preventDefault();
     setErro(null); setEnviando(true);
     try {
-      await entrarSuporte({ empresaId: empresa.id, motivo: motivo.trim(), codigo: codigo.trim(), avisar, edicao });
+      await entrarSuporte({ empresaId: empresa.id, motivo: motivo.trim(), codigo: pedeCodigo ? codigo.trim() : undefined, avisar, edicao });
       window.location.assign('/');
     } catch (err) { setErro(err.message); setCodigo(''); setEnviando(false); toast.erro(err); }
   }
@@ -39,13 +40,15 @@ export default function SuporteModal({ empresa, onClose }) {
           <button type="button" role="switch" aria-checked={edicao} aria-label="Permitir edição" className={edicao ? 'on' : ''} onClick={() => setEdicao(!edicao)} />
           <span>Permitir edição durante o suporte<div className="cl-sub">Só cadastros (produtos, fornecedores, lojas, PDVs, estoque). Usuários, senhas, 2FA, cancelamentos e exclusões ficam sempre bloqueados.</div></span>
         </div>
-        <Field label="Código do app autenticador *" hint="Confirmação do seu 2FA (6 dígitos).">
-          <input inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={codigo} onChange={(e) => setCodigo(e.target.value.replace(/\D/g, ''))} required />
-        </Field>
+        {pedeCodigo ? (
+          <Field label="Código do app autenticador *" hint="Esta empresa usa verificação em duas etapas: confirme com o seu código (6 dígitos).">
+            <input inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={codigo} onChange={(e) => setCodigo(e.target.value.replace(/\D/g, ''))} required />
+          </Field>
+        ) : <p className="cl-sub" style={{ margin: 0 }}>Esta empresa não usa verificação em duas etapas: não é preciso informar código.</p>}
         {erro && <p className="error" role="alert">{erro}</p>}
         <div className="modal-actions">
           <button type="button" onClick={onClose} disabled={enviando}>Cancelar</button>
-          <button type="submit" disabled={enviando || motivo.trim().length < 10 || codigo.length !== 6}>{enviando ? 'Entrando…' : 'Entrar'}</button>
+          <button type="submit" disabled={enviando || motivo.trim().length < 10 || (pedeCodigo && codigo.length !== 6)}>{enviando ? 'Entrando…' : 'Entrar'}</button>
         </div>
       </form>
     </Modal>

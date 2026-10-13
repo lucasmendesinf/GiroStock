@@ -54,6 +54,13 @@ async function validarSessao(db, sessaoId, user, dadosEmpresa) {
   return { sessao: s, empresa };
 }
 
+// O codigo do 2FA do Master so e pedido quando a empresa acessada TEM verificacao em duas etapas ativa
+// (algum usuario ativo dela com 2FA). Empresa sem 2FA: entra so com o motivo.
+async function clienteTemDoisFatores(db, tenantId) {
+  const r = await db.query(`SELECT 1 FROM users WHERE tenant_id = $1 AND ativo AND totp_ativo LIMIT 1`, [tenantId]);
+  return r.rows.length > 0;
+}
+
 // Inicia o suporte. `reautenticar(userId, codigo)` confere o codigo TOTP recente do Master (lanca se invalido).
 async function iniciar({ master, empresaId, motivo, edicao, avisar, codigo, ip, reautenticar, modoTesteAtivo }) {
   const db = pool.producao;
@@ -71,8 +78,10 @@ async function iniciar({ master, empresaId, motivo, edicao, avisar, codigo, ip, 
   if (aberta.rows.length > 0) throw new HttpError(409, 'já existe uma sessão de suporte aberta; encerre-a antes');
 
   // Reautenticacao: codigo TOTP recente do Master (sem ele, nada acontece).
-  if (!codigo) throw new HttpError(400, 'informe o código do app autenticador para confirmar');
-  await reautenticar(master.id, codigo);
+  if (await clienteTemDoisFatores(db, emp.id)) {
+    if (!codigo) throw new HttpError(400, 'esta empresa usa verificação em duas etapas: informe o código do seu app autenticador para confirmar');
+    await reautenticar(master.id, codigo);
+  }
 
   const { rows: u } = await db.query(`SELECT id, tenant_id, senha_hash FROM users WHERE id = $1`, [master.id]);
   const client = await db.connect();
@@ -110,4 +119,4 @@ function iniciarVarredura() {
   timer.unref();
 }
 
-module.exports = { iniciar, encerrar, validarSessao, encerrarVencidas, iniciarVarredura, formatarQuando };
+module.exports = { clienteTemDoisFatores, iniciar, encerrar, validarSessao, encerrarVencidas, iniciarVarredura, formatarQuando };

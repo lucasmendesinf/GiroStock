@@ -56,7 +56,8 @@ router.get('/master/empresas', async (req, res) => {
     `SELECT t.id, t.nome, t.documento, t.plano, p.nome AS plano_nome, t.status, t.criado_em,
             (SELECT COUNT(*)::int FROM locations l WHERE l.tenant_id = t.id AND l.ativo) AS qtd_lojas,
             (SELECT COUNT(*)::int FROM users u WHERE u.tenant_id = t.id AND u.ativo AND u.perfil <> 'Master') AS qtd_usuarios_ativos,
-            (SELECT MAX(u.ultimo_login) FROM users u WHERE u.tenant_id = t.id) AS ultimo_acesso
+            (SELECT MAX(u.ultimo_login) FROM users u WHERE u.tenant_id = t.id) AS ultimo_acesso,
+            EXISTS(SELECT 1 FROM users u WHERE u.tenant_id = t.id AND u.ativo AND u.totp_ativo) AS cliente_2fa
      FROM tenants t LEFT JOIN planos p ON p.codigo = t.plano
      WHERE t.nome <> 'Plataforma' ${mostrarTeste(req) ? '' : `AND ${semDadosDeTeste({ empresa: 't' })}`} ORDER BY t.nome`
   );
@@ -78,12 +79,13 @@ router.get('/master/empresas/:id', async (req, res) => {
   const usados = await uso(db, req.params.id);
   const lojas = await db.query(`SELECT id, nome, ativo FROM locations WHERE tenant_id = $1 ORDER BY ativo DESC, nome`, [req.params.id]);
   const usuarios = await db.query(
-    `SELECT id, nome, email, perfil, ativo, ultimo_login FROM users WHERE tenant_id = $1 AND perfil <> 'Master' ORDER BY ativo DESC, nome`,
+    `SELECT id, nome, email, perfil, ativo, ultimo_login, totp_ativo FROM users WHERE tenant_id = $1 AND perfil <> 'Master' ORDER BY ativo DESC, nome`,
     [req.params.id]
   );
   res.json({
     id: e.id, nome: e.nome, documento: e.documento, status: e.status, suspenso_motivo: e.suspenso_motivo, suspenso_em: e.suspenso_em,
     plano: e.plano, plano_nome: e.plano_nome, criado_em: e.criado_em,
+    cliente_2fa: usuarios.rows.some((u) => u.ativo && u.totp_ativo),
     limites: ['lojas', 'usuarios', 'pdvs'].map((k) => ({ chave: k, limite: ef.limites[k], usado: usados[k], origem: ef.origem[k] })),
     recursos: { pedidos: ef.recursos.pedidos, clientes: ef.recursos.clientes, origem: { pedidos: ef.origem.pedidos, clientes: ef.origem.clientes } },
     overrides: { limites: e.limites || null, recursos: e.recursos || null },

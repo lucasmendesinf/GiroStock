@@ -18,7 +18,7 @@ const COLUNAS = [
 const NOME_STATUS = { novo: 'Novo', em_preparo: 'Em preparo', pronto: 'Pronto', saiu_entrega: 'Saiu p/ entrega', finalizado: 'Finalizado', cancelado: 'Cancelado' };
 const ORIGENS_FILTRO = [['todas', 'Todas as origens'], ['balcao', 'Balcão'], ['telefone', 'Telefone'], ['whatsapp', 'WhatsApp']];
 // iFood e 99Food: filtros prontos para a etapa de integracao (ficam ocultos por enquanto).
-const ATRASO_MIN = 25;
+const ATRASO_PADRAO_MIN = 25; // padrao; o Master pode mudar em Configuracoes globais (user.parametros)
 const INTERVALO_MS = 15000;
 
 const proximo = (p) => ({ novo: 'em_preparo', em_preparo: 'pronto', pronto: p.tipo === 'entrega' ? 'saiu_entrega' : 'finalizado', saiu_entrega: 'finalizado' })[p.status];
@@ -84,7 +84,7 @@ export default function Pedidos() {
   useEffect(() => { recarregarEntregadores(); }, [recarregarEntregadores]);
 
   const minutos = (p) => p.minutos_etapa + Math.max(0, Math.floor((agora - buscadoEm) / 60000));
-  const atrasado = (p) => ['novo', 'em_preparo'].includes(p.status) && minutos(p) > ATRASO_MIN;
+  const atrasado = (p) => ['novo', 'em_preparo'].includes(p.status) && minutos(p) > ((user && user.parametros && user.parametros.pedidoAtrasadoMin) || ATRASO_PADRAO_MIN);
 
   const filtrados = useMemo(() => {
     const q = busca.trim().toLowerCase();

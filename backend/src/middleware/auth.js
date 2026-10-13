@@ -3,6 +3,7 @@ const pool = require('../db/pool');
 const { areasEfetivas, MATRIX } = require('./permissions');
 const modoTeste = require('../services/modoTeste');
 const { marcarAcesso } = require('../services/monitoramento');
+const config = require('../services/config');
 const { dadosDaEmpresa, efetivos, aplicarRecursos } = require('../utils/limites');
 
 // Valida o token e recarrega o usuario do banco a cada requisicao: assim um usuario
@@ -45,6 +46,11 @@ async function authRequired(req, res, next) {
   const empresa = master ? null : await dadosDaEmpresa(prod, user.tenant_id);
   if (empresa && empresa.status === 'suspensa') {
     return res.status(403).json({ erro: 'empresa suspensa', empresaSuspensa: true, motivo: empresa.suspenso_motivo || null });
+  }
+  // Modo manutencao: so o Master passa (e /auth/me, para o front descobrir o estado e a mensagem).
+  if (!master && !req.originalUrl.startsWith('/api/auth/me')) {
+    const manut = await config.obter('manutencao');
+    if (manut.ativo) return res.status(503).json({ erro: manut.mensagem || 'Sistema em manutenção. Tente novamente em instantes.', manutencao: true });
   }
   const extras = await prod.query(`SELECT location_id FROM user_locations WHERE user_id = $1`, [user.id]);
   const locationIds = [user.location_id, ...extras.rows.map((r) => r.location_id)].filter(Boolean);

@@ -5,6 +5,7 @@ const { logAudit } = require('../utils/audit');
 const { getOwned, isUuid } = require('../utils/tenant');
 const { HttpError } = require('../utils/http');
 const { FUSO } = require('../utils/query');
+const config = require('../services/config');
 
 const router = express.Router();
 
@@ -72,19 +73,25 @@ const SQL_CLIENTES = (filtroLoja) => `
   LEFT JOIN fav ON fav.customer_id = c.id
   WHERE c.tenant_id = $1 AND c.ativo`;
 
-function segmentos(c, vipLimite) {
+// Dias para "em risco" (a partir de) e "inativo" (a partir de): parametros globais do Master (padrao 30 e 60).
+async function limitesDeCliente() {
+  const cfg = await config.todos();
+  return { risco: cfg.cliente_risco_dias, inativo: cfg.cliente_inativo_dias };
+}
+
+function segmentos(c, vipLimite, lim = { risco: 30, inativo: 60 }) {
   const s = [];
   if (c.dias_desde <= 30) s.push('novo');
   if (c.pedidos >= 3) s.push('recorrente');
   if (Number(c.total_gasto) >= vipLimite) s.push('vip');
-  if (c.dias_ultimo !== null && c.dias_ultimo >= 30 && c.dias_ultimo < 60) s.push('risco');
-  if (c.dias_ultimo !== null && c.dias_ultimo >= 60) s.push('inativo');
+  if (c.dias_ultimo !== null && c.dias_ultimo >= lim.risco && c.dias_ultimo < lim.inativo) s.push('risco');
+  if (c.dias_ultimo !== null && c.dias_ultimo >= lim.inativo) s.push('inativo');
   if (c.aniversario && Number(c.aniversario.slice(3, 5)) === c.mes_atual) s.push('aniversario');
   if (!c.telefone) s.push('sem_whatsapp');
   return s;
 }
 
-function formatar(c, vipLimite) {
+function formatar(c, vipLimite, lim) {
   const pedidos = c.pedidos;
   const total = Number(c.total_gasto);
   return {
@@ -94,7 +101,7 @@ function formatar(c, vipLimite) {
     pedidos, total_gasto: total, ticket_medio: pedidos > 0 ? Number((total / pedidos).toFixed(2)) : 0,
     ultimo_pedido_em: c.ultimo_em, dias_ultimo: c.dias_ultimo, dias_desde: c.dias_desde, dias_cadastro: c.dias_cadastro,
     produto_favorito: c.produto_favorito, criado_em: c.criado_em,
-    segmentos: segmentos(c, vipLimite),
+    segmentos: segmentos(c, vipLimite, lim),
   };
 }
 
@@ -126,7 +133,8 @@ router.get('/customers', gerir, async (req, res) => {
   }
   const { rows } = await pool.query(`${SQL_CLIENTES(filtroLoja)}${existeNaLoja} ORDER BY c.nome`, params);
   const vip = await vipLimiteDoTenant(pool, req.user.tenantId);
-  let lista = rows.map((r) => formatar(r, vip));
+  const lim = await limitesDeCliente();
+  let lista = rows.map((r) => formatar(r, vip, lim));
   if (q) {
     const t = String(q).trim().toLowerCase();
     const digitos = apenasDigitos(q);
@@ -270,6 +278,7 @@ async function fichaDoCliente(db, tenantId, id) {
   const { rows } = await db.query(`${SQL_CLIENTES('')} AND c.id = $2`, [tenantId, id]);
   if (rows.length === 0) throw new HttpError(404, 'cliente não encontrado');
   const vip = await vipLimiteDoTenant(db, tenantId);
+  const lim = await limitesDeCliente();
   const enderecos = await db.query(`SELECT id, rotulo, endereco, bairro, padrao FROM customer_addresses WHERE customer_id = $1 ORDER BY padrao DESC, endereco`, [id]);
   const pedidos = await db.query(
     `SELECT o.id, o.numero, o.status, o.criado_em, o.origem, o.tipo, o.location_id,
@@ -285,7 +294,7 @@ async function fichaDoCliente(db, tenantId, id) {
      WHERE m.tenant_id = $1 AND m.customer_id = $2 ORDER BY m.criado_em DESC LIMIT 10`,
     [tenantId, id]
   );
-  return { ...formatar(rows[0], vip), enderecos: enderecos.rows, ultimos_pedidos: pedidos.rows, mensagens: mensagens.rows };
+  return { ...formatar(rows[0], vip, lim), enderecos: enderecos.rows, ultimos_pedidos: pedidos.rows, mensagens: mensagens.rows };
 }
 
 
@@ -403,8 +412,9 @@ const primeiroNome = (n) => String(n || '').trim().split(/\s+/)[0] || 'cliente';
 
 async function destinatarios(req, { segmento, customer_id }) {
   const vip = await vipLimiteDoTenant(pool, req.user.tenantId);
+  const lim = await limitesDeCliente();
   const { rows } = await pool.query(`${SQL_CLIENTES('')} ORDER BY c.nome`, [req.user.tenantId]);
-  let lista = rows.map((r) => formatar(r, vip));
+  let lista = rows.map((r) => formatar(r, vip, lim));
   if (customer_id) lista = lista.filter((c) => c.id === customer_id);
   else if (segmento && segmento !== 'todos') lista = lista.filter((c) => c.segmentos.includes(segmento));
   const alvo = lista;

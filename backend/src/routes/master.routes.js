@@ -9,6 +9,7 @@ const { dadosDaEmpresa, efetivos, uso } = require('../utils/limites');
 const { criarUsuario, resetarDoisFatores } = require('../services/usuarios');
 const { copiarProducao, status } = require('../services/copiaProducao');
 const modoTeste = require('../services/modoTeste');
+const config = require('../services/config');
 const pool = require('../db/pool');
 
 // Painel Master. Todas as rotas exigem a area Master e usam SEMPRE a producao (pool.producao), mesmo em modo teste.
@@ -119,7 +120,8 @@ router.post('/master/empresas', async (req, res) => {
   const client = await db.connect();
   try {
     await client.query('BEGIN');
-    const t = await client.query(`INSERT INTO tenants (nome, documento, plano) VALUES ($1, $2, $3) RETURNING id, nome, documento, plano, status, criado_em`, [nome, documento, plano.codigo]);
+    const vipPadrao = await config.obter('vip_limite_padrao'); // valor inicial; cada empresa mantem o seu depois
+    const t = await client.query(`INSERT INTO tenants (nome, documento, plano, clientes_vip_limite) VALUES ($1, $2, $3, $4) RETURNING id, nome, documento, plano, status, criado_em`, [nome, documento, plano.codigo, vipPadrao]);
     const empresa = t.rows[0];
     await client.query(`INSERT INTO locations (tenant_id, nome) VALUES ($1, $2)`, [empresa.id, String(b.loja_nome || '').trim() || 'Loja única']);
     const administrador = await criarUsuario(client, {

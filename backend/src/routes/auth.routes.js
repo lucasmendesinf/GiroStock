@@ -6,6 +6,7 @@ const { authRequired, authOuMfaConfigurar } = require('../middleware/auth');
 const totp = require('../services/totp');
 const { areasEfetivas } = require('../middleware/permissions');
 const { logAudit } = require('../utils/audit');
+const config = require('../services/config');
 const { HttpError } = require('../utils/http');
 const modoTeste = require('../services/modoTeste');
 const { dadosDaEmpresa, efetivos, aplicarRecursos } = require('../utils/limites');
@@ -45,7 +46,7 @@ async function concluirLogin(user, empresa) {
   user.areasEfetivas = aplicarRecursos(areasEfetivas(user.perfil, user.permissoes), empresa ? efetivos(empresa).recursos : null);
   user.extras = await lojasExtras(user.id);
   user.usa_pedidos = await usaPedidos(user.tenant_id, [user.location_id, ...user.extras.map((e) => e.id)].filter(Boolean), user.perfil);
-  return { token: assinar(user), usuario: dadosDoUsuario(user) };
+  return { token: assinar(user), usuario: { ...dadosDoUsuario(user), parametros: await config.parametrosPublicos() } };
 }
 
 // Token curto do 2FA (nao abre rotas de negocio): 'pendente' (5 min) ou 'configurar' (15 min).
@@ -94,6 +95,11 @@ router.post('/login', async (req, res) => {
       await logAudit(db, { tenantId: user.tenant_id, usuarioId: user.id, acao: 'login_falha', recurso: 'users', recursoId: user.id, detalhes: { falhas_seguidas: f[0].falhas_login } }).catch(() => {});
     }
     return res.status(401).json({ erro: 'Credenciais invalidas' });
+  }
+  // Modo manutencao: so o Master entra.
+  const manut = await config.obter('manutencao');
+  if (manut.ativo && user.perfil !== 'Master') {
+    return res.status(503).json({ erro: manut.mensagem || 'Sistema em manutenção. Tente novamente em instantes.', manutencao: true });
   }
   // Empresa suspensa: nao entra (o Master nunca e bloqueado).
   const empresa = user.perfil === 'Master' ? null : await dadosDaEmpresa(db, user.tenant_id);
@@ -159,7 +165,8 @@ router.get('/me', authRequired, async (req, res) => {
       rows[0].empresaTeste = emp.rows[0] || null;
     }
   }
-  res.json(dadosDoUsuario(rows[0]));
+  const manut = await config.obter('manutencao');
+  res.json({ ...dadosDoUsuario(rows[0]), parametros: await config.parametrosPublicos(), manutencao: manut.ativo && !req.user.master ? { ativo: true, mensagem: manut.mensagem || '' } : null });
 });
 
 // Troca da propria senha (exige a senha atual).

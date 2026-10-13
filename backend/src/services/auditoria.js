@@ -7,7 +7,7 @@ const TIPOS = [
   { codigo: 'config', rotulo: 'Empresas e usuários', acoes: ['master_criar_empresa', 'master_alterar_empresa', 'master_criar_usuario'], prefixos: ['master_config', 'master_aviso', 'master_plano'] },
   { codigo: 'modo_teste', rotulo: 'Modo teste', acoes: ['ligar_modo_teste', 'desligar_modo_teste', 'copiar_producao_para_teste'] },
   { codigo: 'suporte', rotulo: 'Suporte', prefixos: ['master_suporte'] },
-  { codigo: 'backup', rotulo: 'Backup', prefixos: ['master_backup', 'master_exportar', 'master_restaurar'] },
+  { codigo: 'backup', rotulo: 'Backups e dados', prefixos: ['master_backup', 'master_exportar', 'master_restaurar', 'master_corrigir', 'master_otimizar'] },
   { codigo: 'venda', rotulo: 'Venda', acoes: ['venda'] },
   { codigo: 'cancelamento', rotulo: 'Cancelamento', acoes: ['cancelar_venda', 'cancelar_pedido'] },
   { codigo: 'pedido', rotulo: 'Pedido', acoes: ['criar_pedido', 'pedido_status', 'alterar_destino_pedido'] },

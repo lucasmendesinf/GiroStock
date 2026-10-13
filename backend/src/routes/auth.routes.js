@@ -53,6 +53,25 @@ function assinarMfa(user, tipo) {
   return jwt.sign({ sub: user.id, tenantId: user.tenant_id, mfa: tipo }, process.env.JWT_SECRET, { expiresIn: tipo === 'pendente' ? '5m' : '15m' });
 }
 
+// Auditoria de login com falha sem ruido: a partir da 3a falha seguida e depois a cada 5a (3, 5, 10, 15...).
+function deveAuditarFalha(n) {
+  return n === 3 || (n > 3 && n % 5 === 0);
+}
+
+// E-mail que nao existe: conta em memoria (por e-mail) e audita na empresa "Plataforma" pela mesma regra, sem gravar o e-mail digitado.
+const falhasDesconhecidas = new Map();
+async function registrarFalhaDeUsuarioInexistente(email) {
+  const chave = String(email).trim().toLowerCase();
+  const n = (falhasDesconhecidas.get(chave) || 0) + 1;
+  falhasDesconhecidas.set(chave, n);
+  if (falhasDesconhecidas.size > 2000) falhasDesconhecidas.clear();
+  if (!deveAuditarFalha(n)) return;
+  try {
+    const t = await db.query(`SELECT id FROM tenants WHERE nome = 'Plataforma' ORDER BY criado_em LIMIT 1`);
+    if (t.rows[0]) await logAudit(db, { tenantId: t.rows[0].id, usuarioId: null, acao: 'login_falha', recurso: 'users', detalhes: { motivo: 'usuario_inexistente', falhas_seguidas: n } });
+  } catch (e) { /* auditoria nao pode derrubar o login */ }
+}
+
 router.post('/login', async (req, res) => {
   const { email, senha } = req.body || {};
   if (!email || !senha) {
@@ -62,13 +81,18 @@ router.post('/login', async (req, res) => {
   const { rows } = await db.query(`SELECT ${COLUNAS_LOGIN} ${DE_LOGIN} WHERE lower(u.email::text) = lower($1)`, [email]);
   const user = rows[0];
   if (!user || !user.ativo) {
+    if (!user) await registrarFalhaDeUsuarioInexistente(email);
     return res.status(401).json({ erro: 'Credenciais invalidas' });
   }
 
   const ok = await bcrypt.compare(senha, user.senha_hash);
   if (!ok) {
     // Contagem de falhas (painel Master > Usuarios & seguranca): zera no login correto.
-    await db.query(`UPDATE users SET falhas_login = falhas_login + 1, ultima_falha_em = now() WHERE id = $1`, [user.id]);
+    const { rows: f } = await db.query(`UPDATE users SET falhas_login = falhas_login + 1, ultima_falha_em = now() WHERE id = $1 RETURNING falhas_login`, [user.id]);
+    if (deveAuditarFalha(f[0].falhas_login)) {
+      // Nunca grava a senha tentada.
+      await logAudit(db, { tenantId: user.tenant_id, usuarioId: user.id, acao: 'login_falha', recurso: 'users', recursoId: user.id, detalhes: { falhas_seguidas: f[0].falhas_login } }).catch(() => {});
+    }
     return res.status(401).json({ erro: 'Credenciais invalidas' });
   }
   // Empresa suspensa: nao entra (o Master nunca e bloqueado).

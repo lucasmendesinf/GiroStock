@@ -15,6 +15,7 @@ export default function Auditoria() {
   const toast = useToast();
   const [filtros, setFiltros] = useState(VAZIO);
   const [pagina, setPagina] = useState(1);
+  const [verTeste, setVerTeste] = useState(false);
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState(null);
   const [empresas, setEmpresas] = useState([]);
@@ -23,19 +24,21 @@ export default function Auditoria() {
   const qs = useCallback((extra = {}) => {
     const p = new URLSearchParams();
     Object.entries({ ...filtros, ...extra }).forEach(([k, v]) => { if (v) p.set(k, v); });
+    if (verTeste) p.set('teste', '1');
     return p.toString();
-  }, [filtros]);
+  }, [filtros, verTeste]);
 
   const carregar = useCallback(async () => {
     try { setDados(await api.get(`/master/auditoria?${qs({ pagina: pagina > 1 ? pagina : '' })}`)); setErro(null); } catch (err) { setErro(err.message); }
   }, [qs, pagina]);
 
   useEffect(() => { const t = setTimeout(carregar, 200); return () => clearTimeout(t); }, [carregar]);
-  useEffect(() => { api.get('/master/empresas').then((r) => setEmpresas(r.empresas)).catch(() => {}); }, []);
+  useEffect(() => { api.get(`/master/empresas${verTeste ? '?teste=1' : ''}`).then((r) => setEmpresas(r.empresas)).catch(() => {}); }, [verTeste]);
   // Usuarios da empresa escolhida (ou todos) para o filtro "usuario".
   useEffect(() => {
-    api.get(`/master/usuarios${filtros.empresa_id ? `?empresa_id=${filtros.empresa_id}` : ''}`).then((r) => setUsuarios(r.usuarios)).catch(() => setUsuarios([]));
-  }, [filtros.empresa_id]);
+    const q = [filtros.empresa_id && `empresa_id=${filtros.empresa_id}`, verTeste && 'teste=1'].filter(Boolean).join('&');
+    api.get(`/master/usuarios${q ? `?${q}` : ''}`).then((r) => setUsuarios(r.usuarios)).catch(() => setUsuarios([]));
+  }, [filtros.empresa_id, verTeste]);
 
   function mudar(campo, valor) {
     setFiltros((f) => ({ ...f, [campo]: valor, ...(campo === 'empresa_id' ? { usuario_id: '' } : {}) }));
@@ -78,6 +81,7 @@ export default function Auditoria() {
         <input type="date" value={filtros.de} onChange={(e) => mudar('de', e.target.value)} aria-label="De" style={{ width: 'auto' }} />
         <input type="date" value={filtros.ate} onChange={(e) => mudar('ate', e.target.value)} aria-label="Até" style={{ width: 'auto' }} />
         <input className="ped-busca" style={{ maxWidth: 260 }} value={filtros.q} onChange={(e) => mudar('q', e.target.value)} placeholder="Buscar na ação ou no detalhe" aria-label="Buscar" />
+        <label className="check-linha" title="Empresas e usuários criados pelos testes automatizados (E2E) ficam ocultos por padrão"><input type="checkbox" checked={verTeste} onChange={(e) => setVerTeste(e.target.checked)} /> Mostrar dados de teste (E2E)</label>
         {Object.values(filtros).some(Boolean) && <button type="button" className="btn-link" onClick={() => { setFiltros(VAZIO); setPagina(1); }}>Limpar filtros</button>}
       </div>
 

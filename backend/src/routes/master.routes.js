@@ -10,6 +10,7 @@ const { criarUsuario, resetarDoisFatores } = require('../services/usuarios');
 const { copiarProducao, status } = require('../services/copiaProducao');
 const modoTeste = require('../services/modoTeste');
 const config = require('../services/config');
+const { mostrarTeste, semDadosDeTeste } = require('../utils/dadosTeste');
 const pool = require('../db/pool');
 
 // Painel Master. Todas as rotas exigem a area Master e usam SEMPRE a producao (pool.producao), mesmo em modo teste.
@@ -57,7 +58,7 @@ router.get('/master/empresas', async (req, res) => {
             (SELECT COUNT(*)::int FROM users u WHERE u.tenant_id = t.id AND u.ativo AND u.perfil <> 'Master') AS qtd_usuarios_ativos,
             (SELECT MAX(u.ultimo_login) FROM users u WHERE u.tenant_id = t.id) AS ultimo_acesso
      FROM tenants t LEFT JOIN planos p ON p.codigo = t.plano
-     WHERE t.nome <> 'Plataforma' ORDER BY t.nome`
+     WHERE t.nome <> 'Plataforma' ${mostrarTeste(req) ? '' : `AND ${semDadosDeTeste({ empresa: 't' })}`} ORDER BY t.nome`
   );
   res.json({
     resumo: {
@@ -211,6 +212,8 @@ router.get('/master/usuarios', async (req, res) => {
   const { empresa_id: empresaId, q, situacao } = req.query;
   const params = [];
   const where = [`u.perfil <> 'Master'`, `t.nome <> 'Plataforma'`];
+  const ocultarTeste = !mostrarTeste(req);
+  if (ocultarTeste) where.push(semDadosDeTeste({ empresa: 't', usuario: 'u' }));
   if (empresaId) {
     if (!isUuid(empresaId)) throw new HttpError(400, 'empresa inválida');
     params.push(empresaId);
@@ -239,7 +242,7 @@ router.get('/master/usuarios', async (req, res) => {
             COALESCE(SUM(u.falhas_login) FILTER (WHERE u.ultima_falha_em > now() - interval '24 hours'), 0)::int AS falhas_24h,
             COUNT(*) FILTER (WHERE u.falhas_login >= 3)::int AS usuarios_3_falhas,
             COUNT(*) FILTER (WHERE u.ativo AND (u.ultimo_login IS NULL OR u.ultimo_login < now() - interval '30 days'))::int AS sem_login_30d
-     FROM users u JOIN tenants t ON t.id = u.tenant_id WHERE u.perfil <> 'Master' AND t.nome <> 'Plataforma'`
+     FROM users u JOIN tenants t ON t.id = u.tenant_id WHERE u.perfil <> 'Master' AND t.nome <> 'Plataforma' ${ocultarTeste ? `AND ${semDadosDeTeste({ empresa: 't', usuario: 'u' })}` : ''}`
   )).rows[0];
   res.json({ resumo: r, usuarios: rows });
 });

@@ -15,16 +15,18 @@ export default function Usuarios() {
   const [busca, setBusca] = useState('');
   const [situacao, setSituacao] = useState('');
   const [novo, setNovo] = useState(false);
+  const [verTeste, setVerTeste] = useState(false);
 
   const carregar = useCallback(async () => {
     const qs = new URLSearchParams();
     if (empresaId) qs.set('empresa_id', empresaId);
     if (busca.trim()) qs.set('q', busca.trim());
     if (situacao) qs.set('situacao', situacao);
+    if (verTeste) qs.set('teste', '1');
     try { setDados(await api.get(`/master/usuarios?${qs.toString()}`)); } catch (err) { toast.erro(err); }
-  }, [empresaId, busca, situacao, toast]);
+  }, [empresaId, busca, situacao, verTeste, toast]);
   useEffect(() => { const t = setTimeout(carregar, 200); return () => clearTimeout(t); }, [carregar]);
-  useEffect(() => { api.get('/master/empresas').then((r) => setEmpresas(r.empresas)).catch(() => {}); }, []);
+  useEffect(() => { api.get(`/master/empresas${verTeste ? '?teste=1' : ''}`).then((r) => setEmpresas(r.empresas)).catch(() => {}); }, [verTeste]);
 
   async function acao(promessa, msg) {
     try { await promessa; toast.sucesso(msg); await carregar(); } catch (err) { toast.erro(err); }
@@ -70,6 +72,7 @@ export default function Usuarios() {
         <select value={situacao} onChange={(e) => setSituacao(e.target.value)} aria-label="Situação" style={{ width: 'auto' }}>
           {SITUACOES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
         </select>
+        <label className="check-linha" title="Empresas e usuários criados pelos testes automatizados (E2E) ficam ocultos por padrão"><input type="checkbox" checked={verTeste} onChange={(e) => setVerTeste(e.target.checked)} /> Mostrar dados de teste (E2E)</label>
         <input className="ped-busca" style={{ maxWidth: 300 }} value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome ou e-mail" aria-label="Buscar usuário" />
       </div>
 

@@ -4,6 +4,7 @@ const pool = require('../db/pool');
 const { saude } = require('../services/saude');
 const { requisicoesPorMinuto } = require('../services/monitoramento');
 const { consultarAuditoria, exportarCsv, TIPOS } = require('../services/auditoria');
+const { mostrarTeste } = require('../utils/dadosTeste');
 
 // Visao geral e auditoria global do painel Master (Fase 2). So le; nada aqui mostra vendas, pedidos ou clientes.
 // Nao existe nenhuma rota que edite ou apague audit_logs.
@@ -17,13 +18,15 @@ router.get('/master/saude', async (req, res) => {
 
 // Uso da plataforma hoje (sem vendas/pedidos): empresas ativas hoje (>= 1 login hoje), usuarios online (acesso nos ultimos 5 min).
 router.get('/master/uso', async (req, res) => {
+  // Empresas/usuarios de teste (e2e) nao entram nos numeros, a menos que teste=1.
+  const ft = mostrarTeste(req) ? { t: 'true', u: 'true' } : { t: "t.nome NOT LIKE 'E2E %'", u: "lower(u.email::text) NOT LIKE 'e2e.%@girostock.local' AND lower(u.email::text) <> 'ui2fa@teste.local'" };
   const { rows } = await db.query(
     `SELECT
        (SELECT COUNT(DISTINCT u.tenant_id)::int FROM users u JOIN tenants t ON t.id = u.tenant_id
-         WHERE t.nome <> 'Plataforma' AND u.ultimo_login >= date_trunc('day', now())) AS empresas_ativas_hoje,
-       (SELECT COUNT(*)::int FROM users u WHERE u.ultimo_acesso > now() - interval '5 minutes') AS usuarios_online,
-       (SELECT COUNT(*)::int FROM users u WHERE u.perfil <> 'Master') AS usuarios_cadastrados,
-       (SELECT COUNT(*)::int FROM locations l JOIN tenants t ON t.id = l.tenant_id WHERE l.ativo AND t.nome <> 'Plataforma') AS lojas_ativas`
+         WHERE t.nome <> 'Plataforma' AND ${ft.t} AND ${ft.u} AND u.ultimo_login >= date_trunc('day', now())) AS empresas_ativas_hoje,
+       (SELECT COUNT(*)::int FROM users u WHERE ${ft.u} AND u.ultimo_acesso > now() - interval '5 minutes') AS usuarios_online,
+       (SELECT COUNT(*)::int FROM users u WHERE u.perfil <> 'Master' AND ${ft.u}) AS usuarios_cadastrados,
+       (SELECT COUNT(*)::int FROM locations l JOIN tenants t ON t.id = l.tenant_id WHERE l.ativo AND t.nome <> 'Plataforma' AND ${ft.t}) AS lojas_ativas`
   );
   const r = requisicoesPorMinuto();
   res.json({ ...rows[0], requisicoes_por_min_pico: r.pico, requisicoes_ultimo_min: r.ultimoMinuto, requisicoes_serie: r.serie });

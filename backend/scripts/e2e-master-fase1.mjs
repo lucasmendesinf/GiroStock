@@ -28,8 +28,9 @@ let fail = 0;
 const check = (nome, cond, info) => {
   if (cond) { pass++; console.log(`  ok   ${nome}`); } else { fail++; console.log(`  FALHA ${nome} -> ${String(JSON.stringify(info)).slice(0, 300)}`); }
 };
-async function api(method, rota, body, tok) {
+async function api(method, rotaOriginal, body, tok) {
   try {
+    const rota = method === 'GET' && /^\/master\/(empresas|usuarios|auditoria|uso)/.test(rotaOriginal) ? rotaOriginal + (rotaOriginal.includes('?') ? '&' : '?') + 'teste=1' : rotaOriginal; // dados E2E ficam ocultos por padrao
     const res = await fetch(B + '/api' + rota, { method, headers: { 'content-type': 'application/json', ...(tok ? { authorization: 'Bearer ' + tok } : {}) }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(60000) });
     const t = await res.text();
     let j; try { j = JSON.parse(t); } catch { j = t; }

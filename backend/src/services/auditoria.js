@@ -63,6 +63,8 @@ function montarFiltro(q) {
   const params = [];
   const where = [];
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  // Dados de teste (e2e) ficam ocultos, a menos que teste=1.
+  if (String(q.teste) !== '1') where.push(`COALESCE(t.nome, '') NOT LIKE 'E2E %' AND COALESCE(lower(u.email::text), '') NOT LIKE 'e2e.%@girostock.local' AND COALESCE(lower(u.email::text), '') <> 'ui2fa@teste.local'`);
   if (q.tipo) where.push(condicaoDoTipo(String(q.tipo), params));
   if (q.empresa_id) { if (!uuid.test(q.empresa_id)) return { vazio: true }; params.push(q.empresa_id); where.push(`a.tenant_id = $${params.length}`); }
   if (q.usuario_id) { if (!uuid.test(q.usuario_id)) return { vazio: true }; params.push(q.usuario_id); where.push(`a.usuario_id = $${params.length}`); }

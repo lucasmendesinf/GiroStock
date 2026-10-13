@@ -20,10 +20,11 @@ export default function Empresas() {
   const [novoUsuario, setNovoUsuario] = useState(null); // id da empresa
   const [suporteDe, setSuporteDe] = useState(null); // empresa para entrar como suporte
   const [historico, setHistorico] = useState([]);
+  const [verTeste, setVerTeste] = useState(false);
 
   const carregar = useCallback(async () => {
-    try { setDados(await api.get('/master/empresas')); } catch (err) { toast.erro(err); }
-  }, [toast]);
+    try { setDados(await api.get(`/master/empresas${verTeste ? '?teste=1' : ''}`)); } catch (err) { toast.erro(err); }
+  }, [toast, verTeste]);
   useEffect(() => { carregar(); }, [carregar]);
 
   const abrir = useCallback(async (id) => {
@@ -78,6 +79,7 @@ export default function Empresas() {
 
       <div className="ped-bar">
         <input className="ped-busca" style={{ maxWidth: 340 }} value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar empresa ou CNPJ" aria-label="Buscar empresa" />
+      <label className="check-linha" title="Empresas e usuários criados pelos testes automatizados (E2E) ficam ocultos por padrão"><input type="checkbox" checked={verTeste} onChange={(e) => setVerTeste(e.target.checked)} /> Mostrar dados de teste (E2E)</label>
       </div>
 
       <div className="card">

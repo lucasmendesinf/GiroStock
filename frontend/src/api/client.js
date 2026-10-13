@@ -4,9 +4,10 @@ function getToken() {
   return localStorage.getItem('girostock_token');
 }
 
-async function request(path, { method = 'GET', body } = {}) {
+// opcoes.token: token explicito (o token_mfa do 2FA, que nunca vai para o localStorage); nesse caso erros 401 nao derrubam a sessao.
+async function request(path, { method = 'GET', body, token: tokenExplicito } = {}) {
   const headers = { 'Content-Type': 'application/json' };
-  const token = getToken();
+  const token = tokenExplicito || getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -20,7 +21,7 @@ async function request(path, { method = 'GET', body } = {}) {
   const data = await res.json().catch(() => null);
   if (!res.ok) {
     // Sessao expirada/usuario desativado: volta para o login.
-    if (res.status === 401 && token && !path.startsWith('/auth/login')) {
+    if (res.status === 401 && token && !tokenExplicito && !path.startsWith('/auth/login')) {
       clearSession();
       window.location.assign('/login');
     }
@@ -45,7 +46,7 @@ async function request(path, { method = 'GET', body } = {}) {
 
 export const api = {
   get: (path) => request(path),
-  post: (path, body) => request(path, { method: 'POST', body }),
+  post: (path, body, opcoes) => request(path, { method: 'POST', body, ...opcoes }),
   put: (path, body) => request(path, { method: 'PUT', body }),
   patch: (path, body) => request(path, { method: 'PATCH', body }),
   del: (path) => request(path, { method: 'DELETE' }),

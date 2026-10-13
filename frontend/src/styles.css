@@ -1134,3 +1134,23 @@ button.ped-act-btn, .ped-act button { flex: 1; padding: 8px; font-size: 11.5px; 
 .mt-passos span.ok { color: var(--ok); border-color: var(--ok); }
 .mt-limite { border-color: var(--err); color: var(--err); }
 .mt-master-card { margin-bottom: 16px; }
+
+/* 2FA */
+.login-card-larga { width: 440px; max-width: calc(100vw - 32px); }
+.login-sub { margin: 0; text-align: center; color: var(--muted); font-size: 13px; }
+.login-card .login-link { background: none; border: none; color: var(--muted); text-transform: none; letter-spacing: 0; font-weight: 600; font-size: 13px; padding: 6px; margin: 0; cursor: pointer; }
+.login-card .login-link:hover { color: var(--ivory); text-decoration: underline; }
+.campo-codigo { text-align: center; font-size: 26px !important; letter-spacing: 10px; font-variant-numeric: tabular-nums; font-family: ui-monospace, Consolas, monospace; }
+.passos-2fa { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; color: var(--ivory); font-size: 13px; }
+.qr-2fa { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.qr-2fa img { background: #fff; padding: 8px; border-radius: 12px; border: 1px solid var(--line); }
+.chave-2fa { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
+.chave-2fa code { font-size: 14px; letter-spacing: 2px; color: var(--ivory); background: var(--panel-alt); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; word-break: break-all; text-align: center; user-select: all; }
+.codigos-rec { list-style: none; margin: 0; padding: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; background: var(--panel-alt); border: 1px solid var(--line); border-radius: 12px; font-family: ui-monospace, Consolas, monospace; font-size: 15px; color: var(--ivory); }
+.check-linha { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ivory); cursor: pointer; text-transform: none; letter-spacing: 0; }
+.check-linha input { width: auto; margin: 0; }
+.selo-ok { border-color: var(--ok); color: var(--ok); background: var(--ok-soft); }
+.login-card .check-linha { flex-direction: row; font-size: 13px; }
+.login-card .btn-primario:disabled, .form-stack .btn-primario:disabled { opacity: 0.5; cursor: not-allowed; }
+.login-card .btn-link { background: none; border: 1px solid var(--line); color: var(--ivory); border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 700; text-transform: none; letter-spacing: normal; margin: 0; cursor: pointer; }
+.login-card .modal-actions button { margin: 0; }

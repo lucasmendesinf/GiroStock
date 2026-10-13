@@ -45,6 +45,15 @@ export default function Users() {
     } catch (err) { toast.erro(err); }
   }
 
+  async function resetar2fa(u) {
+    if (!(await confirmar({ titulo: `Resetar o 2FA de ${u.nome}?`, mensagem: 'O segredo e os códigos de recuperação são apagados e as sessões atuais caem. O usuário terá de configurar o app de novo.', confirmar: 'Resetar 2FA', perigo: true }))) return;
+    try {
+      await api.post(`/users/${u.id}/2fa/resetar`);
+      toast.sucesso('2FA resetado.');
+      reload();
+    } catch (err) { toast.erro(err); }
+  }
+
   return (
     <div className="page">
       <div className="page-header">
@@ -55,18 +64,20 @@ export default function Users() {
       <div className="card">
         <div className="tabela-wrap">
           <table>
-            <thead><tr><th>Usuário</th><th>Perfil</th><th className="col-opcional">Loja de atuação</th><th className="col-opcional">Situação</th><th /></tr></thead>
+            <thead><tr><th>Usuário</th><th>Perfil</th><th className="col-opcional">Loja de atuação</th><th className="col-opcional">2FA</th><th className="col-opcional">Situação</th><th /></tr></thead>
             <tbody>
               {users.map((u) => (
                 <tr key={u.id} className={u.ativo ? '' : 'row-inativa'}>
                   <td><div className="celula-principal">{u.nome}{u.id === eu.id ? ' (você)' : ''}</div><div className="celula-sub">{u.email}</div></td>
                   <td><span className="badge">{u.perfil}</span>{u.permissoes && Object.keys(u.permissoes).length > 0 && <span className="badge-inativo" title="Permissões ajustadas em relação ao padrão do perfil" style={{ marginLeft: 6 }}>personalizado</span>}</td>
                   <td className="col-opcional">{u.location_id ? [nomeLocal(u.location_id), ...(u.location_ids || []).map(nomeLocal)].filter(Boolean).join(', ') : <span className="muted">Todas as lojas</span>}</td>
+                  <td className="col-opcional">{u.totp_ativo ? <span className="badge selo-ok">Ativo</span> : <span className="muted">Não ativo</span>}{u.totp_exigido && <span className="badge" style={{ marginLeft: 6 }}>exigido</span>}</td>
                   <td className="col-opcional">{u.ativo ? 'Ativo' : <span className="badge-inativo">Inativo</span>}</td>
                   <td>
                     <div className="row-actions">
                       <button className="btn-link" onClick={() => setEditando(u)}>Editar</button>
                       <button className="btn-link" onClick={() => setSenhaDe(u)}>Redefinir senha</button>
+                      {u.totp_ativo && <button className="btn-link" onClick={() => resetar2fa(u)}>Resetar 2FA</button>}
                       {u.id !== eu.id && <button className={`btn-link ${u.ativo ? 'perigo' : ''}`} onClick={() => alternarStatus(u)}>{u.ativo ? 'Desativar' : 'Reativar'}</button>}
                     </div>
                   </td>
@@ -147,13 +158,13 @@ function CamposPerfilLoja({ form, setForm, locations, matriz }) {
 function NovoUsuario({ matriz, locations, onClose, onSalvo }) {
   const toast = useToast();
   const confirmar = useConfirm();
-  const [form, setForm] = useState({ ...FORM_VAZIO, permissoes: { ...matriz.padrao[FORM_VAZIO.perfil] } });
+  const [form, setForm] = useState({ ...FORM_VAZIO, totp_exigido: false, permissoes: { ...matriz.padrao[FORM_VAZIO.perfil] } });
   async function salvar(e) {
     e.preventDefault();
     if (form.senha !== form.confirmarSenha) { toast.erro('As senhas não conferem.'); return; }
     if (form.perfil === 'Administrador' && !(await confirmar({ titulo: 'Criar um Administrador?', mensagem: 'Administradores têm acesso total ao sistema.', confirmar: 'Criar administrador' }))) return;
     try {
-      await api.post('/users', { nome: form.nome, email: form.email, senha: form.senha, perfil: form.perfil, location_id: form.location_id || null, location_ids: form.location_id ? form.location_ids : [], permissoes: soListadas(matriz, form.permissoes) });
+      await api.post('/users', { nome: form.nome, email: form.email, senha: form.senha, perfil: form.perfil, location_id: form.location_id || null, location_ids: form.location_id ? form.location_ids : [], permissoes: soListadas(matriz, form.permissoes), totp_exigido: !!form.totp_exigido });
       toast.sucesso('Usuário cadastrado.');
       onSalvo();
     } catch (err) { toast.erro(err); }
@@ -170,6 +181,7 @@ function NovoUsuario({ matriz, locations, onClose, onSalvo }) {
           <Field label="Senha *" hint="Mínimo de 6 caracteres"><input type="password" autoComplete="new-password" minLength={6} value={form.senha} onChange={(e) => setForm({ ...form, senha: e.target.value })} required /></Field>
           <Field label="Confirmar senha *"><input type="password" autoComplete="new-password" value={form.confirmarSenha} onChange={(e) => setForm({ ...form, confirmarSenha: e.target.value })} required /></Field>
         </div>
+        <label className="check-linha"><input type="checkbox" checked={!!form.totp_exigido} onChange={(e) => setForm({ ...form, totp_exigido: e.target.checked })} /> Exigir verificação em duas etapas (2FA) no primeiro acesso</label>
         <div className="modal-actions">
           <button type="button" onClick={onClose}>Cancelar</button>
           <button type="submit">Cadastrar</button>
@@ -183,7 +195,7 @@ function EditarUsuario({ usuario, matriz, locations, souEu, onClose, onSalvo }) 
   const toast = useToast();
   const confirmar = useConfirm();
   const inicial = efetivas(matriz, usuario.perfil, usuario.permissoes);
-  const [form, setForm] = useState({ nome: usuario.nome, perfil: usuario.perfil, location_id: usuario.location_id || '', location_ids: usuario.location_ids || [], permissoes: inicial });
+  const [form, setForm] = useState({ nome: usuario.nome, perfil: usuario.perfil, location_id: usuario.location_id || '', location_ids: usuario.location_ids || [], totp_exigido: !!usuario.totp_exigido, permissoes: inicial });
   async function salvar(e) {
     e.preventDefault();
     const mudouPerfil = form.perfil !== usuario.perfil;
@@ -196,7 +208,7 @@ function EditarUsuario({ usuario, matriz, locations, souEu, onClose, onSalvo }) 
       confirmar: 'Confirmar',
     }))) return;
     try {
-      await api.patch(`/users/${usuario.id}`, { nome: form.nome, perfil: form.perfil, location_id: form.location_id || null, location_ids: form.location_id ? form.location_ids : [], permissoes: soListadas(matriz, form.permissoes) });
+      await api.patch(`/users/${usuario.id}`, { nome: form.nome, perfil: form.perfil, location_id: form.location_id || null, location_ids: form.location_id ? form.location_ids : [], permissoes: soListadas(matriz, form.permissoes), totp_exigido: !!form.totp_exigido });
       toast.sucesso('Usuário atualizado.');
       onSalvo();
     } catch (err) { toast.erro(err); }
@@ -206,6 +218,7 @@ function EditarUsuario({ usuario, matriz, locations, souEu, onClose, onSalvo }) 
       <form onSubmit={salvar} className="form-stack">
         <Field label="Nome *"><input autoFocus value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required minLength={2} /></Field>
         <CamposPerfilLoja form={form} setForm={setForm} locations={locations} matriz={matriz} />
+        <label className="check-linha"><input type="checkbox" checked={!!form.totp_exigido} onChange={(e) => setForm({ ...form, totp_exigido: e.target.checked })} /> Exigir verificação em duas etapas (2FA)</label>
         {souEu && <p className="form-hint">Você não pode remover o seu próprio perfil de Administrador.</p>}
         <div className="modal-actions">
           <button type="button" onClick={onClose}>Cancelar</button>

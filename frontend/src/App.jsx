@@ -4,6 +4,7 @@ import { useAuth } from './context/AuthContext.jsx';
 import { useToast } from './context/UiContext.jsx';
 import ThemeToggle from './components/ThemeToggle.jsx';
 import { Field, Modal } from './components/ui.jsx';
+import SegurancaModal from './components/DoisFatores.jsx';
 import { api } from './api/client';
 import { exitFullscreen } from './utils/fullscreen.js';
 import { podeAcessar, rotaInicial, telasDoUsuario } from './utils/permissions.js';
@@ -94,6 +95,7 @@ function Layout({ children }) {
   const [menuAberto, setMenuAberto] = useState(false);
   const [contaAberta, setContaAberta] = useState(false);
   const [trocandoSenha, setTrocandoSenha] = useState(false);
+  const [segurancaAberta, setSegurancaAberta] = useState(false);
   const [modoTesteAberto, setModoTesteAberto] = useState(false);
   const noPdv = location.pathname === '/pdv';
   const telas = telasDoUsuario(user);
@@ -153,6 +155,7 @@ function Layout({ children }) {
                   <button type="button" onClick={() => { setContaAberta(false); setModoTesteAberto(true); }}>Modo teste</button>
                 )}
                 <button type="button" onClick={() => { setContaAberta(false); setTrocandoSenha(true); }}>Alterar minha senha</button>
+                <button type="button" onClick={() => { setContaAberta(false); setSegurancaAberta(true); }}>Verificação em duas etapas</button>
                 <button type="button" onClick={sair}>Sair</button>
               </div>
             )}
@@ -161,6 +164,7 @@ function Layout({ children }) {
       </header>
       <main>{children}</main>
       {trocandoSenha && <TrocarSenha onClose={() => setTrocandoSenha(false)} />}
+      {segurancaAberta && <SegurancaModal onClose={() => setSegurancaAberta(false)} />}
       {modoTesteAberto && <ModoTesteModal onClose={() => setModoTesteAberto(false)} />}
     </div>
   );

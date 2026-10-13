@@ -33,6 +33,10 @@ export default function Usuarios() {
     if (!(await confirmar({ titulo: `Encerrar as sessões de ${u.nome}?`, mensagem: 'Ele precisará entrar de novo em todos os dispositivos.', confirmar: 'Encerrar sessões', perigo: true }))) return;
     acao(api.post(`/master/usuarios/${u.id}/encerrar-sessoes`), `Todas as sessões de ${u.nome} foram encerradas`);
   }
+  async function resetar2fa(u) {
+    if (!(await confirmar({ titulo: `Resetar o 2FA de ${u.nome}?`, mensagem: 'O segredo e os códigos de recuperação são apagados e as sessões atuais caem. Ele terá de configurar o app de novo.', confirmar: 'Resetar 2FA', perigo: true }))) return;
+    acao(api.post(`/master/usuarios/${u.id}/2fa/resetar`), `2FA de ${u.nome} resetado`);
+  }
   async function alternarAtivo(u) {
     if (u.ativo && !(await confirmar({ titulo: `Desativar ${u.nome}?`, mensagem: 'O acesso é cortado na hora.', confirmar: 'Desativar', perigo: true }))) return;
     acao(api.patch(`/master/usuarios/${u.id}/status`, { ativo: !u.ativo }), `${u.nome} ${u.ativo ? 'desativado' : 'reativado'}`);
@@ -72,7 +76,7 @@ export default function Usuarios() {
       <div className="card">
         <div className="tabela-wrap">
           <table>
-            <thead><tr><th>Usuário</th><th>Empresa</th><th>Perfil</th><th>Último login</th><th>Falhas</th><th>Modo teste</th><th>Situação</th><th /></tr></thead>
+            <thead><tr><th>Usuário</th><th>Empresa</th><th>Perfil</th><th>Último login</th><th>Falhas</th><th>Modo teste</th><th>2FA</th><th>Situação</th><th /></tr></thead>
             <tbody>
               {dados && dados.usuarios.map((u) => (
                 <tr key={u.id}>
@@ -88,10 +92,13 @@ export default function Usuarios() {
                       <span className="cl-sub" style={{ margin: 0 }}>{u.modo_teste ? 'liberado' : '—'}</span>
                     </div>
                   </td>
+                  <td>{u.totp_ativo ? <span className="ped-pill ok">Ativo</span> : <span className="cl-sub" style={{ margin: 0 }}>Não ativo</span>}{(u.totp_exigido || u.perfil === 'Master') && <span className="ped-tag" style={{ marginLeft: 6 }}>exigido</span>}</td>
                   <td><span className={`ped-pill ${u.ativo ? 'ok' : 'err'}`}>{u.ativo ? 'Ativo' : 'Inativo'}</span></td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                     <button type="button" className="btn-link" onClick={() => acao(api.post(`/master/usuarios/${u.id}/forcar-troca-senha`), `Troca de senha exigida no próximo login de ${u.nome}`)}>Forçar troca de senha</button>{' '}
                     <button type="button" className="btn-link" onClick={() => encerrar(u)}>Encerrar sessões</button>{' '}
+                    {u.perfil !== 'Master' && <button type="button" className="btn-link" onClick={() => acao(api.patch(`/master/usuarios/${u.id}/exigir-2fa`, { exigido: !u.totp_exigido }), u.totp_exigido ? `2FA deixou de ser exigido de ${u.nome}` : `2FA exigido de ${u.nome} no próximo login`)}>{u.totp_exigido ? 'Dispensar 2FA' : 'Exigir 2FA'}</button>}{' '}
+                    {u.totp_ativo && u.perfil !== 'Master' && <button type="button" className="btn-link" onClick={() => resetar2fa(u)}>Resetar 2FA</button>}{' '}
                     <button type="button" className={`btn-link ${u.ativo ? 'perigo' : ''}`} onClick={() => alternarAtivo(u)}>{u.ativo ? 'Desativar' : 'Reativar'}</button>
                   </td>
                 </tr>

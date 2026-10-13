@@ -8,6 +8,15 @@ export function AuthProvider({ children }) {
 
   const login = useCallback(async (email, senha) => {
     const data = await api.post('/auth/login', { email, senha });
+    // 2FA: ainda nao ha sessao; o token_mfa fica so na memoria do componente de login.
+    if (data.mfa) return { mfa: data.mfa, tokenMfa: data.token_mfa };
+    saveSession(data.token, data.usuario);
+    setUser(data.usuario);
+    return data.usuario;
+  }, []);
+
+  // Conclui o login com a resposta que traz token + usuario (2FA verificado ou ativado no fluxo "configurar").
+  const concluirLogin = useCallback((data) => {
     saveSession(data.token, data.usuario);
     setUser(data.usuario);
     return data.usuario;
@@ -45,7 +54,7 @@ export function AuthProvider({ children }) {
   }, [logout]);
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, alternarModoTeste, recarregarUsuario }}>
+    <AuthContext.Provider value={{ user, login, concluirLogin, logout, alternarModoTeste, recarregarUsuario }}>
       {children}
     </AuthContext.Provider>
   );

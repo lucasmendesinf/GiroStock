@@ -48,6 +48,7 @@ cPanel → **Setup Node.js App** → Criar aplicação:
   - `JWT_SECRET` = (texto longo e aleatório)
   - `JWT_EXPIRES_IN` = `8h`
   - `TOTP_ENC_KEY` = chave do 2FA (32 bytes em base64 ou 64 hexadecimais). Gere com `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`, digite você mesmo no painel e **guarde uma cópia**: sem ela os 2FA ativos deixam de funcionar. Sem a variável, o 2FA fica indisponível (e o Master não consegue entrar, pois o 2FA dele é obrigatório).
+  - **Master sem celular e sem códigos de recuperação:** rode no servidor `RESET_EMAIL=<e-mail do Master> npm run resetar-2fa` (script "resetar-2fa" em "Correr script JS"; não mostra segredos). No próximo login ele configura o app de novo.
 - Clique em **Run NPM Install** e depois em **Restart**.
 (A porta é definida pelo Passenger; o servidor lê `process.env.PORT`.)
 

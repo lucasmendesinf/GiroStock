@@ -11,7 +11,8 @@
     "seed": "node src/db/seed.js",
     "usuarios": "node scripts/usuarios.js",
     "master": "node scripts/master.js",
-    "test:e2e": "node scripts/e2e-estoque-vendas.mjs"
+    "test:e2e": "node scripts/e2e-estoque-vendas.mjs",
+    "test:e2e:modo-teste": "node scripts/e2e-modo-teste.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -21,7 +22,8 @@
     "express-async-errors": "^3.1.1",
     "helmet": "6.2.0",
     "jsonwebtoken": "^9.0.2",
-    "pg": "8.11.3"
+    "pg": "8.11.3",
+    "pg-copy-streams": "^7.0.0"
   },
   "engines": {
     "node": ">=14.21"

@@ -1,6 +1,7 @@
 // Areas do sistema por tela. O backend envia em user.areas o que o perfil acessa
 // (mesma matriz de backend/src/middleware/permissions.js).
 export const TELAS = [
+  { path: '/master', label: 'Master', area: 'Master' },
   { path: '/inicio', label: 'Início', area: null, paraPerfis: ['Administrador', 'Gerente', 'Financeiro', 'Estoque', 'Lanchonete/Cozinha'] },
   { path: '/pdv', label: 'PDV', area: 'Vendas' },
   { path: '/pedidos', label: 'Pedidos', area: 'Pedidos', requer: 'usaPedidos' },

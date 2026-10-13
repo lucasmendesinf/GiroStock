@@ -13,6 +13,16 @@ export function AuthProvider({ children }) {
     return data.usuario;
   }, []);
 
+  // Liga/desliga o modo teste da sessao: o servidor devolve um novo token; depois recarrega o usuario (/auth/me).
+  const alternarModoTeste = useCallback(async (ativo, extra = {}) => {
+    const { token } = await api.post('/auth/modo-teste', { ativo, ...extra });
+    localStorage.setItem('girostock_token', token);
+    const u = await api.get('/auth/me');
+    updateStoredUser(u);
+    setUser(u);
+    return u;
+  }, []);
+
   const logout = useCallback(() => {
     clearSession();
     setUser(null);
@@ -27,7 +37,7 @@ export function AuthProvider({ children }) {
   }, [logout]);
 
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider value={{ user, login, logout, alternarModoTeste }}>
       {children}
     </AuthContext.Provider>
   );

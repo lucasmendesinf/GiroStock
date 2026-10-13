@@ -24,8 +24,14 @@ async function request(path, { method = 'GET', body } = {}) {
       clearSession();
       window.location.assign('/login');
     }
+    // Permissao do modo teste retirada (ou modo teste indisponivel): o token de teste nao serve mais; volta ao login (producao).
+    if (data && data.modoTesteRevogado && token) {
+      clearSession();
+      window.location.assign('/login');
+    }
     const erro = new Error((data && data.erro) || `Erro ${res.status}`);
     erro.status = res.status;
+    erro.dados = data;
     throw erro;
   }
   return data;

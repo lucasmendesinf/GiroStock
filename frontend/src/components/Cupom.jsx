@@ -1,4 +1,10 @@
 import { brl, dataHora, qtd, FORMA_PAGAMENTO } from '../utils/format';
+import { useAuth } from '../context/AuthContext.jsx';
+
+// Modo teste: todo documento impresso leva a faixa no topo e no rodape.
+function FaixaTeste() {
+  return <div className="cupom-centro"><strong>*** TESTE ***</strong></div>;
+}
 
 // Padrao da configuracao (igual ao do backend: backend/src/utils/cupom.js).
 export const CONFIG_PADRAO = {
@@ -42,10 +48,11 @@ function Pedido({ numero, tamanho }) {
 }
 
 // Cupom do cliente (nao fiscal), conforme a configuracao da loja.
-export function CupomCliente({ venda, config }) {
+export function CupomCliente({ venda, config, teste }) {
   const c = config.cliente;
   return (
     <div className="cupom-doc" style={{ width: larguraDoc(c.largura_mm) }}>
+      {teste && <FaixaTeste />}
       <div className="cupom-centro">
         {c.mostrar_empresa && <strong>{venda.empresa_nome}</strong>}
         {c.mostrar_loja && <div>{venda.location_nome}</div>}
@@ -76,16 +83,18 @@ export function CupomCliente({ venda, config }) {
       {c.mostrar_troco && venda.troco !== null && venda.troco !== undefined && <div className="cupom-dir">Recebido {brl(venda.valor_recebido)} · Troco {brl(venda.troco)}</div>}
       {venda.status === 'cancelada' && <div className="cupom-centro"><strong>VENDA CANCELADA</strong></div>}
       {c.rodape && (<><div className="cupom-linha" /><div className="cupom-centro cupom-texto">{c.rodape}</div></>)}
+      {teste && <FaixaTeste />}
     </div>
   );
 }
 
 // Comanda da cozinha: so o que precisa ser preparado, com o numero do pedido em destaque.
-export function ComandaCozinha({ venda, config }) {
+export function ComandaCozinha({ venda, config, teste }) {
   const k = config.cozinha;
   const itens = k.itens === 'todos' ? venda.itens : venda.itens.filter((i) => i.preparo);
   return (
     <div className="cupom-doc" style={{ width: larguraDoc(k.largura_mm) }}>
+      {teste && <FaixaTeste />}
       <div className="cupom-centro">
         {k.cabecalho && <strong className="cupom-texto">{k.cabecalho}</strong>}
         {k.mostrar_loja && <div>{venda.location_nome}</div>}
@@ -112,15 +121,17 @@ export function ComandaCozinha({ venda, config }) {
         </div>
       ))}
       <div className="cupom-linha" />
+      {teste && <FaixaTeste />}
     </div>
   );
 }
 
 // Senha do cliente: papel que o cliente guarda e apresenta quando o pedido sai (sem valores).
-export function SenhaCliente({ venda, config }) {
+export function SenhaCliente({ venda, config, teste }) {
   const s = config.senha;
   return (
     <div className="cupom-doc" style={{ width: larguraDoc(s.largura_mm) }}>
+      {teste && <FaixaTeste />}
       <div className="cupom-centro">
         {s.titulo && <strong className="cupom-texto">{s.titulo}</strong>}
         {s.mostrar_loja && <div>{venda.location_nome}</div>}
@@ -140,6 +151,7 @@ export function SenhaCliente({ venda, config }) {
         </>
       )}
       {s.mensagem && (<><div className="cupom-linha" /><div className="cupom-centro cupom-texto">{s.mensagem}</div></>)}
+      {teste && <FaixaTeste />}
     </div>
   );
 }
@@ -154,14 +166,16 @@ function modosDe(modo) {
 
 // Area de impressao (so aparece no print).
 export default function Cupom({ venda }) {
+  const { user } = useAuth();
+  const teste = !!(user && user.modoTeste);
   const config = configDaVenda(venda);
   const modos = modosDe(venda.modo);
   const vias = Math.max(1, Number(config.cliente.vias) || 1);
   const docs = [];
   for (const m of modos) {
-    if (m === 'cliente') for (let v = 0; v < vias; v += 1) docs.push(<CupomCliente key={`c${v}`} venda={venda} config={config} />);
-    if (m === 'cozinha') docs.push(<ComandaCozinha key="k" venda={venda} config={config} />);
-    if (m === 'senha') docs.push(<SenhaCliente key="s" venda={venda} config={config} />);
+    if (m === 'cliente') for (let v = 0; v < vias; v += 1) docs.push(<CupomCliente key={`c${v}`} venda={venda} config={config} teste={teste} />);
+    if (m === 'cozinha') docs.push(<ComandaCozinha key="k" venda={venda} config={config} teste={teste} />);
+    if (m === 'senha') docs.push(<SenhaCliente key="s" venda={venda} config={config} teste={teste} />);
   }
   const primeiro = modos[0] || 'cliente';
   const largura = config[primeiro].largura_mm === 58 ? 58 : 80;

@@ -17,6 +17,8 @@ import Users from './pages/Users.jsx';
 import Suppliers from './pages/Suppliers.jsx';
 import Reports from './pages/Reports.jsx';
 import Locations from './pages/Locations.jsx';
+import Master from './pages/Master.jsx';
+import ModoTesteModal from './components/ModoTesteModal.jsx';
 
 // Tela protegida: exige login e, se informada, acesso a area do perfil.
 function Private({ area, children }) {
@@ -66,6 +68,22 @@ function TrocarSenha({ onClose }) {
   );
 }
 
+// Faixa fixa em todas as telas enquanto o modo teste estiver ligado (nao pode ser escondida).
+function FaixaTeste() {
+  const { user, alternarModoTeste } = useAuth();
+  const toast = useToast();
+  if (!user || !user.modoTeste) return null;
+  async function voltar() {
+    try { await alternarModoTeste(false); window.location.assign('/'); } catch (err) { toast.erro(err); }
+  }
+  return (
+    <div className="faixa-teste" role="alert">
+      <span>MODO TESTE — nada aqui afeta a produção</span>
+      <button type="button" onClick={voltar}>Voltar à produção</button>
+    </div>
+  );
+}
+
 function Layout({ children }) {
   const { user, logout } = useAuth();
   const location = useLocation();
@@ -73,6 +91,7 @@ function Layout({ children }) {
   const [menuAberto, setMenuAberto] = useState(false);
   const [contaAberta, setContaAberta] = useState(false);
   const [trocandoSenha, setTrocandoSenha] = useState(false);
+  const [modoTesteAberto, setModoTesteAberto] = useState(false);
   const noPdv = location.pathname === '/pdv';
   const telas = telasDoUsuario(user);
 
@@ -93,6 +112,7 @@ function Layout({ children }) {
     const outrasTelas = telas.filter((t) => t.path !== '/pdv');
     return (
       <div className="app-shell pdv-mode">
+        <FaixaTeste />
         <header className="topbar topbar-pdv">
           <div className="brand">GiroStock</div>
           <span className="pdv-mode-user">{user?.nome}{user?.locationNome ? ` · ${user.locationNome}` : ''}</span>
@@ -109,6 +129,7 @@ function Layout({ children }) {
 
   return (
     <div className="app-shell">
+      <FaixaTeste />
       <header className="topbar">
         <div className="brand">GiroStock</div>
         <button type="button" className="menu-toggle" aria-label="Abrir menu" aria-expanded={menuAberto} onClick={() => setMenuAberto(!menuAberto)}>☰</button>
@@ -125,6 +146,9 @@ function Layout({ children }) {
             {contaAberta && (
               <div className="conta-menu">
                 {user?.empresaNome && <div className="conta-empresa">{user.empresaNome}</div>}
+                {user?.areas?.ModoTeste && !user.master && !user.modoTeste && (
+                  <button type="button" onClick={() => { setContaAberta(false); setModoTesteAberto(true); }}>Modo teste</button>
+                )}
                 <button type="button" onClick={() => { setContaAberta(false); setTrocandoSenha(true); }}>Alterar minha senha</button>
                 <button type="button" onClick={sair}>Sair</button>
               </div>
@@ -134,6 +158,7 @@ function Layout({ children }) {
       </header>
       <main>{children}</main>
       {trocandoSenha && <TrocarSenha onClose={() => setTrocandoSenha(false)} />}
+      {modoTesteAberto && <ModoTesteModal onClose={() => setModoTesteAberto(false)} />}
     </div>
   );
 }
@@ -147,6 +172,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/master" element={<Private area="Master"><Master /></Private>} />
       <Route path="/inicio" element={<Private><Home /></Private>} />
       <Route path="/pdv" element={<Private area="Vendas"><PDV /></Private>} />
       <Route path="/pedidos" element={<Private area="Pedidos"><Pedidos /></Private>} />

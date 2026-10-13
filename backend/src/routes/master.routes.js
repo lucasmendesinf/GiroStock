@@ -6,7 +6,7 @@ const { logAudit } = require('../utils/audit');
 const { isUuid } = require('../utils/tenant');
 const { isValidDocumento, onlyDigits } = require('../utils/validators');
 const { dadosDaEmpresa, efetivos, uso } = require('../utils/limites');
-const { criarUsuario } = require('../services/usuarios');
+const { criarUsuario, resetarDoisFatores } = require('../services/usuarios');
 const { copiarProducao, status } = require('../services/copiaProducao');
 const modoTeste = require('../services/modoTeste');
 const pool = require('../db/pool');
@@ -225,7 +225,7 @@ router.get('/master/usuarios', async (req, res) => {
   const { rows } = await db.query(
     `SELECT u.id, u.nome, u.email, u.perfil, u.ativo, u.ultimo_login, u.falhas_login, u.ultima_falha_em, u.deve_trocar_senha,
             t.id AS empresa_id, t.nome AS empresa_nome,
-            COALESCE((u.permissoes ->> 'ModoTeste')::boolean, false) AS modo_teste,
+            COALESCE((u.permissoes ->> 'ModoTeste')::boolean, false) AS modo_teste, u.totp_ativo, u.totp_exigido,
             (SELECT COALESCE(json_agg(l.nome ORDER BY l.nome), '[]'::json) FROM locations l
               WHERE l.id = u.location_id OR l.id IN (SELECT ul.location_id FROM user_locations ul WHERE ul.user_id = u.id)) AS lojas
      FROM users u JOIN tenants t ON t.id = u.tenant_id
@@ -288,6 +288,22 @@ router.post('/master/usuarios/:id/encerrar-sessoes', async (req, res) => {
   await db.query(`UPDATE users SET sessoes_validas_desde = now() WHERE id = $1`, [u.id]);
   await logAudit(db, { tenantId: u.tenant_id, usuarioId: req.user.id, acao: 'master_encerrar_sessoes', recurso: 'users', recursoId: u.id });
   res.json({ ok: true });
+});
+
+// O Master pode resetar o 2FA de qualquer usuario (inclusive outro Master nao: so por script).
+router.post('/master/usuarios/:id/2fa/resetar', async (req, res) => {
+  const u = await alvoOuErro(req.params.id);
+  await resetarDoisFatores(db, u.id);
+  await logAudit(db, { tenantId: u.tenant_id, usuarioId: req.user.id, acao: 'resetar_2fa', recurso: 'users', recursoId: u.id });
+  res.json({ ok: true });
+});
+
+router.patch('/master/usuarios/:id/exigir-2fa', async (req, res) => {
+  const u = await alvoOuErro(req.params.id);
+  const exigido = !!(req.body || {}).exigido;
+  await db.query(`UPDATE users SET totp_exigido = $1 WHERE id = $2`, [exigido, u.id]);
+  await logAudit(db, { tenantId: u.tenant_id, usuarioId: req.user.id, acao: exigido ? 'exigir_2fa' : 'dispensar_2fa', recurso: 'users', recursoId: u.id });
+  res.json({ exigido });
 });
 
 router.patch('/master/usuarios/:id/status', async (req, res) => {

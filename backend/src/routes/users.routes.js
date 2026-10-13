@@ -5,7 +5,7 @@ const { requireArea, MATRIX, PERMISSOES, areasEfetivas, normalizarOverrides } = 
 const { logAudit } = require('../utils/audit');
 const { getOwnedLocation } = require('../utils/tenant');
 const { HttpError } = require('../utils/http');
-const { PERFIS, criarUsuario, lojasAdicionais, gravarLojasAdicionais } = require('../services/usuarios');
+const { PERFIS, criarUsuario, lojasAdicionais, gravarLojasAdicionais, resetarDoisFatores } = require('../services/usuarios');
 
 const router = express.Router();
 
@@ -16,7 +16,7 @@ router.get('/users/permissoes', requireArea('Configuracoes'), (req, res) => {
 
 router.get('/users', requireArea('Configuracoes'), async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT u.id, u.nome, u.email, u.perfil, u.location_id, u.ativo, u.criado_em, u.permissoes,
+    `SELECT u.id, u.nome, u.email, u.perfil, u.location_id, u.ativo, u.criado_em, u.permissoes, u.totp_ativo, u.totp_exigido,
             COALESCE((SELECT json_agg(ul.location_id) FROM user_locations ul WHERE ul.user_id = u.id), '[]') AS location_ids
      FROM users u WHERE u.tenant_id = $1 AND u.perfil <> 'Master' ORDER BY u.nome`,
     [req.user.tenantId]
@@ -34,7 +34,7 @@ router.post('/users', requireArea('Configuracoes'), async (req, res) => {
   try {
     await client.query('BEGIN');
     const usuario = await criarUsuario(client, {
-      tenantId: req.user.tenantId, nome, email, senha, perfil, location_id, location_ids: (req.body || {}).location_ids, permissoes,
+      tenantId: req.user.tenantId, nome, email, senha, perfil, location_id, location_ids: (req.body || {}).location_ids, permissoes, totpExigido: (req.body || {}).totp_exigido === true,
       auditoria: { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'criar', detalhes: { perfil, permissoes } },
     });
     await client.query('COMMIT');
@@ -99,6 +99,10 @@ router.patch('/users/:id', requireArea('Configuracoes'), async (req, res) => {
       [perfil, locationId, req.params.id, req.user.tenantId, nome, permissoes ? JSON.stringify(permissoes) : null]
     );
     if (extras !== undefined) await gravarLojasAdicionais(client, req.user.tenantId, req.params.id, extras);
+    if (typeof body.totp_exigido === 'boolean') {
+      await client.query(`UPDATE users SET totp_exigido = $1 WHERE id = $2 AND tenant_id = $3`, [body.totp_exigido, req.params.id, req.user.tenantId]);
+      await logAudit(client, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: body.totp_exigido ? 'exigir_2fa' : 'dispensar_2fa', recurso: 'users', recursoId: req.params.id });
+    }
     await logAudit(client, {
       tenantId: req.user.tenantId,
       usuarioId: req.user.id,
@@ -162,6 +166,17 @@ router.patch('/users/:id/status', requireArea('Configuracoes'), async (req, res)
   } finally {
     client.release();
   }
+});
+
+// Reset do 2FA por quem administra (Administrador da empresa: so usuarios dela; nunca o Master).
+router.post('/users/:id/2fa/resetar', requireArea('Configuracoes'), async (req, res) => {
+  const { rows } = await pool.query(`SELECT id, tenant_id, nome, perfil FROM users WHERE id = $1`, [req.params.id]);
+  const alvo = rows[0];
+  if (alvo && alvo.perfil === 'Master') throw new HttpError(403, 'o 2FA do Master só pode ser resetado pelo próprio Master ou por script');
+  if (!alvo || alvo.tenant_id !== req.user.tenantId) throw new HttpError(404, 'usuário não encontrado');
+  await resetarDoisFatores(pool, alvo.id);
+  await logAudit(pool, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'resetar_2fa', recurso: 'users', recursoId: alvo.id });
+  res.json({ ok: true });
 });
 
 module.exports = router;

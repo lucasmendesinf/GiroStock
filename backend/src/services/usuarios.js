@@ -7,6 +7,15 @@ const { getOwnedLocation } = require('../utils/tenant');
 const { HttpError } = require('../utils/http');
 const { checarLimite } = require('../utils/limites');
 
+// Zera o 2FA do usuario (segredo, estado, bloqueio e codigos de recuperacao). A exigencia (totp_exigido) nao muda.
+async function resetarDoisFatores(db, userId) {
+  await db.query(
+    `UPDATE users SET totp_ativo = false, totp_segredo_cript = NULL, totp_ativado_em = NULL, totp_ultimo_passo = NULL, totp_falhas = 0, totp_bloqueado_ate = NULL WHERE id = $1`,
+    [userId]
+  );
+  await db.query(`DELETE FROM user_recovery_codes WHERE user_id = $1`, [userId]);
+}
+
 const PERFIS = ['Administrador', 'Gerente', 'Caixa/Operador', 'Estoque', 'Lanchonete/Cozinha', 'Financeiro'];
 
 // Valida a lista de lojas adicionais (ids de lojas da empresa, sem repetir a principal).
@@ -29,7 +38,7 @@ async function gravarLojasAdicionais(client, tenantId, userId, ids) {
 //           deveTrocarSenha, exigirLoja (perfis que nao sao Administrador precisam de ao menos uma loja),
 //           auditoria: { tenantId, usuarioId, acao, detalhes } }
 async function criarUsuario(db, opcoes) {
-  const { tenantId, nome, email, senha, perfil, location_id: locationId, permissoes, deveTrocarSenha, exigirLoja, auditoria } = opcoes;
+  const { tenantId, nome, email, senha, perfil, location_id: locationId, permissoes, deveTrocarSenha, exigirLoja, auditoria, totpExigido } = opcoes;
   if (perfil === 'Master') throw new HttpError(403, 'o perfil Master só pode ser criado por script');
   if (!nome || !email || !senha || !perfil) throw new HttpError(400, 'nome, email, senha e perfil são obrigatórios');
   if (!isValidEmail(email)) throw new HttpError(400, 'email inválido');
@@ -49,10 +58,10 @@ async function criarUsuario(db, opcoes) {
 
   const senhaHash = await bcrypt.hash(String(senha), 10);
   const { rows } = await db.query(
-    `INSERT INTO users (tenant_id, nome, email, senha_hash, perfil, location_id, permissoes, deve_trocar_senha)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO users (tenant_id, nome, email, senha_hash, perfil, location_id, permissoes, deve_trocar_senha, totp_exigido)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING id, nome, email, perfil, location_id, ativo, permissoes`,
-    [tenantId, nome, email, senhaHash, perfil, locationId || null, permissoes ? JSON.stringify(permissoes) : null, !!deveTrocarSenha]
+    [tenantId, nome, email, senhaHash, perfil, locationId || null, permissoes ? JSON.stringify(permissoes) : null, !!deveTrocarSenha, !!totpExigido]
   );
   await gravarLojasAdicionais(db, tenantId, rows[0].id, extras);
   const a = auditoria || { tenantId, usuarioId: null, acao: 'criar' };
@@ -63,4 +72,4 @@ async function criarUsuario(db, opcoes) {
   return { ...rows[0], location_ids: extras };
 }
 
-module.exports = { PERFIS, criarUsuario, lojasAdicionais, gravarLojasAdicionais };
+module.exports = { PERFIS, criarUsuario, lojasAdicionais, gravarLojasAdicionais, resetarDoisFatores };

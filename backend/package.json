@@ -11,9 +11,11 @@
     "seed": "node src/db/seed.js",
     "usuarios": "node scripts/usuarios.js",
     "master": "node scripts/master.js",
+    "resetar-2fa": "node scripts/resetar-2fa.js",
     "test:e2e": "node scripts/e2e-estoque-vendas.mjs",
     "test:e2e:modo-teste": "node scripts/e2e-modo-teste.mjs",
-    "test:e2e:master-fase1": "node scripts/e2e-master-fase1.mjs"
+    "test:e2e:master-fase1": "node scripts/e2e-master-fase1.mjs",
+    "test:e2e:2fa": "node scripts/e2e-2fa.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

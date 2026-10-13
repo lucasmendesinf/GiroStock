@@ -101,13 +101,18 @@ check('admin concede ModoTeste ao usuario', conc.s === 200 && conc.j.permissoes 
 
 // ---------- 8a. regressao em producao (antes) ----------
 console.log('\n# 8a. Producao funciona (login, PDV, venda direta)');
-const loja = (await api('POST', '/locations', { nome: 'Loja E2E ' + Date.now() }, ADM)).j;
-const term = (await api('POST', '/terminals', { nome: 'PDV E2E', location_id: loja.id }, ADM)).j;
-const cat = (await api('POST', '/categories', { nome: 'E2E ' + Date.now() }, ADM)).j;
+// Reaproveita loja, PDV e categoria das execucoes anteriores (os limites do plano impedem criar sempre novos).
+const locsAdm = (await api('GET', '/locations', null, ADM)).j;
+const loja = locsAdm.find((l) => l.nome.startsWith('Loja E2E')) || (await api('POST', '/locations', { nome: 'Loja E2E' }, ADM)).j;
+const termsAdm = (await api('GET', '/terminals', null, ADM)).j;
+const term = termsAdm.find((t) => t.location_id === loja.id && t.ativo) || (await api('POST', '/terminals', { nome: 'PDV E2E', location_id: loja.id }, ADM)).j;
+const catsAdm = (await api('GET', '/categories', null, ADM)).j;
+const cat = catsAdm.find((x) => x.nome === 'E2E MT') || (await api('POST', '/categories', { nome: 'E2E MT' }, ADM)).j;
 const prodA = await api('POST', '/products', { nome: 'Produto E2E', categoria_id: cat.id, barcode: String(7890000000000 + (Date.now() % 100000000)), unidade: 'UN', preco_custo: 2, preco_venda: 5, location_id: loja.id, estoque_inicial: 50 }, ADM);
 check('cria produto em producao', prodA.s === 201, prodA);
-const caixa = await api('POST', '/cash-sessions', { terminal_id: term.id, valor_inicial: 10 }, ADM);
-check('abre caixa', caixa.s === 201, caixa);
+const aberto = (await api('GET', `/cash-sessions/current?terminal_id=${term.id}`, null, ADM)).j;
+const caixa = aberto ? { s: 201 } : await api('POST', '/cash-sessions', { terminal_id: term.id, valor_inicial: 10 }, ADM);
+check('caixa aberto', caixa.s === 201, caixa);
 const venda = await api('POST', '/sales', { terminal_id: term.id, itens: [{ product_id: prodA.j.id, quantidade: 2 }], forma_pagamento: 'pix' }, ADM);
 check('venda direta em producao', venda.s === 201, venda);
 const me1 = await api('GET', '/auth/me', null, ADM);
@@ -144,6 +149,8 @@ if (!jaCopiado) check('primeira ativacao pede confirmacao da copia (409 precisa_
 const ativ = jaCopiado ? semCopia : await api('POST', '/auth/modo-teste', { ativo: true, confirmar_copia: true, anonimizar: true }, GER0);
 check('usuario com permissao liga o modo teste (200 + token)', ativ.s === 200 && ativ.j.token, ativ);
 const GT = ativ.j.token;
+// Se o teste ja tinha uma copia antiga (execucoes anteriores), sincroniza antes de comparar as contagens.
+if (jaCopiado) await api('POST', '/master/modo-teste/copiar-producao', { confirmacao: 'COPIAR', anonimizar: true }, MAS);
 const meT = await api('GET', '/auth/me', null, GT);
 check('/auth/me em modo teste: modoTeste=true', meT.s === 200 && meT.j.modoTeste === true && meT.j.master === false, meT.j);
 const antesProd = await contar(prod);

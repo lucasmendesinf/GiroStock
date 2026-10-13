@@ -397,6 +397,33 @@ router.post('/2fa/codigos-recuperacao', authRequired, async (req, res) => {
   res.json({ codigos_recuperacao: codigos });
 });
 
+// Esqueci minha senha (tela de login): so para contas com verificacao em duas etapas ATIVA. Prova de identidade = codigo do
+// app autenticador (ou um codigo de recuperacao). Contas sem 2FA nao tem como se provar sem e-mail: pedem ao administrador.
+// Respostas genericas (nao revelam se o e-mail existe nem se tem 2FA). Reusa a contagem de falhas/bloqueio do 2FA.
+router.post('/redefinir-senha', async (req, res) => {
+  const { email, codigo, nova_senha: novaSenha } = req.body || {};
+  if (!email || !codigo || !novaSenha) throw new HttpError(400, 'informe e-mail, código e a nova senha');
+  if (String(novaSenha).length < 6) throw new HttpError(400, 'a nova senha deve ter no mínimo 6 caracteres');
+  const generico = new HttpError(400, 'Não foi possível redefinir: confira o e-mail e o código.');
+  const { rows } = await db.query(`SELECT ${COLUNAS_LOGIN} ${DE_LOGIN} WHERE lower(u.email::text) = lower($1)`, [String(email).trim()]);
+  const user = rows[0];
+  if (!user || !user.ativo || !user.totp_ativo || !totp.disponivel()) {
+    await new Promise((ok) => setTimeout(ok, 400)); // atraso parecido com o caminho real
+    throw generico;
+  }
+  bloqueado(user);
+  const tipo = await conferirCodigo(user, String(codigo).trim(), { recuperacao: true });
+  if (!tipo) {
+    try { await falhaCodigo(user); } catch (e) { if (e.status === 429) throw e; }
+    throw generico;
+  }
+  const hash = await bcrypt.hash(String(novaSenha), 10);
+  // Derruba todas as sessoes abertas (sessoes_validas_desde) e zera contadores de falha.
+  await db.query(`UPDATE users SET senha_hash = $1, deve_trocar_senha = false, sessoes_validas_desde = now(), falhas_login = 0, totp_falhas = 0, totp_bloqueado_ate = NULL WHERE id = $2`, [hash, user.id]);
+  await logAudit(db, { tenantId: user.tenant_id, usuarioId: user.id, acao: 'redefinir_senha_2fa', recurso: 'users', recursoId: user.id, detalhes: { com: tipo } });
+  res.status(204).end();
+});
+
 // Reautenticacao do Master (iniciar suporte): codigo TOTP recente. Mesma contagem de falhas/bloqueio do login; nao aceita codigo de recuperacao.
 router.reautenticarTotp = async (userId, codigo) => {
   exigir2faDisponivel();

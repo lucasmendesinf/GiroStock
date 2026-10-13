@@ -21,6 +21,9 @@ export default function Login() {
   const [mfa, setMfa] = useState(null); // { tipo: 'pendente' | 'configurar', tokenMfa }
   const [codigo, setCodigo] = useState('');
   const [usarRecuperacao, setUsarRecuperacao] = useState(false);
+  const [esqueci, setEsqueci] = useState(false);
+  const [rs, setRs] = useState({ codigo: '', nova: '', confirmar: '' });
+  const [aviso, setAviso] = useState(null);
 
   function entrar(usuario, aviso) {
     if (aviso) toast.sucesso(aviso);
@@ -59,8 +62,40 @@ export default function Login() {
     }
   }
 
+  async function redefinir(e) {
+    e.preventDefault();
+    setErro(null);
+    if (rs.nova !== rs.confirmar) { setErro('A confirmação não confere com a nova senha.'); return; }
+    setLoading(true);
+    try {
+      await api.post('/auth/redefinir-senha', { email: email.trim(), codigo: rs.codigo.trim(), nova_senha: rs.nova });
+      setEsqueci(false); setRs({ codigo: '', nova: '', confirmar: '' }); setSenha('');
+      setAviso('Senha redefinida. Entre com a nova senha.');
+    } catch (err) { setErro(err.message); } finally { setLoading(false); }
+  }
+
   function voltar() {
     setMfa(null); setCodigo(''); setUsarRecuperacao(false); setErro(null);
+  }
+
+  if (esqueci) {
+    return (
+      <div className="login-screen">
+        <div className="theme-toggle-corner"><ThemeToggle /></div>
+        <form className="login-card login-card-larga" onSubmit={redefinir}>
+          <h1>Redefinir senha</h1>
+          <p className="login-sub">Para contas com verificação em duas etapas: informe o e-mail, o código do app autenticador (ou um código de recuperação) e a nova senha.</p>
+          <label>E-mail<input type="email" autoComplete="username" autoFocus value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
+          <label>Código do app ou de recuperação<input autoComplete="off" spellCheck={false} value={rs.codigo} onChange={(e) => setRs({ ...rs, codigo: e.target.value })} required /></label>
+          <label>Nova senha<input type="password" autoComplete="new-password" minLength={6} value={rs.nova} onChange={(e) => setRs({ ...rs, nova: e.target.value })} required /></label>
+          <label>Confirmar nova senha<input type="password" autoComplete="new-password" value={rs.confirmar} onChange={(e) => setRs({ ...rs, confirmar: e.target.value })} required /></label>
+          {erro && <p className="error" role="alert">{erro}</p>}
+          <button type="submit" disabled={loading}>{loading ? 'Redefinindo...' : 'Redefinir senha'}</button>
+          <p className="login-sub" style={{ fontSize: 12 }}>Sua conta não usa 2FA? Peça ao administrador da empresa para redefinir sua senha (menu Usuários). Administrador sem 2FA: fale com o suporte da plataforma.</p>
+          <button type="button" className="login-link" onClick={() => { setEsqueci(false); setErro(null); }}>Voltar ao login</button>
+        </form>
+      </div>
+    );
   }
 
   // Ativacao forcada (Master / usuario com 2FA exigido): tela cheia antes de entrar.
@@ -120,8 +155,10 @@ export default function Login() {
           Senha
           <input type="password" autoComplete="current-password" value={senha} onChange={(e) => setSenha(e.target.value)} required />
         </label>
+        {aviso && <p className="success" role="status">{aviso}</p>}
         {erro && <p className="error" role="alert">{erro}</p>}
         <button type="submit" disabled={loading}>{loading ? 'Entrando...' : 'Entrar'}</button>
+        <button type="button" className="login-link" onClick={() => { setEsqueci(true); setErro(null); setAviso(null); }}>Esqueci minha senha</button>
       </form>
     </div>
   );

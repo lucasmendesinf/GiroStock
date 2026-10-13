@@ -11,6 +11,8 @@ import { podeAcessar, rotaInicial, telasDoUsuario } from './utils/permissions.js
 import Login from './pages/Login.jsx';
 import Manutencao from './pages/Manutencao.jsx';
 import AvisoGlobal from './components/AvisoGlobal.jsx';
+import AvisoEmpresa from './components/AvisoEmpresa.jsx';
+import SuporteFaixa from './components/SuporteFaixa.jsx';
 import Home from './pages/Home.jsx';
 import PDV from './pages/PDV.jsx';
 import Pedidos from './pages/Pedidos.jsx';
@@ -119,6 +121,7 @@ function Layout({ children }) {
     const outrasTelas = telas.filter((t) => t.path !== '/pdv');
     return (
       <div className="app-shell pdv-mode">
+        <SuporteFaixa />
         <FaixaTeste />
         <header className="topbar topbar-pdv">
           <div className="brand">GiroStock</div>
@@ -136,7 +139,9 @@ function Layout({ children }) {
 
   return (
     <div className="app-shell">
+      <SuporteFaixa />
       <AvisoGlobal />
+      <AvisoEmpresa />
       <FaixaTeste />
       <header className="topbar">
         <div className="brand">GiroStock</div>
@@ -154,11 +159,11 @@ function Layout({ children }) {
             {contaAberta && (
               <div className="conta-menu">
                 {user?.empresaNome && <div className="conta-empresa">{user.empresaNome}</div>}
-                {user?.areas?.ModoTeste && !user.master && !user.modoTeste && (
+                {user?.areas?.ModoTeste && !user.master && !user.modoTeste && !user.suporte && (
                   <button type="button" onClick={() => { setContaAberta(false); setModoTesteAberto(true); }}>Modo teste</button>
                 )}
-                <button type="button" onClick={() => { setContaAberta(false); setTrocandoSenha(true); }}>Alterar minha senha</button>
-                <button type="button" onClick={() => { setContaAberta(false); setSegurancaAberta(true); }}>Verificação em duas etapas</button>
+                {!user?.suporte && <button type="button" onClick={() => { setContaAberta(false); setTrocandoSenha(true); }}>Alterar minha senha</button>}
+                {!user?.suporte && <button type="button" onClick={() => { setContaAberta(false); setSegurancaAberta(true); }}>Verificação em duas etapas</button>}
                 <button type="button" onClick={sair}>Sair</button>
               </div>
             )}

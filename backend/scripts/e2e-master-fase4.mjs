@@ -44,7 +44,7 @@ const decodificar = (tok) => JSON.parse(Buffer.from(tok.split('.')[1], 'base64ur
 // ---------- preparo ----------
 const mk = spawnSync('node', ['scripts/master.js'], { cwd: raiz, env: { ...process.env, MASTER_EMAIL: EMAIL_MASTER, MASTER_PASSWORD: SENHA_MASTER, MASTER_NOME: 'E2E M4 Master' }, encoding: 'utf8' });
 check('Master e2e criado/atualizado por script', mk.status === 0, mk.stderr);
-const { token: MAS, segredo } = await masterComSegredo(B, EMAIL_MASTER, SENHA_MASTER);
+let { token: MAS, segredo } = await masterComSegredo(B, EMAIL_MASTER, SENHA_MASTER);
 check('login do Master (com 2FA)', !!MAS);
 const master = (await prod.query(`SELECT id, tenant_id FROM users WHERE lower(email::text) = $1`, [EMAIL_MASTER])).rows[0];
 // Cada inicio de suporte exige um codigo TOTP novo: zera o "ultimo passo" para poder reutilizar o passo atual nos testes.
@@ -68,7 +68,8 @@ const ger = await api('POST', '/master/usuarios', { empresa_id: A.id, nome: 'Ger
 const lgGer = await login(email('gerente'), ger.j.senha_temporaria);
 check('gerente da empresa A criado', ger.s === 201 && lgGer.s === 200, ger);
 // produtos: um em A, outro em B
-const produto = async (tenant, nome) => (await prod.query(`INSERT INTO products (tenant_id, codigo_interno, nome, barcode, unidade, preco_custo, preco_venda) VALUES ($1, $2, $3, $4, 'UN', 1, 2) RETURNING id`, [tenant, 'E2E' + rnd().slice(0, 6), nome, String(Date.now()).slice(-10) + String(Math.floor(Math.random() * 1000)).padStart(3, '0')])).rows[0].id;
+const categoria = async (tenant) => (await prod.query(`INSERT INTO categories (tenant_id, nome) VALUES ($1, 'Categoria E2E') RETURNING id`, [tenant])).rows[0].id;
+const produto = async (tenant, nome) => (await prod.query(`INSERT INTO products (tenant_id, categoria_id, codigo_interno, nome, barcode, unidade, preco_custo, preco_venda) VALUES ($1, $5, $2, $3, $4, 'UN', 1, 2) RETURNING id`, [tenant, 'E2E' + rnd().slice(0, 6), nome, String(Date.now()).slice(-10) + String(Math.floor(Math.random() * 1000)).padStart(3, '0'), await categoria(tenant)])).rows[0].id;
 const prodA = await produto(A.id, `Produto Alfa ${SUF}`);
 const prodB = await produto(Bm.id, `Produto Beta ${SUF}`);
 
@@ -152,7 +153,7 @@ console.log('\n# 5. Edição liberada (cadastros sim; ações sensíveis nunca)'
 const s2 = await iniciar(A.id, { edicao: true, avisar: false });
 const T2 = s2.j.token;
 check('iniciar com edição -> 201', s2.s === 201 && s2.j.sessao.edicao === true, s2);
-const edit = await api('PUT', `/products/${prodA}`, { nome: `Produto Alfa ${SUF} (suporte)`, preco_venda: 3 }, T2);
+const edit = await api('PUT', `/products/${prodA}`, { nome: `Produto Alfa ${SUF} (suporte)`, preco_venda: 3, categoria_id: (await prod.query(`SELECT categoria_id FROM products WHERE id = $1`, [prodA])).rows[0].categoria_id }, T2);
 check('editar um produto funciona', edit.s === 200, edit);
 const aud = (await prod.query(`SELECT usuario_id, tenant_id, detalhes FROM audit_logs WHERE recurso = 'products' AND recurso_id = $1 ORDER BY criado_em DESC LIMIT 1`, [prodA])).rows[0];
 check('auditoria: autor = Master, empresa = A, marcada com suporte/sessão/master_id', aud && aud.usuario_id === master.id && aud.tenant_id === A.id && aud.detalhes.suporte === true && aud.detalhes.sessao_suporte_id === s2.j.sessao.id && aud.detalhes.master_id === master.id, aud);
@@ -180,7 +181,7 @@ const sempre = [
 ];
 check('ações sensíveis ficam bloqueadas (403) mesmo com edição: ' + sempre.map((x) => x[0]).join(', '), sempre.every(([, r]) => r.s === 403 && r.j.suporte === true), sempre.filter(([, r]) => r.s !== 403).map(([n, r]) => `${n}:${r.s}`));
 check('a empresa e o Master continuam intactos após as tentativas', (await prod.query(`SELECT status FROM tenants WHERE id = $1`, [A.id])).rows[0].status === 'ativa' && Number((await prod.query(`SELECT max_usuarios FROM planos WHERE codigo = 'completo'`)).rows[0].max_usuarios) === 10 && (await prod.query(`SELECT ativo FROM users WHERE id = $1`, [alvoUser])).rows[0].ativo === true);
-const usoEscrita = await api('POST', '/suppliers', { nome: `Fornecedor suporte ${SUF}` }, T2);
+const usoEscrita = await api('POST', '/suppliers', { nome: `Fornecedor suporte ${SUF}`, documento: '07.526.557/0001-00', telefone: '11999999999', categoria: 'Outros' }, T2);
 check('cadastros de apoio (fornecedor) podem ser criados com edição liberada', usoEscrita.s === 201, usoEscrita);
 
 // ---------- 6. Expiracao ----------
@@ -209,7 +210,9 @@ await prod.query(`UPDATE users SET senha_hash = $1 WHERE id = $2`, [hashAntigo, 
 const s5 = await iniciar(A.id);
 await prod.query(`UPDATE users SET sessoes_validas_desde = now() + interval '5 seconds' WHERE id = $1`, [master.id]);
 check('"encerrar sessões" do Master derruba o suporte (401)', (await api('GET', '/products', null, s5.j.token)).s === 401);
-const s5b = await (async () => { await prod.query(`UPDATE users SET sessoes_validas_desde = NULL WHERE id = $1`, [master.id]); return iniciar(A.id); })();
+await new Promise((ok) => setTimeout(ok, 6500)); // passa o instante de "encerrar sessoes"
+({ token: MAS, segredo } = await masterComSegredo(B, EMAIL_MASTER, SENHA_MASTER)); // "encerrar sessoes" derrubou o token antigo: o Master entra de novo
+const s5b = await iniciar(A.id);
 check('depois disso um novo suporte pode ser iniciado (linha antiga liberada)', s5b.s === 201, s5b);
 await prod.query(`UPDATE users SET ativo = false WHERE id = $1`, [master.id]);
 check('desativar o Master derruba o suporte (401)', (await api('GET', '/products', null, s5b.j.token)).s === 401);

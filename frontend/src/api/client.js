@@ -21,7 +21,15 @@ async function request(path, { method = 'GET', body, token: tokenExplicito } = {
   const data = await res.json().catch(() => null);
   if (!res.ok) {
     // Sessao expirada/usuario desativado: volta para o login.
-    if (res.status === 401 && token && !tokenExplicito && !path.startsWith('/auth/login')) {
+    // Sessao de suporte vencida/encerrada: volta ao painel Master com o token guardado (em vez de cair no login).
+    if (res.status === 401 && token && !tokenExplicito && data && data.suporteEncerrado && localStorage.getItem('girostock_master_token')) {
+      localStorage.setItem('girostock_token', localStorage.getItem('girostock_master_token'));
+      localStorage.setItem('girostock_user', localStorage.getItem('girostock_master_user') || '');
+      localStorage.removeItem('girostock_master_token');
+      localStorage.removeItem('girostock_master_user');
+      try { sessionStorage.setItem('girostock_aviso', 'A sessão de suporte foi encerrada.'); } catch { /* sem armazenamento */ }
+      window.location.assign('/master/empresas');
+    } else if (res.status === 401 && token && !tokenExplicito && !path.startsWith('/auth/login')) {
       clearSession();
       window.location.assign('/login');
     }

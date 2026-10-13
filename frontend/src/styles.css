@@ -1187,3 +1187,8 @@ button.ped-act-btn, .ped-act button { flex: 1; padding: 8px; font-size: 11.5px; 
 .aviso-faixa { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 7px 40px 7px 16px; position: relative; background: var(--accent-soft, rgba(212, 174, 74, 0.14)); border-bottom: 1px solid var(--accent-line, var(--line)); color: var(--ivory); font-size: 13px; text-align: center; }
 .aviso-fechar { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; padding: 2px 8px; }
 .aviso-fechar:hover { color: var(--ivory); }
+
+/* Suporte do Master */
+.faixa-suporte { position: sticky; top: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; padding: 8px 16px; background: var(--err); color: #fff; font-weight: 700; font-size: 13px; }
+.faixa-suporte button { background: #fff; color: var(--err); border: none; border-radius: 8px; padding: 6px 14px; font-weight: 800; cursor: pointer; text-transform: none; letter-spacing: 0; }
+body.suporte-leitura main .btn-primario, body.suporte-leitura main form button[type="submit"] { opacity: 0.45; pointer-events: none; }

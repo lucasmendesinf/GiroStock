@@ -32,6 +32,38 @@ export function AuthProvider({ children }) {
     return u;
   }, []);
 
+  // ---- Suporte do Master: guarda o token do Master para voltar (a sessao de suporte e curta e nao renova) ----
+  const entrarSuporte = useCallback(async ({ empresaId, motivo, codigo, avisar, edicao }) => {
+    const r = await api.post(`/master/empresas/${empresaId}/suporte`, { motivo, codigo, avisar, edicao });
+    localStorage.setItem('girostock_master_token', localStorage.getItem('girostock_token'));
+    localStorage.setItem('girostock_master_user', localStorage.getItem('girostock_user') || '');
+    localStorage.setItem('girostock_token', r.token);
+    const u = await api.get('/auth/me');
+    updateStoredUser(u);
+    setUser(u);
+    return u;
+  }, []);
+
+  // Troca o token de suporte pelo do Master guardado (sem chamar a API: serve tambem quando a sessao ja expirou).
+  const voltarAoMasterLocal = useCallback((aviso) => {
+    const tokenMaster = localStorage.getItem('girostock_master_token');
+    if (!tokenMaster) { clearSession(); window.location.assign('/login'); return; }
+    localStorage.setItem('girostock_token', tokenMaster);
+    localStorage.setItem('girostock_user', localStorage.getItem('girostock_master_user') || '');
+    localStorage.removeItem('girostock_master_token');
+    localStorage.removeItem('girostock_master_user');
+    if (aviso) { try { sessionStorage.setItem('girostock_aviso', aviso); } catch { /* sem armazenamento */ } }
+    window.location.assign('/master/empresas');
+  }, []);
+
+  const encerrarSuporte = useCallback(async () => {
+    const r = await api.post('/master/suporte/encerrar');
+    localStorage.setItem('girostock_token', r.token);
+    localStorage.setItem('girostock_user', localStorage.getItem('girostock_master_user') || '');
+    localStorage.removeItem('girostock_master_token');
+    localStorage.removeItem('girostock_master_user');
+  }, []);
+
   // Recarrega o usuario (ex.: depois da troca obrigatoria de senha).
   const recarregarUsuario = useCallback(async () => {
     const u = await api.get('/auth/me');
@@ -41,9 +73,15 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = useCallback(() => {
+    localStorage.removeItem('girostock_master_token');
+    localStorage.removeItem('girostock_master_user');
     clearSession();
     setUser(null);
   }, []);
+
+  useEffect(() => {
+    document.body.classList.toggle('suporte-leitura', !!(user && user.suporte && !user.suporte.edicao));
+  }, [user]);
 
   // Recarrega perfil/loja/areas ao abrir o sistema (podem ter mudado desde o login).
   useEffect(() => {
@@ -54,7 +92,7 @@ export function AuthProvider({ children }) {
   }, [logout]);
 
   return (
-    <AuthContext.Provider value={{ user, login, concluirLogin, logout, alternarModoTeste, recarregarUsuario }}>
+    <AuthContext.Provider value={{ user, login, concluirLogin, entrarSuporte, encerrarSuporte, voltarAoMasterLocal, logout, alternarModoTeste, recarregarUsuario }}>
       {children}
     </AuthContext.Provider>
   );

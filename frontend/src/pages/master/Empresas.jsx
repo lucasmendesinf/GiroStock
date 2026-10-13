@@ -5,6 +5,7 @@ import { Modal } from '../../components/ui.jsx';
 import { baixarArquivo, gerarSenha, quando } from './util.js';
 import SenhaUnicaModal from './SenhaUnicaModal.jsx';
 import NovoUsuarioModal from './NovoUsuarioModal.jsx';
+import SuporteModal from './SuporteModal.jsx';
 
 const NOME_LIMITE = { lojas: 'Lojas', usuarios: 'Usuários', pdvs: 'PDVs' };
 
@@ -17,6 +18,8 @@ export default function Empresas() {
   const [criada, setCriada] = useState(null); // resposta da criacao (senha temporaria, uma unica vez)
   const [suspender, setSuspender] = useState(null);
   const [novoUsuario, setNovoUsuario] = useState(null); // id da empresa
+  const [suporteDe, setSuporteDe] = useState(null); // empresa para entrar como suporte
+  const [historico, setHistorico] = useState([]);
 
   const carregar = useCallback(async () => {
     try { setDados(await api.get('/master/empresas')); } catch (err) { toast.erro(err); }
@@ -24,7 +27,10 @@ export default function Empresas() {
   useEffect(() => { carregar(); }, [carregar]);
 
   const abrir = useCallback(async (id) => {
-    try { setFicha(await api.get(`/master/empresas/${id}`)); } catch (err) { toast.erro(err); }
+    try {
+      setFicha(await api.get(`/master/empresas/${id}`));
+      api.get(`/master/empresas/${id}/suporte`).then((r) => setHistorico(r.sessoes)).catch(() => setHistorico([]));
+    } catch (err) { toast.erro(err); }
   }, [toast]);
   async function exportarDados(f) {
     try {
@@ -88,7 +94,7 @@ export default function Empresas() {
                   <td className="num">{e.qtd_usuarios_ativos}</td>
                   <td style={{ color: 'var(--muted)' }}>{quando(e.ultimo_acesso)}</td>
                   <td style={{ textAlign: 'right' }} onClick={(ev) => ev.stopPropagation()}>
-                    <button type="button" className="btn-link" disabled title="Fase 4 — em breve">Entrar como suporte · em breve</button>
+                    <button type="button" className="btn-link" disabled={e.status !== 'ativa'} title={e.status !== 'ativa' ? 'Só empresas ativas recebem suporte' : ''} onClick={() => setSuporteDe(e)}>Entrar como suporte</button>
                   </td>
                 </tr>
               ))}
@@ -150,15 +156,24 @@ export default function Empresas() {
             </div>
 
             <div className="cl-linha-btn" style={{ justifyContent: 'flex-start', marginTop: 18, flexWrap: 'wrap' }}>
-              <button type="button" className="btn-link" disabled title="Fase 4 — em breve">Entrar como suporte · em breve</button>
+              <button type="button" className="btn-link" disabled={ficha.status !== 'ativa'} title={ficha.status !== 'ativa' ? 'Só empresas ativas recebem suporte' : ''} onClick={() => setSuporteDe(ficha)}>Entrar como suporte</button>
               <button type="button" className="btn-link" onClick={() => exportarDados(ficha)}>Exportar dados</button>
               {ficha.status === 'ativa'
                 ? <button type="button" className="btn-link perigo" onClick={() => setSuspender(ficha)}>Suspender</button>
                 : <button type="button" className="btn-link" onClick={reativar}>Reativar</button>}
             </div>
+
+            <h4 style={{ margin: '20px 0 6px' }}>Histórico de suporte</h4>
+            {historico.length === 0 ? <div className="cl-sub">Nenhum acesso de suporte nesta empresa.</div> : historico.slice(0, 10).map((h) => (
+              <div key={h.id} className="ped-linha" style={{ display: 'block' }}>
+                <b>{new Date(h.iniciada_em).toLocaleString('pt-BR')}</b> · {h.master_nome} · <span className="ped-tag">{h.edicao ? 'edição' : 'leitura'}</span> · {h.encerrada_em ? ({ master: 'encerrada pelo Master', expirou: 'expirou', sistema: 'encerrada pelo sistema' }[h.encerrada_por] || 'encerrada') : 'em andamento'}
+                <div className="cl-sub">{h.motivo}</div>
+              </div>
+            ))}
           </aside>
         </div>
       )}
+      {suporteDe && <SuporteModal empresa={suporteDe} onClose={() => setSuporteDe(null)} />}
 
       {nova && <NovaEmpresaModal onClose={() => setNova(false)} onCriada={(resp) => { setNova(false); setCriada(resp); carregar(); }} />}
       {criada && <SenhaUnicaModal titulo="Empresa criada" resumo={`${criada.empresa.nome} · administrador ${criada.administrador.nome} (${criada.administrador.email})`} senha={criada.senha_temporaria} onClose={() => setCriada(null)} />}

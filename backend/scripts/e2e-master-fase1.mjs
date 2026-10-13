@@ -6,6 +6,7 @@
 // Cria empresas "E2E M1 ..." e usuarios com e-mails e2e.m1.* pela propria API do Master (senhas aleatorias, so em memoria,
 // nunca impressas). Use somente em banco de DESENVOLVIMENTO. No fim, as empresas ficam suspensas e os usuarios inativos.
 import 'dotenv/config';
+import { tokenDoMasterComDoisFatores } from './e2e-2fa-helper.mjs';
 import pg from 'pg';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
@@ -41,7 +42,7 @@ const espera = (ms) => new Promise((ok) => setTimeout(ok, ms));
 // ---------- preparo: Master e2e ----------
 const mk = spawnSync('node', ['scripts/master.js'], { cwd: raiz, env: { ...process.env, MASTER_EMAIL: EMAIL_MASTER, MASTER_PASSWORD: SENHA_MASTER, MASTER_NOME: 'E2E M1 Master' }, encoding: 'utf8' });
 check('Master e2e criado/atualizado por script', mk.status === 0, mk.stderr);
-const MAS = (await login(EMAIL_MASTER, SENHA_MASTER)).j.token;
+const MAS = await tokenDoMasterComDoisFatores(B, EMAIL_MASTER, SENHA_MASTER); // o Master exige 2FA
 check('login do Master', !!MAS);
 
 // ---------- 1. Criar empresa = empresa + loja + administrador ----------
@@ -118,7 +119,7 @@ await api('PATCH', `/master/empresas/${Bemp.id}`, { recursos: { pedidos: false }
 const meB3 = await api('GET', '/auth/me', null, TB);
 check('override desligando bloqueia de novo', meB3.j.areas.Pedidos === false && (await api('GET', '/orders', null, TB)).s === 403, meB3.j.areas);
 await api('PATCH', `/master/empresas/${Bemp.id}`, { recursos: null }, MAS);
-const antigas = await prod.query(`SELECT count(*)::int AS n FROM tenants WHERE nome <> 'Plataforma' AND nome NOT LIKE 'E2E M1 %' AND (plano <> 'completo' OR status <> 'ativa' OR limites IS NOT NULL OR recursos IS NOT NULL)`);
+const antigas = await prod.query(`SELECT count(*)::int AS n FROM tenants WHERE nome <> 'Plataforma' AND nome NOT LIKE 'E2E %' AND (plano <> 'completo' OR status <> 'ativa' OR limites IS NOT NULL OR recursos IS NOT NULL)`);
 check('empresas existentes continuam completo/ativa/sem overrides', antigas.rows[0].n === 0, antigas.rows);
 check('PATCH com recurso invalido -> 400', (await api('PATCH', `/master/empresas/${Bemp.id}`, { recursos: { foo: true } }, MAS)).s === 400);
 

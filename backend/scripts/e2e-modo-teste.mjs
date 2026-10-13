@@ -6,6 +6,7 @@
 // O script cria uma empresa "E2E Modo Teste" e usuarios e2e.* (senhas aleatorias, so em memoria, nunca impressas) direto
 // na producao do ambiente de DESENVOLVIMENTO. Use somente em banco de desenvolvimento. No fim, os usuarios e2e.* ficam inativos.
 import 'dotenv/config';
+import { tokenDoMasterComDoisFatores } from './e2e-2fa-helper.mjs';
 import pg from 'pg';
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
@@ -74,7 +75,7 @@ check('master recusa senha curta (<8)', mk3.status !== 0, mk3.stdout);
 const ADM = await login('admin');
 const GER0 = await login('gerente');
 const CAI = await login('caixa');
-const MAS = await login('master');
+const MAS = await tokenDoMasterComDoisFatores(B, EMAIL.master, SENHAS.master); // o Master exige 2FA
 check('logins de admin, gerente, caixa e master', [ADM, GER0, CAI, MAS].every(Boolean), { ADM: !!ADM, GER0: !!GER0, CAI: !!CAI, MAS: !!MAS });
 
 // ---------- 1. Master na API de usuarios ----------
@@ -135,7 +136,7 @@ for (const [rotulo, extra] of [['ausente', { DATABASE_URL_TESTE: '' }], ['igual 
   const G = await api('POST', '/auth/login', { email: EMAIL.gerente, senha: SENHAS.gerente }, null, `http://localhost:${porta}`);
   const r = await api('POST', '/auth/modo-teste', { ativo: true }, G.j.token, `http://localhost:${porta}`);
   check(`DATABASE_URL_TESTE ${rotulo}: ativar -> 409 "modo teste nao configurado"`, r.s === 409 && /não configurado/.test(r.j.erro || ''), r);
-  const st = await api('GET', '/master/modo-teste/status', null, (await api('POST', '/auth/login', { email: EMAIL.master, senha: SENHAS.master }, null, `http://localhost:${porta}`)).j.token, `http://localhost:${porta}`);
+  const st = await api('GET', '/master/modo-teste/status', null, MAS, `http://localhost:${porta}`);
   check(`DATABASE_URL_TESTE ${rotulo}: status informa configurado=false`, st.s === 200 && st.j.configurado === false, st);
   srv.kill();
 }

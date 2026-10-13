@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const pool = require('../db/pool');
 const { areasEfetivas, MATRIX } = require('./permissions');
 const modoTeste = require('../services/modoTeste');
+const { marcarAcesso } = require('../services/monitoramento');
 const { dadosDaEmpresa, efetivos, aplicarRecursos } = require('../utils/limites');
 
 // Valida o token e recarrega o usuario do banco a cada requisicao: assim um usuario
@@ -34,6 +35,7 @@ async function authRequired(req, res, next) {
   if (!user || !user.ativo || user.tenant_id !== payload.tenantId) {
     return res.status(401).json({ erro: 'Usuário inativo ou inexistente' });
   }
+  marcarAcesso(user.id); // ultimo acesso (no maximo 1x/min por usuario; nao bloqueia)
   // Encerrar sessoes: tokens emitidos antes de sessoes_validas_desde deixam de valer (comparacao em segundos inteiros).
   if (user.sessoes_validas_desde && payload.iat < Math.floor(new Date(user.sessoes_validas_desde).getTime() / 1000)) {
     return res.status(401).json({ erro: 'Sessão encerrada: entre novamente' });

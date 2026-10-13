@@ -9,6 +9,7 @@ const fs = require('fs');
 
 const { authRequired } = require('./middleware/auth');
 const { mapPgError } = require('./utils/http');
+const monitoramento = require('./services/monitoramento');
 
 const authRoutes = require('./routes/auth.routes');
 const usersRoutes = require('./routes/users.routes');
@@ -31,6 +32,7 @@ const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
 app.use(express.json());
+app.use('/api', monitoramento.contarRequisicao);
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
@@ -65,17 +67,24 @@ app.use((req, res) => {
   res.status(404).json({ erro: 'rota nao encontrada' });
 });
 
+// Erros 5xx ficam em erros_sistema (so os 5xx; 4xx e 409 sao erros de negocio esperados e nao entram).
 // eslint-disable-next-line no-unused-vars
-app.use((err, req, res, next) => {
+function tratarErros(err, req, res, next) {
   if (err.status && err.status < 500) {
     // HttpError das rotas ou JSON malformado no corpo (body-parser)
     const erro = err.type === 'entity.parse.failed' ? 'corpo da requisicao nao e um JSON valido' : err.message;
     return res.status(err.status).json({ erro });
   }
   const mapped = mapPgError(err);
-  if (mapped) return res.status(mapped.status).json({ erro: mapped.erro });
+  if (mapped) {
+    if (mapped.status >= 500) monitoramento.registrarErro(req, mapped.status, err);
+    return res.status(mapped.status).json({ erro: mapped.erro });
+  }
   console.error(err);
+  monitoramento.registrarErro(req, 500, err);
   res.status(500).json({ erro: 'erro interno do servidor' });
-});
+}
+app.use(tratarErros);
 
 module.exports = app;
+module.exports.tratarErros = tratarErros; // usado pelo teste e2e da Fase 2

@@ -4,7 +4,8 @@
 //   ARQUIVO=dados-importacao/insumos.json [IMPORTAR_CONFIRMAR=SIM] npm run importar-insumos
 // Formato do arquivo: { "mapaLojas": { "<loja de origem>": "<loja de destino>" },
 //                      "insumos": [ { "nome", "unidade", "custo_unitario", "saldos": { "<loja de origem>": numero } } ] }
-// A empresa de destino e a que tem TODAS as lojas de destino (se houver mais de uma empresa assim, o script para e avisa).
+// A empresa de destino e a que tem TODAS as lojas de destino (se houver mais de uma, o script para e avisa; use EMPRESA=<parte do nome>
+// para escolher, ex.: EMPRESA="JOSE APARECIDO").
 // Nao imprime senhas nem segredos; grava uma linha de auditoria (importar_insumos).
 require('dotenv').config();
 const fs = require('fs');
@@ -29,6 +30,8 @@ const num = (v) => Number(v);
       `SELECT l.tenant_id, t.nome AS empresa FROM locations l JOIN tenants t ON t.id = l.tenant_id
         WHERE l.nome = ANY($1) GROUP BY l.tenant_id, t.nome HAVING COUNT(DISTINCT l.nome) = $2`, [destinos, destinos.length]
     )).rows;
+    const filtro = String(process.env.EMPRESA || '').trim().toLowerCase();
+    if (filtro) cand.splice(0, cand.length, ...cand.filter((x) => x.empresa.toLowerCase().includes(filtro)));
     if (cand.length !== 1) throw new Error(`não achei uma única empresa com as lojas ${destinos.join(' e ')} (encontradas: ${cand.map((x) => x.empresa).join(', ') || 'nenhuma'})`);
     const { tenant_id: tenantId, empresa } = cand[0];
     const lojas = Object.fromEntries((await c.query(`SELECT id, nome FROM locations WHERE tenant_id = $1 AND nome = ANY($2)`, [tenantId, destinos])).rows.map((l) => [l.nome, l.id]));

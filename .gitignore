@@ -5,3 +5,6 @@ build/
 *.log
 .DS_Store
 deploy/
+
+# Dados de importacao pontual (nao versionar)
+backend/dados-importacao/

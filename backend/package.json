@@ -14,6 +14,7 @@
     "resetar-2fa": "node scripts/resetar-2fa.js",
     "restaurar-backup": "node scripts/restaurar-backup.js",
     "limpar-e2e": "node scripts/limpar-e2e.js",
+    "importar-insumos": "node scripts/importar-insumos.js",
     "test:e2e": "node scripts/e2e-estoque-vendas.mjs",
     "test:e2e:modo-teste": "node scripts/e2e-modo-teste.mjs",
     "test:e2e:master-fase1": "node scripts/e2e-master-fase1.mjs",

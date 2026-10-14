@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/UiContext.jsx';
 import ThemeToggle from '../components/ThemeToggle.jsx';
+import { Logo } from '../components/Logo.jsx';
 
 // Tela de troca obrigatoria de senha: aparece antes de liberar o sistema (senha temporaria / troca forcada pelo Master).
 export default function TrocaObrigatoria() {
@@ -30,7 +31,7 @@ export default function TrocaObrigatoria() {
     <div className="login-screen">
       <div className="theme-toggle-corner"><ThemeToggle /></div>
       <form className="login-card" onSubmit={salvar}>
-        <h1>GiroStock</h1>
+        <h1 className="login-logo"><Logo tamanho={56} vertical /></h1>
         <p className="muted" style={{ margin: 0 }}>Olá, {user.nome}. Por segurança, defina uma <b>nova senha</b> antes de continuar.</p>
         <label>Senha atual (temporária)
           <input type="password" autoComplete="current-password" autoFocus value={form.atual} onChange={(e) => setForm({ ...form, atual: e.target.value })} required />

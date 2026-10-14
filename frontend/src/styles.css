@@ -1192,3 +1192,29 @@ button.ped-act-btn, .ped-act button { flex: 1; padding: 8px; font-size: 11.5px; 
 .faixa-suporte { position: sticky; top: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; padding: 8px 16px; background: var(--err); color: #fff; font-weight: 700; font-size: 13px; }
 .faixa-suporte button { background: #fff; color: var(--err); border: none; border-radius: 8px; padding: 6px 14px; font-weight: 800; cursor: pointer; text-transform: none; letter-spacing: 0; }
 body.suporte-leitura main .btn-primario, body.suporte-leitura main form button[type="submit"] { opacity: 0.45; pointer-events: none; }
+
+/* Logomarca (docs/logo): cores por tema; a marca troca com o tema sem recarregar */
+:root, :root[data-theme="dark"] {
+  --logo-seta-1: #d4ae4a; --logo-seta-2: #c0394a;
+  --logo-caixa-topo: #e6c766; --logo-caixa-esq: #d4ae4a; --logo-caixa-dir: #8a1c2b;
+}
+:root[data-theme="light"] {
+  --logo-seta-1: #8f6810; --logo-seta-2: #7a1420;
+  --logo-caixa-topo: #a57a14; --logo-caixa-esq: #8f6810; --logo-caixa-dir: #7a1420;
+}
+.logo { display: inline-flex; align-items: center; gap: 10px; line-height: 1; }
+.logo-textos { display: flex; flex-direction: column; gap: 4px; }
+.logo-nome { font-family: 'Playfair Display', serif; font-weight: 800; font-size: 20px; letter-spacing: 0.5px; }
+.logo-giro { color: var(--ivory); }
+.logo-stock { color: var(--gold-light); }
+.logo-legenda { font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 10px; letter-spacing: 2.4px; text-transform: uppercase; color: var(--muted-2); }
+.logo-vertical { flex-direction: column; gap: 10px; }
+.logo-vertical .logo-textos { align-items: center; }
+.logo-vertical .logo-nome { font-size: 28px; }
+.marca-svg { flex: none; display: block; }
+.topbar .brand { display: flex; align-items: center; }
+.topbar .brand-link { display: inline-flex; text-decoration: none; background: none; border: none; padding: 0; border-radius: 10px; }
+.topbar .brand-link:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 3px; }
+.login-card h1.login-logo { margin: 0 0 4px; font-size: inherit; display: flex; justify-content: center; }
+.login-marca { display: flex; justify-content: center; margin-bottom: -4px; }
+@media (max-width: 1100px) { .topbar .marca-svg { width: 30px; height: 30px; } }

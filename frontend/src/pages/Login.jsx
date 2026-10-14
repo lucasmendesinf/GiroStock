@@ -6,6 +6,7 @@ import { useToast } from '../context/UiContext.jsx';
 import ThemeToggle from '../components/ThemeToggle.jsx';
 import { AtivarDoisFatores, CampoCodigo } from '../components/DoisFatores.jsx';
 import { rotaInicial } from '../utils/permissions.js';
+import { Logo, Marca } from '../components/Logo.jsx';
 
 export default function Login() {
   const { login, concluirLogin } = useAuth();
@@ -83,6 +84,7 @@ export default function Login() {
       <div className="login-screen">
         <div className="theme-toggle-corner"><ThemeToggle /></div>
         <form className="login-card login-card-larga" onSubmit={redefinir}>
+          <div className="login-marca"><Marca tamanho={40} /></div>
           <h1>Redefinir senha</h1>
           <p className="login-sub">Para contas com verificação em duas etapas: informe o e-mail, o código do app autenticador (ou um código de recuperação) e a nova senha.</p>
           <label>E-mail<input type="email" autoComplete="username" autoFocus value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
@@ -104,6 +106,7 @@ export default function Login() {
       <div className="login-screen">
         <div className="theme-toggle-corner"><ThemeToggle /></div>
         <div className="login-card login-card-larga">
+          <div className="login-marca"><Marca tamanho={40} /></div>
           <h1>Proteja sua conta</h1>
           <p className="login-sub">Sua conta exige verificação em duas etapas. Configure agora para continuar.</p>
           <AtivarDoisFatores
@@ -121,6 +124,7 @@ export default function Login() {
       <div className="login-screen">
         <div className="theme-toggle-corner"><ThemeToggle /></div>
         <form className="login-card" onSubmit={(e) => { e.preventDefault(); verificar(codigo); }}>
+          <div className="login-marca"><Marca tamanho={40} /></div>
           <h1>Código de verificação</h1>
           <p className="login-sub">{usarRecuperacao ? 'Digite um dos seus códigos de recuperação.' : 'Digite o código de 6 dígitos do seu app autenticador.'}</p>
           {usarRecuperacao ? (
@@ -146,7 +150,7 @@ export default function Login() {
     <div className="login-screen">
       <div className="theme-toggle-corner"><ThemeToggle /></div>
       <form className="login-card" onSubmit={handleSubmit}>
-        <h1>GiroStock</h1>
+        <h1 className="login-logo"><Logo tamanho={64} legenda vertical /></h1>
         <label>
           E-mail
           <input type="email" autoComplete="username" autoFocus value={email} onChange={(e) => setEmail(e.target.value)} required />

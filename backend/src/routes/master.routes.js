@@ -87,6 +87,7 @@ router.get('/master/empresas/:id', async (req, res) => {
     id: e.id, nome: e.nome, documento: e.documento, status: e.status, suspenso_motivo: e.suspenso_motivo, suspenso_em: e.suspenso_em,
     plano: e.plano, plano_nome: e.plano_nome, criado_em: e.criado_em,
     cliente_2fa: usuarios.rows.some((u) => u.ativo && u.totp_ativo),
+    contato: (await db.query(`SELECT email_contato, telefone, responsavel FROM tenants WHERE id = $1`, [req.params.id])).rows[0],
     limites: ['lojas', 'usuarios', 'pdvs'].map((k) => ({ chave: k, limite: ef.limites[k], usado: usados[k], origem: ef.origem[k] })),
     recursos: { pedidos: ef.recursos.pedidos, clientes: ef.recursos.clientes, origem: { pedidos: ef.origem.pedidos, clientes: ef.origem.clientes } },
     overrides: { limites: e.limites || null, recursos: e.recursos || null },

@@ -24,6 +24,7 @@ const reportsRoutes = require('./routes/reports.routes');
 const ordersRoutes = require('./routes/orders.routes');
 const customersRoutes = require('./routes/customers.routes');
 const masterSuporteRoutes = require('./routes/master.suporte.routes');
+const empresaRoutes = require('./routes/empresa.routes');
 const masterRoutes = require('./routes/master.routes');
 const masterVisaoRoutes = require('./routes/master.visao.routes');
 const masterConfigRoutes = require('./routes/master.config.routes');
@@ -41,6 +42,7 @@ app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 app.use('/api/auth', authRoutes);
 
+app.use('/api', authRequired, empresaRoutes);
 app.use('/api', authRequired, usersRoutes);
 app.use('/api', authRequired, suppliersRoutes);
 app.use('/api', authRequired, productsRoutes);

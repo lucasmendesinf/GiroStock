@@ -111,6 +111,7 @@ export default function Empresas() {
           <aside className="ped-drawer" role="dialog" aria-label={`Empresa ${ficha.nome}`}>
             <button type="button" className="modal-close" style={{ float: 'right' }} aria-label="Fechar" onClick={() => setFicha(null)}>×</button>
             <h3>{ficha.nome}</h3>
+            {ficha.contato && (ficha.contato.responsavel || ficha.contato.email_contato || ficha.contato.telefone) && <div className="cl-sub">Contato: {[ficha.contato.responsavel, ficha.contato.telefone, ficha.contato.email_contato].filter(Boolean).join(' · ')}</div>}
             <div className="cl-sub">{ficha.documento || 'sem CNPJ'} · cliente desde {new Date(ficha.criado_em).toLocaleDateString('pt-BR')}</div>
             <div style={{ margin: '10px 0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span className={`ped-pill ${ficha.status === 'ativa' ? 'ok' : 'err'}`}>{ficha.status === 'ativa' ? 'Ativa' : 'Suspensa'}</span>

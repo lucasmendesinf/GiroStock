@@ -13,6 +13,7 @@ import Manutencao from './pages/Manutencao.jsx';
 import AvisoGlobal from './components/AvisoGlobal.jsx';
 import AvisoEmpresa from './components/AvisoEmpresa.jsx';
 import SuporteFaixa from './components/SuporteFaixa.jsx';
+import { Logo } from './components/Logo.jsx';
 import Home from './pages/Home.jsx';
 import PDV from './pages/PDV.jsx';
 import Pedidos from './pages/Pedidos.jsx';
@@ -124,7 +125,7 @@ function Layout({ children }) {
         <SuporteFaixa />
         <FaixaTeste />
         <header className="topbar topbar-pdv">
-          <div className="brand">GiroStock</div>
+          <div className="brand"><Logo tamanho={36} /></div>
           <span className="pdv-mode-user">{user?.nome}{user?.locationNome ? ` · ${user.locationNome}` : ''}</span>
           <div className="user-box">
             <ThemeToggle />
@@ -144,7 +145,7 @@ function Layout({ children }) {
       <AvisoEmpresa />
       <FaixaTeste />
       <header className="topbar">
-        <div className="brand">GiroStock</div>
+        <div className="brand"><NavLink to={rotaInicial(user)} className="brand-link" aria-label="GiroStock - ir para a tela inicial"><Logo tamanho={36} /></NavLink></div>
         <button type="button" className="menu-toggle" aria-label="Abrir menu" aria-expanded={menuAberto} onClick={() => setMenuAberto(!menuAberto)}>☰</button>
         <nav className={menuAberto ? 'aberto' : ''}>
           {telas.map((t) => <NavLink key={t.path} to={t.path}>{t.label}</NavLink>)}

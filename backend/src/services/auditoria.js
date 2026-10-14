@@ -2,7 +2,7 @@
 // `tipo` e derivado da `acao` por esta tabela (unica fonte da verdade, usada no filtro SQL e na resposta).
 const TIPOS = [
   { codigo: 'login_falha', rotulo: 'Login com falha', acoes: ['login_falha'] },
-  { codigo: 'seguranca', rotulo: 'Segurança', acoes: ['trocar_senha', 'redefinir_senha', 'alterar_permissao', 'master_alterar_permissao', 'master_forcar_troca_senha', 'master_encerrar_sessoes', 'resetar_2fa', 'ativar_2fa', 'desativar_2fa', 'bloquear_2fa', 'login_codigo_recuperacao', 'gerar_codigos_recuperacao_2fa', 'exigir_2fa', 'dispensar_2fa'] },
+  { codigo: 'seguranca', rotulo: 'Segurança', acoes: ['trocar_senha', 'alterar_email', 'master_alterar_email', 'redefinir_senha', 'alterar_permissao', 'master_alterar_permissao', 'master_forcar_troca_senha', 'master_encerrar_sessoes', 'resetar_2fa', 'ativar_2fa', 'desativar_2fa', 'bloquear_2fa', 'login_codigo_recuperacao', 'gerar_codigos_recuperacao_2fa', 'exigir_2fa', 'dispensar_2fa'] },
   { codigo: 'suspensao', rotulo: 'Suspensão', acoes: ['master_suspender_empresa', 'master_reativar_empresa'] },
   { codigo: 'config', rotulo: 'Empresas e usuários', acoes: ['master_criar_empresa', 'master_alterar_empresa', 'master_criar_usuario'], prefixos: ['master_config', 'master_aviso', 'master_plano'] },
   { codigo: 'modo_teste', rotulo: 'Modo teste', acoes: ['ligar_modo_teste', 'desligar_modo_teste', 'copiar_producao_para_teste'] },

@@ -7,7 +7,7 @@ const { logAudit } = require('../utils/audit');
 const { isUuid } = require('../utils/tenant');
 const { isValidDocumento, onlyDigits } = require('../utils/validators');
 const { dadosDaEmpresa, efetivos, uso } = require('../utils/limites');
-const { criarUsuario, resetarDoisFatores } = require('../services/usuarios');
+const { criarUsuario, resetarDoisFatores, validarNovoEmail } = require('../services/usuarios');
 const { copiarProducao, status } = require('../services/copiaProducao');
 const modoTeste = require('../services/modoTeste');
 const config = require('../services/config');
@@ -308,6 +308,17 @@ router.post('/master/usuarios/:id/redefinir-senha', async (req, res) => {
   await db.query(`UPDATE users SET senha_hash = $1, deve_trocar_senha = true, sessoes_validas_desde = now(), falhas_login = 0 WHERE id = $2`, [hash, u.id]);
   await logAudit(db, { tenantId: u.tenant_id, usuarioId: req.user.id, acao: 'master_redefinir_senha', recurso: 'users', recursoId: u.id });
   res.json({ senha_temporaria: senha });
+});
+
+// Alterar o e-mail de acesso de um usuario de empresa (unico no sistema). Derruba as sessoes abertas dele.
+router.patch('/master/usuarios/:id/email', async (req, res) => {
+  const u = await alvoOuErro(req.params.id);
+  const novo = await validarNovoEmail(db, u.id, (req.body || {}).email);
+  const ant = (await db.query(`SELECT email FROM users WHERE id = $1`, [u.id])).rows[0].email;
+  if (novo === ant) throw new HttpError(400, 'este já é o e-mail de acesso do usuário');
+  await db.query(`UPDATE users SET email = $1, sessoes_validas_desde = now() WHERE id = $2`, [novo, u.id]);
+  await logAudit(db, { tenantId: u.tenant_id, usuarioId: req.user.id, acao: 'master_alterar_email', recurso: 'users', recursoId: u.id, detalhes: { anterior: ant, novo } });
+  res.json({ email: novo });
 });
 
 // O Master pode resetar o 2FA de qualquer usuario (inclusive outro Master nao: so por script).

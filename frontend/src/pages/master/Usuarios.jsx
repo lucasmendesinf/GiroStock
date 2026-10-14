@@ -4,6 +4,7 @@ import { useToast, useConfirm } from '../../context/UiContext.jsx';
 import { quando } from './util.js';
 import NovoUsuarioModal from './NovoUsuarioModal.jsx';
 import SenhaUnicaModal from './SenhaUnicaModal.jsx';
+import EmailUsuarioModal from './EmailUsuarioModal.jsx';
 
 const SITUACOES = [['', 'Todas as situações'], ['ativos', 'Ativos'], ['inativos', 'Inativos'], ['falhas', '3+ falhas de login'], ['sem_login', 'Sem login há 30+ dias']];
 
@@ -17,6 +18,7 @@ export default function Usuarios() {
   const [situacao, setSituacao] = useState('');
   const [novo, setNovo] = useState(false);
   const [verTeste, setVerTeste] = useState(false);
+  const [editandoEmail, setEditandoEmail] = useState(null);
   const [novaSenha, setNovaSenha] = useState(null); // { usuario, senha } mostrada uma unica vez
 
   const carregar = useCallback(async () => {
@@ -108,6 +110,7 @@ export default function Usuarios() {
                   <td>{u.totp_ativo ? <span className="ped-pill ok">Ativo</span> : <span className="cl-sub" style={{ margin: 0 }}>Não ativo</span>}{(u.totp_exigido || u.perfil === 'Master') && <span className="ped-tag" style={{ marginLeft: 6 }}>exigido</span>}</td>
                   <td><span className={`ped-pill ${u.ativo ? 'ok' : 'err'}`}>{u.ativo ? 'Ativo' : 'Inativo'}</span></td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    {u.perfil !== 'Master' && <button type="button" className="btn-link" onClick={() => setEditandoEmail(u)}>Alterar e-mail</button>}{' '}
                     {u.perfil !== 'Master' && <button type="button" className="btn-link" onClick={() => redefinirSenha(u)}>Redefinir senha</button>}{' '}
                     <button type="button" className="btn-link" onClick={() => acao(api.post(`/master/usuarios/${u.id}/forcar-troca-senha`), `Troca de senha exigida no próximo login de ${u.nome}`)}>Forçar troca de senha</button>{' '}
                     <button type="button" className="btn-link" onClick={() => encerrar(u)}>Encerrar sessões</button>{' '}
@@ -124,6 +127,7 @@ export default function Usuarios() {
       </div>
 
       {novaSenha && <SenhaUnicaModal titulo="Senha redefinida" resumo={`${novaSenha.usuario.nome} (${novaSenha.usuario.email}) · informe esta senha ao usuário; ele troca no próximo login.`} senha={novaSenha.senha} onClose={() => setNovaSenha(null)} />}
+      {editandoEmail && <EmailUsuarioModal usuario={editandoEmail} onClose={() => setEditandoEmail(null)} onSalvo={() => { setEditandoEmail(null); carregar(); }} />}
       {novo && <NovoUsuarioModal onClose={() => setNovo(false)} onCriado={() => { setNovo(false); carregar(); }} />}
     </div>
   );

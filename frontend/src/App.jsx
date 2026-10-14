@@ -14,6 +14,7 @@ import AvisoGlobal from './components/AvisoGlobal.jsx';
 import AvisoEmpresa from './components/AvisoEmpresa.jsx';
 import SuporteFaixa from './components/SuporteFaixa.jsx';
 import DadosEmpresa from './components/DadosEmpresa.jsx';
+import AlterarEmail from './components/AlterarEmail.jsx';
 import { Logo } from './components/Logo.jsx';
 import Home from './pages/Home.jsx';
 import PDV from './pages/PDV.jsx';
@@ -101,6 +102,7 @@ function Layout({ children }) {
   const [menuAberto, setMenuAberto] = useState(false);
   const [contaAberta, setContaAberta] = useState(false);
   const [trocandoSenha, setTrocandoSenha] = useState(false);
+  const [alterandoEmail, setAlterandoEmail] = useState(false);
   const [segurancaAberta, setSegurancaAberta] = useState(false);
   const [empresaAberta, setEmpresaAberta] = useState(false);
   const [modoTesteAberto, setModoTesteAberto] = useState(false);
@@ -166,6 +168,7 @@ function Layout({ children }) {
                   <button type="button" onClick={() => { setContaAberta(false); setModoTesteAberto(true); }}>Modo teste</button>
                 )}
                 {!user?.master && <button type="button" onClick={() => { setContaAberta(false); setEmpresaAberta(true); }}>Dados da empresa</button>}
+                {!user?.suporte && <button type="button" onClick={() => { setContaAberta(false); setAlterandoEmail(true); }}>Alterar meu e-mail</button>}
                 {!user?.suporte && <button type="button" onClick={() => { setContaAberta(false); setTrocandoSenha(true); }}>Alterar minha senha</button>}
                 {!user?.suporte && <button type="button" onClick={() => { setContaAberta(false); setSegurancaAberta(true); }}>Verificação em duas etapas</button>}
                 <button type="button" onClick={sair}>Sair</button>
@@ -176,6 +179,7 @@ function Layout({ children }) {
       </header>
       <main>{children}</main>
       {trocandoSenha && <TrocarSenha onClose={() => setTrocandoSenha(false)} />}
+      {alterandoEmail && <AlterarEmail onClose={() => setAlterandoEmail(false)} />}
       {segurancaAberta && <SegurancaModal onClose={() => setSegurancaAberta(false)} />}
       {empresaAberta && <DadosEmpresa podeEditar={!!user?.areas?.Configuracoes} onClose={() => setEmpresaAberta(false)} />}
       {modoTesteAberto && <ModoTesteModal onClose={() => setModoTesteAberto(false)} />}

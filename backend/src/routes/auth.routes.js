@@ -9,6 +9,7 @@ const { logAudit } = require('../utils/audit');
 const config = require('../services/config');
 const { HttpError } = require('../utils/http');
 const modoTeste = require('../services/modoTeste');
+const { validarNovoEmail } = require('../services/usuarios');
 const { dadosDaEmpresa, efetivos, aplicarRecursos } = require('../utils/limites');
 
 const router = express.Router();
@@ -186,6 +187,19 @@ router.post('/change-password', authRequired, async (req, res) => {
   await db.query(`UPDATE users SET senha_hash = $1, deve_trocar_senha = false WHERE id = $2`, [hash, req.user.id]);
   await logAudit(db, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'trocar_senha', recurso: 'users', recursoId: req.user.id });
   res.status(204).send();
+});
+
+// Troca do proprio e-mail de acesso (exige a senha atual). Nao derruba sessoes: o token identifica o usuario pelo id.
+router.post('/alterar-email', authRequired, async (req, res) => {
+  const { senha_atual, novo_email } = req.body || {};
+  if (!senha_atual) throw new HttpError(400, 'informe a senha atual');
+  const { rows } = await db.query(`SELECT senha_hash, email FROM users WHERE id = $1`, [req.user.id]);
+  if (!(await bcrypt.compare(String(senha_atual), rows[0].senha_hash))) throw new HttpError(400, 'senha atual incorreta');
+  const novo = await validarNovoEmail(db, req.user.id, novo_email);
+  if (novo === rows[0].email) throw new HttpError(400, 'este já é o seu e-mail de acesso');
+  await db.query(`UPDATE users SET email = $1 WHERE id = $2`, [novo, req.user.id]);
+  await logAudit(db, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'alterar_email', recurso: 'users', recursoId: req.user.id, detalhes: { anterior: rows[0].email, novo } });
+  res.json({ email: novo });
 });
 
 function assinar(user, extra = {}) {

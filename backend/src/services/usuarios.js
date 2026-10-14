@@ -16,6 +16,16 @@ async function resetarDoisFatores(db, userId) {
   await db.query(`DELETE FROM user_recovery_codes WHERE user_id = $1`, [userId]);
 }
 
+// Valida e normaliza um novo e-mail de acesso (unico no sistema todo, sem diferenciar maiusculas). Devolve o e-mail aparado.
+async function validarNovoEmail(db, userId, email) {
+  const novo = String(email || '').trim();
+  if (!novo) throw new HttpError(400, 'informe o novo e-mail');
+  if (novo.length > 120 || !isValidEmail(novo)) throw new HttpError(400, 'email inválido');
+  const { rows } = await db.query(`SELECT id FROM users WHERE lower(email::text) = lower($1) AND id <> $2`, [novo, userId]);
+  if (rows.length > 0) throw new HttpError(409, 'já existe um usuário com este email');
+  return novo;
+}
+
 const PERFIS = ['Administrador', 'Gerente', 'Caixa/Operador', 'Estoque', 'Lanchonete/Cozinha', 'Financeiro'];
 
 // Valida a lista de lojas adicionais (ids de lojas da empresa, sem repetir a principal).
@@ -72,4 +82,4 @@ async function criarUsuario(db, opcoes) {
   return { ...rows[0], location_ids: extras };
 }
 
-module.exports = { PERFIS, criarUsuario, lojasAdicionais, gravarLojasAdicionais, resetarDoisFatores };
+module.exports = { PERFIS, validarNovoEmail, criarUsuario, lojasAdicionais, gravarLojasAdicionais, resetarDoisFatores };

@@ -16,7 +16,7 @@ const LIBERADAS = [
 const BLOQUEADAS_SEMPRE = [
   { metodos: '*', re: /^\/master(\/|$)/, motivo: 'O painel Master não está disponível durante o suporte.' },
   { metodos: 'escrita', re: /^\/users(\/|$)/, motivo: 'Usuários, senhas, permissões e 2FA não podem ser alterados em sessão de suporte.' },
-  { metodos: 'escrita', re: /^\/auth\/(change-password|modo-teste|2fa)(\/|$)/, motivo: 'Senha, 2FA e modo teste não podem ser alterados em sessão de suporte.' },
+  { metodos: 'escrita', re: /^\/auth\/(change-password|alterar-email|modo-teste|2fa)(\/|$)/, motivo: 'Senha, 2FA e modo teste não podem ser alterados em sessão de suporte.' },
   { metodos: 'escrita', re: /^\/(sales|orders)\/[^/]+\/cancel$/, motivo: 'Cancelamentos (estornam estoque e caixa) não são permitidos em sessão de suporte.' },
 ];
 

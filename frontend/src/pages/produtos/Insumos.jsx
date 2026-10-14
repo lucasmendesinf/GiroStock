@@ -170,6 +170,7 @@ function NovoInsumo({ locaisAtivos, user, reload, onClose }) {
 
 function EditarInsumo({ insumo, reload, onClose }) {
   const toast = useToast();
+  const confirmar = useConfirm();
   const [form, setForm] = useState({
     nome: insumo.nome, unidade: insumo.unidade, ativo: insumo.ativo,
   });
@@ -177,12 +178,20 @@ function EditarInsumo({ insumo, reload, onClose }) {
   async function salvar(e) {
     e.preventDefault();
     try {
-      await api.put(`/ingredients/${insumo.id}`, {
+      const r = await api.put(`/ingredients/${insumo.id}`, {
         nome: form.nome, unidade: form.unidade, ativo: form.ativo,
       });
       toast.sucesso('Insumo atualizado.');
       await reload();
       onClose();
+      // Unidade trocada com o insumo em receitas: o custo dos produtos foi recalculado, mas as quantidades das receitas ficaram como estavam.
+      if (r.produtos_afetados && r.produtos_afetados.length > 0) {
+        await confirmar({
+          titulo: `Unidade de ${insumo.nome} alterada para ${form.unidade}`,
+          mensagem: `Estes produtos usam este insumo e o custo deles foi recalculado. Revise a quantidade usada em cada receita: ${r.produtos_afetados.join(', ')}.`,
+          confirmar: 'Entendi',
+        });
+      }
     } catch (err) { toast.erro(err); }
   }
   return (
@@ -190,7 +199,7 @@ function EditarInsumo({ insumo, reload, onClose }) {
       <form onSubmit={salvar} className="form-stack">
         <Field label="Nome *"><input autoFocus value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required minLength={2} /></Field>
         <div className="form-grid">
-          <Field label="Unidade de medida" hint={podeTrocarUnidade ? undefined : 'Só pode trocar com saldo zerado.'} >
+          <Field label="Unidade de medida" hint={podeTrocarUnidade ? 'Se o insumo estiver em receitas, o custo dos produtos é recalculado e mostramos quais revisar.' : 'Só pode trocar com o estoque zerado em todas as lojas (Movimentar > Balanço).'} >
             <select value={form.unidade} disabled={!podeTrocarUnidade} onChange={(e) => setForm({ ...form, unidade: e.target.value })}>
               {UNIDADES_INSUMO.map((u) => <option key={u} value={u}>{u}</option>)}
             </select>

@@ -59,6 +59,19 @@ check('Master vê o contato na ficha da empresa', ficha.s === 200 && ficha.j.con
 check('editar fica auditado (editar_dados_empresa)', (await prod.query(`SELECT 1 FROM audit_logs WHERE acao = 'editar_dados_empresa' AND tenant_id = $1`, [A.id])).rows.length >= 1);
 check('o Master não edita dados de empresa por esta rota (sem empresa própria)', (await api('PUT', '/empresa', { responsavel: 'x' }, MAS)).s === 403);
 
+console.log('\n# Unidade de insumo');
+await api('POST', '/categories', { nome: 'Lanches' }, A.token);
+const catId = (await api('GET', '/categories', null, A.token)).j[0].id;
+const prodU = await api('POST', '/products', { nome: 'Lanche Teste', categoria_id: catId, barcode: String(Date.now()).slice(-12), unidade: 'UN', preco_custo: 1, preco_venda: 10 }, A.token);
+const insComSaldo = await api('POST', '/ingredients', { nome: 'Insumo Com Saldo', unidade: 'G', estoque_inicial: 100, custo_total: 10, location_id: loja }, A.token);
+const insZero = await api('POST', '/ingredients', { nome: 'Insumo Zerado', unidade: 'G' }, A.token);
+await api('POST', `/products/${prodU.j.id}/ingredients`, { ingredient_id: insZero.j.id, quantidade_por_unidade: 5 }, A.token);
+check('trocar a unidade com estoque -> 400', (await api('PUT', `/ingredients/${insComSaldo.j.id}`, { unidade: 'KG' }, A.token)).s === 400);
+const trU = await api('PUT', `/ingredients/${insZero.j.id}`, { unidade: 'KG' }, A.token);
+check('com estoque zerado a unidade troca mesmo em receita', trU.s === 200 && trU.j.unidade === 'KG', trU);
+check('a resposta lista os produtos afetados', Array.isArray(trU.j.produtos_afetados) && trU.j.produtos_afetados.includes('Lanche Teste'), trU.j.produtos_afetados);
+check('insumo fora de receita troca sem lista de produtos', (await api('PUT', `/ingredients/${insComSaldo.j.id}`, { unidade: 'G', nome: 'Insumo Com Saldo' }, A.token)).j.produtos_afetados.length === 0);
+
 console.log('\n# E-mail de acesso do usuário');
 const emA = `e2e.de.a.${SUF}@girostock.local`;
 const novoEm = `e2e.de.novo.${SUF}@girostock.local`;

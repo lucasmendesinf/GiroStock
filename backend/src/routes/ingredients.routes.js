@@ -133,7 +133,7 @@ async function recalcularCustoProdutos(client, tenantId, ingredientId) {
     .map((r) => ({ nome: r.nome, preco_custo: Number(r.preco_custo), preco_venda: Number(r.preco_venda) }));
 }
 
-// Edita o cadastro do insumo: nome, custo por unidade, ativo e (so sem saldo e sem uso em receita) a unidade.
+// Edita o cadastro do insumo: nome, custo por unidade, ativo e (so com saldo zerado) a unidade.
 router.put('/ingredients/:id', requireArea('Estoque'), async (req, res) => {
   const atual = await getOwned(pool, 'ingredients', req.params.id, req.user.tenantId, { columns: 'id, nome, unidade, custo_unitario, ativo' });
   const body = req.body || {};
@@ -143,15 +143,21 @@ router.put('/ingredients/:id', requireArea('Estoque'), async (req, res) => {
   if (!(custo >= 0)) throw new HttpError(400, 'custo por unidade deve ser 0 ou mais');
   const ativo = body.ativo === undefined ? atual.ativo : !!body.ativo;
   const unidade = body.unidade === undefined ? atual.unidade : String(body.unidade);
+  // Trocar a unidade exige estoque zerado em todas as lojas. Estar em receitas NAO impede: os produtos afetados voltam na resposta.
+  let produtosAfetados = [];
   if (unidade !== atual.unidade) {
     const uso = await pool.query(
-      `SELECT (SELECT COALESCE(SUM(saldo), 0) FROM ingredient_balances WHERE ingredient_id = $1 AND tenant_id = $2) AS saldo,
-              (SELECT COUNT(*) FROM product_ingredients WHERE ingredient_id = $1 AND tenant_id = $2) AS receitas`,
+      `SELECT EXISTS(SELECT 1 FROM ingredient_balances WHERE ingredient_id = $1 AND tenant_id = $2 AND saldo <> 0) AS com_saldo`,
       [req.params.id, req.user.tenantId]
     );
-    if (Number(uso.rows[0].saldo) !== 0 || Number(uso.rows[0].receitas) > 0) {
-      throw new HttpError(400, 'não dá para trocar a unidade de um insumo com saldo ou usado em receita');
+    if (uso.rows[0].com_saldo) {
+      throw new HttpError(400, 'não dá para trocar a unidade com estoque: zere o saldo do insumo em todas as lojas (Movimentar > Balanço) e tente de novo');
     }
+    produtosAfetados = (await pool.query(
+      `SELECT DISTINCT p.nome FROM product_ingredients pi JOIN products p ON p.id = pi.product_id
+        WHERE pi.ingredient_id = $1 AND pi.tenant_id = $2 ORDER BY p.nome`,
+      [req.params.id, req.user.tenantId]
+    )).rows.map((r) => r.nome);
   }
   const client = await pool.connect();
   try {
@@ -166,7 +172,7 @@ router.put('/ingredients/:id', requireArea('Estoque'), async (req, res) => {
       detalhes: { antes: { nome: atual.nome, unidade: atual.unidade, custo_unitario: Number(atual.custo_unitario), ativo: atual.ativo }, depois: { nome, unidade, custo_unitario: custo, ativo } },
     });
     await client.query('COMMIT');
-    res.json({ ...(await carregarInsumo(pool, req.user.tenantId, req.params.id)), produtos_custo_acima_venda: acimaVenda });
+    res.json({ ...(await carregarInsumo(pool, req.user.tenantId, req.params.id)), produtos_custo_acima_venda: acimaVenda, produtos_afetados: produtosAfetados });
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

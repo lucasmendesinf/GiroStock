@@ -1,6 +1,16 @@
 const { Pool } = require('pg');
 const { AsyncLocalStorage } = require('async_hooks');
 
+// Atalho para hospedagem sem editar senha: DATABASE_NOME_TESTE (so o NOME do segundo banco) monta a URL do teste a partir da
+// DATABASE_URL (mesmo servidor, usuario e senha). DATABASE_URL_TESTE, se existir, continua mandando.
+if (!process.env.DATABASE_URL_TESTE && process.env.DATABASE_NOME_TESTE && process.env.DATABASE_URL) {
+  try {
+    const u = new URL(process.env.DATABASE_URL);
+    u.pathname = '/' + String(process.env.DATABASE_NOME_TESTE).trim();
+    process.env.DATABASE_URL_TESTE = u.toString();
+  } catch (err) { /* DATABASE_URL invalida: o modo teste fica indisponivel */ }
+}
+
 // Dois bancos: producao (DATABASE_URL) e teste (DATABASE_URL_TESTE). O resto do sistema continua usando
 // `require('../db/pool')` como antes: este objeto delega ao banco do contexto atual. Sem contexto = producao
 // (inclusive scripts, jobs e workers). O contexto "teste" so e aberto em middleware/auth.js, depois de validar o token.

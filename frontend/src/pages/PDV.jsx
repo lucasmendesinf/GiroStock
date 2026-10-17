@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { api } from '../api/client';
 import { requestFullscreen, isFullscreen as checkIsFullscreen } from '../utils/fullscreen';
 import { brl, qtd, parseNumero, dataHora, UNIDADES_INTEIRAS, FORMA_PAGAMENTO } from '../utils/format';
@@ -107,7 +107,7 @@ export default function PDV() {
   const [selecionado, setSelecionado] = useState(0);
   const itemSelecionadoRef = useRef(null);
   // Lista completa (busca iniciada por *): carrega em lotes conforme a rolagem.
-  const LOTE = 30;
+  const LOTE = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches ? 120 : 30;
   const [temMais, setTemMais] = useState(false);
   const [carregandoMais, setCarregandoMais] = useState(false);
   const listaAtual = useRef(null); // termo da lista completa em exibicao (null = busca normal)
@@ -117,7 +117,27 @@ export default function PDV() {
   const [editandoQtd, setEditandoQtd] = useState({});
   const timerBusca = useRef(null);
 
-  const focarBusca = useCallback(() => setTimeout(() => buscaRef.current?.focus(), 0), []);
+  // Celular/tablet (garcom na mesa): sem teclado fisico. A lista de produtos fica aberta, tocar adiciona e o campo
+  // de busca nao recebe foco sozinho (senao o teclado virtual abre a cada item).
+  const toque = useMemo(() => typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(pointer: coarse)').matches, []);
+  const [categoria, setCategoria] = useState(null); // filtro por categoria na lista (toque)
+  const focarBusca = useCallback(() => { if (!toque) setTimeout(() => buscaRef.current?.focus(), 0); }, [toque]);
+
+  // Toque: com a busca vazia, a lista de produtos (cardapio) fica sempre aberta.
+  useEffect(() => {
+    if (toque && session && terminalId && busca === '' && results.length === 0) onBuscaChange('');
+  }, [toque, session, terminalId, busca, results.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Barra fixa do celular (total + ir ao carrinho) some quando o botao de finalizar ja esta na tela.
+  const finalizarRef = useRef(null);
+  const [finalizarVisivel, setFinalizarVisivel] = useState(true);
+  useEffect(() => {
+    const el = finalizarRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return undefined;
+    const obs = new IntersectionObserver(([e]) => setFinalizarVisivel(e.isIntersecting), { threshold: 0.5 });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [session, cart.length === 0]);
 
   // A seta para baixo/cima acompanha o item escolhido com a rolagem da lista.
   useEffect(() => {
@@ -142,8 +162,9 @@ export default function PDV() {
     setSelecionado(0);
     clearTimeout(timerBusca.current);
     // "*" lista todos os produtos; "*texto" lista os que combinam com o texto. A lista carrega em lotes ao rolar.
-    if (texto.trim().startsWith('*')) {
-      const filtro = texto.trim().slice(1).trim();
+    // No toque, a busca vazia tambem mostra todos (o cardapio fica aberto).
+    if (texto.trim().startsWith('*') || (toque && texto.trim() === '')) {
+      const filtro = texto.trim().replace(/^\*/, '').trim();
       listaAtual.current = filtro;
       setTemMais(false);
       timerBusca.current = setTimeout(async () => {
@@ -327,6 +348,10 @@ export default function PDV() {
     focarBusca();
   }
 
+  // Categorias da lista aberta (toque): filtro rapido por tipo de produto.
+  const categorias = toque && listaAtual.current !== null ? [...new Set(results.map((p) => p.categoria).filter(Boolean))].sort() : [];
+  const categoriaAtiva = categoria && categorias.includes(categoria) ? categoria : null;
+  const visiveis = categoriaAtiva ? results.filter((p) => p.categoria === categoriaAtiva) : results;
   const subtotal = Number(cart.reduce((acc, i) => acc + i.preco_venda * i.quantidade, 0).toFixed(2));
 
   // ---------- pedido (lanchonete): o carrinho vira pedido em vez de venda imediata ----------
@@ -689,15 +714,22 @@ export default function PDV() {
           <input
             ref={buscaRef}
             className="pdv-campo"
-            placeholder="Código de barras ou nome do produto  ·  3*código para quantidade  ·  * lista todos"
+            placeholder={toque ? 'Buscar produto pelo nome ou código' : 'Código de barras ou nome do produto  ·  3*código para quantidade  ·  * lista todos'}
             value={busca}
             onChange={(e) => onBuscaChange(e.target.value)}
             onKeyDown={onBuscaKeyDown}
-            autoFocus
+            enterKeyHint="search"
+            autoFocus={!toque}
             aria-label="Buscar produto"
           />
+          {toque && categorias.length > 1 && (
+            <div className="pdv-categorias" role="tablist" aria-label="Categorias">
+              <button type="button" role="tab" aria-selected={!categoriaAtiva} className={!categoriaAtiva ? 'on' : ''} onClick={() => setCategoria(null)}>Todos</button>
+              {categorias.map((c) => <button type="button" role="tab" key={c} aria-selected={categoriaAtiva === c} className={categoriaAtiva === c ? 'on' : ''} onClick={() => setCategoria(c)}>{c}</button>)}
+            </div>
+          )}
           {results.length > 0 && (
-            <div className="resultados-lista">
+            <div className={`resultados-lista ${toque ? 'toque' : ''}`}>
               <div className="resultados-cab" aria-hidden="true">
                 <span />
                 <span>Produto</span>
@@ -708,14 +740,15 @@ export default function PDV() {
               </div>
               <ul className="resultados" role="listbox" aria-label="Produtos encontrados"
                 onScroll={(e) => { const el = e.currentTarget; if (el.scrollTop + el.clientHeight >= el.scrollHeight - 60) carregarMais(); }}>
-                {results.map((p, i) => {
+                {visiveis.map((p, i) => {
                   const semEstoque = Number(p.saldo) <= 0;
+                  const noCarrinho = cart.filter((c) => c.id === p.id).reduce((t, c) => t + c.quantidade, 0);
                   return (
                     <li key={p.id} ref={i === selecionado ? itemSelecionadoRef : null} role="option" aria-selected={i === selecionado}
                       className={`${i === selecionado ? 'selecionado' : ''} ${semEstoque ? 'sem-estoque' : ''}`}
-                      onMouseMove={() => { if (i !== selecionado) setSelecionado(i); }} onClick={() => { if (addToCart(p)) { setBusca(''); setResults([]); } }}>
+                      onMouseMove={() => { if (i !== selecionado) setSelecionado(i); }} onClick={() => { if (addToCart(p) && !toque) { setBusca(''); setResults([]); } }}>
                       <span className="resultado-seta">{i === selecionado ? '▶' : ''}</span>
-                      <span className="resultado-nome">{p.nome}</span>
+                      <span className="resultado-nome">{p.nome}{noCarrinho > 0 && <span className="no-carrinho" aria-label={`${qtd(noCarrinho, p.unidade)} no carrinho`}>{qtd(noCarrinho, p.unidade)}</span>}</span>
                       <span className="resultado-codigo">{p.codigo_interno}<small>{p.barcode}</small></span>
                       <span className="resultado-cat">{p.categoria || '—'}</span>
                       <span className="saldo-pdv num">{semEstoque ? (p.tem_ficha_tecnica ? `sem estoque: falta ${p.insumo_limitante || 'insumo'}` : `sem estoque${p.em_outras_lojas ? ' (há em outra loja)' : ''}`) : p.tem_ficha_tecnica ? `dá para ${p.saldo} un.` : qtd(p.saldo, p.unidade)}</span>
@@ -724,8 +757,8 @@ export default function PDV() {
                   );
                 })}
                 {listaAtual.current !== null && (
-                  <li className="resultados-rodape" aria-hidden="true">
-                    {carregandoMais ? 'Carregando mais produtos...' : temMais ? 'Role ou use ↓ para carregar mais' : `Fim da lista · ${results.length} produto(s)`}
+                  <li className="resultados-rodape" aria-hidden={!toque || !temMais} onClick={() => { if (temMais) carregarMais(); }}>
+                    {carregandoMais ? 'Carregando mais produtos...' : temMais ? (toque ? 'Toque para carregar mais' : 'Role ou use ↓ para carregar mais') : `Fim da lista · ${visiveis.length} produto(s)`}
                   </li>
                 )}
               </ul>
@@ -775,7 +808,7 @@ export default function PDV() {
                 <button type="button" className="carrinho-remover" aria-label={`Remover ${i.nome}`} onClick={() => removeItem(i.key)}>×</button>
                 {i.tem_ficha_tecnica && (
                   <div className="carrinho-obs">
-                    <textarea rows={1} maxLength={200} aria-label={`Observação de ${i.nome}`} placeholder="Observação do pedido (ex.: sem milho, sem cebola)"
+                    <textarea rows={1} maxLength={200} aria-label={`Observação de ${i.nome}`} placeholder={toque ? 'Observação (ex.: sem cebola)' : 'Observação do pedido (ex.: sem milho, sem cebola)'}
                       value={i.observacao || ''} onChange={(e) => observar(i.key, e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focarBusca(); } }} />
                     {i.quantidade > 1 && <button type="button" className="btn-link" onClick={() => separarUnidade(i)}>Separar 1 un. com outra observação</button>}
@@ -834,7 +867,7 @@ export default function PDV() {
                 <div className="ped-seg2" style={{ marginTop: 6 }}>
                   {ORIGENS.map((o) => <button type="button" key={o.id} className={origemPdv === o.id ? 'on' : ''} onClick={() => setOrigemPdv(o.id)}>{o.nome}</button>)}
                 </div>
-                <div style={{ marginTop: 6 }}>F2 gera o pedido, reserva o estoque e mostra a comanda.</div>
+                <div style={{ marginTop: 6 }}>{toque ? 'Gerar pedido' : 'F2'} reserva o estoque e mostra a comanda.</div>
               </div>
             </>
           )}
@@ -855,9 +888,16 @@ export default function PDV() {
               {taxaPed > 0 && <div className="ped-linha ped-total"><span>Total do pedido</span><b>{brl(totalPed)}</b></div>}
             </div>
           )}
-          <button className="btn-finalizar" disabled={cart.length === 0 || gerando} onClick={abrirPagamento}>{modoPedido ? 'Gerar pedido' : 'Finalizar venda'} <kbd>F2</kbd></button>
+          <button ref={finalizarRef} className="btn-finalizar" disabled={cart.length === 0 || gerando} onClick={abrirPagamento}>{modoPedido ? 'Gerar pedido' : 'Finalizar venda'} <kbd>F2</kbd></button>
         </div>
       </div>
+
+      {cart.length > 0 && !finalizarVisivel && (
+        <div className="pdv-barra-movel">
+          <div><span className="muted">{cart.reduce((t, i) => t + (UNIDADES_INTEIRAS.includes(i.unidade) ? i.quantidade : 1), 0)} item(ns)</span><strong>{brl(subtotal)}</strong></div>
+          <button type="button" className="btn-primario" onClick={() => finalizarRef.current?.scrollIntoView({ block: 'center' })}>{modoPedido ? 'Ver pedido' : 'Ver carrinho'}</button>
+        </div>
+      )}
 
       {pedidoModal && terminal && (
         <PedidoForm lojaId={terminal.location_id} origemInicial={origemPdv} titulo="Gerar pedido" telefoneInicial={clienteTel} nomeInicial={nomeChamar.trim() || (clienteInfo ? clienteInfo.nome : '')}
@@ -871,13 +911,15 @@ export default function PDV() {
             <div className="cp-loja">{comanda.location_nome || 'Lanchonete'}</div>
             <div className="cp-numero">PEDIDO #{comanda.numero}</div>
             <div className="cp-centro">{NOME_ORIGEM[comanda.origem] || comanda.origem}{comanda.cliente_nome ? ` · ${comanda.cliente_nome}` : ''}</div>
+            {comanda.tipo === 'mesa' && <div className="cp-numero cp-mesa">{(comanda.endereco || 'MESA').toUpperCase()}</div>}
+            {comanda.tipo === 'entrega' && comanda.endereco && <div className="cp-centro">ENTREGA · {comanda.endereco}</div>}
             <div className="cp-centro cp-pequeno">{dataHora(comanda.criado_em)}</div>
             <hr />
             {comanda.itens.map((i) => <div key={i.id || i.product_id}>{qtd(i.quantidade, i.unidade)}x {i.product_nome || i.nome}{i.complementos && i.complementos.length > 0 ? <div className="cp-obs">{textoComplementos(i.complementos)}</div> : null}{i.observacao ? <div className="cp-obs">Obs.: {i.observacao}</div> : null}</div>)}
             {comanda.observacao && <div className="cp-obs" style={{ marginTop: 8 }}>OBS: {comanda.observacao}</div>}
             <hr />
             <div className="cp-total"><span>TOTAL</span><b>{brl(comanda.total)}</b></div>
-            <div className="cp-centro">{comanda.pago ? 'PAGO' : 'A PAGAR NA RETIRADA'}</div>
+            <div className="cp-centro">{comanda.pago ? 'PAGO' : comanda.tipo === 'mesa' ? 'A PAGAR NA MESA' : comanda.tipo === 'entrega' ? 'A PAGAR NA ENTREGA' : 'A PAGAR NA RETIRADA'}</div>
           </div>
           <div className="modal-actions">
             <button type="button" onClick={() => { const n = comanda.id; setComanda(null); navigate('/pedidos', { state: { abrir: n } }); }}>Ver em Pedidos</button>

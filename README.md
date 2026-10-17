@@ -54,6 +54,17 @@ Acesse:
 - Cada venda recebe um número curto e sequencial por empresa (Venda nº 123).
 - No PDV o menu do sistema fica escondido (modo caixa) para o operador não sair da venda sem querer.
 
+### PDV no celular / tablet (garçom na mesa)
+
+Em aparelho de toque o PDV se adapta sozinho:
+
+- A **lista de produtos fica aberta** (com filtro por categoria); tocar no produto adiciona e mostra quantos já estão no pedido. O teclado do celular só abre quando se toca na busca.
+- Lanche com adicionais abre a escolha dos complementos; a lista continua aberta para o próximo item.
+- **Barra fixa embaixo** com a quantidade e o total; *Ver pedido* leva ao carrinho (destino **Mesa**, número da mesa, *Gerar pedido*).
+- A comanda mostra **MESA 5** em destaque e "A pagar na mesa".
+- Sem as dicas de teclas (F2, F4…), botões maiores para o dedo, campos com 16px (o iPhone não dá zoom ao tocar), avisos no topo da tela.
+- Testado de 320px (celular pequeno) a tablet, em pé e deitado.
+
 ### Telas
 
 - O menu mostra só as telas que o perfil pode usar; quem abre uma tela sem permissão vê um aviso.

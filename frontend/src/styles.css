@@ -1256,3 +1256,78 @@ body.suporte-leitura main .btn-primario, body.suporte-leitura main form button[t
 .comp-opcao.on .comp-radio { background: var(--gold-light); border-color: var(--gold-light); }
 .comp-q { min-width: 22px; text-align: center; font-weight: 700; }
 .comp-opcao .carrinho-qtd { grid-area: auto; width: auto; margin: 0; }
+
+/* ===== PDV no celular / tablet (garcom na mesa) ===== */
+.pdv-categorias { display: flex; gap: 8px; overflow-x: auto; padding: 12px 2px 2px; scrollbar-width: none; }
+.pdv-categorias::-webkit-scrollbar { display: none; }
+.pdv-categorias button { flex: 0 0 auto; padding: 9px 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--muted);
+  font-size: 14px; font-weight: 700; white-space: nowrap; }
+.pdv-categorias button.on { border-color: var(--gold-light); background: var(--accent-soft); color: var(--gold-light); }
+.resultado-nome .no-carrinho { display: inline-block; margin-left: 8px; min-width: 22px; padding: 1px 7px; border-radius: 999px; background: var(--gold-light);
+  color: var(--btn-text); font-size: 12px; font-weight: 800; text-align: center; vertical-align: 2px; }
+/* Toque: lista na pagina (sem rolagem dentro da rolagem), linhas altas para o dedo, sem a seta do teclado */
+.resultados-lista.toque .resultados { max-height: none; overflow: visible; }
+.resultados-lista.toque .resultados li { min-height: 56px; padding: 12px 14px; -webkit-tap-highlight-color: transparent; }
+.resultados-lista.toque .resultados li:active { background: var(--accent-soft); }
+.resultados-lista.toque .resultados li.selecionado { background: transparent; box-shadow: none; }
+.resultados-lista.toque .resultado-seta { display: none; }
+.resultados-lista.toque .resultados-cab, .resultados-lista.toque .resultado-codigo, .resultados-lista.toque .resultado-cat { display: none; }
+.resultados-lista.toque .resultados li { grid-template-columns: 1fr auto; row-gap: 2px; }
+.resultados-lista.toque .resultado-nome { grid-column: 1; grid-row: 1; }
+.resultados-lista.toque .saldo-pdv { grid-column: 1; grid-row: 2; text-align: left; }
+.resultados-lista.toque .resultado-preco { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+.resultados-lista.toque .resultados li.resultados-rodape { display: block; }
+/* Barra fixa: total do carrinho e atalho para finalizar (so em telas estreitas) */
+.pdv-barra-movel { display: none; }
+@media (max-width: 1000px) {
+  .pdv-barra-movel { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); background: var(--panel); border-top: 1px solid var(--gold-light); box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35); }
+  .pdv-barra-movel > div { display: flex; flex-direction: column; line-height: 1.2; }
+  .pdv-barra-movel strong { font-size: 20px; color: var(--gold-light); }
+  .pdv-barra-movel .btn-primario { padding: 12px 18px; white-space: nowrap; }
+  .pdv-mode main { padding-bottom: 90px; }
+  .pdv-mode .toast-stack { bottom: 84px; }
+}
+/* Separar unidade: link de texto (nao o botao quadrado de quantidade) */
+.carrinho-item .carrinho-obs .btn-link { width: auto; height: auto; border: none; background: none; padding: 4px 0; color: var(--gold-light); text-align: left; }
+/* Aparelhos de toque: botoes maiores, sem dicas de tecla, e campos com 16px (o iPhone nao da zoom ao tocar) */
+@media (pointer: coarse) {
+  kbd, .atalhos { display: none !important; }
+  .carrinho-item .carrinho-qtd button, .carrinho-item .carrinho-remover { width: 40px; height: 40px; font-size: 18px; }
+  .carrinho-qtd input { height: 40px; }
+  .pdv-screen input, .pdv-screen select, .pdv-screen textarea, .modal input, .modal select, .modal textarea { font-size: 16px; }
+}
+/* Cabecalho no celular: nada passa da largura da tela */
+@media (max-width: 640px) {
+  .topbar { padding: 0 12px; gap: 8px; }
+  .user-box { gap: 6px; min-width: 0; }
+  .conta-nome { display: block; max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .topbar-pdv .user-box button, .topbar-pdv .user-box a { padding: 8px 10px; white-space: nowrap; }
+  .pdv-header .pdv-header-acoes button { flex: 1 1 auto; }
+}
+@media (max-width: 400px) {
+  .topbar .logo-nome { display: none; }
+}
+/* Celular: avisos no topo (no rodape cobriam os botoes das janelas) e botoes das janelas empilhados */
+@media (max-width: 640px) {
+  .toast-stack, .pdv-mode .toast-stack { top: calc(10px + env(safe-area-inset-top)); bottom: auto; left: 10px; right: 10px; max-width: none; }
+  .modal-actions { flex-wrap: wrap; }
+  .modal-actions button { flex: 1 1 140px; }
+}
+.comanda-previa .cp-mesa { font-size: 20px; margin-top: 4px; }
+/* Com a barra fixa na tela, rolar ate um item (ou campo) para acima dela */
+@media (max-width: 1000px) {
+  html:has(.pdv-barra-movel) { scroll-padding-bottom: 96px; }
+}
+/* Celulares bem estreitos (320-400px): carrinho mais compacto para a linha do item caber */
+@media (max-width: 400px) {
+  .pdv-carrinho { padding: 14px; }
+  .carrinho-qtd input { width: 44px; }
+  .carrinho-subtotal { min-width: 0; }
+  .carrinho-item { column-gap: 6px; }
+}
+.pdv-header select { min-width: 0; max-width: 100%; text-overflow: ellipsis; }
+/* Celular deitado (pouca altura): avisos no topo tambem */
+@media (max-height: 500px) {
+  .toast-stack, .pdv-mode .toast-stack { top: 10px; bottom: auto; }
+}

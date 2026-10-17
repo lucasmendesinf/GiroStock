@@ -29,6 +29,7 @@ const pedidos = new Map(); // id -> payload
 let eventos = []; // { id, code, fullCode, orderId, merchantId, createdAt, metadata }
 const acoes = [];
 const disputas = new Map(); // disputeId -> orderId
+const catalogo = new Map(); // merchantId -> Map(externalCode -> { status, em })
 let display = 1000;
 
 const FULL = { PLC: 'PLACED', CFM: 'CONFIRMED', RTP: 'READY_TO_PICKUP', DSP: 'DISPATCHED', CON: 'CONCLUDED', CAN: 'CANCELLED', HSD: 'HANDSHAKE_DISPUTE', HSS: 'HANDSHAKE_SETTLEMENT' };
@@ -113,6 +114,7 @@ const servidor = http.createServer(async (req, res) => {
     }
     if (c === '/_sim/acoes') return responder(res, 200, acoes);
     if (c === '/_sim/eventos') return responder(res, 200, eventos);
+    if (c === '/_sim/catalogo') return responder(res, 200, Object.fromEntries([...catalogo].map(([m, mapa]) => [m, Object.fromEntries(mapa)])));
     let m = c.match(/^\/_sim\/pedidos\/([^/]+)\/(cancelar-cliente|disputa|concluir)$/);
     if (m && req.method === 'POST') {
       const p = pedidos.get(m[1]);
@@ -186,6 +188,16 @@ const servidor = http.createServer(async (req, res) => {
       evento('HSS', p);
       if (m[2] === 'accept') evento('CAN', p, { reason: 'Cancelamento aceito pela loja' });
       return responder(res, 202, { status: 'ACCEPTED' });
+    }
+    // ---------- cardapio: status por codigo PDV ----------
+    m = c.match(/^\/catalog\/v2\.0\/merchants\/([^/]+)\/products\/status$/);
+    if (m && req.method === 'PATCH') {
+      if (!LOJAS.some((l) => l.id === m[1])) return responder(res, 403, { error: { message: 'loja não autorizada' } });
+      if (!Array.isArray(b) || b.some((x) => !x.externalCode || !['AVAILABLE', 'UNAVAILABLE'].includes(x.status))) return responder(res, 400, { error: { message: 'corpo inválido' } });
+      if (!catalogo.has(m[1])) catalogo.set(m[1], new Map());
+      for (const x of b) catalogo.get(m[1]).set(x.externalCode, { status: x.status, em: new Date().toISOString() });
+      acoes.push({ acao: 'disponibilidade', corpo: b, em: new Date().toISOString() });
+      return responder(res, 202, { batchId: id() });
     }
     return responder(res, 404, { error: { message: `rota não simulada: ${req.method} ${c}` } });
   } catch (err) {

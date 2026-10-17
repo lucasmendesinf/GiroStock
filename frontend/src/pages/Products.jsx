@@ -8,12 +8,14 @@ import ListaProdutos from './produtos/ListaProdutos.jsx';
 import Movimentacoes from './produtos/Movimentacoes.jsx';
 import EntradaNota from './produtos/EntradaNota.jsx';
 import Insumos from './produtos/Insumos.jsx';
+import Complementos from './produtos/Complementos.jsx';
 
 const ABAS = [
   { id: 'produtos', label: 'Produtos' },
   { id: 'estoque', label: 'Estoque & Movimentações' },
   { id: 'nota', label: 'Entrada por nota' },
   { id: 'insumos', label: 'Insumos' },
+  { id: 'complementos', label: 'Complementos' },
 ];
 
 // Dados compartilhados entre as abas; cada aba recarrega o que precisar via reload().
@@ -61,6 +63,7 @@ export default function Products() {
         {carregado && aba === 'estoque' && <Movimentacoes {...props} />}
         {carregado && aba === 'nota' && <EntradaNota {...props} />}
         {carregado && aba === 'insumos' && <Insumos {...props} />}
+        {carregado && aba === 'complementos' && <Complementos {...props} />}
       </div>
     </div>
   );

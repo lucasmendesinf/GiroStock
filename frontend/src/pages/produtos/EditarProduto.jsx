@@ -5,13 +5,22 @@ import { Field, Modal } from '../../components/ui.jsx';
 import { brl, parseNumero, pct } from '../../utils/format';
 import { UNIDADES_PRODUTO, ordenarCategoriasHierarquia, SeletorFornecedores } from './comum.jsx';
 import ReceitaEditor, { custoDaReceita, insumosSemCusto } from './ReceitaEditor.jsx';
+import { CamposIfood, ComboEditor, GruposDoProduto, custoDoCombo } from './ExtrasProduto.jsx';
+import { useAuth } from '../../context/AuthContext.jsx';
+import { temModulo } from '../../utils/permissions.js';
 
 const numeroParaCampo = (n) => String(n).replace('.', ',');
 
 // Edicao do produto: so os dados cadastrais. Produto comum tem o botao "Tratar estoque →";
 // produto controlado por insumos mostra a receita (e abre ja rolado ate ela).
-export default function EditarProduto({ productId, categories, suppliers, ingredients, reload, onClose, onTratarEstoque, lanchonete = true }) {
+export default function EditarProduto({ productId, categories, suppliers, ingredients, products = [], reload, onClose, onTratarEstoque, lanchonete = true }) {
   const toast = useToast();
+  const { user } = useAuth();
+  const usaIfood = temModulo(user, 'delivery_apps');
+  const [comboItens, setComboItens] = useState([]);
+  const [viraCombo, setViraCombo] = useState(false);
+  const [grupos, setGrupos] = useState([]);
+  const [ifood, setIfood] = useState({ vende_ifood: false, codigo_ifood: '' });
   const confirmar = useConfirm();
   const [p, setP] = useState(null);
   const [form, setForm] = useState(null);
@@ -32,6 +41,9 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
         supplier_id: principal, supplier_ids: d.fornecedores.map((f) => f.id).filter((id) => id !== principal),
       });
       setFicha(d.ficha_tecnica.map((f) => ({ ingredient_id: f.ingredient_id, quantidade_por_unidade: Number(f.quantidade_por_unidade) })));
+      setComboItens(d.combo.map((c) => ({ product_id: c.product_id, quantidade: Number(c.quantidade) })));
+      setGrupos(d.grupos.map((g) => g.id));
+      setIfood({ vende_ifood: !!d.vende_ifood, codigo_ifood: d.codigo_ifood || '' });
     } catch (err) { toast.erro(err); }
   }, [productId, toast]);
 
@@ -47,8 +59,10 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
 
   const semSaldo = p.saldos_por_local.every((s) => Number(s.saldo) === 0);
   const usaReceita = compostoOriginal || viraComposto;
+  const comboOriginal = !!p.e_combo;
+  const usaCombo = comboOriginal || viraCombo;
   const custoFicha = custoDaReceita(ficha, ingredients);
-  const custo = usaReceita ? custoFicha : parseNumero(form.preco_custo);
+  const custo = usaReceita ? custoFicha : usaCombo ? custoDoCombo(comboItens, products) : parseNumero(form.preco_custo);
   const venda = parseNumero(form.preco_venda);
   const margem = venda > 0 && custo >= 0 ? ((venda - custo) / venda) * 100 : null;
 
@@ -58,6 +72,7 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
     if (!form.categoria_id) return 'Escolha a categoria.';
     if (ean.length < 8 || ean.length > 14) return 'O código de barras deve ter de 8 a 14 dígitos.';
     if (usaReceita && ficha.length === 0) return 'Adicione ao menos um insumo à receita.';
+    if (usaCombo && comboItens.length === 0) return 'Adicione ao menos um produto ao combo.';
     if (!(custo > 0)) return 'Informe o preço de custo (maior que zero).';
     if (!(venda > custo)) return usaReceita ? `O preço de venda precisa ser maior que o custo dos insumos (${brl(custo)}).` : 'O preço de venda precisa ser maior que o custo.';
     return '';
@@ -79,6 +94,9 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
         preco_venda: venda,
         supplier_id: form.supplier_id || null,
         supplier_ids: form.supplier_ids,
+        grupos,
+        ...(usaCombo ? { combo: comboItens } : {}),
+        ...(usaIfood ? { vende_ifood: ifood.vende_ifood, codigo_ifood: ifood.codigo_ifood } : {}),
       });
       if (usaReceita) {
         const original = p.ficha_tecnica;
@@ -119,10 +137,12 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
 
   return (
     <Modal titulo={<>{p.nome} {!p.ativo && <span className="badge-inativo">inativo</span>}</>}
-      subtitulo={`Editar produto · ${p.codigo_interno}${compostoOriginal ? ' · controlado por insumos' : ''}`} onClose={onClose} largura="extra">
+      subtitulo={`Editar produto · ${p.codigo_interno}${compostoOriginal ? ' · controlado por insumos' : comboOriginal ? ' · combo' : ''}`} onClose={onClose} largura="extra">
       <form onSubmit={salvar} className="form-stack" noValidate>
         <div className="es-resumo">
-          {usaReceita
+          {usaCombo
+            ? <>Combo: <b>feito de outros produtos</b>, sem estoque próprio. O custo é a soma dos produtos do combo.</>
+            : usaReceita
             ? <>Produto controlado por <b>insumos</b>: aqui você define a receita. O custo é calculado pelos insumos e não existe saldo para cadastrar.</>
             : <>Aqui ficam só os <b>dados do produto</b>. O saldo não é cadastrado aqui: use o botão <b>Tratar estoque</b> (ou o ícone de caixa da lista) para dar entrada, transferir ou ajustar estoque.</>}
         </div>
@@ -147,8 +167,8 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
         </div>
 
         <div className="es-form" style={{ alignItems: 'start' }}>
-          <Field label="Preço de custo (R$) *" hint={usaReceita ? (insumosSemCusto(ficha, ingredients).length ? `Soma dos insumos. Sem custo: ${insumosSemCusto(ficha, ingredients).join(', ')} — dê entrada informando o custo.` : 'Soma dos insumos (atualiza ao mudar a receita)') : undefined}>
-            <input inputMode="decimal" readOnly={usaReceita} value={usaReceita ? custoFicha.toFixed(2).replace('.', ',') : form.preco_custo}
+          <Field label="Preço de custo (R$) *" hint={usaCombo ? 'Soma dos produtos do combo' : usaReceita ? (insumosSemCusto(ficha, ingredients).length ? `Soma dos insumos. Sem custo: ${insumosSemCusto(ficha, ingredients).join(', ')} — dê entrada informando o custo.` : 'Soma dos insumos (atualiza ao mudar a receita)') : undefined}>
+            <input inputMode="decimal" readOnly={usaReceita || usaCombo} value={usaReceita || usaCombo ? custo.toFixed(2).replace('.', ',') : form.preco_custo}
               onChange={(e) => setForm({ ...form, preco_custo: e.target.value })} />
           </Field>
           <Field label="Preço de venda (R$) *" hint={margem !== null && Number.isFinite(margem) ? `Margem: ${pct(margem.toFixed(1))}` : undefined}>
@@ -160,21 +180,29 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
           </Field>
         </div>
 
-        {lanchonete && !compostoOriginal && semSaldo && (
+        {lanchonete && !compostoOriginal && !usaCombo && semSaldo && (
           <label className="check">
             <input type="checkbox" checked={viraComposto} onChange={(e) => setViraComposto(e.target.checked)} /> Passar a controlar este produto por insumos (lanche / receita)
           </label>
         )}
+        {!comboOriginal && !usaReceita && semSaldo && (
+          <label className="check">
+            <input type="checkbox" checked={viraCombo} onChange={(e) => setViraCombo(e.target.checked)} /> Transformar em combo (feito de outros produtos)
+          </label>
+        )}
 
         {usaReceita && <ReceitaEditor ref={receitaRef} ficha={ficha} setFicha={setFicha} ingredients={ingredients} onErro={setErro} />}
+        {usaCombo && <ComboEditor itens={comboItens} setItens={setComboItens} produtos={products} proprioId={p.id} />}
+        <GruposDoProduto selecionados={grupos} setSelecionados={setGrupos} />
+        {usaIfood && <CamposIfood valor={ifood} setValor={setIfood} codigoInterno={p.codigo_interno} />}
 
         {erro && <div className="es-erro">{erro}</div>}
         <div className="modal-actions" style={{ flexWrap: 'wrap' }}>
           <button type="button" className={`btn-link ${p.ativo ? 'perigo' : ''}`} onClick={alternarStatus}>{p.ativo ? 'Desativar' : 'Reativar'}</button>
-          {!compostoOriginal && !viraComposto && (
+          {!compostoOriginal && !viraComposto && !usaCombo && (
             <button type="button" className="es-btn-ghost" style={{ marginLeft: 'auto' }} onClick={() => onTratarEstoque(p.id)}>Tratar estoque →</button>
           )}
-          <button type="button" onClick={onClose} style={compostoOriginal || viraComposto ? { marginLeft: 'auto' } : undefined}>Cancelar</button>
+          <button type="button" onClick={onClose} style={compostoOriginal || viraComposto || usaCombo ? { marginLeft: 'auto' } : undefined}>Cancelar</button>
           <button type="submit" disabled={salvando}>{salvando ? 'Salvando...' : 'Salvar alterações'}</button>
         </div>
       </form>

@@ -6,6 +6,9 @@ import { brl, parseNumero, pct } from '../../utils/format';
 import { UNIDADES_PRODUTO, ordenarCategoriasHierarquia, SeletorFornecedores } from './comum.jsx';
 import ReceitaEditor, { custoDaReceita, insumosSemCusto } from './ReceitaEditor.jsx';
 import Categorias from './Categorias.jsx';
+import { CamposIfood, ComboEditor, GruposDoProduto, custoDoCombo } from './ExtrasProduto.jsx';
+import { useAuth } from '../../context/AuthContext.jsx';
+import { temModulo } from '../../utils/permissions.js';
 
 // Cadastro de produto: so os dados do produto. O saldo nao e cadastrado aqui (depois de salvar,
 // o icone de caixa da lista trata o estoque). Produto controlado por insumos (lanche / receita)
@@ -15,8 +18,14 @@ const textoCustoReceita = (ficha, ingredients) => {
   return sem.length ? `Soma dos insumos (atualiza ao mudar a receita). Sem custo: ${sem.join(', ')} — dê entrada informando o custo.` : 'Soma dos insumos (atualiza ao mudar a receita)';
 };
 
-export default function FormProduto({ categories, suppliers, ingredients, reload, onClose, onSalvo, lanchonete = true }) {
+export default function FormProduto({ categories, suppliers, ingredients, products = [], reload, onClose, onSalvo, lanchonete = true }) {
   const toast = useToast();
+  const { user } = useAuth();
+  const usaIfood = temModulo(user, 'delivery_apps');
+  const [combo, setCombo] = useState(false);
+  const [comboItens, setComboItens] = useState([]);
+  const [grupos, setGrupos] = useState([]);
+  const [ifood, setIfood] = useState({ vende_ifood: false, codigo_ifood: '' });
   const [form, setForm] = useState({
     nome: '', categoria_id: '', unidade: 'UN', barcode: '', preco_custo: '', preco_venda: '', supplier_id: '', supplier_ids: [],
   });
@@ -28,7 +37,7 @@ export default function FormProduto({ categories, suppliers, ingredients, reload
   const arvore = ordenarCategoriasHierarquia(categories);
 
   const custoFicha = custoDaReceita(ficha, ingredients);
-  const custo = composto ? custoFicha : parseNumero(form.preco_custo);
+  const custo = composto ? custoFicha : combo ? custoDoCombo(comboItens, products) : parseNumero(form.preco_custo);
   const venda = parseNumero(form.preco_venda);
   const margem = venda > 0 && custo >= 0 ? ((venda - custo) / venda) * 100 : null;
 
@@ -38,8 +47,9 @@ export default function FormProduto({ categories, suppliers, ingredients, reload
     if (!form.categoria_id) return 'Escolha a categoria.';
     if (ean.length < 8 || ean.length > 14) return 'O código de barras deve ter de 8 a 14 dígitos.';
     if (composto && ficha.length === 0) return 'Adicione ao menos um insumo à receita.';
+    if (combo && comboItens.length === 0) return 'Adicione ao menos um produto ao combo.';
     if (!(custo > 0)) return 'Informe o preço de custo (maior que zero).';
-    if (!(venda > custo)) return composto ? `O preço de venda precisa ser maior que o custo dos insumos (${brl(custo)}).` : 'O preço de venda precisa ser maior que o custo.';
+    if (!(venda > custo)) return composto || combo ? `O preço de venda precisa ser maior que o custo (${brl(custo)}).` : 'O preço de venda precisa ser maior que o custo.';
     return '';
   }
 
@@ -60,9 +70,12 @@ export default function FormProduto({ categories, suppliers, ingredients, reload
         supplier_id: form.supplier_id || null,
         supplier_ids: form.supplier_ids,
         ficha_tecnica: composto ? ficha.map((f) => ({ ingredient_id: f.ingredient_id, quantidade_por_unidade: f.quantidade_por_unidade })) : [],
+        combo: combo ? comboItens : [],
+        grupos,
+        ...(usaIfood ? { vende_ifood: ifood.vende_ifood, codigo_ifood: ifood.codigo_ifood } : {}),
       });
-      toast.sucesso(composto
-        ? `Produto ${produto.codigo_interno} cadastrado — receita salva.`
+      toast.sucesso(composto || combo
+        ? `Produto ${produto.codigo_interno} cadastrado — ${combo ? 'combo' : 'receita'} salvo.`
         : `Produto ${produto.codigo_interno} cadastrado — agora use o ícone de caixa para lançar o estoque.`);
       await reload();
       onSalvo(produto.id);
@@ -78,7 +91,9 @@ export default function FormProduto({ categories, suppliers, ingredients, reload
     <Modal titulo="Cadastrar produto" subtitulo="Novo produto · o código PRD é gerado ao salvar." onClose={onClose} largura="extra">
       <form onSubmit={salvar} className="form-stack" noValidate>
         <div className="es-resumo">
-          {composto
+          {combo
+            ? <>Combo: <b>feito de outros produtos</b>, sem estoque próprio. O custo é a soma dos produtos do combo.</>
+            : composto
             ? <>Produto controlado por <b>insumos</b>: aqui você define a receita. O custo é calculado pelos insumos e não existe saldo para cadastrar.</>
             : <>Aqui ficam só os <b>dados do produto</b>. O saldo não é cadastrado aqui: depois de salvar, use o <b>ícone de caixa</b> da lista para dar a primeira entrada, transferir ou ajustar estoque.</>}
         </div>
@@ -105,9 +120,9 @@ export default function FormProduto({ categories, suppliers, ingredients, reload
         </div>
 
         <div className="es-form" style={{ alignItems: 'start' }}>
-          <Field label="Preço de custo (R$) *" hint={composto ? textoCustoReceita(ficha, ingredients) : undefined}>
-            <input inputMode="decimal" readOnly={composto} placeholder="0,00"
-              value={composto ? custoFicha.toFixed(2).replace('.', ',') : form.preco_custo}
+          <Field label="Preço de custo (R$) *" hint={composto ? textoCustoReceita(ficha, ingredients) : combo ? 'Soma dos produtos do combo' : undefined}>
+            <input inputMode="decimal" readOnly={composto || combo} placeholder="0,00"
+              value={composto || combo ? custo.toFixed(2).replace('.', ',') : form.preco_custo}
               onChange={(e) => setForm({ ...form, preco_custo: e.target.value })} />
           </Field>
           <Field label="Preço de venda (R$) *" hint={margem !== null && Number.isFinite(margem) ? `Margem: ${pct(margem.toFixed(1))}` : undefined}>
@@ -121,11 +136,17 @@ export default function FormProduto({ categories, suppliers, ingredients, reload
 
         {lanchonete && (
           <label className="check">
-            <input type="checkbox" checked={composto} onChange={(e) => setComposto(e.target.checked)} /> Produto controlado por insumos (lanche / receita)
+            <input type="checkbox" checked={composto} onChange={(e) => { setComposto(e.target.checked); if (e.target.checked) setCombo(false); }} /> Produto controlado por insumos (lanche / receita)
           </label>
         )}
+        <label className="check">
+          <input type="checkbox" checked={combo} onChange={(e) => { setCombo(e.target.checked); if (e.target.checked) setComposto(false); }} /> Combo (feito de outros produtos, ex.: lanche + batata + bebida)
+        </label>
 
         {composto && <ReceitaEditor ficha={ficha} setFicha={setFicha} ingredients={ingredients} onErro={setErro} />}
+        {combo && <ComboEditor itens={comboItens} setItens={setComboItens} produtos={products} />}
+        <GruposDoProduto selecionados={grupos} setSelecionados={setGrupos} />
+        {usaIfood && <CamposIfood valor={ifood} setValor={setIfood} />}
 
         {erro && <div className="es-erro">{erro}</div>}
         <div className="modal-actions">

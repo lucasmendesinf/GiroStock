@@ -10,6 +10,8 @@ const { MATRIX } = require('../../middleware/permissions');
 const { logAudit } = require('../../utils/audit');
 const { HttpError } = require('../../utils/http');
 const { ErroPlataforma } = require('../http');
+const { reservadosDaLoja } = require('../../utils/reservas');
+const { unidadesDisponiveis } = require('../../services/consumo');
 
 const db = () => pool.producao;
 const PLATAFORMA = 'ifood';
@@ -140,9 +142,12 @@ async function produtosDosItens(client, tenantId, itens) {
     if (r.has(i.chave)) continue;
     const codigos = [i.codigo_externo, i.ean].filter(Boolean);
     if (codigos.length === 0) continue;
+    const maiusc = codigos.map((c) => String(c).toUpperCase());
     const p = await client.query(
-      `SELECT id FROM products WHERE tenant_id = $1 AND ativo AND (codigo_interno = ANY($2::text[]) OR barcode = ANY($2::text[])) ORDER BY (codigo_interno = ANY($2::text[])) DESC LIMIT 1`,
-      [tenantId, codigos]
+      `SELECT id FROM products WHERE tenant_id = $1 AND ativo
+         AND (upper(codigo_ifood) = ANY($3::text[]) OR upper(codigo_interno) = ANY($3::text[]) OR barcode = ANY($2::text[]))
+       ORDER BY (upper(codigo_ifood) = ANY($3::text[])) DESC, (upper(codigo_interno) = ANY($3::text[])) DESC LIMIT 1`,
+      [tenantId, codigos, maiusc]
     );
     if (p.rows[0]) r.set(i.chave, p.rows[0].id);
   }
@@ -177,11 +182,20 @@ async function importar(pedidoExternoId) {
     const produtos = await produtosDosItens(client, pe.tenant_id, dados.itens);
     if (dados.itens.some((i) => !produtos.has(i.chave))) { await client.query('COMMIT'); return pe; }
     const user = await usuarioSistema(pe.tenant_id);
+    // Complementos do iFood com codigo PDV igual ao codigo de um complemento do GiroStock: baixam o insumo/produto dele.
+    const codigos = [...new Set(dados.itens.flatMap((i) => i.opcoes.map((o) => o.codigo)).filter(Boolean))];
+    const compPorCodigo = new Map(codigos.length === 0 ? [] : (await client.query(
+      `SELECT c.id, c.codigo FROM complementos c JOIN grupos_complementos g ON g.id = c.grupo_id
+       WHERE c.tenant_id = $1 AND c.codigo = ANY($2::text[]) AND c.ativo AND g.ativo`, [pe.tenant_id, codigos]
+    )).rows.map((r) => [r.codigo, r.id]));
     let r;
     try {
       r = await criarPedido(client, user, {
         ...dados, location_id: pe.location_id, origem: 'ifood',
-        itens: dados.itens.map((i) => ({ product_id: produtos.get(i.chave), quantidade: i.quantidade, observacao: i.observacao, preco_unitario: i.preco_unitario })),
+        itens: dados.itens.map((i) => ({
+          product_id: produtos.get(i.chave), quantidade: i.quantidade, observacao: i.observacao, preco_unitario: i.preco_unitario,
+          complementos: i.opcoes.filter((o) => o.codigo && compPorCodigo.has(o.codigo)).map((o) => ({ id: compPorCodigo.get(o.codigo), quantidade: Math.max(1, Math.round(o.quantidade)), preco: o.preco })),
+        })),
       }, { externo: { externo_id: pe.externo_id, codigo_externo: pe.codigo_externo } });
     } catch (err) {
       await client.query('ROLLBACK');
@@ -282,6 +296,55 @@ async function sincronizar(integ) {
   return { eventos: evs.length, tratados: ok.length, falhas };
 }
 
+// ---------------------------------------------------------------- disponibilidade no cardapio
+// Produtos marcados "Vender no iFood" e complementos com codigo: disponivel quando ha estoque para ao menos 1 unidade
+// na loja conectada (saldo - reservado), pela mesma regra da venda (ficha, combo, complementos). So as mudancas vao ao iFood.
+async function calcularDisponibilidade(integ) {
+  const prods = (await db().query(
+    `SELECT id, nome, ativo, COALESCE(codigo_ifood, codigo_interno) AS codigo FROM products WHERE tenant_id = $1 AND vende_ifood`, [integ.tenant_id]
+  )).rows;
+  const comps = (await db().query(
+    `SELECT c.id, c.nome, c.codigo, c.ativo AND g.ativo AS ativo FROM complementos c JOIN grupos_complementos g ON g.id = c.grupo_id
+     WHERE c.tenant_id = $1 AND c.codigo IS NOT NULL`, [integ.tenant_id]
+  )).rows;
+  if (prods.length === 0 && comps.length === 0) return [];
+  const reservados = await reservadosDaLoja(db(), integ.tenant_id, integ.location_id);
+  const u = await unidadesDisponiveis(db(), integ.tenant_id, integ.location_id, prods.map((p) => p.id), comps.map((c) => c.id), reservados);
+  const linha = (tipo, x, d) => {
+    const temEstoque = !d || d.unidades === null || d.unidades >= 1;
+    const status = x.ativo && temEstoque ? 'AVAILABLE' : 'UNAVAILABLE';
+    const motivo = !x.ativo ? 'desativado no GiroStock' : !temEstoque ? `sem estoque${d.limitante ? ` (falta ${d.limitante})` : ''}` : null;
+    return { tipo, id: x.id, nome: x.nome, codigo: String(x.codigo).toUpperCase(), status, motivo, unidades: d ? d.unidades : null };
+  };
+  return [...prods.map((p) => linha('item', p, u.produtos.get(p.id))), ...comps.map((c) => linha('complemento', c, u.complementos.get(c.id)))];
+}
+
+async function atualizarDisponibilidade(integ, { forcar = false } = {}) {
+  const atual = await calcularDisponibilidade(integ);
+  const enviados = new Map((await db().query(`SELECT tipo, codigo, status FROM ifood_disponibilidade WHERE integracao_id = $1`, [integ.id])).rows.map((r) => [`${r.tipo}:${r.codigo}`, r.status]));
+  const mudou = atual.filter((x) => forcar || enviados.get(`${x.tipo}:${x.codigo}`) !== x.status);
+  if (mudou.length === 0) return { enviados: 0, total: atual.length };
+  const token = await tokenDa(integ);
+  await api.alterarDisponibilidade(token, integ.merchant_id, mudou);
+  for (const x of mudou) {
+    await db().query(
+      `INSERT INTO ifood_disponibilidade (integracao_id, tipo, codigo, status, motivo, atualizado_em) VALUES ($1, $2, $3, $4, $5, now())
+       ON CONFLICT (integracao_id, tipo, codigo) DO UPDATE SET status = EXCLUDED.status, motivo = EXCLUDED.motivo, atualizado_em = now()`,
+      [integ.id, x.tipo, x.codigo, x.status, x.motivo]
+    );
+  }
+  return { enviados: mudou.length, total: atual.length };
+}
+
+async function listaDisponibilidade(integ) {
+  const atual = await calcularDisponibilidade(integ);
+  const enviados = new Map((await db().query(`SELECT tipo, codigo, status, atualizado_em FROM ifood_disponibilidade WHERE integracao_id = $1`, [integ.id])).rows.map((r) => [`${r.tipo}:${r.codigo}`, r]));
+  return atual.map((x) => {
+    const e = enviados.get(`${x.tipo}:${x.codigo}`);
+    return { ...x, no_ifood: e ? e.status : null, enviado_em: e ? e.atualizado_em : null };
+  });
+}
+
 // Ciclo de todas as conexoes ativas de empresas com o modulo "iFood e 99Food" ligado.
 let rodando = false;
 async function cicloGeral() {
@@ -294,6 +357,8 @@ async function cicloGeral() {
         const emp = await dadosDaEmpresa(db(), integ.tenant_id);
         if (!emp || !efetivos(emp).recursos.delivery_apps) continue;
         await sincronizar(integ);
+        // Pausa/reativa no cardapio do iFood o que acabou/voltou (falha aqui nao impede o recebimento de pedidos).
+        try { await atualizarDisponibilidade(integ); } catch (err) { await registrarErro(integ.id, `disponibilidade no cardápio: ${err.message}`); }
       } catch (err) {
         await registrarErro(integ.id, err.message).catch(() => {});
       }
@@ -402,5 +467,5 @@ async function vincular(user, pe, vinculos) {
 module.exports = {
   iniciarConexao, concluirConexao, escolherLoja, desconectar, sincronizar, cicloGeral, iniciarPolling, integracao,
   aoMudarStatus, pedidoExternoDoPedido, pedidoExterno, aceitar, motivos, solicitarCancelamento, responderDisputa, vincular,
-  importar, produtosDosItens, PLATAFORMA,
+  importar, produtosDosItens, PLATAFORMA, atualizarDisponibilidade, listaDisponibilidade,
 };

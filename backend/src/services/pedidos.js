@@ -7,6 +7,9 @@ const { isQuantidadeValidaParaUnidade } = require('../utils/validators');
 const { HttpError } = require('../utils/http');
 const { reservadosDaLoja } = require('../utils/reservas');
 const { assertReceitasPermitidas } = require('./vendas');
+const {
+  carregarComposicao, consumoDaLinha, consumoDasLinhas, validarComplementos, precoDosComplementos, idsDeComplementos, saldosDaLoja, faltasDoConsumo,
+} = require('./consumo');
 
 const ORIGENS = ['balcao', 'telefone', 'whatsapp', 'ifood', '99food'];
 const FORMAS_PREVISTAS = ['dinheiro', 'cartao', 'cartao_debito', 'cartao_credito', 'pix'];
@@ -51,7 +54,10 @@ async function criarPedido(client, user, b, opcoes = {}) {
 
   const linhas = b.itens.map((i) => {
     if (!i || !isUuid(i.product_id) || !(Number(i.quantidade) > 0)) throw new HttpError(400, 'cada item precisa de product_id válido e quantidade (>0)');
-    const linha = { product_id: i.product_id, quantidade: Number(i.quantidade), observacao: String(i.observacao || '').trim().slice(0, 200) };
+    const linha = {
+      product_id: i.product_id, quantidade: Number(i.quantidade), observacao: String(i.observacao || '').trim().slice(0, 200),
+      complementos_pedidos: Array.isArray(i.complementos) ? i.complementos : [],
+    };
     if (externo && i.preco_unitario !== undefined) {
       linha.preco_unitario = Number(i.preco_unitario);
       if (!(linha.preco_unitario >= 0)) throw new HttpError(400, 'preço do item inválido');
@@ -77,56 +83,26 @@ async function criarPedido(client, user, b, opcoes = {}) {
     if (!isQuantidadeValidaParaUnidade(l.quantidade, p.unidade)) throw new HttpError(400, `"${p.nome}" é vendido em ${p.unidade} e só aceita quantidade inteira`);
   }
 
-  const fichas = await client.query(
-    `SELECT pi.product_id, pi.ingredient_id, pi.quantidade_por_unidade, i.nome AS insumo_nome
-     FROM product_ingredients pi JOIN ingredients i ON i.id = pi.ingredient_id
-     WHERE pi.tenant_id = $1 AND pi.product_id = ANY($2::uuid[])`,
-    [user.tenantId, ids]
-  );
-  const fichaPor = new Map();
-  for (const r of fichas.rows) {
-    if (!fichaPor.has(r.product_id)) fichaPor.set(r.product_id, []);
-    fichaPor.get(r.product_id).push(r);
-  }
-
-  // Trava os saldos envolvidos (sempre em ordem) para que dois pedidos simultaneos nao reservem o mesmo estoque.
-  const simples = ids.filter((id) => !fichaPor.has(id));
-  const insumoIds = [...new Set(fichas.rows.map((r) => r.ingredient_id))];
-  const saldoProd = simples.length === 0 ? { rows: [] } : await client.query(
-    `SELECT product_id, saldo FROM stock_balances WHERE product_id = ANY($1::uuid[]) AND location_id = $2 AND tenant_id = $3 ORDER BY product_id FOR UPDATE`,
-    [simples, locationId, user.tenantId]
-  );
-  const saldoIns = insumoIds.length === 0 ? { rows: [] } : await client.query(
-    `SELECT ingredient_id, saldo FROM ingredient_balances WHERE ingredient_id = ANY($1::uuid[]) AND location_id = $2 AND tenant_id = $3 ORDER BY ingredient_id FOR UPDATE`,
-    [insumoIds, locationId, user.tenantId]
-  );
-  const saldoProdMap = new Map(saldoProd.rows.map((r) => [r.product_id, Number(r.saldo)]));
-  const saldoInsMap = new Map(saldoIns.rows.map((r) => [r.ingredient_id, Number(r.saldo)]));
-  const reservados = await reservadosDaLoja(client, user.tenantId, locationId);
-
-  const precisaProd = new Map();
-  const precisaIns = new Map();
+  // Complementos (adicionais) de cada linha: validados pelos grupos do produto (os da plataforma ja vem validados por ela).
+  const comp = await carregarComposicao(client, user.tenantId, ids, idsDeComplementos(linhas.map((l) => ({ complementos: l.complementos_pedidos }))));
   for (const l of linhas) {
-    const ficha = fichaPor.get(l.product_id);
-    if (!ficha) {
-      precisaProd.set(l.product_id, (precisaProd.get(l.product_id) || 0) + l.quantidade);
-    } else {
-      for (const r of ficha) precisaIns.set(r.ingredient_id, (precisaIns.get(r.ingredient_id) || 0) + Number(r.quantidade_por_unidade) * l.quantidade);
-    }
+    l.complementos = validarComplementos(comp, l.product_id, l.complementos_pedidos, { validarGrupos: !externo });
+    if (externo) for (const c of l.complementos) { const v = l.complementos_pedidos.find((x) => x.id === c.id); if (v && Number.isFinite(Number(v.preco))) c.preco = Number(v.preco); }
   }
-  const faltas = [];
-  for (const [pid, q] of precisaProd) {
-    const disponivel = (saldoProdMap.get(pid) || 0) - (reservados.produtos.get(pid) || 0);
-    if (disponivel < q) faltas.push(`Sem estoque disponível de ${mapa.get(pid).nome}`);
+
+  // Reserva: o consumo do pedido (produtos, insumos da ficha, combos e complementos) contra o disponivel da loja,
+  // travando os saldos (sempre em ordem) para que dois pedidos simultaneos nao reservem o mesmo estoque.
+  const consumo = consumoDasLinhas(comp, linhas);
+  if (user.modulos && user.modulos.lanchonete === false && consumo.insumos.size > 0) {
+    throw new HttpError(403, 'há item que consome insumos (lanche, combo ou adicional) e o módulo Lanchonete e cozinha não faz parte do plano da sua empresa');
   }
-  for (const [iid, q] of precisaIns) {
-    const disponivel = (saldoInsMap.get(iid) || 0) - (reservados.insumos.get(iid) || 0);
-    if (disponivel < q) {
-      const dono = linhas.find((l) => (fichaPor.get(l.product_id) || []).some((r) => r.ingredient_id === iid));
-      const insumoNome = fichas.rows.find((r) => r.ingredient_id === iid).insumo_nome;
-      faltas.push(`Sem estoque disponível de ${dono ? mapa.get(dono.product_id).nome : 'produto'} (falta ${insumoNome})`);
-    }
-  }
+  const reservados = await reservadosDaLoja(client, user.tenantId, locationId);
+  const disponivel = await saldosDaLoja(client, user.tenantId, locationId, consumo, reservados, true);
+  const faltas = (await faltasDoConsumo(client, user.tenantId, consumo, disponivel, comp)).map((f) => {
+    if (f.tipo === 'produto') return `Sem estoque disponível de ${f.nome}`;
+    const dono = linhas.find((l) => consumoDaLinha(comp, l).insumos.has(f.id));
+    return `Sem estoque disponível de ${dono ? mapa.get(dono.product_id).nome : 'produto'} (falta ${f.nome})`;
+  });
   if (faltas.length > 0 && !externo) throw new HttpError(409, faltas[0]);
 
   // Cliente: o telefone (so digitos) e a chave. Cadastrado -> vincula; novo -> cria quando "cadastrar_cliente" (padrao: sim).
@@ -158,12 +134,13 @@ async function criarPedido(client, user, b, opcoes = {}) {
   );
   const orderId = pedido.rows[0].id;
   for (const l of linhas) {
-    const preco = l.preco_unitario !== undefined ? l.preco_unitario : Number(mapa.get(l.product_id).preco_venda);
-    // Observacao: lanches (preparo) sempre; de plataforma, em qualquer item (complementos e pedidos do cliente).
-    const obs = (fichaPor.has(l.product_id) || externo) && l.observacao ? l.observacao : null;
+    const preco = l.preco_unitario !== undefined ? l.preco_unitario : Number((Number(mapa.get(l.product_id).preco_venda) + precoDosComplementos(l.complementos)).toFixed(2));
+    // Observacao: itens com preparo (consomem insumos), com complementos ou combo; de plataforma, em qualquer item.
+    const preparo = consumoDaLinha(comp, l).insumos.size > 0 || l.complementos.length > 0 || comp.combos.has(l.product_id);
+    const obs = (preparo || externo) && l.observacao ? l.observacao : null;
     await client.query(
-      `INSERT INTO order_items (order_id, product_id, quantidade, preco_unitario, subtotal, observacao) VALUES ($1, $2, $3, $4, $5, $6)`,
-      [orderId, l.product_id, l.quantidade, preco, Number((preco * l.quantidade).toFixed(2)), obs]
+      `INSERT INTO order_items (order_id, product_id, quantidade, preco_unitario, subtotal, observacao, complementos) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [orderId, l.product_id, l.quantidade, preco, Number((preco * l.quantidade).toFixed(2)), obs, l.complementos.length ? JSON.stringify(l.complementos) : null]
     );
   }
   await client.query(`INSERT INTO order_status_log (order_id, de, para, usuario_id) VALUES ($1, NULL, 'novo', $2)`, [orderId, user.id || null]);

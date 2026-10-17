@@ -29,6 +29,7 @@ const masterRoutes = require('./routes/master.routes');
 const masterVisaoRoutes = require('./routes/master.visao.routes');
 const masterConfigRoutes = require('./routes/master.config.routes');
 const integracoesRoutes = require('./routes/integracoes.routes');
+const { router: complementosRoutes } = require('./routes/complementos.routes');
 
 const app = express();
 
@@ -46,6 +47,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api', authRequired, empresaRoutes);
 app.use('/api', authRequired, usersRoutes);
 app.use('/api', authRequired, suppliersRoutes);
+app.use('/api', authRequired, complementosRoutes);
 app.use('/api', authRequired, productsRoutes);
 app.use('/api', authRequired, stockRoutes);
 app.use('/api', authRequired, ingredientsRoutes);

@@ -1,3 +1,4 @@
+import { textoComplementos } from './EscolherComplementos.jsx';
 import { brl, dataHora, qtd, FORMA_PAGAMENTO } from '../utils/format';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -72,6 +73,7 @@ export function CupomCliente({ venda, config, teste }) {
         <div key={i.id} className="cupom-item">
           <div>{c.mostrar_codigo_produto && i.codigo_interno ? `${i.codigo_interno} ` : ''}{i.product_nome}</div>
           <div className="cupom-dir">{qtd(i.quantidade, i.unidade)} {i.unidade} x {brl(i.preco_unitario)} = {brl(i.subtotal)}</div>
+          {i.complementos && i.complementos.length > 0 && <div className="cupom-obs">{textoComplementos(i.complementos)}</div>}
           {c.mostrar_observacao && i.observacao && <div className="cupom-obs">Obs: {i.observacao}</div>}
         </div>
       ))}
@@ -117,6 +119,7 @@ export function ComandaCozinha({ venda, config, teste }) {
         <div key={i.id} className="cupom-item cupom-item-cozinha">
           <strong>{qtd(i.quantidade, i.unidade)}{i.unidade && i.unidade !== 'UN' ? ` ${i.unidade}` : 'x'}</strong> {i.product_nome}
           {k.mostrar_valores && <span className="cupom-dir"> {brl(i.subtotal)}</span>}
+          {i.complementos && i.complementos.length > 0 && <div className="cupom-obs cupom-obs-cozinha">{textoComplementos(i.complementos)}</div>}
           {i.observacao && <div className="cupom-obs cupom-obs-cozinha">» {i.observacao}</div>}
         </div>
       ))}
@@ -145,6 +148,7 @@ export function SenhaCliente({ venda, config, teste }) {
           {venda.itens.map((i) => (
             <div key={i.id} className="cupom-item">
               <div>{qtd(i.quantidade, i.unidade)}{i.unidade && i.unidade !== 'UN' ? ` ${i.unidade}` : 'x'} {i.product_nome}</div>
+              {i.complementos && i.complementos.length > 0 && <div className="cupom-obs">{textoComplementos(i.complementos)}</div>}
               {i.observacao && <div className="cupom-obs">Obs: {i.observacao}</div>}
             </div>
           ))}

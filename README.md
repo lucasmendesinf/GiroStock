@@ -95,6 +95,14 @@ Cada cliente usa só os módulos (segmentos) que contratou. O Master define isso
 - Módulos "em breve" já podem ser liberados: passam a valer quando ficarem prontos.
 - Catálogo em `backend/src/config/modulos.js`. A migração `024_modulos_por_plano.sql` não muda nada para quem já usa: os planos existentes mantêm PDV e Lanchonete, Pedidos/Clientes seguem como estavam.
 
+## Combos e complementos (adicionais)
+
+- **Complementos** (Produtos & Estoque → aba *Complementos*): grupos com mínimo e máximo — ex.: *Adicionais* (0 a 3: Bacon extra +R$ 3, Cheddar +R$ 2) e *Escolha a bebida* (obrigatório 1). Cada opção tem preço e pode **baixar um insumo** (Bacon extra = 30 g de bacon, exige o módulo Lanchonete), **baixar um produto** (Refri lata) ou não baixar nada (ex.: "ao ponto").
+- No cadastro do produto, marque quais grupos ele oferece. No **PDV** e no **novo pedido**, ao adicionar o produto abre a escolha; o preço soma no item, a regra de mínimo/máximo é conferida e os complementos saem no cupom e na comanda da cozinha.
+- **Combo**: produto feito de outros produtos (X-Burguer + Batata + Refri), sem estoque próprio. A venda baixa cada componente (estoque da revenda, insumos dos lanches). O custo é a soma dos componentes. Para o cliente escolher a bebida, use um grupo obrigatório com as bebidas como opções que baixam produto.
+- Toda baixa (venda, reserva de pedido, disponibilidade no PDV e no iFood) usa a mesma regra: `backend/src/services/consumo.js`. Cancelar a venda estorna tudo, inclusive componentes do combo e insumos dos adicionais.
+- Complemento já usado em venda/pedido não é excluído (só desativado). Combo dentro de combo não existe.
+
 ## iFood (módulo "iFood e 99Food")
 
 Os pedidos do iFood entram sozinhos na tela **Pedidos**, reservam o estoque e ficam sincronizados com o iFood.
@@ -105,6 +113,9 @@ Os pedidos do iFood entram sozinhos na tela **Pedidos**, reservam o estoque e fi
 - **Valores**: preço do iFood (com complementos), desconto bancado pela loja e taxa de entrega só quando a loja entrega. Pago online vira a forma **"Pago online (iFood)"**, que não entra no dinheiro do caixa; cobrado na entrega usa dinheiro (com troco)/cartão/Pix.
 - **Status**: *Aceitar no iFood* (ou aceite automático, que não aceita pedido com falta de estoque) → *Iniciar preparo* → *Marcar pronto* → entrega da loja: *Saiu p/ entrega* (despacho no iFood) / entrega do iFood: *Retirado pelo iFood*. Finalizar gera a venda.
 - **Cancelamento**: pela loja, com um motivo da lista do iFood (o pedido daqui cancela quando o iFood confirmar); cancelamento do cliente/iFood cancela aqui sozinho; pedido de cancelamento do cliente depois de aceito aparece para *Aceitar* ou *Recusar*.
+- **Adicionais do iFood**: complemento do pedido do iFood cujo *código PDV* é igual ao código de um complemento do GiroStock (ex.: `ADC-BACON`) baixa o insumo/produto dele; sem código, fica só na observação.
+- **Código do produto no iFood**: por padrão o código interno (PRD-0002); dá para usar outro no cadastro do produto (*Código PDV no iFood*).
+- **Disponibilidade automática**: produtos marcados **"Vender no iFood"** e complementos com código são pausados no iFood quando acaba o estoque (ou um insumo da receita) na loja conectada e reativados quando volta — a cada ciclo (30 s), só as mudanças. Em Lojas & PDVs → *Cardápio no iFood* aparece o que está à venda/pausado e o motivo. *(Caminho e formato da chamada de pausa a confirmar na homologação: `api.js`, `disponibilidade`.)*
 - **Falta de estoque**: o pedido entra assim mesmo (ele já existe no iFood), marcado "Falta estoque", e não é aceito sozinho.
 - **Segurança**: tokens cifrados (mesma chave do 2FA, `TOTP_ENC_KEY`), nunca saem na API, na exportação nem na cópia para o modo teste (lá a conexão fica desligada). O modo teste nunca fala com o iFood.
 - Caminhos da API do iFood concentrados em `backend/src/integracoes/ifood/api.js`.
@@ -134,6 +145,7 @@ Na conexão, o "Portal do Parceiro" do simulador é o link mostrado no próprio 
 ```bash
 cd backend
 API_URL=http://localhost:3000 npm run test:e2e:ifood     # iFood (com o simulador rodando e a API apontando para ele)
+API_URL=http://localhost:3000 npm run test:e2e:combos    # combos e complementos
 ```
 
 

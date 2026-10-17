@@ -4,6 +4,7 @@ import { useToast } from '../context/UiContext.jsx';
 import { Modal } from './ui.jsx';
 import ClienteTelefone from './ClienteTelefone.jsx';
 import { brl, parseNumero, qtd } from '../utils/format';
+import EscolherComplementos, { assinatura, precoComplementos, textoComplementos } from './EscolherComplementos.jsx';
 
 const LOTE = 30;
 
@@ -50,7 +51,10 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
   const [jaPago, setJaPago] = useState(false);
   const [recebidoTxt, setRecebidoTxt] = useState('');
   const [observacao, setObservacao] = useState('');
-  const [itens, setItens] = useState(itensIniciais);
+  // Cada linha tem a sua chave: o mesmo produto com complementos/observacoes diferentes fica em linhas separadas.
+  const [itens, setItens] = useState(() => itensIniciais.map((i, n) => ({ ...i, key: i.key || `${i.product_id}#${n}` })));
+  const [escolhendo, setEscolhendo] = useState(null);
+  const proxLinha = useRef(1);
   const [busca, setBusca] = useState('');
   const [achados, setAchados] = useState([]);
   const [temMais, setTemMais] = useState(false);
@@ -121,22 +125,27 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
     if (el) el.scrollIntoView({ block: 'nearest' });
   }, [sel, achados]);
 
-  function adicionar(p) {
+  function adicionar(p, complementos = null) {
+    // Produto com complementos (adicionais, bebida do combo): escolhe antes de entrar na lista.
+    if (complementos === null && p.grupos && p.grupos.length > 0) { setEscolhendo(p); return; }
+    const comps = complementos || [];
     const disponivel = Number(p.saldo);
-    const existente = itens.find((i) => i.product_id === p.id);
-    if ((existente ? existente.quantidade : 0) + 1 > disponivel) { toast.erro(`Sem estoque disponível de ${p.nome}`); return; }
-    if (existente) setItens(itens.map((i) => (i.product_id === p.id ? { ...i, quantidade: i.quantidade + 1 } : i)));
-    else setItens([...itens, { product_id: p.id, nome: p.nome, unidade: p.unidade, preco: Number(p.preco_venda), quantidade: 1, observacao: '', tem_ficha: !!p.tem_ficha_tecnica, limite: disponivel }]);
+    const doProduto = itens.filter((i) => i.product_id === p.id).reduce((s, i) => s + i.quantidade, 0);
+    const existente = itens.find((i) => i.product_id === p.id && !i.observacao && assinatura(i.complementos) === assinatura(comps));
+    if (doProduto + 1 > disponivel) { toast.erro(`Sem estoque disponível de ${p.nome}`); return; }
+    if (existente) setItens(itens.map((i) => (i.key === existente.key ? { ...i, quantidade: i.quantidade + 1 } : i)));
+    else setItens([...itens, { key: `${p.id}#n${proxLinha.current++}`, product_id: p.id, nome: p.nome, unidade: p.unidade, preco: Number(p.preco_venda) + precoComplementos(comps), quantidade: 1, observacao: '', tem_ficha: !!p.tem_ficha_tecnica, limite: disponivel, complementos: comps }]);
     // Navegando pela lista completa (*), mantem a lista aberta para adicionar varios itens.
     if (!modoLista) { setBusca(''); setAchados([]); }
   }
 
-  function mudarQtd(id, delta) {
+  function mudarQtd(key, delta) {
     setItens((atual) => atual.flatMap((i) => {
-      if (i.product_id !== id) return [i];
+      if (i.key !== key) return [i];
       const nova = i.quantidade + delta;
       if (nova < 1) return [];
-      if (delta > 0 && i.limite !== undefined && nova > i.limite) { toast.erro(`Sem estoque disponível de ${i.nome}`); return [i]; }
+      const doProduto = atual.filter((x) => x.product_id === i.product_id).reduce((s, x) => s + x.quantidade, 0);
+      if (delta > 0 && i.limite !== undefined && doProduto + delta > i.limite) { toast.erro(`Sem estoque disponível de ${i.nome}`); return [i]; }
       return [{ ...i, quantidade: nova }];
     }));
   }
@@ -152,7 +161,7 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
       const pedido = await api.post('/orders', {
         location_id: lojaId, origem, cliente_nome: cliente, cliente_telefone: telefone.replace(/\D/g, ''), cadastrar_cliente: cadastrar, tipo, endereco: tipo === 'mesa' ? `Mesa ${mesa.trim().replace(/^mesa\s*/i, '')}` : endereco, taxa_entrega: taxa,
         observacao, forma_pagamento_prevista: pag.forma, pago: jaPago, valor_recebido: jaPago && pag.forma === 'dinheiro' ? recebido : undefined,
-        itens: itens.map((i) => ({ product_id: i.product_id, quantidade: i.quantidade, observacao: i.observacao || '' })),
+        itens: itens.map((i) => ({ product_id: i.product_id, quantidade: i.quantidade, observacao: i.observacao || '', complementos: (i.complementos || []).map((c) => ({ id: c.id, quantidade: c.quantidade })) })),
       });
       onCriado(pedido);
     } catch (err) { toast.erro(err); } finally { setSalvando(false); }
@@ -217,21 +226,21 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
           )}
           {itens.length === 0 && <div className="ped-vazio">Nenhum item</div>}
           {itens.map((i, idx) => (
-            <div key={`${i.product_id}-${idx}`} className="ped-item">
+            <div key={i.key || `${i.product_id}-${idx}`} className="ped-item">
               <div className="ped-item-linha">
-                <span className="ped-item-nome">{i.nome}</span>
+                <span className="ped-item-nome">{i.nome}{i.complementos && i.complementos.length > 0 && <span className="carrinho-comps">{textoComplementos(i.complementos)}</span>}</span>
                 {permitirBusca ? (
                   <span className="ped-qtd">
-                    <button type="button" onClick={() => mudarQtd(i.product_id, -1)}>−</button>
+                    <button type="button" onClick={() => mudarQtd(i.key, -1)}>−</button>
                     <b>{i.quantidade}</b>
-                    <button type="button" onClick={() => mudarQtd(i.product_id, 1)}>+</button>
+                    <button type="button" onClick={() => mudarQtd(i.key, 1)}>+</button>
                   </span>
                 ) : <span>{qtd(i.quantidade, i.unidade)}× {brl(i.preco)}</span>}
                 <span className="ped-item-valor">{brl(i.preco * i.quantidade)}</span>
               </div>
               {permitirBusca && i.tem_ficha && (
                 <input className="ped-item-obs" maxLength={200} value={i.observacao || ''} placeholder="Observação (ex.: sem milho)"
-                  onChange={(e) => setItens(itens.map((x) => (x.product_id === i.product_id ? { ...x, observacao: e.target.value } : x)))} />
+                  onChange={(e) => setItens(itens.map((x) => (x.key === i.key ? { ...x, observacao: e.target.value } : x)))} />
               )}
               {!permitirBusca && i.observacao && <div className="ped-item-obsv">Obs.: {i.observacao}</div>}
             </div>
@@ -261,6 +270,7 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
           <button type="button" disabled={salvando || itens.length === 0} onClick={criar}>{salvando ? 'Gerando...' : 'Gerar pedido'}</button>
         </div>
       </div>
+      {escolhendo && <EscolherComplementos produto={escolhendo} onClose={() => setEscolhendo(null)} onConfirmar={(comps) => { const p = escolhendo; setEscolhendo(null); adicionar(p, comps); }} />}
     </Modal>
   );
 }

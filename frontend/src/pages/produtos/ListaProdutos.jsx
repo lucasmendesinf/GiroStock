@@ -86,7 +86,7 @@ export default function ListaProdutos(props) {
 
   function abrirEstoque(p) {
     // Produto composto nao tem estoque proprio: a caixa abre a edicao ja na receita.
-    if (p.tem_ficha_tecnica) setEditandoId(p.id); else setEstoqueId(p.id);
+    if (p.tem_ficha_tecnica || p.e_combo) setEditandoId(p.id); else setEstoqueId(p.id);
   }
 
   return (
@@ -146,7 +146,7 @@ export default function ListaProdutos(props) {
             <tbody>
               {pagina.map(({ p, st }) => {
                 const saldo = lojaFiltrada ? saldoNaLoja(p, lojaFiltrada.id) : totalDoProduto(p);
-                const tip = p.tem_ficha_tecnica ? 'Controlar insumos' : 'Tratar estoque';
+                const tip = p.tem_ficha_tecnica ? 'Controlar insumos' : p.e_combo ? 'Produtos do combo' : 'Tratar estoque';
                 return (
                   <tr key={p.id} className={`es-row-${st.cls} ${p.ativo ? '' : 'row-inativa'}`}>
                     <td><div className="es-foto"><IconeImagem /></div></td>
@@ -159,7 +159,9 @@ export default function ListaProdutos(props) {
                     <td className="col-opcional">{p.unidade}</td>
                     <td className="num es-preco">{brl(p.preco_venda)}</td>
                     <td className="num">
-                      {p.tem_ficha_tecnica
+                      {p.e_combo
+                        ? <span className="es-pill info">combo</span>
+                        : p.tem_ficha_tecnica
                         ? <><span className="es-pill info" style={{ marginRight: 6 }}>por insumos</span><span className={`es-pill ${st.cls}`}>{st.txt}</span></>
                         : <><b className="es-qtd">{qtd(saldo, p.unidade)}</b> <span className={`es-pill ${st.cls}`}>{st.txt}</span></>}
                     </td>

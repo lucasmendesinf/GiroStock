@@ -63,6 +63,24 @@ router.post('/integracoes/:id/sincronizar', pedidos, async (req, res) => {
   res.json(await ifood.sincronizar(integ));
 });
 
+// ---------- disponibilidade no cardapio do iFood ----------
+// O que esta a venda/pausado (calculado agora) e o ultimo status enviado. "enviar" manda tudo de novo agora.
+router.get('/integracoes/:id/disponibilidade', configuracoes, async (req, res) => {
+  const integ = await ifood.integracao(req.params.id, req.user.tenantId);
+  if (integ.status !== 'conectado') throw new HttpError(409, 'o iFood não está conectado nesta loja');
+  res.json(await ifood.listaDisponibilidade(integ));
+});
+router.post('/integracoes/:id/disponibilidade/enviar', configuracoes, async (req, res) => {
+  const integ = await ifood.integracao(req.params.id, req.user.tenantId);
+  if (integ.status !== 'conectado') throw new HttpError(409, 'o iFood não está conectado nesta loja');
+  try {
+    res.json(await ifood.atualizarDisponibilidade(integ, { forcar: !!(req.body || {}).tudo }));
+  } catch (err) {
+    if (err.status && err.status < 600 && err.corpo !== undefined) throw new HttpError(502, `o iFood não aceitou a atualização do cardápio: ${err.message}`);
+    throw err;
+  }
+});
+
 // ---------- pedidos do iFood que precisam de atencao ----------
 // Aguardando vinculo de itens ou com erro: a equipe vincula os itens (ou recusa no iFood).
 router.get('/integracoes/pendencias', pedidos, async (req, res) => {

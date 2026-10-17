@@ -9,6 +9,7 @@ import Cupom, { imprimirCupom, configDaVenda } from '../components/Cupom.jsx';
 import { brl, dataHora, parseNumero, qtd } from '../utils/format';
 import { temModulo } from '../utils/permissions.js';
 import { BlocoIfood, CancelarIfoodModal, EtiquetasIfood, PendenciasIfood, bipe } from '../components/IfoodPedidos.jsx';
+import { textoComplementos } from '../components/EscolherComplementos.jsx';
 
 const COLUNAS = [
   ['novo', 'Novo', 'novo'],
@@ -381,6 +382,7 @@ function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, onClose, onAva
           {p.itens.map((i) => (
             <div key={i.id}>
               <div className="ped-linha"><span>{qtd(i.quantidade, i.unidade)}× {i.product_nome}</span><span>{brl(i.subtotal)}</span></div>
+              {i.complementos && i.complementos.length > 0 && <div className="ped-item-obsv">{textoComplementos(i.complementos)}</div>}
               {i.observacao && <div className="ped-item-obsv">» {i.observacao}</div>}
             </div>
           ))}

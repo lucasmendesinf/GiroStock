@@ -218,8 +218,9 @@ router.get('/sales/:id', async (req, res) => {
 
   const itens = await pool.query(
     `SELECT si.id, si.product_id, p.nome AS product_nome, p.codigo_interno, si.quantidade,
-            p.unidade, si.preco_unitario, si.custo_unitario, si.subtotal, si.observacao,
-            EXISTS(SELECT 1 FROM product_ingredients pi WHERE pi.product_id = p.id AND pi.tenant_id = p.tenant_id) AS preparo
+            p.unidade, si.preco_unitario, si.custo_unitario, si.subtotal, si.observacao, COALESCE(si.complementos, '[]'::jsonb) AS complementos,
+            (EXISTS(SELECT 1 FROM product_ingredients pi WHERE pi.product_id = p.id AND pi.tenant_id = p.tenant_id)
+              OR EXISTS(SELECT 1 FROM combo_itens ci WHERE ci.combo_id = p.id) OR si.complementos IS NOT NULL) AS preparo
      FROM sale_items si JOIN products p ON p.id = si.product_id
      WHERE si.sale_id = $1 AND si.tenant_id = $2
      ORDER BY p.nome, si.id`,

@@ -19,6 +19,9 @@ const CAMINHOS = {
   pedido: (id) => `/order/v1.0/orders/${encodeURIComponent(id)}`,
   acao: (id, acao) => `/order/v1.0/orders/${encodeURIComponent(id)}/${acao}`,
   disputa: (id, acao) => `/order/v1.0/disputes/${encodeURIComponent(id)}/${acao}`,
+  // Catalogo v2: status (AVAILABLE/UNAVAILABLE) de itens e complementos em lote pelo codigo PDV (externalCode).
+  // A CONFIRMAR NA HOMOLOGACAO: o caminho e o formato do corpo (lista de { externalCode, status }).
+  disponibilidade: (merchantId) => `/catalog/v2.0/merchants/${encodeURIComponent(merchantId)}/products/status`,
 };
 
 function mensagemDe(corpo) {
@@ -95,7 +98,15 @@ async function responderDisputa(token, disputaId, aceitar, motivo) {
   return chamar('POST', CAMINHOS.disputa(disputaId, aceitar ? 'accept' : 'reject'), { token, json: motivo ? { reason: motivo } : {} });
 }
 
+// ---------- cardapio: pausar / reativar pelo codigo PDV ----------
+async function alterarDisponibilidade(token, merchantId, itens) {
+  if (itens.length === 0) return null;
+  const r = await chamar('PATCH', CAMINHOS.disponibilidade(merchantId), { token, json: itens.map((i) => ({ externalCode: i.codigo, status: i.status })) });
+  return r.corpo; // pode trazer um batchId (processamento assincrono no iFood)
+}
+
 module.exports = {
+  alterarDisponibilidade,
   configurado, gerarCodigoVinculo, tokenPorCodigo, renovarToken, lojas, eventos, confirmarRecebimento, pedido,
   confirmar, iniciarPreparo, prontoParaRetirada, despachar, motivosCancelamento, solicitarCancelamento, responderDisputa, CAMINHOS,
 };

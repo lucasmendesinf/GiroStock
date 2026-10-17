@@ -10,6 +10,7 @@ import PedidoForm, { ORIGENS, NOME_ORIGEM, PAGAMENTOS, vendaDoPedido } from '../
 import { Field, Modal } from '../components/ui.jsx';
 import ClienteTelefone from '../components/ClienteTelefone.jsx';
 import Cupom, { imprimirCupom as abrirImpressao, modoAutomatico, configDaVenda } from '../components/Cupom.jsx';
+import EscolherComplementos, { assinatura, precoComplementos, textoComplementos } from '../components/EscolherComplementos.jsx';
 
 const TROCOS_RAPIDOS = [10, 20, 50, 100, 200];
 const FORMAS = ['pix', 'cartao_credito', 'cartao_debito', 'dinheiro'];
@@ -77,6 +78,7 @@ export default function PDV() {
   }, [toast]);
 
   const [cart, setCart] = useState([]);
+  const [escolhendo, setEscolhendo] = useState(null); // { product, quantidade }: escolha dos complementos antes de entrar no carrinho
   useEffect(() => {
     // O carrinho e validado contra o estoque da loja do terminal: trocar de terminal limpa o carrinho.
     setCart([]);
@@ -167,7 +169,13 @@ export default function PDV() {
   }
 
   // Adiciona ao carrinho respeitando o saldo da loja. quantidade null = 1 (ou peso a informar).
-  function addToCart(product, quantidadeInformada = null) {
+  // Produto com complementos (adicionais, bebida do combo): abre a escolha antes; complementos = null quer dizer "ainda nao escolheu".
+  function addToCart(product, quantidadeInformada = null, complementos = null) {
+    if (complementos === null && product.grupos && product.grupos.length > 0) {
+      setEscolhendo({ product, quantidade: quantidadeInformada });
+      return true;
+    }
+    const comps = complementos || [];
     const fracionado = !UNIDADES_INTEIRAS.includes(product.unidade);
     const quantidade = quantidadeInformada ?? 1;
     if (!fracionado && !Number.isInteger(quantidade)) {
@@ -178,7 +186,7 @@ export default function PDV() {
     // O limite vale para o total do produto (somando as linhas com observacoes diferentes).
     // Uma nova unidade entra na linha do produto que ainda nao tem observacao; senao abre uma linha nova.
     const doProduto = cart.filter((i) => i.id === product.id);
-    const noCarrinho = doProduto.find((i) => !i.observacao);
+    const noCarrinho = doProduto.find((i) => !i.observacao && assinatura(i.complementos) === assinatura(comps));
     const novaQtd = doProduto.reduce((s, i) => s + i.quantidade, 0) + quantidade;
     if (novaQtd > limite) {
       toast.erro(msgSemEstoque(product, limite));
@@ -190,8 +198,8 @@ export default function PDV() {
         return prev.map((i) => (i.key === noCarrinho.key ? { ...i, quantidade: noCarrinho.quantidade + quantidade } : i));
       }
       return [...prev, {
-        key: chave, id: product.id, nome: product.nome, unidade: product.unidade, preco_venda: Number(product.preco_venda),
-        quantidade, limite, tem_ficha_tecnica: product.tem_ficha_tecnica, insumo_limitante: product.insumo_limitante, observacao: '',
+        key: chave, id: product.id, nome: product.nome, unidade: product.unidade, preco_venda: Number(product.preco_venda) + precoComplementos(comps),
+        quantidade, limite, tem_ficha_tecnica: product.tem_ficha_tecnica, insumo_limitante: product.insumo_limitante, observacao: '', complementos: comps,
       }];
     });
     // Produto por peso/volume adicionado sem quantidade: abre o campo para digitar o peso.
@@ -379,11 +387,13 @@ export default function PDV() {
           const ja = linhas.filter((l) => l.id === i.product_id).reduce((t, l) => t + l.quantidade, 0);
           if (!p || disp - ja < Number(i.quantidade)) { faltou.push(i.nome); return; }
           linhas.push({
-            key: `${p.id}#r${idx}`, id: p.id, nome: p.nome, unidade: p.unidade, preco_venda: Number(p.preco_venda), quantidade: Number(i.quantidade),
+            key: `${p.id}#r${idx}`, id: p.id, nome: p.nome, unidade: p.unidade, quantidade: Number(i.quantidade),
+            // Repete os complementos com o preco de hoje (os que sairam do cadastro ficam de fora).
+            complementos: (i.complementos || []).map((c) => { const o = (p.grupos || []).flatMap((g) => g.opcoes).find((x) => x.id === c.id); return o ? { id: o.id, nome: o.nome, quantidade: Number(c.quantidade), preco: Number(o.preco) } : null; }).filter(Boolean),
             limite: disp, tem_ficha_tecnica: p.tem_ficha_tecnica, insumo_limitante: p.insumo_limitante, observacao: i.observacao || '',
           });
         });
-        setCart(linhas);
+        setCart(linhas.map((l) => ({ ...l, preco_venda: Number(prods.find((x) => x.id === l.id).preco_venda) + precoComplementos(l.complementos) })));
         if (rep.telefone) setClienteTel(rep.telefone);
         if (faltou.length > 0) toast.erro(`Sem estoque disponível, ficaram de fora: ${faltou.join(', ')}`);
         else toast.sucesso('Itens do último pedido no carrinho');
@@ -428,7 +438,7 @@ export default function PDV() {
         taxa_entrega: destinoRapido === 'entrega' ? Math.max(0, parseNumero(taxaRapida) || 0) : 0, cadastrar_cliente: cadastrarCliente,
         cliente_nome: nomeChamar.trim() || (clienteInfo ? clienteInfo.nome : ''), cliente_telefone: clienteInfo ? clienteInfo.telefone : clienteTel.replace(/\D/g, ''),
         forma_pagamento_prevista: formaPed, pago: jaPagoPed, valor_recebido: jaPagoPed && formaPed === 'dinheiro' ? recebidoNum : undefined,
-        itens: cart.map((i) => ({ product_id: i.id, quantidade: i.quantidade, observacao: i.tem_ficha_tecnica ? (i.observacao || '').trim() : '' })),
+        itens: cart.map((i) => ({ product_id: i.id, quantidade: i.quantidade, observacao: i.tem_ficha_tecnica ? (i.observacao || '').trim() : '', complementos: (i.complementos || []).map((c) => ({ id: c.id, quantidade: c.quantidade })) })),
       });
       await pedidoCriado(pedido);
     } catch (err) { toast.erro(err); } finally { setGerando(false); }
@@ -485,7 +495,7 @@ export default function PDV() {
     try {
       const payload = {
         terminal_id: terminalId,
-        itens: cart.map((i) => ({ product_id: i.id, quantidade: i.quantidade, observacao: i.tem_ficha_tecnica ? (i.observacao || '').trim() : undefined })),
+        itens: cart.map((i) => ({ product_id: i.id, quantidade: i.quantidade, observacao: i.tem_ficha_tecnica ? (i.observacao || '').trim() : undefined, complementos: (i.complementos || []).map((c) => ({ id: c.id, quantidade: c.quantidade })) })),
         forma_pagamento: formaPagamento,
         desconto,
       };
@@ -744,6 +754,7 @@ export default function PDV() {
               <div key={i.key} className="carrinho-item">
                 <div className="carrinho-info">
                   <span className="carrinho-nome">{i.nome}</span>
+                  {i.complementos && i.complementos.length > 0 && <span className="carrinho-comps">{textoComplementos(i.complementos)}</span>}
                   <span className="muted">{qtd(i.quantidade, i.unidade)} {i.unidade} × {brl(i.preco_venda)}</span>
                 </div>
                 <div className="carrinho-qtd">
@@ -851,7 +862,7 @@ export default function PDV() {
       {pedidoModal && terminal && (
         <PedidoForm lojaId={terminal.location_id} origemInicial={origemPdv} titulo="Gerar pedido" telefoneInicial={clienteTel} nomeInicial={nomeChamar.trim() || (clienteInfo ? clienteInfo.nome : '')}
           tipoInicial={destinoRapido} enderecoInicial={destinoRapido === 'entrega' ? enderecoRapido : ''} taxaInicial={taxaRapida} mesaInicial={mesaRapida} cadastrarInicial={cadastrarCliente} onClose={() => setPedidoModal(false)} onCriado={pedidoCriado}
-          itensIniciais={cart.map((i) => ({ product_id: i.id, nome: i.nome, unidade: i.unidade, preco: i.preco_venda, quantidade: i.quantidade, observacao: i.tem_ficha_tecnica ? (i.observacao || '').trim() : '', tem_ficha: !!i.tem_ficha_tecnica, limite: i.limite }))} />
+          itensIniciais={cart.map((i) => ({ key: i.key, product_id: i.id, nome: i.nome, unidade: i.unidade, preco: i.preco_venda, quantidade: i.quantidade, observacao: i.tem_ficha_tecnica ? (i.observacao || '').trim() : '', tem_ficha: !!i.tem_ficha_tecnica, limite: i.limite, complementos: i.complementos || [] }))} />
       )}
 
       {comanda && (
@@ -862,7 +873,7 @@ export default function PDV() {
             <div className="cp-centro">{NOME_ORIGEM[comanda.origem] || comanda.origem}{comanda.cliente_nome ? ` · ${comanda.cliente_nome}` : ''}</div>
             <div className="cp-centro cp-pequeno">{dataHora(comanda.criado_em)}</div>
             <hr />
-            {comanda.itens.map((i) => <div key={i.id || i.product_id}>{qtd(i.quantidade, i.unidade)}x {i.product_nome || i.nome}{i.observacao ? <div className="cp-obs">Obs.: {i.observacao}</div> : null}</div>)}
+            {comanda.itens.map((i) => <div key={i.id || i.product_id}>{qtd(i.quantidade, i.unidade)}x {i.product_nome || i.nome}{i.complementos && i.complementos.length > 0 ? <div className="cp-obs">{textoComplementos(i.complementos)}</div> : null}{i.observacao ? <div className="cp-obs">Obs.: {i.observacao}</div> : null}</div>)}
             {comanda.observacao && <div className="cp-obs" style={{ marginTop: 8 }}>OBS: {comanda.observacao}</div>}
             <hr />
             <div className="cp-total"><span>TOTAL</span><b>{brl(comanda.total)}</b></div>
@@ -982,6 +993,10 @@ export default function PDV() {
         </Modal>
       )}
 
+      {escolhendo && (
+        <EscolherComplementos produto={escolhendo.product} onClose={() => { setEscolhendo(null); focarBusca(); }}
+          onConfirmar={(comps) => { const e = escolhendo; setEscolhendo(null); addToCart(e.product, e.quantidade, comps); }} />
+      )}
       {cupom && <Cupom venda={cupom} />}
     </div>
   );

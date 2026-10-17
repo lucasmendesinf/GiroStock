@@ -16,6 +16,7 @@ export default function IfoodConexoes({ lojas }) {
   const confirmar = useConfirm();
   const [dados, setDados] = useState(null);
   const [conectando, setConectando] = useState(null); // { loja, id, codigo, link } ou { loja, id, lojas } (escolher)
+  const [cardapio, setCardapio] = useState(null); // { integ, loja }
 
   const carregar = useCallback(() => api.get('/integracoes').then(setDados).catch((err) => toast.erro(err)), [toast]);
   useEffect(() => { carregar(); }, [carregar]);
@@ -58,6 +59,7 @@ export default function IfoodConexoes({ lojas }) {
                   <input type="checkbox" checked={i.aceite_automatico} onChange={() => alternarAceite(i)} /> Aceitar automaticamente
                 </label>
               )}
+              {ligado && <button type="button" className="btn-link" onClick={() => setCardapio({ integ: i, loja: l })}>Cardápio no iFood</button>}
               {ligado && <button type="button" className="btn-link" onClick={() => buscar(i)}>Buscar agora</button>}
               {ligado && <button type="button" className="btn-link perigo" onClick={() => desconectar(i, l)}>Desconectar</button>}
               {!ligado && i && i.status === 'aguardando_codigo' && i.codigo_vinculo && (
@@ -71,6 +73,7 @@ export default function IfoodConexoes({ lojas }) {
           </div>
         );
       })}
+      {cardapio && <CardapioModal {...cardapio} onClose={() => setCardapio(null)} />}
       {conectando && <ConectarModal estado={conectando} onClose={() => { setConectando(null); carregar(); }} />}
     </div>
   );
@@ -116,6 +119,53 @@ function ConectarModal({ estado, onClose }) {
           <div className="modal-actions"><button type="button" onClick={onClose}>Depois</button><button type="submit" disabled={codigo.trim().length < 4 || salvando}>{salvando ? 'Conectando…' : 'Concluir conexão'}</button></div>
         </form>
       )}
+    </Modal>
+  );
+}
+
+// Disponibilidade no cardapio do iFood: produtos marcados "Vender no iFood" e complementos com codigo.
+// O GiroStock pausa o que acabou e reativa o que voltou sozinho (a cada 30 s); "Enviar agora" manda tudo de novo.
+function CardapioModal({ integ, loja, onClose }) {
+  const toast = useToast();
+  const [lista, setLista] = useState(null);
+  const [enviando, setEnviando] = useState(false);
+  const carregar = useCallback(() => api.get(`/integracoes/${integ.id}/disponibilidade`).then(setLista).catch((err) => { toast.erro(err); setLista([]); }), [integ, toast]);
+  useEffect(() => { carregar(); }, [carregar]);
+  async function enviar() {
+    setEnviando(true);
+    try { const r = await api.post(`/integracoes/${integ.id}/disponibilidade/enviar`, { tudo: true }); toast.sucesso(`${r.enviados} item(ns) enviados ao iFood`); carregar(); } catch (err) { toast.erro(err); } finally { setEnviando(false); }
+  }
+  const pausados = (lista || []).filter((x) => x.status === 'UNAVAILABLE').length;
+  return (
+    <Modal titulo={`Cardápio no iFood · ${loja.nome}`} subtitulo="O GiroStock pausa no iFood o que acabou (estoque ou insumo da receita) e reativa quando volta." onClose={onClose} largura="larga">
+      <div className="form-stack">
+        {lista === null ? <p className="muted">Calculando…</p> : lista.length === 0 ? (
+          <p className="muted">Nenhum produto marcado para o iFood. No cadastro do produto, marque <b>"Vender no iFood"</b>; nos complementos, informe o <b>código PDV no iFood</b>.</p>
+        ) : (
+          <>
+            <div className="muted">{lista.length - pausados} à venda · {pausados} pausado(s)</div>
+            <div className="tabela-wrap">
+              <table className="compacta">
+                <thead><tr><th>Item</th><th>Código PDV</th><th>Situação</th><th>No iFood</th></tr></thead>
+                <tbody>
+                  {lista.map((x) => (
+                    <tr key={`${x.tipo}:${x.codigo}`}>
+                      <td>{x.nome}{x.tipo === 'complemento' && <span className="celula-sub"> complemento</span>}</td>
+                      <td>{x.codigo}</td>
+                      <td><span className={`ped-pill ${x.status === 'AVAILABLE' ? 'ok' : 'err'}`}>{x.status === 'AVAILABLE' ? 'À venda' : 'Pausado'}</span>{x.motivo && <span className="celula-sub"> {x.motivo}</span>}</td>
+                      <td className="muted">{x.no_ifood ? (x.no_ifood === x.status ? 'atualizado' : 'enviando…') : 'ainda não enviado'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+        <div className="modal-actions">
+          <button type="button" onClick={onClose}>Fechar</button>
+          <button type="button" className="btn-primario" disabled={enviando || !lista || lista.length === 0} onClick={enviar}>{enviando ? 'Enviando…' : 'Enviar tudo ao iFood agora'}</button>
+        </div>
+      </div>
     </Modal>
   );
 }

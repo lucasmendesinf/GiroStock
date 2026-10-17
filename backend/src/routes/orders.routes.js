@@ -41,7 +41,9 @@ const SELECT_PEDIDO = `
 async function itensDoPedido(db, orderId) {
   const { rows } = await db.query(
     `SELECT oi.id, oi.product_id, p.nome AS product_nome, p.codigo_interno, p.unidade, oi.quantidade, oi.preco_unitario, oi.subtotal, oi.observacao,
-            EXISTS(SELECT 1 FROM product_ingredients pi WHERE pi.product_id = p.id) AS preparo
+            COALESCE(oi.complementos, '[]'::jsonb) AS complementos,
+            (EXISTS(SELECT 1 FROM product_ingredients pi WHERE pi.product_id = p.id) OR EXISTS(SELECT 1 FROM combo_itens ci WHERE ci.combo_id = p.id)
+              OR oi.complementos IS NOT NULL) AS preparo
      FROM order_items oi JOIN products p ON p.id = oi.product_id
      WHERE oi.order_id = $1 ORDER BY p.nome, oi.id`,
     [orderId]
@@ -236,7 +238,7 @@ router.post('/orders/:id/status', async (req, res) => {
         if (cx.rows.length === 0) throw new HttpError(400, 'nenhum caixa aberto nesta loja: abra o caixa no PDV para finalizar o pedido');
         terminalId = cx.rows[0].id;
       }
-      const itens = await client.query(`SELECT product_id, quantidade, observacao, preco_unitario FROM order_items WHERE order_id = $1`, [o.id]);
+      const itens = await client.query(`SELECT product_id, quantidade, observacao, preco_unitario, complementos FROM order_items WHERE order_id = $1`, [o.id]);
       const externo = !!o.origem_externa_id; // pedido de plataforma: vale o preco e o desconto da plataforma
       let forma = b.forma_pagamento;
       if (o.pago) {
@@ -248,7 +250,10 @@ router.post('/orders/:id/status', async (req, res) => {
       if (!forma) throw new HttpError(400, 'informe a forma de pagamento para finalizar');
       const venda = await registrarVenda(client, req.user, {
         terminal_id: terminalId,
-        itens: itens.rows.map((i) => ({ product_id: i.product_id, quantidade: Number(i.quantidade), observacao: i.observacao, ...(externo ? { preco_unitario: Number(i.preco_unitario) } : {}) })),
+        itens: itens.rows.map((i) => ({
+          product_id: i.product_id, quantidade: Number(i.quantidade), observacao: i.observacao, complementos: Array.isArray(i.complementos) ? i.complementos : [],
+          ...(externo ? { preco_unitario: Number(i.preco_unitario) } : {}),
+        })),
         forma_pagamento: forma,
         valor_recebido: (o.pago || externo) && forma === 'dinheiro' && b.valor_recebido === undefined ? (o.valor_recebido === null ? undefined : Number(o.valor_recebido)) : b.valor_recebido,
         desconto: externo ? Number(o.desconto || 0) : 0,

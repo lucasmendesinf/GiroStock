@@ -1,29 +1,21 @@
 // Reserva de estoque por pedidos em aberto (status diferente de finalizado/cancelado), por loja.
-// Produto simples: soma das quantidades dos itens. Produto com receita: soma dos insumos (qtd por unidade x quantidade).
-// disponivel = saldo - reservado. Nada e gravado nos saldos: a reserva e sempre calculada, entao cancelar libera sozinho.
+// O consumo de cada item segue a mesma regra da venda (services/consumo.js): produto simples, ficha tecnica,
+// combo e complementos escolhidos. disponivel = saldo - reservado. Nada e gravado nos saldos: a reserva e sempre
+// calculada, entao cancelar libera sozinho.
 async function reservadosDaLoja(db, tenantId, locationId, ignorarPedidoId = null) {
-  const prod = await db.query(
-    `SELECT oi.product_id, SUM(oi.quantidade) AS q
+  // require tardio: consumo.js nao depende deste arquivo, mas evita ciclo se um dia depender.
+  const { carregarComposicao, consumoDasLinhas, idsDeComplementos } = require('../services/consumo');
+  const { rows } = await db.query(
+    `SELECT oi.product_id, oi.quantidade, oi.complementos
      FROM order_items oi JOIN orders o ON o.id = oi.order_id
      WHERE o.tenant_id = $1 AND o.location_id = $2 AND o.status NOT IN ('finalizado', 'cancelado')
-       AND ($3::uuid IS NULL OR o.id <> $3::uuid)
-       AND NOT EXISTS (SELECT 1 FROM product_ingredients pi WHERE pi.product_id = oi.product_id)
-     GROUP BY oi.product_id`,
+       AND ($3::uuid IS NULL OR o.id <> $3::uuid)`,
     [tenantId, locationId, ignorarPedidoId]
   );
-  const ins = await db.query(
-    `SELECT pi.ingredient_id, SUM(pi.quantidade_por_unidade * oi.quantidade) AS q
-     FROM order_items oi JOIN orders o ON o.id = oi.order_id
-     JOIN product_ingredients pi ON pi.product_id = oi.product_id
-     WHERE o.tenant_id = $1 AND o.location_id = $2 AND o.status NOT IN ('finalizado', 'cancelado')
-       AND ($3::uuid IS NULL OR o.id <> $3::uuid)
-     GROUP BY pi.ingredient_id`,
-    [tenantId, locationId, ignorarPedidoId]
-  );
-  return {
-    produtos: new Map(prod.rows.map((r) => [r.product_id, Number(r.q)])),
-    insumos: new Map(ins.rows.map((r) => [r.ingredient_id, Number(r.q)])),
-  };
+  if (rows.length === 0) return { produtos: new Map(), insumos: new Map() };
+  const linhas = rows.map((r) => ({ product_id: r.product_id, quantidade: Number(r.quantidade), complementos: Array.isArray(r.complementos) ? r.complementos : [] }));
+  const comp = await carregarComposicao(db, tenantId, [...new Set(linhas.map((l) => l.product_id))], idsDeComplementos(linhas));
+  return consumoDasLinhas(comp, linhas);
 }
 
 module.exports = { reservadosDaLoja };

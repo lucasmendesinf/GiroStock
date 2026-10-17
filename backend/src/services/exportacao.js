@@ -13,7 +13,7 @@ const { dirBackups, diretorioPronto } = require('./backup');
 const gzip = promisify(zlib.gzip);
 const IGNORAR = ['schema_migrations', 'teste_copias', 'backups', 'config_global', 'avisos_globais', 'erros_sistema', 'planos', 'user_recovery_codes', 'tenants'];
 // Filhas sem tenant_id: tabela -> [coluna, tabela-mae].
-const FILHAS = { customer_addresses: ['customer_id', 'customers'], order_items: ['order_id', 'orders'], order_status_log: ['order_id', 'orders'] };
+const FILHAS = { customer_addresses: ['customer_id', 'customers'], order_items: ['order_id', 'orders'], order_status_log: ['order_id', 'orders'], ifood_disponibilidade: ['integracao_id', 'integracoes_delivery'] };
 const COLUNA_SENSIVEL = /^(senha_hash|totp_.*|.*token.*|.*segredo.*)$/i;
 
 function dirExportacoes() {

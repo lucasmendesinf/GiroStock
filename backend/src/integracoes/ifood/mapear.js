@@ -73,6 +73,14 @@ function pedidoDoIfood(p) {
       quantidade,
       preco_unitario: dinheiro(totalLinha / quantidade),
       observacao: texto([extras.length ? `+ ${extras.join(', ')}` : '', it.observations].filter(Boolean).join(' · '), 200),
+      // Complementos com codigo PDV viram complementos do GiroStock (baixam insumo/produto); os demais ficam so na observacao.
+      // Quantidade e preco por unidade do item.
+      opcoes: opcoes.map((o) => ({
+        codigo: o.externalCode ? texto(o.externalCode, 60).toUpperCase() : null,
+        nome: texto(o.name, 60),
+        quantidade: num(o.quantity) || 1,
+        preco: dinheiro(num(o.unitPrice) || (num(o.price) / (num(o.quantity) || 1))),
+      })),
     };
   });
 

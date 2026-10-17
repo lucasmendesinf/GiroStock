@@ -1,6 +1,9 @@
 const express = require('express');
 const pool = require('../db/pool');
 const { requireArea, requireModulo } = require('../middleware/permissions');
+const { reservadosDaLoja } = require('../utils/reservas');
+const { unidadesDisponiveis } = require('../services/consumo');
+const { salvarCombo } = require('./complementos.routes');
 const { isValidBarcode, UNIDADES_INTEIRAS, isQuantidadeValidaParaUnidade } = require('../utils/validators');
 const { logAudit } = require('../utils/audit');
 const { getOwned, getOwnedLocation, isUuid } = require('../utils/tenant');
@@ -129,6 +132,32 @@ const SQL_FORNECEDORES = `
             FROM product_suppliers ps2 JOIN suppliers s2 ON s2.id = ps2.supplier_id
             WHERE ps2.product_id = p.id AND ps2.tenant_id = p.tenant_id), '[]') AS fornecedores`;
 
+// iFood: "vender no iFood" e o codigo PDV usado no cardapio do iFood (vazio = codigo interno).
+async function camposIfood(db, tenantId, body, atual, productId = null) {
+  const vende = typeof body.vende_ifood === 'boolean' ? body.vende_ifood : !!atual.vende_ifood;
+  let codigo = body.codigo_ifood === undefined ? (atual.codigo_ifood || null) : (String(body.codigo_ifood || '').trim().slice(0, 60).toUpperCase() || null);
+  if (codigo) {
+    const dup = await db.query(
+      `SELECT nome FROM products WHERE tenant_id = $1 AND (codigo_ifood = $2 OR (codigo_ifood IS NULL AND upper(codigo_interno) = $2)) AND ($3::uuid IS NULL OR id <> $3::uuid) LIMIT 1`,
+      [tenantId, codigo, productId]
+    );
+    if (dup.rows.length) throw new HttpError(409, `o código do iFood ${codigo} já é usado por "${dup.rows[0].nome}"`);
+  }
+  return { vende_ifood: vende, codigo_ifood: codigo };
+}
+
+// Grupos de complementos do produto (substitui a lista, na ordem informada).
+async function salvarGruposDoProduto(client, tenantId, productId, grupos) {
+  const ids = [...new Set(grupos)];
+  if (ids.some((id) => !isUuid(id))) throw new HttpError(400, 'grupo de complementos inválido');
+  if (ids.length) {
+    const ok = await client.query(`SELECT id FROM grupos_complementos WHERE tenant_id = $1 AND id = ANY($2::uuid[])`, [tenantId, ids]);
+    if (ok.rows.length !== ids.length) throw new HttpError(400, 'grupo de complementos inválido');
+  }
+  await client.query(`DELETE FROM produto_grupos WHERE product_id = $1`, [productId]);
+  for (let i = 0; i < ids.length; i++) await client.query(`INSERT INTO produto_grupos (tenant_id, product_id, grupo_id, ordem) VALUES ($1, $2, $3, $4)`, [tenantId, productId, ids[i], i]);
+}
+
 // ---------- Rotas de produto ----------
 
 router.get('/products', async (req, res) => {
@@ -141,8 +170,11 @@ router.get('/products', async (req, res) => {
   const { rows } = await pool.query(
     `SELECT p.id, p.codigo_interno, p.nome, p.categoria_id, c.nome AS categoria_nome,
             p.supplier_id, s.nome AS supplier_nome, p.barcode,
-            p.unidade, p.preco_custo, p.preco_venda, p.ativo,
+            p.unidade, p.preco_custo, p.preco_venda, p.ativo, p.vende_ifood, p.codigo_ifood,
             ${SQL_FORNECEDORES},
+            COALESCE((SELECT json_agg(json_build_object('product_id', ci.product_id, 'quantidade', ci.quantidade))
+                      FROM combo_itens ci WHERE ci.combo_id = p.id), '[]') AS combo,
+            COALESCE((SELECT json_agg(pg.grupo_id ORDER BY pg.ordem) FROM produto_grupos pg WHERE pg.product_id = p.id), '[]') AS grupos,
             COALESCE(SUM(sb.saldo), 0) AS saldo_total,
             COALESCE(
               json_agg(
@@ -166,7 +198,7 @@ router.get('/products', async (req, res) => {
      ORDER BY p.ativo DESC, p.nome`,
     params
   );
-  res.json(rows);
+  res.json(rows.map((r) => ({ ...r, e_combo: r.combo.length > 0 })));
 });
 
 // Busca do PDV. Com terminal_id (ou location_id) retorna o saldo daquele local:
@@ -247,12 +279,42 @@ router.get('/products/search', async (req, res) => {
      ORDER BY (COALESCE(x.saldo, 1) > 0) DESC, x.nome, x.id LIMIT ${limite} OFFSET ${deslocamento}`,
     params
   );
-  res.json(rows);
+  if (rows.length === 0) return res.json(rows);
+  const ids = rows.map((r) => r.id);
+  // Combos e grupos de complementos de cada produto (o PDV abre a escolha dos complementos ao adicionar).
+  const extras = await pool.query(
+    `SELECT p.id,
+            EXISTS(SELECT 1 FROM combo_itens ci WHERE ci.combo_id = p.id) AS e_combo,
+            COALESCE((SELECT json_agg(json_build_object('id', g.id, 'nome', g.nome, 'minimo', g.minimo, 'maximo', g.maximo,
+                        'opcoes', (SELECT COALESCE(json_agg(json_build_object('id', c.id, 'nome', c.nome, 'preco', c.preco) ORDER BY c.ordem, c.nome), '[]')
+                                   FROM complementos c WHERE c.grupo_id = g.id AND c.ativo)) ORDER BY pg.ordem, g.nome)
+                      FROM produto_grupos pg JOIN grupos_complementos g ON g.id = pg.grupo_id WHERE pg.product_id = p.id AND g.ativo), '[]') AS grupos
+     FROM products p WHERE p.id = ANY($1::uuid[]) AND p.tenant_id = $2`,
+    [ids, req.user.tenantId]
+  );
+  const extraDe = new Map(extras.rows.map((r) => [r.id, r]));
+  // Disponibilidade pela mesma regra da venda (ficha, combo e reservas de pedidos com complementos).
+  let disp = null;
+  if (locationId) {
+    const reservados = await reservadosDaLoja(pool, req.user.tenantId, locationId);
+    disp = (await unidadesDisponiveis(pool, req.user.tenantId, locationId, ids, [], reservados)).produtos;
+  }
+  res.json(rows.map((r) => {
+    const e = extraDe.get(r.id) || {};
+    const d = disp && disp.get(r.id);
+    const composto = r.tem_ficha_tecnica || e.e_combo;
+    return {
+      ...r, e_combo: !!e.e_combo, grupos: e.grupos || [],
+      ...(d && d.unidades !== null ? { saldo: d.unidades, insumo_limitante: composto ? d.limitante : r.insumo_limitante } : {}),
+      // "preparo": item que pode ter observacao para a cozinha (lanche, combo ou com complementos).
+      tem_ficha_tecnica: r.tem_ficha_tecnica || !!e.e_combo || (e.grupos || []).length > 0,
+    };
+  }));
 });
 
 router.get('/products/:id', async (req, res) => {
   const product = await getOwned(pool, 'products', req.params.id, req.user.tenantId, {
-    columns: 'id, codigo_interno, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, ativo',
+    columns: 'id, codigo_interno, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, ativo, vende_ifood, codigo_ifood',
   });
 
   const fornecedores = await pool.query(
@@ -281,7 +343,17 @@ router.get('/products/:id', async (req, res) => {
     [req.params.id, req.user.tenantId]
   );
 
-  res.json({ ...product, fornecedores: fornecedores.rows, saldos_por_local: saldos.rows, ficha_tecnica: ficha.rows });
+  const combo = await pool.query(
+    `SELECT ci.product_id, p.nome, p.codigo_interno, p.unidade, ci.quantidade, p.preco_custo, p.preco_venda
+     FROM combo_itens ci JOIN products p ON p.id = ci.product_id WHERE ci.combo_id = $1 AND ci.tenant_id = $2 ORDER BY p.nome`,
+    [req.params.id, req.user.tenantId]
+  );
+  const grupos = await pool.query(
+    `SELECT g.id, g.nome, g.minimo, g.maximo FROM produto_grupos pg JOIN grupos_complementos g ON g.id = pg.grupo_id
+     WHERE pg.product_id = $1 AND pg.tenant_id = $2 ORDER BY pg.ordem`,
+    [req.params.id, req.user.tenantId]
+  );
+  res.json({ ...product, fornecedores: fornecedores.rows, saldos_por_local: saldos.rows, ficha_tecnica: ficha.rows, combo: combo.rows, e_combo: combo.rows.length > 0, grupos: grupos.rows });
 });
 
 router.post('/products', requireArea('Estoque'), async (req, res) => {
@@ -301,6 +373,9 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
   const { custo, venda } = validarPrecos(body.preco_custo, body.preco_venda);
 
   const fichaItems = Array.isArray(ficha_tecnica) ? ficha_tecnica : [];
+  const comboItems = Array.isArray(body.combo) ? body.combo : [];
+  if (fichaItems.length > 0 && comboItems.length > 0) return res.status(400).json({ erro: 'o produto é lanche (ficha técnica) ou combo, não os dois' });
+  const ifood = await camposIfood(pool, req.user.tenantId, body, {});
   if (fichaItems.length > 0 && !(req.user.modulos && req.user.modulos.lanchonete)) {
     return res.status(403).json({ erro: 'O módulo Lanchonete e cozinha não faz parte do plano da sua empresa: produto com ficha técnica indisponível', modulo: 'lanchonete' });
   }
@@ -312,7 +387,7 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
 
   // Produtos com ficha tecnica (lanches) nao tem estoque proprio: a disponibilidade
   // e controlada pelos insumos da receita, entao local/estoque inicial nao se aplicam.
-  const temFicha = fichaItems.length > 0;
+  const temFicha = fichaItems.length > 0 || comboItems.length > 0; // combo tambem nao tem estoque proprio
   // O saldo nao precisa ser cadastrado junto com o produto: o estoque e tratado depois,
   // pelo modal de estoque. Se vier local, o estoque inicial continua sendo lancado (compatibilidade).
   const saldoInicial = Number(estoque_inicial ?? 0);
@@ -343,10 +418,10 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
     const codigoInterno = await proximoCodigoInterno(client, req.user.tenantId);
 
     const { rows } = await client.query(
-      `INSERT INTO products (tenant_id, codigo_interno, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       RETURNING id, codigo_interno, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, ativo`,
-      [req.user.tenantId, codigoInterno, nome.trim(), categoria_id, fornecedores.principal, barcode, unidade, custo, venda]
+      `INSERT INTO products (tenant_id, codigo_interno, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, vende_ifood, codigo_ifood)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       RETURNING id, codigo_interno, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, ativo, vende_ifood, codigo_ifood`,
+      [req.user.tenantId, codigoInterno, nome.trim(), categoria_id, fornecedores.principal, barcode, unidade, custo, venda, ifood.vende_ifood, ifood.codigo_ifood]
     );
     const product = rows[0];
     await sincronizarFornecedores(client, req.user.tenantId, product.id, fornecedores.ids);
@@ -387,6 +462,9 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
       }
     }
 
+    if (comboItems.length > 0) await salvarCombo(client, req.user, product.id, comboItems);
+    if (Array.isArray(body.grupos) && body.grupos.length > 0) await salvarGruposDoProduto(client, req.user.tenantId, product.id, body.grupos);
+
     await logAudit(client, {
       tenantId: req.user.tenantId,
       usuarioId: req.user.id,
@@ -410,8 +488,9 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
 router.put('/products/:id', requireArea('Estoque'), async (req, res) => {
   const body = req.body || {};
   const atual = await getOwned(pool, 'products', req.params.id, req.user.tenantId, {
-    columns: 'id, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda',
+    columns: 'id, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, vende_ifood, codigo_ifood',
   });
+  const ifood = await camposIfood(pool, req.user.tenantId, body, atual, req.params.id);
 
   const nome = body.nome !== undefined ? String(body.nome).trim() : atual.nome;
   if (nome.length < 3) throw new HttpError(400, 'nome deve ter no mínimo 3 caracteres');
@@ -455,12 +534,14 @@ router.put('/products/:id', requireArea('Estoque'), async (req, res) => {
     await client.query('BEGIN');
     const { rows } = await client.query(
       `UPDATE products SET nome = $1, categoria_id = $2, barcode = $3, unidade = $4, preco_custo = $5, preco_venda = $6,
-              supplier_id = $7
+              supplier_id = $7, vende_ifood = $10, codigo_ifood = $11
        WHERE id = $8 AND tenant_id = $9
-       RETURNING id, codigo_interno, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, ativo`,
+       RETURNING id, codigo_interno, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, ativo, vende_ifood, codigo_ifood`,
       [nome, categoriaId, barcode, unidade, custo, venda,
-        fornecedores ? fornecedores.principal : atual.supplier_id, req.params.id, req.user.tenantId]
+        fornecedores ? fornecedores.principal : atual.supplier_id, req.params.id, req.user.tenantId, ifood.vende_ifood, ifood.codigo_ifood]
     );
+    if (body.combo !== undefined) await salvarCombo(client, req.user, req.params.id, body.combo);
+    if (Array.isArray(body.grupos)) await salvarGruposDoProduto(client, req.user.tenantId, req.params.id, body.grupos);
     if (fornecedores) await sincronizarFornecedores(client, req.user.tenantId, req.params.id, fornecedores.ids);
 
     await logAudit(client, {

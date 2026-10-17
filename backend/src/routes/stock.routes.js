@@ -76,6 +76,9 @@ async function prepararMovimento(db, user, dados) {
   if (ficha.rows.length > 0) {
     throw new HttpError(400, `"${product.nome}" tem ficha técnica e não tem estoque próprio; movimente os insumos dele`);
   }
+  if ((await db.query(`SELECT 1 FROM combo_itens WHERE combo_id = $1 LIMIT 1`, [product_id])).rows.length > 0) {
+    throw new HttpError(400, `"${product.nome}" é um combo e não tem estoque próprio; movimente os produtos dele`);
+  }
   if (origemId) await getOwnedLocation(db, origemId, user.tenantId);
   if (destinoId) await getOwnedLocation(db, destinoId, user.tenantId);
 
@@ -230,6 +233,9 @@ router.post('/products/:id/stock-adjustment', requireArea('Estoque'), async (req
   );
   if (ficha.rows.length > 0) {
     throw new HttpError(400, `"${product.nome}" tem ficha técnica e não tem estoque próprio; ajuste os insumos dele`);
+  }
+  if ((await pool.query(`SELECT 1 FROM combo_itens WHERE combo_id = $1 LIMIT 1`, [product.id])).rows.length > 0) {
+    throw new HttpError(400, `"${product.nome}" é um combo e não tem estoque próprio; ajuste os produtos dele`);
   }
   await getOwnedLocation(pool, location_id, req.user.tenantId);
   assertLocationAccess(req.user, location_id, 'ajustar o estoque deste local');

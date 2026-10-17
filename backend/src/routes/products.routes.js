@@ -187,6 +187,10 @@ router.get('/products/search', async (req, res) => {
 
   const params = [req.user.tenantId, locationId];
   let where = 'p.tenant_id = $1 AND p.ativo = true';
+  // Sem o modulo Lanchonete, lanche com ficha tecnica nao aparece na busca do PDV/pedidos (nao pode ser vendido).
+  if (req.user.modulos && req.user.modulos.lanchonete === false) {
+    where += ' AND NOT EXISTS (SELECT 1 FROM product_ingredients pix WHERE pix.product_id = p.id AND pix.tenant_id = p.tenant_id)';
+  }
   if (req.query.ids) {
     const lista = String(req.query.ids).split(',').filter(isUuid);
     params.push(lista);

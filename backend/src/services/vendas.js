@@ -20,6 +20,21 @@ function agruparItens(itens) {
   return [...porProduto.entries()].map(([product_id, quantidade]) => ({ product_id, quantidade }));
 }
 
+// Sem o modulo Lanchonete (plano da empresa), lanche com ficha tecnica nao e vendido nem pedido: a receita baixaria
+// insumos que a empresa nao gerencia mais. Produto de revenda segue normal.
+async function assertReceitasPermitidas(db, user, productIds) {
+  if (!user || !user.modulos || user.modulos.lanchonete !== false || productIds.length === 0) return;
+  const { rows } = await db.query(
+    `SELECT p.nome FROM products p WHERE p.id = ANY($1::uuid[]) AND p.tenant_id = $2
+       AND EXISTS (SELECT 1 FROM product_ingredients pi WHERE pi.product_id = p.id AND pi.tenant_id = p.tenant_id)
+     ORDER BY p.nome LIMIT 1`,
+    [productIds, user.tenantId]
+  );
+  if (rows.length > 0) {
+    throw new HttpError(403, `"${rows[0].nome}" é um lanche com ficha técnica e o módulo Lanchonete e cozinha não faz parte do plano da sua empresa`);
+  }
+}
+
 // Registra uma venda dentro da transacao do chamador (client ja em BEGIN; quem chama faz COMMIT/ROLLBACK).
 // Faz tudo: valida estoque (descontando o que esta reservado por pedidos em aberto), grava a venda e os itens,
 // baixa o estoque ou consome os insumos da receita, numera a comanda e audita.
@@ -71,6 +86,8 @@ async function registrarVenda(client, user, dados) {
       [productIds, user.tenantId]
     );
     const productMap = new Map(products.rows.map((p) => [p.id, p]));
+    // Pedido ja aceito antes de o modulo ser desligado ainda pode ser finalizado (a reserva ja existe).
+    if (!dados.ignorar_pedido_id) await assertReceitasPermitidas(client, user, productIds);
     for (const item of itensAgrupados) {
       const produto = productMap.get(item.product_id);
       if (!produto || !produto.ativo) {
@@ -267,4 +284,4 @@ async function registrarVenda(client, user, dados) {
   }
 }
 
-module.exports = { registrarVenda, agruparItens, FORMAS_PAGAMENTO };
+module.exports = { registrarVenda, agruparItens, assertReceitasPermitidas, FORMAS_PAGAMENTO };

@@ -8,7 +8,7 @@ const { isQuantidadeValidaParaUnidade } = require('../utils/validators');
 const { HttpError } = require('../utils/http');
 const { configEfetiva } = require('../utils/cupom');
 const { reservadosDaLoja } = require('../utils/reservas');
-const { registrarVenda } = require('../services/vendas');
+const { registrarVenda, assertReceitasPermitidas } = require('../services/vendas');
 const { FUSO } = require('../utils/query');
 const { inserirCliente, apenasDigitos } = require('./customers.routes');
 
@@ -179,6 +179,7 @@ router.post('/orders', async (req, res) => {
       [ids, req.user.tenantId]
     );
     const mapa = new Map(produtos.rows.map((p) => [p.id, p]));
+    await assertReceitasPermitidas(client, req.user, ids);
     for (const l of linhas) {
       const p = mapa.get(l.product_id);
       if (!p || !p.ativo) throw new HttpError(400, 'produto não encontrado ou inativo');

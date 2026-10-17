@@ -22,6 +22,10 @@ const B = process.env.API_URL || 'http://localhost:3000';
     await db.query("INSERT INTO users (tenant_id, nome, email, senha_hash, perfil) VALUES ($1, 'Admin B', 'b@b.com', $2, 'Administrador')",
       [t, bcrypt.hashSync('123456', 10)]);
   }
+  // Este teste cria varias lojas, usuarios e PDVs: libera limites altos para as empresas de teste
+  // (o seed tem 4 lojas; o plano Completo permite 3). So em banco de desenvolvimento.
+  await db.query(`UPDATE tenants SET limites = '{"lojas": 50, "usuarios": 50, "pdvs": 50}'
+                  WHERE id IN (SELECT tenant_id FROM users WHERE email IN ('admin@girostock.local', 'b@b.com'))`);
   await db.end();
 }
 let pass = 0, fail = 0;
@@ -36,7 +40,7 @@ async function r(method, path, body, tok) {
 }
 function check(nome, cond, info) {
   if (cond) { pass++; console.log(`  ok   ${nome}`); }
-  else { fail++; falhas.push(nome); console.log(`  FALHA ${nome} -> ${JSON.stringify(info).slice(0, 300)}`); }
+  else { fail++; falhas.push(nome); console.log(`  FALHA ${nome} -> ${String(JSON.stringify(info)).slice(0, 300)}`); }
 }
 const st = (x, s) => x.s === s;
 const login = async (email, senha) => (await r('POST', '/auth/login', { email, senha })).j.token;
@@ -161,14 +165,17 @@ check('mesmo produto em 2 linhas (4+4, saldo 5) -> 400 sem cair', st(await r('PO
 const v1 = await r('POST', '/sales', { terminal_id: PDV1, itens: [{ product_id: P, quantidade: 2 }, { product_id: P, quantidade: 2 }, { product_id: refri, quantidade: 1 }], forma_pagamento: 'dinheiro', valor_recebido: 50 }, A);
 check('linhas repetidas (2+2) somadas numa venda', st(v1, 201) && v1.j.total === 30, v1);
 const dv = (await r('GET', `/sales/${v1.j.id}`, null, A)).j;
-check('detalhe da venda: 2 itens, cerveja qtd 4, com custo', dv.itens.length === 2 && Number(dv.itens.find((i) => i.product_id === P).quantidade) === 4 && Number(dv.itens.find((i) => i.product_id === P).custo_unitario) === 3.5, dv.itens);
+// Cada linha do PDV vira um item (linhas do mesmo produto podem ter observacoes diferentes); o estoque soma as linhas.
+const linhasCerveja = dv.itens.filter((i) => i.product_id === P);
+check('detalhe da venda: cerveja em 2 linhas somando 4, com custo, + refrigerante', dv.itens.length === 3 && linhasCerveja.reduce((s, i) => s + Number(i.quantidade), 0) === 4 && linhasCerveja.every((i) => Number(i.custo_unitario) === 3.5), dv.itens);
 check('quantidade fracionada em produto UN -> 400', st(await r('POST', '/sales', { terminal_id: PDV1, itens: [{ product_id: P, quantidade: 0.5 }], forma_pagamento: 'pix' }, A), 400));
 check('venda acima do saldo -> 400', st(await r('POST', '/sales', { terminal_id: PDV1, itens: [{ product_id: P, quantidade: 2 }], forma_pagamento: 'pix' }, A), 400));
 
 const buscaNome = (await r('GET', `/products/search?q=cerveja&terminal_id=${PDV1}`, null, A)).j;
 check('PDV: busca por nome mostra cerveja (saldo 1) com saldo', buscaNome.length === 1 && Number(buscaNome[0].saldo) === 1, buscaNome);
 const buscaCentro = (await r('GET', `/products/search?q=refri&terminal_id=${TC}`, null, A)).j;
-check('PDV: produto sem saldo na loja nao aparece na busca por nome', buscaCentro.length === 0, buscaCentro);
+// A busca mostra o produto sem saldo na loja (esmaecido e bloqueado no PDV), com saldo 0.
+check('PDV: produto sem saldo na loja aparece na busca com saldo 0', buscaCentro.length === 1 && Number(buscaCentro[0].saldo) === 0, buscaCentro);
 const buscaBarra = (await r('GET', `/products/search?barcode=7891000100103&terminal_id=${TC}`, null, A)).j;
 check('PDV: busca por codigo de barras retorna saldo 0 na loja', buscaBarra.length === 1 && Number(buscaBarra[0].saldo) === 0, buscaBarra);
 

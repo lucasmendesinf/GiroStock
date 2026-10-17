@@ -150,6 +150,23 @@ const mePl = await api('GET', '/auth/me', null, P.tok);
 check('trocar para o plano Lanchonete libera Lanchonete e Pedidos na hora', pr.s === 200 && mePl.j.modulos.lanchonete && mePl.j.modulos.pedidos, mePl.j.modulos);
 check('agora GET /ingredients -> 200', (await api('GET', '/ingredients', null, P.tok)).s === 200);
 
+// Lanche com ficha tecnica criado enquanto havia o modulo; depois o Master desliga a Lanchonete.
+const pao = await api('POST', '/ingredients', { nome: 'Pão', unidade: 'UN', location_id: lojasP.j[0].id, estoque_inicial: 10, custo_total: 10 }, P.tok);
+const lanche = await api('POST', '/products', { nome: 'X-Salada', categoria_id: cats.j.id, barcode: '78910003' + String(Date.now()).slice(-5), unidade: 'UN', preco_custo: 1, preco_venda: 15, ficha_tecnica: [{ ingredient_id: pao.j.id, quantidade_por_unidade: 1 }] }, P.tok);
+check('com o modulo: cria lanche com ficha tecnica', pao.s === 201 && lanche.s === 201, { pao, lanche });
+const vendeLanche = await api('POST', '/sales', { terminal_id: termP.j.id, itens: [{ product_id: lanche.j.id, quantidade: 1 }], forma_pagamento: 'pix' }, P.tok);
+check('com o modulo: vende o lanche', vendeLanche.s === 201, vendeLanche);
+await api('PATCH', `/master/empresas/${P.empresa.id}`, { recursos: { lanchonete: false } }, MAS);
+const semMod = await api('POST', '/sales', { terminal_id: termP.j.id, itens: [{ product_id: lanche.j.id, quantidade: 1 }], forma_pagamento: 'pix' }, P.tok);
+check('sem o modulo: venda do lanche com ficha -> 403 explicando', semMod.s === 403 && /X-Salada/.test(semMod.j.erro) && /Lanchonete/.test(semMod.j.erro), semMod);
+const pedSemMod = await api('POST', '/orders', { location_id: lojasP.j[0].id, itens: [{ product_id: lanche.j.id, quantidade: 1 }] }, P.tok);
+check('sem o modulo: pedido com o lanche tambem e recusado', pedSemMod.s === 403 || (pedSemMod.s === 400 && /pedidos/.test(pedSemMod.j.erro)), pedSemMod);
+const buscaSem = await api('GET', `/products/search?q=&terminal_id=${termP.j.id}`, null, P.tok);
+check('sem o modulo: lanche some da busca do PDV, refrigerante continua', buscaSem.s === 200 && !buscaSem.j.some((p) => p.id === lanche.j.id) && buscaSem.j.some((p) => p.id === prodP.j.id), buscaSem.j);
+const vendeRefri = await api('POST', '/sales', { terminal_id: termP.j.id, itens: [{ product_id: prodP.j.id, quantidade: 1 }], forma_pagamento: 'pix' }, P.tok);
+check('sem o modulo: produto de revenda continua vendendo', vendeRefri.s === 201, vendeRefri);
+await api('PATCH', `/master/empresas/${P.empresa.id}`, { recursos: { lanchonete: null } }, MAS);
+
 // ---------- 5. Criar empresa ja com modulos ajustados ----------
 console.log('\n# 5. Nova empresa com módulos diferentes do plano');
 const L = await empresaComAdmin('Lanche', { plano: 'lanchonete', recursos: { clientes: false, delivery_apps: true } });

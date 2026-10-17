@@ -83,7 +83,7 @@ Cada cliente usa só os módulos (segmentos) que contratou. O Master define isso
 | Lanchonete e cozinha | ficha técnica, insumos com baixa automática, comanda da cozinha | PDV |
 | Pedidos | mesa, retirada, entrega, WhatsApp, entregadores | PDV |
 | Clientes | base de clientes, segmentos e mensagens | — |
-| iFood e 99Food *(em breve)* | pedidos das plataformas na tela de Pedidos | Pedidos |
+| iFood e 99Food | pedidos das plataformas na tela de Pedidos | Pedidos |
 | Casa de shows e eventos *(em breve)* | eventos, PDVs e estoque do evento | PDV |
 | Loja virtual *(em breve)* | catálogo online e delivery | — |
 | Financeiro *(em breve)* | contas a pagar/receber e fluxo de caixa | — |
@@ -140,11 +140,53 @@ curl -X POST localhost:4999/_sim/pedidos -H 'content-type: application/json' \
 
 Na conexão, o "Portal do Parceiro" do simulador é o link mostrado no próprio GiroStock (ele devolve o código de autorização).
 
+## 99Food (mesmo módulo "iFood e 99Food")
+
+Funciona como o iFood na tela de Pedidos (mesmas etiquetas, pendências de vínculo, reserva de estoque, venda ao finalizar). As diferenças:
+
+- **Conectar a loja** (Lojas & PDVs → "Receber pedidos da 99Food" → *Conectar 99Food*). O GiroStock mostra o **código da loja** (ex.: `GS9DF71B22C681`, o `app_shop_id`); a loja autoriza o app GiroStock no portal da 99Food informando esse código e clica em *Já autorizei*. O GiroStock confere pedindo o token da loja à 99Food.
+- **Recebimento por webhook**: a 99Food avisa na hora em `POST /api/webhooks/99food` (fora do login; a autenticidade é a assinatura `didi-header-sign` = md5 do corpo + app_secret). Resposta `{"errno":0}` quando gravado; qualquer outra resposta faz a 99Food reenviar (módulo desligado, falha). Reenvio do mesmo pedido não duplica.
+- **Ids de 64 bits**: os números de pedido da 99Food não cabem no número do JavaScript; são lidos e gravados como texto e enviados de volta como número.
+- **Valores em centavos** na 99Food, convertidos para reais. Pago online → forma "online"; cobrado na entrega → dinheiro/cartão/Pix pelo `pay_channel`.
+- **Status**: *Aceitar na 99Food* (ou aceite automático) → *Iniciar preparo* → *Marcar pronto* (avisa a 99Food: chama o entregador ou libera a retirada) → entrega da loja: *Saiu p/ entrega* envia **nome e telefone do entregador** (cadastre o telefone em Pedidos → Entregadores) / entrega da 99Food: *Retirado pela 99Food*.
+- **Cancelamento** pela loja: motivo da lista; a 99Food cancela na hora e o pedido daqui também. Cancelamento do cliente cancela aqui sozinho; cancelamento parcial deixa um aviso no pedido. Não há "negociação" como no iFood.
+- **Testar conexão** em Lojas & PDVs pede um token novo (token vencido é renovado sozinho). Se a loja tirar a autorização no portal, a conexão fica "Autorizar de novo".
+- Ainda **não** tem a disponibilidade automática no cardápio (só iFood por enquanto).
+- Caminhos e campos concentrados em `backend/src/integracoes/food99/api.js` e `mapear.js`.
+
+### A confirmar na homologação da 99Food
+
+A documentação oficial é fechada; o que está implementado veio de integrações abertas. Confirmar com a conta de desenvolvedor e, se preciso, ajustar só em `food99/api.js` / `food99/mapear.js`:
+
+1. Caminhos de **aceitar** (`/order/order/confirm`) e **cancelar** (`/order/order/cancel`) e os **códigos de motivo** de cancelamento (`MOTIVOS_CANCELAMENTO`).
+2. O **envelope** do webhook (`type`, `data.order_info`) e o campo do **código PDV** do item (hoje `app_item_id`/`app_external_id`).
+3. Campos de **troco** e de **desconto bancado pela loja** (hoje desconto = 0).
+
+### Para ligar em produção
+
+1. Cadastro da **Calutec** no portal de desenvolvedores da 99Food (99Food Open Platform); criar o app e informar o webhook `https://SEU-DOMINIO/api/webhooks/99food`.
+2. No servidor: `FOOD99_APP_ID` e `FOOD99_APP_SECRET` (ver `backend/.env.example`), `npm run migrate` (aplica a 027) e reiniciar. O painel Master → Configurações mostra se está configurado.
+3. Liberar o módulo **iFood e 99Food** para a empresa; a empresa conecta cada loja em Lojas & PDVs. No app da 99Food para lojas, usar o modo que permite integração (app + OpenAPI).
+
+### Testar sem a 99Food (simulador)
+
+```bash
+cd backend
+npm run food99:simulador    # 99Food falsa em http://localhost:4998/v1 (manda webhooks para http://localhost:3000/api/webhooks/99food)
+# backend/.env: FOOD99_API_URL=http://localhost:4998/v1 FOOD99_APP_ID=sim FOOD99_APP_SECRET=sim-segredo
+# a loja "autoriza o app" (use o código mostrado no GiroStock):
+curl 'localhost:4998/_sim/autorizar?app_shop_id=GS...'
+# fazer de conta que um cliente pediu (preços em centavos):
+curl -X POST localhost:4998/_sim/pedidos -H 'content-type: application/json' \
+  -d '{"app_shop_id":"GS...","itens":[{"nome":"X-Burguer","codigo":"PRD-0002","quantidade":1,"preco":2500}]}'
+```
+
 ## Teste ponta a ponta
 
 ```bash
 cd backend
 API_URL=http://localhost:3000 npm run test:e2e:ifood     # iFood (com o simulador rodando e a API apontando para ele)
+API_URL=http://localhost:3000 npm run test:e2e:99food    # 99Food (idem, com o simulador da 99Food)
 API_URL=http://localhost:3000 npm run test:e2e:combos    # combos e complementos
 ```
 

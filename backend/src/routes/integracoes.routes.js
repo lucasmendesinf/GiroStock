@@ -1,6 +1,7 @@
-// Integracoes de delivery (iFood). Modulo "iFood e 99Food" (delivery_apps) obrigatorio.
+// Integracoes de delivery (iFood e 99Food). Modulo "iFood e 99Food" (delivery_apps) obrigatorio.
 // Conectar/desconectar: area Configuracoes. Pedidos (aceitar, vincular itens, cancelar, disputa): area Pedidos.
-// No modo teste nada aqui funciona: o teste nunca fala com o iFood de verdade.
+// No modo teste nada aqui funciona: o teste nunca fala com as plataformas de verdade.
+// Os pedidos da 99Food chegam por webhook (routes/webhooks.routes.js), fora do login.
 const express = require('express');
 const pool = require('../db/pool');
 const { requireArea, requireModulo } = require('../middleware/permissions');
@@ -9,7 +10,8 @@ const { isUuid } = require('../utils/tenant');
 const { assertLocationAccess } = require('../utils/access');
 const ifood = require('../integracoes/ifood/servico');
 const api = require('../integracoes/ifood/api');
-const { pedidoDoIfood } = require('../integracoes/ifood/mapear');
+const api99 = require('../integracoes/food99/api');
+const comum = require('../integracoes/comum');
 
 const router = express.Router();
 router.use('/integracoes', requireModulo('delivery_apps'), (req, res, next) => {
@@ -25,18 +27,20 @@ const STATUS_PUBLICO = 'id, location_id, plataforma, status, merchant_id, mercha
 // ---------- conexoes por loja ----------
 router.get('/integracoes', configuracoes, async (req, res) => {
   const { rows } = await db.query(`SELECT ${STATUS_PUBLICO} FROM integracoes_delivery WHERE tenant_id = $1 ORDER BY criado_em`, [req.user.tenantId]);
-  res.json({ ifood_configurado: api.configurado(), integracoes: rows });
+  res.json({ ifood_configurado: api.configurado(), food99_configurado: api99.configurado(), integracoes: rows });
 });
 
-router.post('/integracoes/ifood/conectar', configuracoes, async (req, res) => {
+router.post('/integracoes/:plataforma(ifood|99food)/conectar', configuracoes, async (req, res) => {
   const locationId = (req.body || {}).location_id;
   if (!isUuid(locationId)) throw new HttpError(400, 'escolha a loja');
-  assertLocationAccess(req.user, locationId, 'conectar o iFood nesta loja');
-  res.status(201).json(await ifood.iniciarConexao(req.user, locationId));
+  assertLocationAccess(req.user, locationId, `conectar o ${comum.NOME[req.params.plataforma]} nesta loja`);
+  res.status(201).json(await comum.plataforma(req.params.plataforma).iniciarConexao(req.user, locationId));
 });
 
+// iFood: cola o codigo de autorizacao do Portal do Parceiro. 99Food: confere se a loja ja autorizou o app.
 router.post('/integracoes/:id/concluir', configuracoes, async (req, res) => {
-  res.json(await ifood.concluirConexao(req.user, req.params.id, (req.body || {}).codigo));
+  const integ = await comum.integracao(req.params.id, req.user.tenantId);
+  res.json(await comum.plataforma(integ.plataforma).concluirConexao(req.user, req.params.id, (req.body || {}).codigo));
 });
 
 router.post('/integracoes/:id/loja', configuracoes, async (req, res) => {
@@ -44,7 +48,7 @@ router.post('/integracoes/:id/loja', configuracoes, async (req, res) => {
 });
 
 router.patch('/integracoes/:id', configuracoes, async (req, res) => {
-  await ifood.integracao(req.params.id, req.user.tenantId);
+  await comum.integracao(req.params.id, req.user.tenantId);
   const b = req.body || {};
   if (typeof b.aceite_automatico !== 'boolean') throw new HttpError(400, 'nada para alterar');
   await db.query(`UPDATE integracoes_delivery SET aceite_automatico = $2, atualizado_em = now() WHERE id = $1`, [req.params.id, b.aceite_automatico]);
@@ -52,27 +56,39 @@ router.patch('/integracoes/:id', configuracoes, async (req, res) => {
 });
 
 router.delete('/integracoes/:id', configuracoes, async (req, res) => {
-  await ifood.desconectar(req.user, req.params.id);
+  const integ = await comum.integracao(req.params.id, req.user.tenantId);
+  await comum.plataforma(integ.plataforma).desconectar(req.user, req.params.id);
   res.status(204).end();
 });
 
-// Buscar pedidos agora (alem do automatico a cada 30 s).
+// iFood: buscar pedidos agora (alem do automatico a cada 30 s). 99Food: testar a conexao (os pedidos chegam sozinhos).
 router.post('/integracoes/:id/sincronizar', pedidos, async (req, res) => {
-  const integ = await ifood.integracao(req.params.id, req.user.tenantId);
-  if (integ.status !== 'conectado') throw new HttpError(409, 'o iFood não está conectado nesta loja');
-  res.json(await ifood.sincronizar(integ));
+  const integ = await comum.integracao(req.params.id, req.user.tenantId);
+  if (integ.status !== 'conectado') throw new HttpError(409, `o ${comum.NOME[integ.plataforma]} não está conectado nesta loja`);
+  try {
+    res.json(await comum.plataforma(integ.plataforma).sincronizar(integ));
+  } catch (err) {
+    if (err.corpo !== undefined && err.status !== undefined && !(err instanceof HttpError)) throw new HttpError(502, `${comum.NOME[integ.plataforma]}: ${err.message}`);
+    throw err;
+  }
 });
+
+// Disponibilidade no cardapio: so o iFood por enquanto (a da 99Food sera ligada na homologacao).
+async function integracaoIfood(req) {
+  const integ = await ifood.integracao(req.params.id, req.user.tenantId);
+  if (integ.plataforma !== 'ifood') throw new HttpError(409, 'a disponibilidade automática no cardápio ainda é só do iFood');
+  if (integ.status !== 'conectado') throw new HttpError(409, 'o iFood não está conectado nesta loja');
+  return integ;
+}
 
 // ---------- disponibilidade no cardapio do iFood ----------
 // O que esta a venda/pausado (calculado agora) e o ultimo status enviado. "enviar" manda tudo de novo agora.
 router.get('/integracoes/:id/disponibilidade', configuracoes, async (req, res) => {
-  const integ = await ifood.integracao(req.params.id, req.user.tenantId);
-  if (integ.status !== 'conectado') throw new HttpError(409, 'o iFood não está conectado nesta loja');
+  const integ = await integracaoIfood(req);
   res.json(await ifood.listaDisponibilidade(integ));
 });
 router.post('/integracoes/:id/disponibilidade/enviar', configuracoes, async (req, res) => {
-  const integ = await ifood.integracao(req.params.id, req.user.tenantId);
-  if (integ.status !== 'conectado') throw new HttpError(409, 'o iFood não está conectado nesta loja');
+  const integ = await integracaoIfood(req);
   try {
     res.json(await ifood.atualizarDisponibilidade(integ, { forcar: !!(req.body || {}).tudo }));
   } catch (err) {
@@ -81,8 +97,8 @@ router.post('/integracoes/:id/disponibilidade/enviar', configuracoes, async (req
   }
 });
 
-// ---------- pedidos do iFood que precisam de atencao ----------
-// Aguardando vinculo de itens ou com erro: a equipe vincula os itens (ou recusa no iFood).
+// ---------- pedidos das plataformas que precisam de atencao ----------
+// Aguardando vinculo de itens ou com erro: a equipe vincula os itens (ou recusa na plataforma).
 router.get('/integracoes/pendencias', pedidos, async (req, res) => {
   const { rows } = await db.query(
     `SELECT pe.id, pe.location_id, l.nome AS location_nome, pe.plataforma, pe.externo_id, pe.codigo_externo, pe.situacao, pe.status_externo,
@@ -94,10 +110,10 @@ router.get('/integracoes/pendencias', pedidos, async (req, res) => {
   );
   const lista = [];
   for (const r of rows) {
-    const dados = pedidoDoIfood(r.payload);
+    const dados = comum.plataforma(r.plataforma).mapear(r.payload);
     const client = await db.connect();
     let produtos;
-    try { produtos = await ifood.produtosDosItens(client, req.user.tenantId, dados.itens); } finally { client.release(); }
+    try { produtos = await comum.produtosDosItens(client, req.user.tenantId, dados.itens, r.plataforma); } finally { client.release(); }
     lista.push({
       id: r.id, location_id: r.location_id, location_nome: r.location_nome, plataforma: r.plataforma, codigo_externo: r.codigo_externo,
       situacao: r.situacao, erro: r.erro, criado_em: r.criado_em, cliente_nome: dados.cliente_nome, tipo: dados.tipo,
@@ -109,38 +125,38 @@ router.get('/integracoes/pendencias', pedidos, async (req, res) => {
 });
 
 router.post('/integracoes/pedidos/:id/vincular', pedidos, async (req, res) => {
-  const pe = await ifood.pedidoExterno(req.user.tenantId, req.params.id);
+  const pe = await comum.pedidoExterno(req.user.tenantId, req.params.id);
   assertLocationAccess(req.user, pe.location_id, 'tratar pedidos desta loja');
-  const r = await ifood.vincular(req.user, pe, (req.body || {}).itens);
+  const r = await comum.vincular(req.user, pe, (req.body || {}).itens);
   res.json({ situacao: r.situacao, order_id: r.order_id || null, erro: r.erro || null, faltas_estoque: r.faltas_estoque || null });
 });
 
 router.post('/integracoes/pedidos/:id/aceitar', pedidos, async (req, res) => {
-  const pe = await ifood.pedidoExterno(req.user.tenantId, req.params.id);
+  const pe = await comum.pedidoExterno(req.user.tenantId, req.params.id);
   assertLocationAccess(req.user, pe.location_id, 'tratar pedidos desta loja');
-  await ifood.aceitar(req.user, pe);
+  await comum.plataforma(pe.plataforma).aceitar(req.user, pe);
   res.json({ ok: true });
 });
 
 router.get('/integracoes/pedidos/:id/motivos-cancelamento', pedidos, async (req, res) => {
-  const pe = await ifood.pedidoExterno(req.user.tenantId, req.params.id);
-  res.json(await ifood.motivos(req.user, pe));
+  const pe = await comum.pedidoExterno(req.user.tenantId, req.params.id);
+  res.json(await comum.plataforma(pe.plataforma).motivos(req.user, pe));
 });
 
 router.post('/integracoes/pedidos/:id/cancelar', pedidos, async (req, res) => {
-  const pe = await ifood.pedidoExterno(req.user.tenantId, req.params.id);
+  const pe = await comum.pedidoExterno(req.user.tenantId, req.params.id);
   assertLocationAccess(req.user, pe.location_id, 'cancelar pedidos desta loja');
   const b = req.body || {};
-  await ifood.solicitarCancelamento(req.user, pe, b.codigo, b.motivo);
-  res.json({ ok: true, status_externo: 'CANCELLATION_REQUESTED' });
+  await comum.plataforma(pe.plataforma).solicitarCancelamento(req.user, pe, b.codigo, b.motivo);
+  res.json({ ok: true, status_externo: (await comum.pedidoExterno(req.user.tenantId, pe.id)).status_externo });
 });
 
-// Cliente pediu para cancelar depois de confirmado (negociacao do iFood): aceitar ou recusar.
+// Cliente pediu para cancelar depois de confirmado (negociacao do iFood): aceitar ou recusar. A 99Food nao tem.
 router.post('/integracoes/pedidos/:id/disputa', pedidos, async (req, res) => {
-  const pe = await ifood.pedidoExterno(req.user.tenantId, req.params.id);
+  const pe = await comum.pedidoExterno(req.user.tenantId, req.params.id);
   assertLocationAccess(req.user, pe.location_id, 'tratar pedidos desta loja');
   if (typeof (req.body || {}).aceitar !== 'boolean') throw new HttpError(400, 'informe se aceita ou recusa o cancelamento');
-  await ifood.responderDisputa(req.user, pe, req.body.aceitar);
+  await comum.plataforma(pe.plataforma).responderDisputa(req.user, pe, req.body.aceitar);
   res.json({ ok: true });
 });
 

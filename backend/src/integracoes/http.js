@@ -11,7 +11,8 @@ class ErroPlataforma extends Error {
   }
 }
 
-// opcoes: { headers, json (corpo JSON), form (objeto -> x-www-form-urlencoded), timeoutMs }
+// opcoes: { headers, json (corpo JSON), jsonTexto (corpo JSON ja montado), form (objeto -> x-www-form-urlencoded),
+//          interpretar (texto -> objeto; padrao JSON.parse), timeoutMs }
 // Devolve { status, corpo } (corpo ja interpretado como JSON quando possivel). Erro de rede -> ErroPlataforma(0).
 function requisicao(metodo, endereco, opcoes = {}) {
   const url = new URL(endereco);
@@ -21,6 +22,9 @@ function requisicao(metodo, endereco, opcoes = {}) {
   if (opcoes.form) {
     corpo = new URLSearchParams(opcoes.form).toString();
     headers['content-type'] = 'application/x-www-form-urlencoded';
+  } else if (opcoes.jsonTexto !== undefined) {
+    corpo = opcoes.jsonTexto;
+    headers['content-type'] = 'application/json';
   } else if (opcoes.json !== undefined) {
     corpo = JSON.stringify(opcoes.json);
     headers['content-type'] = 'application/json';
@@ -33,7 +37,7 @@ function requisicao(metodo, endereco, opcoes = {}) {
       res.on('end', () => {
         const texto = Buffer.concat(partes).toString('utf8');
         let dados = texto;
-        if (texto) { try { dados = JSON.parse(texto); } catch { /* texto puro */ } } else dados = null;
+        if (texto) { try { dados = (opcoes.interpretar || JSON.parse)(texto); } catch { /* texto puro */ } } else dados = null;
         resolve({ status: res.statusCode, corpo: dados });
       });
     });

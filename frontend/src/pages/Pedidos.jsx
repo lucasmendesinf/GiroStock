@@ -8,7 +8,7 @@ import PedidoForm, { NOME_ORIGEM, vendaDoPedido } from '../components/PedidoForm
 import Cupom, { imprimirCupom, configDaVenda } from '../components/Cupom.jsx';
 import { brl, dataHora, parseNumero, qtd } from '../utils/format';
 import { temModulo } from '../utils/permissions.js';
-import { BlocoIfood, CancelarIfoodModal, EtiquetasIfood, PendenciasIfood, bipe } from '../components/IfoodPedidos.jsx';
+import { BlocoIfood, CancelarIfoodModal, EtiquetasIfood, PendenciasIfood, bipe, classePlataforma, nomePlataforma } from '../components/IfoodPedidos.jsx';
 import { textoComplementos } from '../components/EscolherComplementos.jsx';
 
 const COLUNAS = [
@@ -20,14 +20,14 @@ const COLUNAS = [
 ];
 const NOME_STATUS = { novo: 'Novo', em_preparo: 'Em preparo', pronto: 'Pronto', saiu_entrega: 'Saiu p/ entrega', finalizado: 'Finalizado', cancelado: 'Cancelado' };
 const ORIGENS_FILTRO = [['todas', 'Todas as origens'], ['balcao', 'Balcão'], ['telefone', 'Telefone'], ['whatsapp', 'WhatsApp']];
-const ORIGENS_IFOOD = [['ifood', 'iFood']]; // com o modulo "iFood e 99Food" (99Food entra quando a integracao existir)
+const ORIGENS_IFOOD = [['ifood', 'iFood'], ['99food', '99Food']]; // com o modulo "iFood e 99Food"
 const ATRASO_PADRAO_MIN = 25; // padrao; o Master pode mudar em Configuracoes globais (user.parametros)
 const INTERVALO_MS = 15000;
 
-// Entrega feita pelo iFood: a loja nao despacha; de pronto vai direto a finalizado (o entregador do iFood retira).
+// Entrega feita pela plataforma (iFood/99Food): a loja nao despacha; de pronto vai direto a finalizado (o entregador dela retira).
 const entregaDaLoja = (p) => p.tipo === 'entrega' && !(p.externo && p.externo.entrega_pela_plataforma);
 const proximo = (p) => ({ novo: 'em_preparo', em_preparo: 'pronto', pronto: entregaDaLoja(p) ? 'saiu_entrega' : 'finalizado', saiu_entrega: 'finalizado' })[p.status];
-const textoAcao = (p) => ({ novo: 'Iniciar preparo', em_preparo: 'Marcar pronto', pronto: entregaDaLoja(p) ? 'Saiu p/ entrega' : p.tipo === 'entrega' ? 'Retirado pelo iFood' : 'Entregue ao cliente', saiu_entrega: 'Entregue ao cliente' })[p.status] || '';
+const textoAcao = (p) => ({ novo: 'Iniciar preparo', em_preparo: 'Marcar pronto', pronto: entregaDaLoja(p) ? 'Saiu p/ entrega' : p.tipo === 'entrega' ? `Retirado pel${p.origem === '99food' ? 'a' : 'o'} ${nomePlataforma(p.origem)}` : 'Entregue ao cliente', saiu_entrega: 'Entregue ao cliente' })[p.status] || '';
 const aberto = (p) => !['finalizado', 'cancelado'].includes(p.status);
 
 
@@ -71,12 +71,12 @@ export default function Pedidos() {
     if (!lojaId) return;
     try {
       const lista = await api.get(`/orders?location_id=${lojaId}`);
-      // Aviso sonoro quando chega pedido novo do iFood (nao toca na primeira carga da tela).
-      const doIfood = lista.filter((p) => p.origem === 'ifood' && p.status === 'novo').map((p) => p.id);
+      // Aviso sonoro quando chega pedido novo do iFood/99Food (nao toca na primeira carga da tela).
+      const doIfood = lista.filter((p) => (p.origem === 'ifood' || p.origem === '99food') && p.status === 'novo').map((p) => p.id);
       if (vistos.current && doIfood.some((id) => !vistos.current.has(id))) {
         bipe();
-        const novo = lista.find((p) => p.origem === 'ifood' && p.status === 'novo' && !vistos.current.has(p.id));
-        toast.sucesso(`Novo pedido do iFood #${novo.codigo_externo || novo.numero}`);
+        const novo = lista.find((p) => (p.origem === 'ifood' || p.origem === '99food') && p.status === 'novo' && !vistos.current.has(p.id));
+        toast.sucesso(`Novo pedido ${novo.origem === '99food' ? 'da' : 'do'} ${nomePlataforma(novo.origem)} #${novo.codigo_externo || novo.numero}`);
       }
       vistos.current = new Set([...(vistos.current || []), ...doIfood]);
       setPedidos(lista);
@@ -180,7 +180,7 @@ export default function Pedidos() {
         onKeyDown={(e) => { if (e.key === 'Enter') abrirDetalhe(p.id); }}>
         <div className="ped-r1">
           <span className="ped-num">#{p.numero}</span>
-          <span className={`ped-tag ${p.origem === 'ifood' ? 'ifood' : ''}`}>{NOME_ORIGEM[p.origem]}{p.codigo_externo ? ` #${p.codigo_externo}` : ''}</span>
+          <span className={`ped-tag ${classePlataforma(p.origem)}`}>{NOME_ORIGEM[p.origem]}{p.codigo_externo ? ` #${p.codigo_externo}` : ''}</span>
           <span className={`ped-tm ${tarde ? 'late' : ''}`}>{minutos(p)} min</span>
         </div>
         <div className="ped-cli">{p.cliente_nome || 'Cliente'}</div>
@@ -265,7 +265,7 @@ export default function Pedidos() {
                 {filtrados.map((p) => (
                   <tr key={p.id} className="clicavel" onClick={() => abrirDetalhe(p.id)} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter') abrirDetalhe(p.id); }}>
                     <td><b>#{p.numero}</b></td>
-                    <td><span className={`ped-tag ${p.origem === 'ifood' ? 'ifood' : ''}`}>{NOME_ORIGEM[p.origem]}{p.codigo_externo ? ` #${p.codigo_externo}` : ''}</span></td>
+                    <td><span className={`ped-tag ${classePlataforma(p.origem)}`}>{NOME_ORIGEM[p.origem]}{p.codigo_externo ? ` #${p.codigo_externo}` : ''}</span></td>
                     <td>{p.cliente_nome || 'Cliente'}</td>
                     <td>{p.tipo === 'entrega' ? 'Entrega' : p.tipo === 'mesa' ? (p.endereco || 'Mesa') : 'Retirada'}</td>
                     <td>{NOME_STATUS[p.status]}</td>
@@ -313,7 +313,7 @@ export default function Pedidos() {
       {cancelar && cancelar.externo && <CancelarIfoodModal pedido={cancelar} onClose={() => setCancelar(null)} onConfirmar={async (dados) => {
         const p = cancelar;
         setCancelar(null);
-        await executar(api.post(`/orders/${p.id}/cancel`, dados), (r) => (r.status === 'cancelado' ? `Pedido #${r.numero} cancelado` : `Cancelamento do pedido iFood #${p.codigo_externo} pedido ao iFood · aguardando confirmação`));
+        await executar(api.post(`/orders/${p.id}/cancel`, dados), (r) => (r.status === 'cancelado' ? `Pedido #${r.numero} cancelado` : `Cancelamento do pedido ${nomePlataforma(p.origem)} #${p.codigo_externo} pedido à plataforma · aguardando confirmação`));
       }} />}
       {escolherEntregador && (
         <EntregadorModal pedido={escolherEntregador} entregadores={entregadores.filter((e) => e.ativo)} onClose={() => setEscolherEntregador(null)}
@@ -335,7 +335,7 @@ function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, onClose, onAva
   const quando = (status) => { const l = p.log.find((x) => x.para === status); return l ? dataHora(l.criado_em).slice(-5) : ''; };
   const a = textoAcao(p);
   const minutosEtapa = pedidoLista ? agoraMin(pedidoLista) : p.minutos_etapa;
-  const NOME_PAG = { dinheiro: 'Dinheiro', cartao: 'Cartão', cartao_debito: 'Cartão-Débito', cartao_credito: 'Cartão-Crédito', pix: 'Pix', online: 'Online no iFood' };
+  const NOME_PAG = { dinheiro: 'Dinheiro', cartao: 'Cartão', cartao_debito: 'Cartão-Débito', cartao_credito: 'Cartão-Crédito', pix: 'Pix', online: `Online ${p.origem === '99food' ? 'na' : 'no'} ${nomePlataforma(p.origem)}` };
   const pagLabel = p.pago ? `${NOME_PAG[p.forma_pagamento_prevista] || 'Pix'} (já pago)` : `Pagar ${NOME_PAG[p.forma_pagamento_prevista] || 'Dinheiro'} na retirada/entrega`;
   const subtotal = p.itens.reduce((s, i) => s + Number(i.subtotal), 0);
   useEffect(() => {
@@ -347,7 +347,7 @@ function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, onClose, onAva
     <div className="ped-ov" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <aside className="ped-drawer" role="dialog" aria-label={`Pedido ${p.numero}`}>
         <button type="button" className="modal-close" style={{ float: 'right' }} aria-label="Fechar" onClick={onClose}>×</button>
-        <h3>Pedido #{p.numero} <span className={`ped-tag ${p.origem === 'ifood' ? 'ifood' : ''}`}>{NOME_ORIGEM[p.origem]}{p.codigo_externo ? ` #${p.codigo_externo}` : ''}</span></h3>
+        <h3>Pedido #{p.numero} <span className={`ped-tag ${classePlataforma(p.origem)}`}>{NOME_ORIGEM[p.origem]}{p.codigo_externo ? ` #${p.codigo_externo}` : ''}</span></h3>
         <div className="muted">{p.cliente_nome || 'Cliente'}{p.cliente_telefone ? ` · ${p.cliente_telefone}` : ''}{p.customer_id ? ' · 👤 cliente cadastrado' : ''}</div>
         <div className="muted" style={{ marginTop: 4 }}>{entrega ? `🛵 ${p.endereco}` : p.tipo === 'mesa' ? `🍽 ${p.endereco || 'Mesa'}` : '🛍 Retirada no balcão'}</div>
         {p.observacao && <div className="ped-nota"><b>Obs.:</b> {p.observacao}</div>}
@@ -510,27 +510,38 @@ function EntregadorModal({ pedido, entregadores, onClose, onConfirmar, onGerenci
   );
 }
 
+// (41) 98888-7777
+const fone = (t) => String(t).replace(/^(\d{2})(\d{4,5})(\d{4})$/, '($1) $2-$3');
+
 function EntregadoresModal({ lista, onClose, onMudou }) {
   const toast = useToast();
   const [nome, setNome] = useState('');
+  const [telefone, setTelefone] = useState('');
   async function adicionar(e) {
     e.preventDefault();
-    try { await api.post('/couriers', { nome }); setNome(''); onMudou(); } catch (err) { toast.erro(err); }
+    try { await api.post('/couriers', { nome, telefone }); setNome(''); setTelefone(''); onMudou(); } catch (err) { toast.erro(err); }
+  }
+  async function mudarTelefone(c) {
+    const t = window.prompt(`Telefone de ${c.nome} (DDD + número; vazio para apagar)`, c.telefone || '');
+    if (t === null) return;
+    try { await api.patch(`/couriers/${c.id}`, { telefone: t }); onMudou(); } catch (err) { toast.erro(err); }
   }
   async function alternar(c) {
     try { await api.patch(`/couriers/${c.id}`, { ativo: !c.ativo }); onMudou(); } catch (err) { toast.erro(err); }
   }
   return (
-    <Modal titulo="Entregadores" subtitulo="Quem faz as entregas dos pedidos" onClose={onClose}>
+    <Modal titulo="Entregadores" subtitulo="Quem faz as entregas dos pedidos. O telefone vai para o cliente da 99Food acompanhar a entrega." onClose={onClose}>
       <div className="form-stack">
         <form onSubmit={adicionar} className="form-grid">
           <Field label="Novo entregador"><input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome" autoFocus /></Field>
+          <Field label="Telefone (opcional)"><input value={telefone} onChange={(e) => setTelefone(e.target.value)} placeholder="(41) 99999-0000" inputMode="tel" /></Field>
           <button type="submit" className="btn-primario" disabled={nome.trim().length < 2}>Adicionar</button>
         </form>
         <ul className="lista-simples">
           {lista.map((c) => (
             <li key={c.id} style={{ opacity: c.ativo ? 1 : 0.55 }}>
-              <span>{c.nome}{!c.ativo && <span className="badge-inativo"> inativo</span>}</span>
+              <span>{c.nome}{!c.ativo && <span className="badge-inativo"> inativo</span>}
+                {' '}<button type="button" className="btn-link" onClick={() => mudarTelefone(c)}>{c.telefone ? fone(c.telefone) : '+ telefone'}</button></span>
               <button type="button" className={`btn-link ${c.ativo ? 'perigo' : ''}`} onClick={() => alternar(c)}>{c.ativo ? 'Desativar' : 'Reativar'}</button>
             </li>
           ))}

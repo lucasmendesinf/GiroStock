@@ -1230,6 +1230,8 @@ body.suporte-leitura main .btn-primario, body.suporte-leitura main form button[t
 
 /* iFood (integracao de pedidos) */
 .ped-tag.ifood { background: #ea1d2c; color: #fff; border-color: #ea1d2c; }
+.ped-tag.food99 { background: #ffd400; color: #1a1a1a; border-color: #e6bf00; }
+.ifood-bloco.food99 { border-left-color: #ffd400; }
 .ifood-aviso { border: 1px solid #ea1d2c; background: color-mix(in srgb, #ea1d2c 10%, var(--panel)); border-radius: 12px; padding: 10px 14px; margin: 0 0 12px; }
 .ifood-aviso-lista { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .ifood-aviso-lista button { font-size: 12.5px; }

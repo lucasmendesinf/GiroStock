@@ -27,7 +27,9 @@
     "test:e2e:modulos": "node scripts/e2e-modulos.mjs",
     "test:e2e:ifood": "node scripts/e2e-ifood.mjs",
     "test:e2e:combos": "node scripts/e2e-combos.mjs",
-    "ifood:simulador": "node scripts/ifood-simulador.mjs"
+    "ifood:simulador": "node scripts/ifood-simulador.mjs",
+    "test:e2e:99food": "node scripts/e2e-99food.mjs",
+    "food99:simulador": "node scripts/food99-simulador.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

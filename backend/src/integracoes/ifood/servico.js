@@ -1,19 +1,17 @@
 // iFood no GiroStock: conexao da loja, recebimento de pedidos (polling), importacao, vinculo de itens e
 // sincronizacao de status. Roda SEMPRE no banco de producao (o modo teste nao recebe pedidos reais).
-const pool = require('../../db/pool');
 const api = require('./api');
 const { pedidoDoIfood } = require('./mapear');
 const { cifrar, decifrar } = require('../../services/totp');
-const { criarPedido } = require('../../services/pedidos');
-const { dadosDaEmpresa, efetivos, aplicarRecursos } = require('../../utils/limites');
-const { MATRIX } = require('../../middleware/permissions');
+const { dadosDaEmpresa, efetivos } = require('../../utils/limites');
+const comum = require('../comum');
 const { logAudit } = require('../../utils/audit');
 const { HttpError } = require('../../utils/http');
 const { ErroPlataforma } = require('../http');
 const { reservadosDaLoja } = require('../../utils/reservas');
 const { unidadesDisponiveis } = require('../../services/consumo');
 
-const db = () => pool.producao;
+const { db, integracao, registrarErro, importar, cancelarLocal, pedidoExternoDoPedido, pedidoExterno, vincular } = comum;
 const PLATAFORMA = 'ifood';
 const MARGEM_RENOVACAO_MS = 10 * 60 * 1000;
 
@@ -43,19 +41,6 @@ async function salvarTokens(id, t) {
             token_expira_em = now() + ($4 || ' seconds')::interval, atualizado_em = now() WHERE id = $1`,
     [id, cifrar(t.accessToken), t.refreshToken ? cifrar(t.refreshToken) : null, String(Number(t.expiresIn || 21600))]
   );
-}
-
-async function integracao(id, tenantId) {
-  const { rows } = await db().query(`SELECT * FROM integracoes_delivery WHERE id = $1 AND ($2::uuid IS NULL OR tenant_id = $2)`, [id, tenantId || null]);
-  if (rows.length === 0) throw new HttpError(404, 'integração não encontrada');
-  return rows[0];
-}
-
-// Usuario "sistema" da empresa (pedidos que chegam sozinhos): Administrador com os modulos da empresa.
-async function usuarioSistema(tenantId) {
-  const emp = await dadosDaEmpresa(db(), tenantId);
-  const modulos = emp ? efetivos(emp).recursos : null;
-  return { id: null, tenantId, perfil: 'Administrador', locationId: null, locationIds: [], modulos, areas: aplicarRecursos({ ...MATRIX.Administrador }, modulos) };
 }
 
 // ---------------------------------------------------------------- conexao da loja
@@ -127,109 +112,21 @@ async function desconectar(user, id) {
   await logAudit(db(), { tenantId: user.tenantId, usuarioId: user.id, acao: 'ifood_desconectado', recurso: 'integracoes_delivery', recursoId: id, detalhes: { merchant_id: integ.merchant_id } });
 }
 
-// ---------------------------------------------------------------- vinculo de itens
-// Produto do item: vinculo lembrado -> codigo PDV (externalCode) igual ao codigo interno ou ao codigo de barras -> EAN.
-async function produtosDosItens(client, tenantId, itens) {
-  const r = new Map();
-  const chaves = itens.map((i) => i.chave);
-  const lembrados = await client.query(
-    `SELECT ii.chave, ii.product_id FROM integracao_itens ii JOIN products p ON p.id = ii.product_id
-     WHERE ii.tenant_id = $1 AND ii.plataforma = $2 AND ii.chave = ANY($3::text[]) AND p.ativo`,
-    [tenantId, PLATAFORMA, chaves]
-  );
-  for (const l of lembrados.rows) r.set(l.chave, l.product_id);
-  for (const i of itens) {
-    if (r.has(i.chave)) continue;
-    const codigos = [i.codigo_externo, i.ean].filter(Boolean);
-    if (codigos.length === 0) continue;
-    const maiusc = codigos.map((c) => String(c).toUpperCase());
-    const p = await client.query(
-      `SELECT id FROM products WHERE tenant_id = $1 AND ativo
-         AND (upper(codigo_ifood) = ANY($3::text[]) OR upper(codigo_interno) = ANY($3::text[]) OR barcode = ANY($2::text[]))
-       ORDER BY (upper(codigo_ifood) = ANY($3::text[])) DESC, (upper(codigo_interno) = ANY($3::text[])) DESC LIMIT 1`,
-      [tenantId, codigos, maiusc]
-    );
-    if (p.rows[0]) r.set(i.chave, p.rows[0].id);
-  }
-  return r;
-}
-
 // ---------------------------------------------------------------- importacao
 // Guarda o pedido como veio e tenta transformar em pedido do GiroStock. Idempotente (mesmo pedido = mesma linha).
 async function receberPedido(integ, externoId) {
   const token = await tokenDa(integ);
   const payload = await api.pedido(token, externoId);
   const dados = pedidoDoIfood(payload);
-  const { rows } = await db().query(
-    `INSERT INTO pedidos_externos (tenant_id, location_id, integracao_id, plataforma, externo_id, codigo_externo, status_externo, entrega_pela_plataforma, payload)
-     VALUES ($1, $2, $3, 'ifood', $4, $5, 'PLACED', $6, $7)
-     ON CONFLICT (plataforma, externo_id) DO NOTHING RETURNING id`,
-    [integ.tenant_id, integ.location_id, integ.id, dados.externo_id, dados.codigo_externo, dados.entrega_pela_plataforma, JSON.stringify(payload)]
-  );
-  if (rows.length === 0) return null; // ja recebido
-  return importar(rows[0].id);
-}
-
-// Pedido externo -> pedido do GiroStock (quando todos os itens tem produto). Devolve a linha atualizada.
-async function importar(pedidoExternoId) {
-  const client = await db().connect();
-  try {
-    await client.query('BEGIN');
-    const { rows } = await client.query(`SELECT * FROM pedidos_externos WHERE id = $1 FOR UPDATE`, [pedidoExternoId]);
-    const pe = rows[0];
-    if (!pe || pe.situacao !== 'aguardando_vinculo') { await client.query('ROLLBACK'); return pe; }
-    const dados = pedidoDoIfood(pe.payload);
-    const produtos = await produtosDosItens(client, pe.tenant_id, dados.itens);
-    if (dados.itens.some((i) => !produtos.has(i.chave))) { await client.query('COMMIT'); return pe; }
-    const user = await usuarioSistema(pe.tenant_id);
-    // Complementos do iFood com codigo PDV igual ao codigo de um complemento do GiroStock: baixam o insumo/produto dele.
-    const codigos = [...new Set(dados.itens.flatMap((i) => i.opcoes.map((o) => o.codigo)).filter(Boolean))];
-    const compPorCodigo = new Map(codigos.length === 0 ? [] : (await client.query(
-      `SELECT c.id, c.codigo FROM complementos c JOIN grupos_complementos g ON g.id = c.grupo_id
-       WHERE c.tenant_id = $1 AND c.codigo = ANY($2::text[]) AND c.ativo AND g.ativo`, [pe.tenant_id, codigos]
-    )).rows.map((r) => [r.codigo, r.id]));
-    let r;
-    try {
-      r = await criarPedido(client, user, {
-        ...dados, location_id: pe.location_id, origem: 'ifood',
-        itens: dados.itens.map((i) => ({
-          product_id: produtos.get(i.chave), quantidade: i.quantidade, observacao: i.observacao, preco_unitario: i.preco_unitario,
-          complementos: i.opcoes.filter((o) => o.codigo && compPorCodigo.has(o.codigo)).map((o) => ({ id: compPorCodigo.get(o.codigo), quantidade: Math.max(1, Math.round(o.quantidade)), preco: o.preco })),
-        })),
-      }, { externo: { externo_id: pe.externo_id, codigo_externo: pe.codigo_externo } });
-    } catch (err) {
-      await client.query('ROLLBACK');
-      await db().query(`UPDATE pedidos_externos SET situacao = 'erro', erro = $2, atualizado_em = now() WHERE id = $1`, [pe.id, String(err.message).slice(0, 300)]);
-      return { ...pe, situacao: 'erro', erro: err.message };
-    }
-    const atualizado = await client.query(
-      `UPDATE pedidos_externos SET situacao = 'importado', order_id = $2, faltas_estoque = $3, erro = NULL, atualizado_em = now() WHERE id = $1 RETURNING *`,
-      [pe.id, r.orderId, r.faltas.length ? r.faltas.join(' · ') : null]
-    );
-    await client.query('COMMIT');
-    const linha = atualizado.rows[0];
-    // Aceite automatico: so quando tudo ok (sem falta de estoque) e o pedido ainda nao foi cancelado.
-    const integ = linha.integracao_id ? (await db().query(`SELECT * FROM integracoes_delivery WHERE id = $1`, [linha.integracao_id])).rows[0] : null;
-    if (integ && integ.aceite_automatico && !linha.faltas_estoque && linha.status_externo !== 'CANCELLED') {
-      try { await confirmarNoIfood(integ, linha); } catch (err) { await registrarErro(integ.id, `aceite automático falhou: ${err.message}`); }
-    }
-    return linha;
-  } catch (err) {
-    try { await client.query('ROLLBACK'); } catch { /* ja encerrada */ }
-    throw err;
-  } finally {
-    client.release();
-  }
+  const novo = await comum.guardarPedido(integ, dados, 'PLACED', payload);
+  if (!novo) return null; // ja recebido
+  return importar(novo);
 }
 
 async function confirmarNoIfood(integ, pe) {
   if (pe.confirmado) return;
   await api.confirmar(await tokenDa(integ), pe.externo_id);
   await db().query(`UPDATE pedidos_externos SET confirmado = true, atualizado_em = now() WHERE id = $1`, [pe.id]);
-}
-
-async function registrarErro(id, msg) {
-  await db().query(`UPDATE integracoes_delivery SET ultimo_erro = $2, ultimo_erro_em = now() WHERE id = $1`, [id, String(msg).slice(0, 300)]);
 }
 
 // ---------------------------------------------------------------- eventos
@@ -256,28 +153,6 @@ async function tratarEvento(integ, ev) {
   if (!STATUS_POR_CODIGO[codigo] && !Object.values(STATUS_POR_CODIGO).includes(cheio)) return; // outros grupos: so reconhece
   await db().query(`UPDATE pedidos_externos SET status_externo = $2, confirmado = confirmado OR $2 <> 'PLACED', atualizado_em = now() WHERE id = $1`, [pe.id, cheio]);
   if (cheio === 'CANCELLED') await cancelarLocal(pe, 'Cancelado no iFood');
-}
-
-// Cancelado na plataforma: cancela o pedido do GiroStock (libera a reserva). Ja finalizado: fica o aviso.
-async function cancelarLocal(pe, motivo) {
-  await db().query(`UPDATE pedidos_externos SET situacao = CASE WHEN situacao = 'aguardando_vinculo' OR situacao = 'erro' THEN 'cancelado' ELSE situacao END, disputa = NULL, atualizado_em = now() WHERE id = $1`, [pe.id]);
-  if (!pe.order_id) return;
-  const client = await db().connect();
-  try {
-    await client.query('BEGIN');
-    const o = (await client.query(`SELECT id, numero, status, tenant_id FROM orders WHERE id = $1 FOR UPDATE`, [pe.order_id])).rows[0];
-    if (o && !['cancelado', 'finalizado'].includes(o.status)) {
-      await client.query(`UPDATE orders SET status = 'cancelado', cancelado_em = now(), motivo_cancelamento = $2, atualizado_em = now() WHERE id = $1`, [o.id, motivo]);
-      await client.query(`INSERT INTO order_status_log (order_id, de, para, usuario_id) VALUES ($1, $2, 'cancelado', NULL)`, [o.id, o.status]);
-      await logAudit(client, { tenantId: o.tenant_id, usuarioId: null, acao: 'cancelar_pedido', recurso: 'orders', recursoId: o.id, detalhes: { numero: o.numero, motivo, origem: 'ifood' } });
-    }
-    await client.query('COMMIT');
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
 }
 
 // Um ciclo de polling de uma conexao: busca eventos, trata e so entao confirma o recebimento (ACK).
@@ -402,16 +277,6 @@ async function aoMudarStatus(order, para) {
   }
 }
 
-async function pedidoExternoDoPedido(tenantId, orderId) {
-  const { rows } = await db().query(`SELECT * FROM pedidos_externos WHERE order_id = $1 AND tenant_id = $2`, [orderId, tenantId]);
-  return rows[0] || null;
-}
-async function pedidoExterno(tenantId, id) {
-  const { rows } = await db().query(`SELECT * FROM pedidos_externos WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
-  if (rows.length === 0) throw new HttpError(404, 'pedido do iFood não encontrado');
-  return rows[0];
-}
-
 async function aceitar(user, pe) {
   const integ = await integracao(pe.integracao_id, user.tenantId);
   try { await confirmarNoIfood(integ, pe); } catch (err) { if (err instanceof ErroPlataforma) throw new HttpError(502, `o iFood não aceitou: ${err.message}`); throw err; }
@@ -443,28 +308,11 @@ async function responderDisputa(user, pe, aceitar) {
   if (aceitar) await cancelarLocal(pe, 'Cancelamento pedido pelo cliente (aceito pela loja)');
 }
 
-// Vincula itens sem produto e tenta importar de novo. O vinculo fica lembrado para os proximos pedidos.
-async function vincular(user, pe, vinculos) {
-  if (pe.situacao !== 'aguardando_vinculo' && pe.situacao !== 'erro') throw new HttpError(409, 'este pedido não está aguardando vínculo');
-  const dados = pedidoDoIfood(pe.payload);
-  for (const v of vinculos || []) {
-    const item = dados.itens.find((i) => i.chave === v.chave);
-    if (!item || !v.product_id) continue;
-    const p = await db().query(`SELECT id FROM products WHERE id = $1 AND tenant_id = $2 AND ativo`, [v.product_id, user.tenantId]);
-    if (p.rows.length === 0) throw new HttpError(400, 'produto inválido para o vínculo');
-    await db().query(
-      `INSERT INTO integracao_itens (tenant_id, plataforma, chave, nome_externo, product_id) VALUES ($1, 'ifood', $2, $3, $4)
-       ON CONFLICT (tenant_id, plataforma, chave) DO UPDATE SET product_id = EXCLUDED.product_id, nome_externo = EXCLUDED.nome_externo`,
-      [user.tenantId, v.chave, item.nome, v.product_id]
-    );
-  }
-  if (pe.situacao === 'erro') await db().query(`UPDATE pedidos_externos SET situacao = 'aguardando_vinculo', erro = NULL WHERE id = $1`, [pe.id]);
-  const r = await importar(pe.id);
-  await logAudit(db(), { tenantId: user.tenantId, usuarioId: user.id, acao: 'ifood_vincular_itens', recurso: 'pedidos_externos', recursoId: pe.id, detalhes: { itens: (vinculos || []).length, situacao: r.situacao } });
-  return r;
-}
+const mapear = pedidoDoIfood;
+const produtosDosItens = (client, tenantId, itens) => comum.produtosDosItens(client, tenantId, itens, PLATAFORMA);
 
 module.exports = {
+  mapear, confirmarPedido: confirmarNoIfood,
   iniciarConexao, concluirConexao, escolherLoja, desconectar, sincronizar, cicloGeral, iniciarPolling, integracao,
   aoMudarStatus, pedidoExternoDoPedido, pedidoExterno, aceitar, motivos, solicitarCancelamento, responderDisputa, vincular,
   importar, produtosDosItens, PLATAFORMA, atualizarDisponibilidade, listaDisponibilidade,

@@ -82,7 +82,7 @@ async function anonimizarClientes(c) {
   await c.query(`UPDATE orders SET cliente_nome = CASE WHEN cliente_nome = '' THEN '' ELSE 'Cliente' END, cliente_telefone = '' WHERE customer_id IS NULL`);
   await c.query(`UPDATE orders SET endereco = 'Rua Teste, 100' WHERE tipo = 'entrega'`);
   await c.query(`UPDATE message_log SET texto = '[anonimizado]'`);
-  await c.query(`UPDATE pedidos_externos SET payload = payload - 'customer' - 'delivery'`);
+  await c.query(`UPDATE pedidos_externos SET payload = payload - 'customer' - 'delivery' - 'receive_address'`);
 }
 
 async function contagens(db, tabelas) {

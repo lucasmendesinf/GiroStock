@@ -8,7 +8,7 @@ const path = require('path');
 const fs = require('fs');
 
 const { authRequired } = require('./middleware/auth');
-const { mapPgError } = require('./utils/http');
+const { mapPgError, HttpError } = require('./utils/http');
 const monitoramento = require('./services/monitoramento');
 
 const authRoutes = require('./routes/auth.routes');
@@ -29,6 +29,7 @@ const masterRoutes = require('./routes/master.routes');
 const masterVisaoRoutes = require('./routes/master.visao.routes');
 const masterConfigRoutes = require('./routes/master.config.routes');
 const integracoesRoutes = require('./routes/integracoes.routes');
+const webhooksRoutes = require('./routes/webhooks.routes');
 const { router: complementosRoutes } = require('./routes/complementos.routes');
 
 const app = express();
@@ -37,6 +38,8 @@ const app = express();
 // e este e um sistema interno, nao uma pagina publica renderizando conteudo de terceiros.
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
+// Webhooks antes do express.json: a assinatura e conferida sobre o corpo bruto.
+app.use('/api/webhooks', webhooksRoutes);
 app.use(express.json());
 app.use('/api', monitoramento.contarRequisicao);
 
@@ -87,6 +90,8 @@ function tratarErros(err, req, res, next) {
     const erro = err.type === 'entity.parse.failed' ? 'corpo da requisicao nao e um JSON valido' : err.message;
     return res.status(err.status).json({ erro });
   }
+  // 502/503 de proposito (plataforma de delivery recusou, servico nao configurado): a mensagem explica o que houve.
+  if (err instanceof HttpError && (err.status === 502 || err.status === 503)) return res.status(err.status).json({ erro: err.message });
   const mapped = mapPgError(err);
   if (mapped) {
     if (mapped.status >= 500) monitoramento.registrarErro(req, mapped.status, err);

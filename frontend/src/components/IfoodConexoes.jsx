@@ -22,7 +22,7 @@ export default function IfoodConexoes({ lojas }) {
   useEffect(() => { carregar(); }, [carregar]);
   if (!dados) return null;
 
-  const porLoja = Object.fromEntries(dados.integracoes.map((i) => [i.location_id, i]));
+  const porLoja = Object.fromEntries(dados.integracoes.filter((i) => i.plataforma === 'ifood').map((i) => [i.location_id, i]));
   async function conectar(loja) {
     try { const r = await api.post('/integracoes/ifood/conectar', { location_id: loja.id }); setConectando({ loja, ...r }); carregar(); } catch (err) { toast.erro(err); }
   }

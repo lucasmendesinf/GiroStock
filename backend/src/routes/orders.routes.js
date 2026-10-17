@@ -8,7 +8,7 @@ const { HttpError } = require('../utils/http');
 const { configEfetiva } = require('../utils/cupom');
 const { registrarVenda } = require('../services/vendas');
 const { criarPedido, ORIGENS } = require('../services/pedidos');
-const ifood = require('../integracoes/ifood/servico');
+const comum = require('../integracoes/comum');
 const { FUSO } = require('../utils/query');
 const { inserirCliente } = require('./customers.routes');
 
@@ -202,7 +202,7 @@ router.post('/orders/:id/status', async (req, res) => {
     assertLocationAccess(req.user, o.location_id, 'alterar pedidos desta loja');
     const para = b.para;
     if (para === 'cancelado') throw new HttpError(400, 'use a rota de cancelamento');
-    // Entrega feita pelo iFood: a loja nao despacha (sem entregador proprio); de pronto vai direto a finalizado.
+    // Entrega feita pela plataforma (iFood/99Food): a loja nao despacha (sem entregador proprio); de pronto vai direto a finalizado.
     const entregaPlataforma = o.origem_externa_id
       ? !!(await client.query(`SELECT entrega_pela_plataforma FROM pedidos_externos WHERE order_id = $1`, [o.id])).rows.some((r) => r.entrega_pela_plataforma)
       : false;
@@ -266,8 +266,10 @@ router.post('/orders/:id/status', async (req, res) => {
       pago = true;
     }
 
-    // Pedido do iFood: avisa a plataforma ANTES de gravar (se o iFood recusar, nada muda aqui). Nunca no modo teste.
-    if (o.origem === 'ifood' && o.origem_externa_id && !req.user.modoTeste) await ifood.aoMudarStatus(o, para);
+    // Pedido do iFood/99Food: avisa a plataforma ANTES de gravar (se ela recusar, nada muda aqui). Nunca no modo teste.
+    if ((o.origem === 'ifood' || o.origem === '99food') && o.origem_externa_id && !req.user.modoTeste) {
+      await comum.plataforma(o.origem).aoMudarStatus({ ...o, entregador_id: entregadorId }, para);
+    }
 
     await client.query(
       `UPDATE orders SET status = $1, entregador_id = $2, sale_id = $3, pago = $4, atualizado_em = now(),
@@ -303,14 +305,14 @@ router.post('/orders/:id/cancel', async (req, res) => {
     assertLocationAccess(req.user, o.location_id, 'cancelar pedidos desta loja');
     if (o.status === 'finalizado') throw new HttpError(409, 'o pedido já foi finalizado: cancele pela venda (Relatórios), que devolve o estoque');
     if (o.status === 'cancelado') throw new HttpError(400, 'este pedido já foi cancelado');
-    // Pedido do iFood com a loja conectada: o cancelamento e pedido ao iFood (motivo da lista dele); o pedido daqui
-    // e cancelado quando o iFood confirmar (evento de cancelamento), liberando a reserva de estoque.
+    // Pedido do iFood/99Food com a loja conectada: o cancelamento e pedido a plataforma (motivo da lista dela); o pedido
+    // daqui e cancelado quando ela confirmar, liberando a reserva de estoque.
     if (!req.user.modoTeste) {
-      const pe = await ifood.pedidoExternoDoPedido(req.user.tenantId, o.id);
+      const pe = await comum.pedidoExternoDoPedido(req.user.tenantId, o.id);
       const integ = pe && pe.integracao_id ? (await client.query(`SELECT status FROM integracoes_delivery WHERE id = $1`, [pe.integracao_id])).rows[0] : null;
       if (pe && integ && integ.status === 'conectado' && pe.status_externo !== 'CANCELLED') {
         await client.query('ROLLBACK');
-        await ifood.solicitarCancelamento(req.user, pe, (req.body || {}).codigo_motivo, motivo);
+        await comum.plataforma(pe.plataforma).solicitarCancelamento(req.user, pe, (req.body || {}).codigo_motivo, motivo);
         return res.json(await pedidoCompleto(pool, req.user.tenantId, o.id));
       }
     }
@@ -336,26 +338,34 @@ router.post('/orders/:id/cancel', async (req, res) => {
 // ---------- entregadores ----------
 router.get('/couriers', async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT id, nome, ativo FROM couriers WHERE tenant_id = $1 ${req.query.todos ? '' : 'AND ativo'} ORDER BY nome`,
+    `SELECT id, nome, telefone, ativo FROM couriers WHERE tenant_id = $1 ${req.query.todos ? '' : 'AND ativo'} ORDER BY nome`,
     [req.user.tenantId]
   );
   res.json(rows);
 });
 
+// Telefone do entregador (opcional; a 99Food mostra ao cliente quando a loja entrega).
+function telefoneDe(b) {
+  const t = String((b && b.telefone) || '').replace(/\D/g, '');
+  if (t && (t.length < 10 || t.length > 13)) throw new HttpError(400, 'telefone do entregador inválido (DDD + número)');
+  return t || null;
+}
+
 router.post('/couriers', async (req, res) => {
   const nome = String((req.body && req.body.nome) || '').trim();
   if (nome.length < 2) throw new HttpError(400, 'nome do entregador deve ter ao menos 2 caracteres');
-  const { rows } = await pool.query(`INSERT INTO couriers (tenant_id, nome) VALUES ($1, $2) RETURNING id, nome, ativo`, [req.user.tenantId, nome.slice(0, 80)]);
+  const { rows } = await pool.query(`INSERT INTO couriers (tenant_id, nome, telefone) VALUES ($1, $2, $3) RETURNING id, nome, telefone, ativo`, [req.user.tenantId, nome.slice(0, 80), telefoneDe(req.body)]);
   res.status(201).json(rows[0]);
 });
 
 router.patch('/couriers/:id', async (req, res) => {
-  const atual = await getOwned(pool, 'couriers', req.params.id, req.user.tenantId, { columns: 'id, nome, ativo' });
+  const atual = await getOwned(pool, 'couriers', req.params.id, req.user.tenantId, { columns: 'id, nome, telefone, ativo' });
   const b = req.body || {};
   const nome = b.nome !== undefined ? String(b.nome).trim() : atual.nome;
   if (nome.length < 2) throw new HttpError(400, 'nome do entregador deve ter ao menos 2 caracteres');
   const ativo = b.ativo !== undefined ? !!b.ativo : atual.ativo;
-  const { rows } = await pool.query(`UPDATE couriers SET nome = $1, ativo = $2 WHERE id = $3 AND tenant_id = $4 RETURNING id, nome, ativo`, [nome.slice(0, 80), ativo, req.params.id, req.user.tenantId]);
+  const telefone = b.telefone !== undefined ? telefoneDe(b) : atual.telefone;
+  const { rows } = await pool.query(`UPDATE couriers SET nome = $1, ativo = $2, telefone = $5 WHERE id = $3 AND tenant_id = $4 RETURNING id, nome, telefone, ativo`, [nome.slice(0, 80), ativo, req.params.id, req.user.tenantId, telefone]);
   res.json(rows[0]);
 });
 

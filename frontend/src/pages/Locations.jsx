@@ -4,6 +4,7 @@ import { useToast, useConfirm } from '../context/UiContext.jsx';
 import { Field } from '../components/ui.jsx';
 import ConfigCupom from './ConfigCupom.jsx';
 import IfoodConexoes from '../components/IfoodConexoes.jsx';
+import Food99Conexoes from '../components/Food99Conexoes.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { temModulo } from '../utils/permissions.js';
 
@@ -12,7 +13,7 @@ export default function Locations() {
   const toast = useToast();
   const { user } = useAuth();
   const moduloPedidos = temModulo(user, 'pedidos');
-  const moduloIfood = temModulo(user, 'delivery_apps') && !user.modoTeste; // o modo teste nao fala com o iFood
+  const moduloIfood = temModulo(user, 'delivery_apps') && !user.modoTeste; // o modo teste nao fala com o iFood nem com a 99Food
   const confirmar = useConfirm();
   const [locations, setLocations] = useState([]);
   const [terminals, setTerminals] = useState([]);
@@ -193,6 +194,7 @@ export default function Locations() {
         );
       })}
       {moduloIfood && locations.length > 0 && <IfoodConexoes lojas={locations} />}
+      {moduloIfood && locations.length > 0 && <Food99Conexoes lojas={locations} />}
       {configurando && <ConfigCupom loja={locations.find((x) => x.id === configurando.id) || configurando} onClose={() => setConfigurando(null)} onSalvo={() => { setConfigurando(null); reload(); }} />}
     </div>
   );

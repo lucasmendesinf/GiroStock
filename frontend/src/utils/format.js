@@ -64,6 +64,7 @@ export const FORMA_PAGAMENTO = {
   cartao_credito: 'Cartão de crédito',
   cartao_debito: 'Cartão de débito',
   dinheiro: 'Dinheiro',
+  online: 'Pago online (iFood)',
 };
 
 // Telefone so com digitos -> (11) 91234-5678.

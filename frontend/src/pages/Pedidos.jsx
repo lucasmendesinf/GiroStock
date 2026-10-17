@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useToast } from '../context/UiContext.jsx';
@@ -7,6 +7,8 @@ import { Field, Modal } from '../components/ui.jsx';
 import PedidoForm, { NOME_ORIGEM, vendaDoPedido } from '../components/PedidoForm.jsx';
 import Cupom, { imprimirCupom, configDaVenda } from '../components/Cupom.jsx';
 import { brl, dataHora, parseNumero, qtd } from '../utils/format';
+import { temModulo } from '../utils/permissions.js';
+import { BlocoIfood, CancelarIfoodModal, EtiquetasIfood, PendenciasIfood, bipe } from '../components/IfoodPedidos.jsx';
 
 const COLUNAS = [
   ['novo', 'Novo', 'novo'],
@@ -17,12 +19,14 @@ const COLUNAS = [
 ];
 const NOME_STATUS = { novo: 'Novo', em_preparo: 'Em preparo', pronto: 'Pronto', saiu_entrega: 'Saiu p/ entrega', finalizado: 'Finalizado', cancelado: 'Cancelado' };
 const ORIGENS_FILTRO = [['todas', 'Todas as origens'], ['balcao', 'Balcão'], ['telefone', 'Telefone'], ['whatsapp', 'WhatsApp']];
-// iFood e 99Food: filtros prontos para a etapa de integracao (ficam ocultos por enquanto).
+const ORIGENS_IFOOD = [['ifood', 'iFood']]; // com o modulo "iFood e 99Food" (99Food entra quando a integracao existir)
 const ATRASO_PADRAO_MIN = 25; // padrao; o Master pode mudar em Configuracoes globais (user.parametros)
 const INTERVALO_MS = 15000;
 
-const proximo = (p) => ({ novo: 'em_preparo', em_preparo: 'pronto', pronto: p.tipo === 'entrega' ? 'saiu_entrega' : 'finalizado', saiu_entrega: 'finalizado' })[p.status];
-const textoAcao = (p) => ({ novo: 'Iniciar preparo', em_preparo: 'Marcar pronto', pronto: p.tipo === 'entrega' ? 'Saiu p/ entrega' : 'Entregue ao cliente', saiu_entrega: 'Entregue ao cliente' })[p.status] || '';
+// Entrega feita pelo iFood: a loja nao despacha; de pronto vai direto a finalizado (o entregador do iFood retira).
+const entregaDaLoja = (p) => p.tipo === 'entrega' && !(p.externo && p.externo.entrega_pela_plataforma);
+const proximo = (p) => ({ novo: 'em_preparo', em_preparo: 'pronto', pronto: entregaDaLoja(p) ? 'saiu_entrega' : 'finalizado', saiu_entrega: 'finalizado' })[p.status];
+const textoAcao = (p) => ({ novo: 'Iniciar preparo', em_preparo: 'Marcar pronto', pronto: entregaDaLoja(p) ? 'Saiu p/ entrega' : p.tipo === 'entrega' ? 'Retirado pelo iFood' : 'Entregue ao cliente', saiu_entrega: 'Entregue ao cliente' })[p.status] || '';
 const aberto = (p) => !['finalizado', 'cancelado'].includes(p.status);
 
 
@@ -48,6 +52,9 @@ export default function Pedidos() {
   const [entregadoresAberto, setEntregadoresAberto] = useState(false);
   const [entregadores, setEntregadores] = useState([]);
   const [cupom, setCupom] = useState(null);
+  const usaIfood = temModulo(user, 'delivery_apps');
+  const [pendencias, setPendencias] = useState([]);
+  const vistos = useRef(null); // pedidos do iFood ja vistos (para o aviso sonoro dos novos)
 
   // Lojas que usam pedidos e que o usuario pode ver.
   useEffect(() => {
@@ -63,11 +70,20 @@ export default function Pedidos() {
     if (!lojaId) return;
     try {
       const lista = await api.get(`/orders?location_id=${lojaId}`);
+      // Aviso sonoro quando chega pedido novo do iFood (nao toca na primeira carga da tela).
+      const doIfood = lista.filter((p) => p.origem === 'ifood' && p.status === 'novo').map((p) => p.id);
+      if (vistos.current && doIfood.some((id) => !vistos.current.has(id))) {
+        bipe();
+        const novo = lista.find((p) => p.origem === 'ifood' && p.status === 'novo' && !vistos.current.has(p.id));
+        toast.sucesso(`Novo pedido do iFood #${novo.codigo_externo || novo.numero}`);
+      }
+      vistos.current = new Set([...(vistos.current || []), ...doIfood]);
       setPedidos(lista);
+      if (usaIfood) api.get('/integracoes/pendencias').then((l) => setPendencias(l.filter((x) => x.location_id === lojaId))).catch(() => setPendencias([]));
       setBuscadoEm(Date.now());
       setAgora(Date.now());
     } catch (err) { toast.erro(err); }
-  }, [lojaId, toast]);
+  }, [lojaId, toast, usaIfood]);
 
   // Atualizacao automatica (ponto de extensao: trocar por WebSocket/SSE quando houver iFood/99Food).
   useEffect(() => {
@@ -89,7 +105,7 @@ export default function Pedidos() {
   const filtrados = useMemo(() => {
     const q = busca.trim().toLowerCase();
     return pedidos.filter((p) => (origem === 'todas' || p.origem === origem)
-      && (!q || `${p.numero} ${p.cliente_nome} ${p.cliente_telefone}`.toLowerCase().includes(q)));
+      && (!q || `${p.numero} ${p.codigo_externo || ''} ${p.cliente_nome} ${p.cliente_telefone}`.toLowerCase().includes(q)));
   }, [pedidos, origem, busca]);
 
   const conta = (s) => pedidos.filter((p) => p.status === s).length;
@@ -163,7 +179,7 @@ export default function Pedidos() {
         onKeyDown={(e) => { if (e.key === 'Enter') abrirDetalhe(p.id); }}>
         <div className="ped-r1">
           <span className="ped-num">#{p.numero}</span>
-          <span className="ped-tag">{NOME_ORIGEM[p.origem]}</span>
+          <span className={`ped-tag ${p.origem === 'ifood' ? 'ifood' : ''}`}>{NOME_ORIGEM[p.origem]}{p.codigo_externo ? ` #${p.codigo_externo}` : ''}</span>
           <span className={`ped-tm ${tarde ? 'late' : ''}`}>{minutos(p)} min</span>
         </div>
         <div className="ped-cli">{p.cliente_nome || 'Cliente'}</div>
@@ -174,6 +190,7 @@ export default function Pedidos() {
           {aberto(p) && <span className="ped-tag">🔒 Reservado</span>}
           <span className="ped-tot">{brl(p.total)}</span>
         </div>
+        {p.externo && <div className="ped-r3" style={{ marginTop: 6 }}><EtiquetasIfood p={p} /></div>}
         {p.entregador_nome && p.status === 'saiu_entrega' && <div className="ped-its" style={{ marginTop: 6 }}>Entregador: <b>{p.entregador_nome}</b></div>}
         {a && aberto(p) && (
           <div className="ped-act" onClick={(e) => e.stopPropagation()}>
@@ -205,8 +222,10 @@ export default function Pedidos() {
         <div className="ped-kpi"><small>Finalizados hoje</small><b>{conta('finalizado')}</b>{atrasados > 0 && <span className="ped-pill warn" style={{ marginLeft: 6 }}>{atrasados} atrasado{atrasados > 1 ? 's' : ''}</span>}</div>
       </div>
 
+      {usaIfood && <PendenciasIfood pendencias={pendencias} onMudou={carregar} />}
+
       <div className="ped-bar">
-        {ORIGENS_FILTRO.map(([id, nome]) => (
+        {[...ORIGENS_FILTRO, ...(usaIfood ? ORIGENS_IFOOD : [])].map(([id, nome]) => (
           <button key={id} type="button" className={`ped-chip ${origem === id ? 'on' : ''}`} onClick={() => setOrigem(id)}>{nome}</button>
         ))}
         <input className="ped-busca" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nº, cliente ou telefone" aria-label="Buscar pedido" />
@@ -245,7 +264,7 @@ export default function Pedidos() {
                 {filtrados.map((p) => (
                   <tr key={p.id} className="clicavel" onClick={() => abrirDetalhe(p.id)} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter') abrirDetalhe(p.id); }}>
                     <td><b>#{p.numero}</b></td>
-                    <td><span className="ped-tag">{NOME_ORIGEM[p.origem]}</span></td>
+                    <td><span className={`ped-tag ${p.origem === 'ifood' ? 'ifood' : ''}`}>{NOME_ORIGEM[p.origem]}{p.codigo_externo ? ` #${p.codigo_externo}` : ''}</span></td>
                     <td>{p.cliente_nome || 'Cliente'}</td>
                     <td>{p.tipo === 'entrega' ? 'Entrega' : p.tipo === 'mesa' ? (p.endereco || 'Mesa') : 'Retirada'}</td>
                     <td>{NOME_STATUS[p.status]}</td>
@@ -270,7 +289,8 @@ export default function Pedidos() {
           onClose={() => { setAberta(null); setDetalhe(null); }}
           onAvancar={() => avancar(detalhe)} onCancelar={() => setCancelar(detalhe)} onDestino={() => setDestino(detalhe)} onImprimir={() => imprimir(detalhe.id)}
           onEntregador={(id) => executar(api.put(`/orders/${detalhe.id}/entregador`, { entregador_id: id || null }))}
-          pedidoLista={pedidos.find((p) => p.id === aberta)} />
+          pedidoLista={pedidos.find((p) => p.id === aberta)}
+          onIfood={async () => { await carregar(); if (aberta) setDetalhe(await api.get(`/orders/${aberta}`)); }} />
       )}
 
       {novoAberto && (
@@ -283,11 +303,16 @@ export default function Pedidos() {
         const ok = await executar(api.put(`/orders/${p.id}/destino`, dados), (r) => `Pedido #${r.numero} agora é ${r.tipo === 'entrega' ? 'entrega' : r.tipo === 'mesa' ? r.endereco : 'retirada'}`);
         if (ok) setDestino(null);
       }} />}
-      {cancelar && <CancelarModal pedido={cancelar} onClose={() => setCancelar(null)} onConfirmar={async (motivo) => {
+      {cancelar && !cancelar.externo && <CancelarModal pedido={cancelar} onClose={() => setCancelar(null)} onConfirmar={async (motivo) => {
         const p = cancelar;
         setCancelar(null);
         const ok = await executar(api.post(`/orders/${p.id}/cancel`, { motivo }), (r) => `Pedido #${r.numero} cancelado · reserva liberada, estoque disponível novamente`);
         if (ok) { setAberta(null); setDetalhe(null); }
+      }} />}
+      {cancelar && cancelar.externo && <CancelarIfoodModal pedido={cancelar} onClose={() => setCancelar(null)} onConfirmar={async (dados) => {
+        const p = cancelar;
+        setCancelar(null);
+        await executar(api.post(`/orders/${p.id}/cancel`, dados), (r) => (r.status === 'cancelado' ? `Pedido #${r.numero} cancelado` : `Cancelamento do pedido iFood #${p.codigo_externo} pedido ao iFood · aguardando confirmação`));
       }} />}
       {escolherEntregador && (
         <EntregadorModal pedido={escolherEntregador} entregadores={entregadores.filter((e) => e.ativo)} onClose={() => setEscolherEntregador(null)}
@@ -301,14 +326,15 @@ export default function Pedidos() {
 }
 
 // ---------- gaveta de detalhe ----------
-function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, onClose, onAvancar, onCancelar, onDestino, onImprimir, onEntregador }) {
+function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, onClose, onAvancar, onCancelar, onDestino, onImprimir, onEntregador, onIfood }) {
   const entrega = p.tipo === 'entrega';
-  const fluxo = entrega ? COLUNAS : COLUNAS.filter(([s]) => s !== 'saiu_entrega');
+  const entregaLoja = entregaDaLoja(p);
+  const fluxo = entregaLoja ? COLUNAS : COLUNAS.filter(([s]) => s !== 'saiu_entrega');
   const idx = fluxo.findIndex(([s]) => s === p.status);
   const quando = (status) => { const l = p.log.find((x) => x.para === status); return l ? dataHora(l.criado_em).slice(-5) : ''; };
   const a = textoAcao(p);
   const minutosEtapa = pedidoLista ? agoraMin(pedidoLista) : p.minutos_etapa;
-  const NOME_PAG = { dinheiro: 'Dinheiro', cartao: 'Cartão', cartao_debito: 'Cartão-Débito', cartao_credito: 'Cartão-Crédito', pix: 'Pix' };
+  const NOME_PAG = { dinheiro: 'Dinheiro', cartao: 'Cartão', cartao_debito: 'Cartão-Débito', cartao_credito: 'Cartão-Crédito', pix: 'Pix', online: 'Online no iFood' };
   const pagLabel = p.pago ? `${NOME_PAG[p.forma_pagamento_prevista] || 'Pix'} (já pago)` : `Pagar ${NOME_PAG[p.forma_pagamento_prevista] || 'Dinheiro'} na retirada/entrega`;
   const subtotal = p.itens.reduce((s, i) => s + Number(i.subtotal), 0);
   useEffect(() => {
@@ -320,10 +346,11 @@ function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, onClose, onAva
     <div className="ped-ov" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <aside className="ped-drawer" role="dialog" aria-label={`Pedido ${p.numero}`}>
         <button type="button" className="modal-close" style={{ float: 'right' }} aria-label="Fechar" onClick={onClose}>×</button>
-        <h3>Pedido #{p.numero} <span className="ped-tag">{NOME_ORIGEM[p.origem]}</span></h3>
+        <h3>Pedido #{p.numero} <span className={`ped-tag ${p.origem === 'ifood' ? 'ifood' : ''}`}>{NOME_ORIGEM[p.origem]}{p.codigo_externo ? ` #${p.codigo_externo}` : ''}</span></h3>
         <div className="muted">{p.cliente_nome || 'Cliente'}{p.cliente_telefone ? ` · ${p.cliente_telefone}` : ''}{p.customer_id ? ' · 👤 cliente cadastrado' : ''}</div>
         <div className="muted" style={{ marginTop: 4 }}>{entrega ? `🛵 ${p.endereco}` : p.tipo === 'mesa' ? `🍽 ${p.endereco || 'Mesa'}` : '🛍 Retirada no balcão'}</div>
         {p.observacao && <div className="ped-nota"><b>Obs.:</b> {p.observacao}</div>}
+        <BlocoIfood p={p} onFeito={onIfood} />
 
         {p.status === 'cancelado' ? (
           <div className="ped-nota" style={{ borderColor: 'var(--err)' }}><b>Pedido cancelado</b>{p.motivo_cancelamento ? ` · ${p.motivo_cancelamento}` : ''}</div>
@@ -340,7 +367,7 @@ function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, onClose, onAva
           </div>
         )}
 
-        {entrega && ['pronto', 'saiu_entrega'].includes(p.status) && (
+        {entregaLoja && ['pronto', 'saiu_entrega'].includes(p.status) && (
           <Field label="Entregador">
             <select value={p.entregador_id || ''} onChange={(e) => onEntregador(e.target.value)}>
               <option value="">Escolha...</option>
@@ -358,6 +385,7 @@ function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, onClose, onAva
             </div>
           ))}
           {Number(p.taxa_entrega) > 0 && <div className="ped-linha"><span>Taxa de entrega</span><span>{brl(p.taxa_entrega)}</span></div>}
+          {Number(p.desconto) > 0 && <div className="ped-linha"><span>Desconto (da loja)</span><span>− {brl(p.desconto)}</span></div>}
           <div className="ped-linha ped-total"><span>Total</span><b>{brl(Number(p.total) || subtotal + Number(p.taxa_entrega))}</b></div>
           <div className="ped-linha"><span>Estoque</span><span className="ped-tag">{p.status === 'finalizado' ? 'Baixa definitiva' : p.status === 'cancelado' ? 'Reserva liberada' : '🔒 Reservado até finalizar'}</span></div>
           <div className="ped-linha"><span>{pagLabel}</span><span className={`ped-pill ${p.pago ? 'ok' : 'warn'}`}>{p.pago ? 'Pago' : 'A receber'}</span></div>
@@ -366,8 +394,8 @@ function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, onClose, onAva
         <div className="ped-botoes">
           {a && aberto(p) && <button type="button" className="btn-primario" style={{ flex: 1 }} onClick={onAvancar}>{a}</button>}
           <button type="button" onClick={onImprimir}>🖨 Imprimir comanda</button>
-          {aberto(p) && p.status !== 'saiu_entrega' && <button type="button" onClick={onDestino}>Alterar destino</button>}
-          {aberto(p) && <button type="button" className="perigo" onClick={onCancelar}>Cancelar</button>}
+          {aberto(p) && p.status !== 'saiu_entrega' && !p.externo && <button type="button" onClick={onDestino}>Alterar destino</button>}
+          {aberto(p) && !(p.externo && p.externo.status_externo === 'CANCELLATION_REQUESTED') && <button type="button" className="perigo" onClick={onCancelar}>Cancelar</button>}
         </div>
       </aside>
     </div>
@@ -378,7 +406,7 @@ function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, onClose, onAva
 function ReceberModal({ pedido, onClose, onConfirmar }) {
   const total = Number(pedido.total);
   const [forma, setForma] = useState(['cartao_credito', 'cartao_debito', 'pix'].includes(pedido.forma_pagamento_prevista) ? pedido.forma_pagamento_prevista : pedido.forma_pagamento_prevista === 'cartao' ? 'cartao_credito' : 'dinheiro');
-  const [recebido, setRecebido] = useState('');
+  const [recebido, setRecebido] = useState(pedido.valor_recebido ? String(Number(pedido.valor_recebido)).replace('.', ',') : '');
   const valor = parseNumero(recebido);
   const troco = forma === 'dinheiro' && valor >= total ? valor - total : 0;
   const ok = forma !== 'dinheiro' || valor >= total;

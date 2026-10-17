@@ -5,7 +5,8 @@ const { isQuantidadeValidaParaUnidade } = require('../utils/validators');
 const { HttpError } = require('../utils/http');
 const { reservadosDaLoja } = require('../utils/reservas');
 
-const FORMAS_PAGAMENTO = ['pix', 'cartao_credito', 'cartao_debito', 'dinheiro'];
+// 'online' = pago na plataforma (iFood...): so por pedido de plataforma; nao entra no dinheiro do caixa.
+const FORMAS_PAGAMENTO = ['pix', 'cartao_credito', 'cartao_debito', 'dinheiro', 'online'];
 
 // Junta linhas repetidas do mesmo produto (ex: 4 + 4) numa so. Antes, cada linha
 // era validada contra o saldo separadamente e a venda passava do estoque.
@@ -39,7 +40,8 @@ async function assertReceitasPermitidas(db, user, productIds) {
 // Faz tudo: valida estoque (descontando o que esta reservado por pedidos em aberto), grava a venda e os itens,
 // baixa o estoque ou consome os insumos da receita, numera a comanda e audita.
 // dados: { terminal_id, itens: [{ product_id, quantidade, observacao }], forma_pagamento, valor_recebido, desconto,
-//          taxa_entrega, numero_pedido (fixo, vindo de um pedido), ignorar_pedido_id (pedido cuja reserva vira baixa) }
+//          taxa_entrega, numero_pedido (fixo, vindo de um pedido), ignorar_pedido_id (pedido cuja reserva vira baixa),
+//          precos_informados (pedido de plataforma: cada item traz preco_unitario, o preco cobrado pela plataforma) }
 async function registrarVenda(client, user, dados) {
   const { terminal_id, itens, forma_pagamento, valor_recebido } = dados;
   const descontoInformado = Number(dados.desconto || 0);
@@ -51,7 +53,11 @@ async function registrarVenda(client, user, dados) {
   if (!FORMAS_PAGAMENTO.includes(forma_pagamento)) throw new HttpError(400, 'forma_pagamento inválida');
   const itensAgrupados = agruparItens(itens);
   // Linhas como vieram do PDV (mesmo produto com observacoes diferentes vira linhas separadas).
-  const linhas = itens.map((i) => ({ product_id: i.product_id, quantidade: Number(i.quantidade), observacao: String(i.observacao || '').trim().slice(0, 200) }));
+  const linhas = itens.map((i) => ({
+    product_id: i.product_id, quantidade: Number(i.quantidade), observacao: String(i.observacao || '').trim().slice(0, 200),
+    preco_informado: dados.precos_informados && Number.isFinite(Number(i.preco_unitario)) ? Number(i.preco_unitario) : null,
+  }));
+  if (forma_pagamento === 'online' && !dados.precos_informados) throw new HttpError(400, 'forma_pagamento inválida');
 
   {
     const terminal = await getOwned(client, 'terminals', terminal_id, user.tenantId, { columns: 'id, location_id, ativo' });
@@ -109,7 +115,8 @@ async function registrarVenda(client, user, dados) {
     // O subtotal e o gravado por linha (cada linha vira um item da venda, com a sua observacao).
     const linhasComPreco = linhas.map((l) => {
       const base = itemsComPreco.find((i) => i.product_id === l.product_id);
-      return { ...l, preco_unitario: base.preco_unitario, custo_unitario: base.custo_unitario, subtotal: Number((base.preco_unitario * l.quantidade).toFixed(2)) };
+      const preco = l.preco_informado !== null ? l.preco_informado : base.preco_unitario;
+      return { ...l, preco_unitario: preco, custo_unitario: base.custo_unitario, subtotal: Number((preco * l.quantidade).toFixed(2)) };
     });
     subtotalVenda = Number(linhasComPreco.reduce((s, l) => s + l.subtotal, 0).toFixed(2));
     const desconto = Number(descontoInformado.toFixed(2));
@@ -121,7 +128,9 @@ async function registrarVenda(client, user, dados) {
     let troco = null;
     let valorRecebidoFinal = null;
     if (forma_pagamento === 'dinheiro') {
-      const recebido = Number(valor_recebido);
+      // Pedido de plataforma cobrado em dinheiro sem "troco para": o cliente paga o valor exato.
+      const semValor = valor_recebido === undefined || valor_recebido === null || valor_recebido === '';
+      const recebido = dados.precos_informados && semValor ? total : Number(valor_recebido);
       if (!(recebido >= total)) {
         throw new HttpError(400, `valor recebido (${recebido}) deve ser maior ou igual ao total (${total})`);
       }

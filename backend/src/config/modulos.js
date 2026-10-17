@@ -28,8 +28,8 @@ const MODULOS = [
     areas: ['Clientes'],
   },
   {
-    chave: 'delivery_apps', nome: 'iFood e 99Food', padrao: false, disponivel: false, requer: ['pedidos'],
-    descricao: 'Pedidos do iFood e da 99Food entrando direto na tela de Pedidos.',
+    chave: 'delivery_apps', nome: 'iFood e 99Food', padrao: false, disponivel: true, requer: ['pedidos'],
+    descricao: 'Pedidos do iFood entrando direto na tela de Pedidos (aceite, preparo, entrega e cancelamento sincronizados). 99Food em breve.',
     areas: [],
   },
   {

@@ -13,6 +13,7 @@ const totp = require('../services/totp');
 const { verificarMigracoes } = require('../services/saude');
 const { modulosDoPlano } = require('../utils/limites');
 const { CHAVES, conflitoDeDependencia } = require('../config/modulos');
+const ifoodApi = require('../integracoes/ifood/api');
 
 // Painel Master, fase 3: backups e dados, manutencao segura, configuracoes globais (aviso, manutencao, parametros, planos).
 // Segredos (senhas, chaves, DATABASE_URL*) nunca saem daqui: so "configurado / nao configurado".
@@ -119,7 +120,7 @@ async function statusIntegracoes() {
     { id: 'totp', nome: 'Chave do 2FA (TOTP_ENC_KEY)', status: totp.disponivel() ? 'ok' : 'nao_configurado', detalhe: totp.disponivel() ? 'configurada' : 'ausente: o 2FA fica indisponível', testavel: false },
     { id: 'smtp', nome: 'E-mail (SMTP)', status: process.env.SMTP_HOST ? 'ok' : 'nao_configurado', detalhe: process.env.SMTP_HOST ? 'configurado' : 'não configurado (o sistema ainda não envia e-mails)', testavel: false },
     { id: 'whatsapp', nome: 'WhatsApp (API)', status: 'nao_contratado', detalhe: 'não contratado: as mensagens usam o link wa.me', testavel: false },
-    { id: 'ifood', nome: 'iFood', status: 'futuro', detalhe: 'etapa futura', testavel: false },
+    { id: 'ifood', nome: 'iFood', status: ifoodApi.configurado() ? 'ok' : 'nao_configurado', detalhe: ifoodApi.configurado() ? `app configurado${process.env.IFOOD_API_URL ? ` (endereço: ${process.env.IFOOD_API_URL})` : ''}: cada loja conecta a sua conta em Lojas & PDVs` : 'IFOOD_CLIENT_ID/IFOOD_CLIENT_SECRET ausentes: cadastre o app no Portal do Desenvolvedor iFood', testavel: false },
     { id: '99food', nome: '99Food', status: 'futuro', detalhe: 'etapa futura', testavel: false },
   ];
 }

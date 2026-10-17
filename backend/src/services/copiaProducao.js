@@ -17,7 +17,11 @@ const FORA_DA_COPIA = ['schema_migrations', 'teste_copias', 'backups', 'erros_si
 // Tabelas truncadas no teste mas NUNCA copiadas (segredos de 2FA ficam so na producao).
 const SEM_DADOS = ['user_recovery_codes'];
 // Colunas que viram valor neutro na copia: nenhum segredo TOTP chega ao banco de teste.
-const NEUTRAS = { users: { totp_segredo_cript: 'NULL', totp_ativo: 'false', totp_ativado_em: 'NULL', totp_ultimo_passo: 'NULL', totp_falhas: '0', totp_bloqueado_ate: 'NULL' } };
+const NEUTRAS = {
+  users: { totp_segredo_cript: 'NULL', totp_ativo: 'false', totp_ativado_em: 'NULL', totp_ultimo_passo: 'NULL', totp_falhas: '0', totp_bloqueado_ate: 'NULL' },
+  // Tokens do iFood/99Food nunca vao para o teste: la a integracao fica desconectada (o teste nao recebe pedidos reais).
+  integracoes_delivery: { access_token_cript: 'NULL', refresh_token_cript: 'NULL', verificador_token_cript: 'NULL', token_expira_em: 'NULL', status: "'desconectado'" },
+};
 
 // Tabelas de negocio do schema public, ordenadas pelas chaves estrangeiras (pais antes dos filhos).
 async function tabelasEmOrdem(db) {
@@ -78,6 +82,7 @@ async function anonimizarClientes(c) {
   await c.query(`UPDATE orders SET cliente_nome = CASE WHEN cliente_nome = '' THEN '' ELSE 'Cliente' END, cliente_telefone = '' WHERE customer_id IS NULL`);
   await c.query(`UPDATE orders SET endereco = 'Rua Teste, 100' WHERE tipo = 'entrega'`);
   await c.query(`UPDATE message_log SET texto = '[anonimizado]'`);
+  await c.query(`UPDATE pedidos_externos SET payload = payload - 'customer' - 'delivery'`);
 }
 
 async function contagens(db, tabelas) {

@@ -60,7 +60,7 @@ console.log('\n# 1. Catalogo de modulos e planos prontos');
 const cat = await api('GET', '/master/modulos', null, MAS);
 const chaves = cat.s === 200 ? cat.j.modulos.map((m) => m.chave) : [];
 check('GET /master/modulos traz os 8 modulos', ['pdv', 'lanchonete', 'pedidos', 'clientes', 'delivery_apps', 'eventos', 'loja_virtual', 'financeiro'].every((k) => chaves.includes(k)), cat.j);
-check('iFood/99Food, Eventos, Loja virtual e Financeiro marcados como em breve', cat.j.modulos.filter((m) => !m.disponivel).map((m) => m.chave).sort().join() === 'delivery_apps,eventos,financeiro,loja_virtual', cat.j.modulos);
+check('Eventos, Loja virtual e Financeiro marcados como em breve (iFood já disponível)', cat.j.modulos.filter((m) => !m.disponivel).map((m) => m.chave).sort().join() === 'eventos,financeiro,loja_virtual', cat.j.modulos);
 check('Pedidos depende do PDV', cat.j.modulos.find((m) => m.chave === 'pedidos').requer.includes('pdv'));
 const pls = await api('GET', '/master/planos', null, MAS);
 const plano = (c) => pls.j.planos.find((p) => p.codigo === c);

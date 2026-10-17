@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import { useToast, useConfirm } from '../context/UiContext.jsx';
 import { Field } from '../components/ui.jsx';
 import ConfigCupom from './ConfigCupom.jsx';
+import IfoodConexoes from '../components/IfoodConexoes.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { temModulo } from '../utils/permissions.js';
 
@@ -11,6 +12,7 @@ export default function Locations() {
   const toast = useToast();
   const { user } = useAuth();
   const moduloPedidos = temModulo(user, 'pedidos');
+  const moduloIfood = temModulo(user, 'delivery_apps') && !user.modoTeste; // o modo teste nao fala com o iFood
   const confirmar = useConfirm();
   const [locations, setLocations] = useState([]);
   const [terminals, setTerminals] = useState([]);
@@ -190,6 +192,7 @@ export default function Locations() {
           </div>
         );
       })}
+      {moduloIfood && locations.length > 0 && <IfoodConexoes lojas={locations} />}
       {configurando && <ConfigCupom loja={locations.find((x) => x.id === configurando.id) || configurando} onClose={() => setConfigurando(null)} onSalvo={() => { setConfigurando(null); reload(); }} />}
     </div>
   );

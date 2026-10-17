@@ -95,7 +95,47 @@ Cada cliente usa só os módulos (segmentos) que contratou. O Master define isso
 - Módulos "em breve" já podem ser liberados: passam a valer quando ficarem prontos.
 - Catálogo em `backend/src/config/modulos.js`. A migração `024_modulos_por_plano.sql` não muda nada para quem já usa: os planos existentes mantêm PDV e Lanchonete, Pedidos/Clientes seguem como estavam.
 
+## iFood (módulo "iFood e 99Food")
+
+Os pedidos do iFood entram sozinhos na tela **Pedidos**, reservam o estoque e ficam sincronizados com o iFood.
+
+- **Conectar a loja** (Lojas & PDVs → "Receber pedidos do iFood" → *Conectar iFood*). O GiroStock gera um **código de vínculo**; a loja abre o Portal do Parceiro iFood, informa o código, autoriza o app e cola de volta o **código de autorização**. Conta com várias lojas no iFood: escolhe-se qual é esta.
+- **Recebimento**: o servidor consulta o iFood a cada 30 s. O evento só é confirmado (ACK) depois de gravado; se algo falhar, o iFood entrega de novo.
+- **Itens**: o item do iFood vira o produto cujo **código interno** (ex.: PRD-0002) ou **código de barras** é igual ao *código PDV* do item no cardápio do iFood. Item sem correspondência deixa o pedido em "aguardando vínculo": a equipe escolhe o produto uma vez e o vínculo fica guardado. Complementos entram no preço e na observação do item.
+- **Valores**: preço do iFood (com complementos), desconto bancado pela loja e taxa de entrega só quando a loja entrega. Pago online vira a forma **"Pago online (iFood)"**, que não entra no dinheiro do caixa; cobrado na entrega usa dinheiro (com troco)/cartão/Pix.
+- **Status**: *Aceitar no iFood* (ou aceite automático, que não aceita pedido com falta de estoque) → *Iniciar preparo* → *Marcar pronto* → entrega da loja: *Saiu p/ entrega* (despacho no iFood) / entrega do iFood: *Retirado pelo iFood*. Finalizar gera a venda.
+- **Cancelamento**: pela loja, com um motivo da lista do iFood (o pedido daqui cancela quando o iFood confirmar); cancelamento do cliente/iFood cancela aqui sozinho; pedido de cancelamento do cliente depois de aceito aparece para *Aceitar* ou *Recusar*.
+- **Falta de estoque**: o pedido entra assim mesmo (ele já existe no iFood), marcado "Falta estoque", e não é aceito sozinho.
+- **Segurança**: tokens cifrados (mesma chave do 2FA, `TOTP_ENC_KEY`), nunca saem na API, na exportação nem na cópia para o modo teste (lá a conexão fica desligada). O modo teste nunca fala com o iFood.
+- Caminhos da API do iFood concentrados em `backend/src/integracoes/ifood/api.js`.
+
+### Para ligar em produção
+
+1. Cadastro da **Calutec** (CNPJ de tecnologia) no Portal do Desenvolvedor iFood; criar o app **distribuído** do módulo de pedidos.
+2. Testar com a loja de teste que o portal fornece, pedir a **homologação** e, aprovada, usar as credenciais do app de produção.
+3. No servidor: `IFOOD_CLIENT_ID` e `IFOOD_CLIENT_SECRET` (ver `backend/.env.example`), `npm run migrate` (aplica a 025) e reiniciar.
+4. No painel Master, liberar o módulo **iFood e 99Food** para a empresa; a empresa conecta cada loja em Lojas & PDVs.
+
+### Testar sem o iFood (simulador)
+
+```bash
+cd backend
+npm run ifood:simulador     # iFood falso em http://localhost:4999
+# backend/.env: IFOOD_API_URL=http://localhost:4999 IFOOD_CLIENT_ID=sim IFOOD_CLIENT_SECRET=sim IFOOD_POLLING_SEGUNDOS=2
+# fazer de conta que um cliente pediu:
+curl -X POST localhost:4999/_sim/pedidos -H 'content-type: application/json' \
+  -d '{"itens":[{"nome":"X-Burguer","codigo":"PRD-0002","quantidade":1,"preco":25}]}'
+```
+
+Na conexão, o "Portal do Parceiro" do simulador é o link mostrado no próprio GiroStock (ele devolve o código de autorização).
+
 ## Teste ponta a ponta
+
+```bash
+cd backend
+API_URL=http://localhost:3000 npm run test:e2e:ifood     # iFood (com o simulador rodando e a API apontando para ele)
+```
+
 
 ```bash
 cd backend

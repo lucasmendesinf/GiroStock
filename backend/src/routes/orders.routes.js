@@ -4,19 +4,17 @@ const { requireArea } = require('../middleware/permissions');
 const { logAudit } = require('../utils/audit');
 const { getOwned, isUuid } = require('../utils/tenant');
 const { assertLocationAccess, filtroLocais } = require('../utils/access');
-const { isQuantidadeValidaParaUnidade } = require('../utils/validators');
 const { HttpError } = require('../utils/http');
 const { configEfetiva } = require('../utils/cupom');
-const { reservadosDaLoja } = require('../utils/reservas');
-const { registrarVenda, assertReceitasPermitidas } = require('../services/vendas');
+const { registrarVenda } = require('../services/vendas');
+const { criarPedido, ORIGENS } = require('../services/pedidos');
+const ifood = require('../integracoes/ifood/servico');
 const { FUSO } = require('../utils/query');
-const { inserirCliente, apenasDigitos } = require('./customers.routes');
+const { inserirCliente } = require('./customers.routes');
 
 const router = express.Router();
 router.use(['/orders', '/couriers'], requireArea('Pedidos'));
 
-const ORIGENS = ['balcao', 'telefone', 'whatsapp', 'ifood', '99food'];
-const FORMAS_PREVISTAS = ['dinheiro', 'cartao', 'cartao_debito', 'cartao_credito', 'pix'];
 const FLUXO = {
   novo: ['em_preparo'],
   em_preparo: ['pronto'],
@@ -24,22 +22,15 @@ const FLUXO = {
   saiu_entrega: ['finalizado'],
 };
 
-// Pedido numerado por loja com o mesmo contador da comanda (recomeca quando um caixa abre num novo turno).
-async function proximoNumero(client, tenantId, locationId) {
-  const { rows } = await client.query(
-    `INSERT INTO location_order_counters (location_id, tenant_id, ultimo) VALUES ($1, $2, 1)
-     ON CONFLICT (location_id) DO UPDATE SET ultimo = location_order_counters.ultimo + 1 RETURNING ultimo`,
-    [locationId, tenantId]
-  );
-  return rows[0].ultimo;
-}
-
 const SELECT_PEDIDO = `
-  SELECT o.id, o.numero, o.location_id, l.nome AS location_nome, o.origem, o.origem_externa_id, o.cliente_nome, o.cliente_telefone,
+  SELECT o.id, o.numero, o.location_id, l.nome AS location_nome, o.origem, o.origem_externa_id, o.codigo_externo, o.desconto, o.cliente_nome, o.cliente_telefone,
          o.tipo, o.endereco, o.taxa_entrega, o.observacao, o.forma_pagamento_prevista, o.pago, o.status,
          o.entregador_id, c.nome AS entregador_nome, o.sale_id, o.criado_por, u.nome AS criado_por_nome, o.customer_id, o.valor_recebido,
          o.criado_em, o.atualizado_em, o.finalizado_em, o.cancelado_em, o.motivo_cancelamento,
-         COALESCE((SELECT SUM(oi.subtotal) FROM order_items oi WHERE oi.order_id = o.id), 0) + o.taxa_entrega AS total,
+         COALESCE((SELECT SUM(oi.subtotal) FROM order_items oi WHERE oi.order_id = o.id), 0) + o.taxa_entrega - o.desconto AS total,
+         (SELECT json_build_object('id', pe.id, 'plataforma', pe.plataforma, 'confirmado', pe.confirmado, 'status_externo', pe.status_externo,
+                 'entrega_pela_plataforma', pe.entrega_pela_plataforma, 'faltas_estoque', pe.faltas_estoque, 'disputa', pe.disputa)
+            FROM pedidos_externos pe WHERE pe.order_id = o.id LIMIT 1) AS externo,
          COALESCE((SELECT MAX(sl.criado_em) FROM order_status_log sl WHERE sl.order_id = o.id), o.criado_em) AS etapa_desde,
          GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (now() - COALESCE((SELECT MAX(sl.criado_em) FROM order_status_log sl WHERE sl.order_id = o.id), o.criado_em))) / 60))::int AS minutos_etapa
   FROM orders o
@@ -142,139 +133,12 @@ router.get('/orders/:id', async (req, res) => {
 
 // ---------- criar ----------
 router.post('/orders', async (req, res) => {
-  const b = req.body || {};
-  const locationId = b.location_id;
-  if (!isUuid(locationId)) throw new HttpError(400, 'location_id (loja) é obrigatório');
-  const origem = b.origem || 'balcao';
-  if (!ORIGENS.includes(origem)) throw new HttpError(400, 'origem inválida');
-  const tipo = ['entrega', 'mesa'].includes(b.tipo) ? b.tipo : 'retirada';
-  if (!Array.isArray(b.itens) || b.itens.length === 0) throw new HttpError(400, 'adicione ao menos um item ao pedido');
-  const endereco = String(b.endereco || '').trim().slice(0, 300);
-  if (tipo === 'entrega' && endereco.length < 3) throw new HttpError(400, 'informe o endereço da entrega');
-  if (tipo === 'mesa' && endereco.length < 1) throw new HttpError(400, 'informe a mesa');
-  const taxa = tipo === 'entrega' ? Number(b.taxa_entrega || 0) : 0;
-  if (!(taxa >= 0)) throw new HttpError(400, 'taxa de entrega inválida');
-  const forma = b.forma_pagamento_prevista === undefined || b.forma_pagamento_prevista === null ? null : String(b.forma_pagamento_prevista);
-  if (forma !== null && !FORMAS_PREVISTAS.includes(forma)) throw new HttpError(400, 'forma de pagamento prevista inválida');
-  const pago = !!b.pago;
-  const valorRecebido = pago && forma === 'dinheiro' && b.valor_recebido !== undefined && b.valor_recebido !== null && b.valor_recebido !== '' ? Number(b.valor_recebido) : null;
-  if (valorRecebido !== null && !(valorRecebido >= 0)) throw new HttpError(400, 'valor recebido inválido');
-
-  const linhas = b.itens.map((i) => {
-    if (!i || !isUuid(i.product_id) || !(Number(i.quantidade) > 0)) throw new HttpError(400, 'cada item precisa de product_id válido e quantidade (>0)');
-    return { product_id: i.product_id, quantidade: Number(i.quantidade), observacao: String(i.observacao || '').trim().slice(0, 200) };
-  });
-
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const loja = await getOwned(client, 'locations', locationId, req.user.tenantId, { columns: 'id, nome, ativo, usa_pedidos' });
-    if (!loja.ativo) throw new HttpError(400, 'esta loja está inativa');
-    if (!loja.usa_pedidos) throw new HttpError(400, 'esta loja não usa pedidos (ative em Lojas & PDVs)');
-    assertLocationAccess(req.user, locationId, 'criar pedidos nesta loja');
-
-    const ids = [...new Set(linhas.map((l) => l.product_id))];
-    const produtos = await client.query(
-      `SELECT id, nome, unidade, preco_venda, ativo FROM products WHERE id = ANY($1::uuid[]) AND tenant_id = $2 ORDER BY id`,
-      [ids, req.user.tenantId]
-    );
-    const mapa = new Map(produtos.rows.map((p) => [p.id, p]));
-    await assertReceitasPermitidas(client, req.user, ids);
-    for (const l of linhas) {
-      const p = mapa.get(l.product_id);
-      if (!p || !p.ativo) throw new HttpError(400, 'produto não encontrado ou inativo');
-      if (!isQuantidadeValidaParaUnidade(l.quantidade, p.unidade)) throw new HttpError(400, `"${p.nome}" é vendido em ${p.unidade} e só aceita quantidade inteira`);
-    }
-
-    const fichas = await client.query(
-      `SELECT pi.product_id, pi.ingredient_id, pi.quantidade_por_unidade, i.nome AS insumo_nome
-       FROM product_ingredients pi JOIN ingredients i ON i.id = pi.ingredient_id
-       WHERE pi.tenant_id = $1 AND pi.product_id = ANY($2::uuid[])`,
-      [req.user.tenantId, ids]
-    );
-    const fichaPor = new Map();
-    for (const r of fichas.rows) {
-      if (!fichaPor.has(r.product_id)) fichaPor.set(r.product_id, []);
-      fichaPor.get(r.product_id).push(r);
-    }
-
-    // Trava os saldos envolvidos (sempre em ordem) para que dois pedidos simultaneos nao reservem o mesmo estoque.
-    const simples = ids.filter((id) => !fichaPor.has(id));
-    const insumoIds = [...new Set(fichas.rows.map((r) => r.ingredient_id))];
-    const saldoProd = simples.length === 0 ? { rows: [] } : await client.query(
-      `SELECT product_id, saldo FROM stock_balances WHERE product_id = ANY($1::uuid[]) AND location_id = $2 AND tenant_id = $3 ORDER BY product_id FOR UPDATE`,
-      [simples, locationId, req.user.tenantId]
-    );
-    const saldoIns = insumoIds.length === 0 ? { rows: [] } : await client.query(
-      `SELECT ingredient_id, saldo FROM ingredient_balances WHERE ingredient_id = ANY($1::uuid[]) AND location_id = $2 AND tenant_id = $3 ORDER BY ingredient_id FOR UPDATE`,
-      [insumoIds, locationId, req.user.tenantId]
-    );
-    const saldoProdMap = new Map(saldoProd.rows.map((r) => [r.product_id, Number(r.saldo)]));
-    const saldoInsMap = new Map(saldoIns.rows.map((r) => [r.ingredient_id, Number(r.saldo)]));
-    const reservados = await reservadosDaLoja(client, req.user.tenantId, locationId);
-
-    const precisaProd = new Map();
-    const precisaIns = new Map();
-    for (const l of linhas) {
-      const ficha = fichaPor.get(l.product_id);
-      if (!ficha) {
-        precisaProd.set(l.product_id, (precisaProd.get(l.product_id) || 0) + l.quantidade);
-      } else {
-        for (const r of ficha) precisaIns.set(r.ingredient_id, (precisaIns.get(r.ingredient_id) || 0) + Number(r.quantidade_por_unidade) * l.quantidade);
-      }
-    }
-    for (const [pid, q] of precisaProd) {
-      const disponivel = (saldoProdMap.get(pid) || 0) - (reservados.produtos.get(pid) || 0);
-      if (disponivel < q) throw new HttpError(409, `Sem estoque disponível de ${mapa.get(pid).nome}`);
-    }
-    for (const [iid, q] of precisaIns) {
-      const disponivel = (saldoInsMap.get(iid) || 0) - (reservados.insumos.get(iid) || 0);
-      if (disponivel < q) {
-        const dono = linhas.find((l) => (fichaPor.get(l.product_id) || []).some((r) => r.ingredient_id === iid));
-        const insumoNome = fichas.rows.find((r) => r.ingredient_id === iid).insumo_nome;
-        throw new HttpError(409, `Sem estoque disponível de ${dono ? mapa.get(dono.product_id).nome : 'produto'} (falta ${insumoNome})`);
-      }
-    }
-
-    // Cliente: o telefone (so digitos) e a chave. Cadastrado -> vincula; novo -> cria quando "cadastrar_cliente" (padrao: sim).
-    let customerId = null;
-    let clienteNovo = false;
-    const tel = apenasDigitos(b.cliente_telefone);
-    if (tel.length >= 10) {
-      const ex = await client.query(`SELECT id FROM customers WHERE tenant_id = $1 AND telefone = $2 AND ativo`, [req.user.tenantId, tel]);
-      if (ex.rows.length > 0) {
-        customerId = ex.rows[0].id;
-      } else if (b.cadastrar_cliente !== false) {
-        customerId = await inserirCliente(client, req.user.tenantId, {
-          nome: String(b.cliente_nome || '').trim() || 'Cliente', telefone: tel, endereco: tipo === 'entrega' ? endereco : '', aceita_mensagens: false,
-        });
-        clienteNovo = true;
-      }
-    }
-
-    const numero = await proximoNumero(client, req.user.tenantId, locationId);
-    const pedido = await client.query(
-      `INSERT INTO orders (tenant_id, location_id, numero, origem, cliente_nome, cliente_telefone, tipo, endereco, taxa_entrega,
-                           observacao, forma_pagamento_prevista, pago, status, criado_por, customer_id, valor_recebido)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'novo', $13, $14, $15) RETURNING id`,
-      [req.user.tenantId, locationId, numero, origem, String(b.cliente_nome || '').trim().slice(0, 120), String(b.cliente_telefone || '').trim().slice(0, 40),
-        tipo, tipo === 'retirada' ? '' : endereco, taxa, String(b.observacao || '').trim().slice(0, 300), forma, pago, req.user.id, customerId, valorRecebido]
-    );
-    const orderId = pedido.rows[0].id;
-    for (const l of linhas) {
-      const preco = Number(mapa.get(l.product_id).preco_venda);
-      await client.query(
-        `INSERT INTO order_items (order_id, product_id, quantidade, preco_unitario, subtotal, observacao) VALUES ($1, $2, $3, $4, $5, $6)`,
-        [orderId, l.product_id, l.quantidade, preco, Number((preco * l.quantidade).toFixed(2)), fichaPor.has(l.product_id) && l.observacao ? l.observacao : null]
-      );
-    }
-    await client.query(`INSERT INTO order_status_log (order_id, de, para, usuario_id) VALUES ($1, NULL, 'novo', $2)`, [orderId, req.user.id]);
-    await logAudit(client, {
-      tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'criar_pedido', recurso: 'orders', recursoId: orderId,
-      detalhes: { numero, origem, tipo, itens: linhas.length, customer_id: customerId, cliente_novo: clienteNovo },
-    });
+    const r = await criarPedido(client, req.user, req.body || {}, { inserirCliente });
     await client.query('COMMIT');
-    res.status(201).json({ ...(await pedidoCompleto(pool, req.user.tenantId, orderId)), cliente_novo: clienteNovo });
+    res.status(201).json({ ...(await pedidoCompleto(pool, req.user.tenantId, r.orderId)), cliente_novo: r.clienteNovo });
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -336,8 +200,12 @@ router.post('/orders/:id/status', async (req, res) => {
     assertLocationAccess(req.user, o.location_id, 'alterar pedidos desta loja');
     const para = b.para;
     if (para === 'cancelado') throw new HttpError(400, 'use a rota de cancelamento');
+    // Entrega feita pelo iFood: a loja nao despacha (sem entregador proprio); de pronto vai direto a finalizado.
+    const entregaPlataforma = o.origem_externa_id
+      ? !!(await client.query(`SELECT entrega_pela_plataforma FROM pedidos_externos WHERE order_id = $1`, [o.id])).rows.some((r) => r.entrega_pela_plataforma)
+      : false;
     const permitidos = (FLUXO[o.status] || []).filter((s) => {
-      if (o.status === 'pronto') return o.tipo === 'entrega' ? s === 'saiu_entrega' : s === 'finalizado';
+      if (o.status === 'pronto') return o.tipo === 'entrega' && !entregaPlataforma ? s === 'saiu_entrega' : s === 'finalizado';
       return true;
     });
     if (!permitidos.includes(para)) {
@@ -368,19 +236,23 @@ router.post('/orders/:id/status', async (req, res) => {
         if (cx.rows.length === 0) throw new HttpError(400, 'nenhum caixa aberto nesta loja: abra o caixa no PDV para finalizar o pedido');
         terminalId = cx.rows[0].id;
       }
-      const itens = await client.query(`SELECT product_id, quantidade, observacao FROM order_items WHERE order_id = $1`, [o.id]);
+      const itens = await client.query(`SELECT product_id, quantidade, observacao, preco_unitario FROM order_items WHERE order_id = $1`, [o.id]);
+      const externo = !!o.origem_externa_id; // pedido de plataforma: vale o preco e o desconto da plataforma
       let forma = b.forma_pagamento;
       if (o.pago) {
         const prev = o.forma_pagamento_prevista;
-        forma = prev === 'dinheiro' ? 'dinheiro' : prev === 'cartao' ? (b.forma_pagamento || 'cartao_credito') : ['cartao_credito', 'cartao_debito'].includes(prev) ? prev : 'pix';
+        forma = prev === 'online' ? 'online' : prev === 'dinheiro' ? 'dinheiro' : prev === 'cartao' ? (b.forma_pagamento || 'cartao_credito') : ['cartao_credito', 'cartao_debito'].includes(prev) ? prev : 'pix';
+      } else if (!forma && externo && o.forma_pagamento_prevista && o.forma_pagamento_prevista !== 'cartao') {
+        forma = o.forma_pagamento_prevista; // cobrado na entrega: a forma ja veio da plataforma
       }
       if (!forma) throw new HttpError(400, 'informe a forma de pagamento para finalizar');
       const venda = await registrarVenda(client, req.user, {
         terminal_id: terminalId,
-        itens: itens.rows.map((i) => ({ product_id: i.product_id, quantidade: Number(i.quantidade), observacao: i.observacao })),
+        itens: itens.rows.map((i) => ({ product_id: i.product_id, quantidade: Number(i.quantidade), observacao: i.observacao, ...(externo ? { preco_unitario: Number(i.preco_unitario) } : {}) })),
         forma_pagamento: forma,
-        valor_recebido: o.pago && forma === 'dinheiro' ? (o.valor_recebido === null ? undefined : Number(o.valor_recebido)) : b.valor_recebido,
-        desconto: 0,
+        valor_recebido: (o.pago || externo) && forma === 'dinheiro' && b.valor_recebido === undefined ? (o.valor_recebido === null ? undefined : Number(o.valor_recebido)) : b.valor_recebido,
+        desconto: externo ? Number(o.desconto || 0) : 0,
+        precos_informados: externo,
         taxa_entrega: Number(o.taxa_entrega),
         numero_pedido: o.numero,
         ignorar_pedido_id: o.id,
@@ -388,6 +260,9 @@ router.post('/orders/:id/status', async (req, res) => {
       saleId = venda.id;
       pago = true;
     }
+
+    // Pedido do iFood: avisa a plataforma ANTES de gravar (se o iFood recusar, nada muda aqui). Nunca no modo teste.
+    if (o.origem === 'ifood' && o.origem_externa_id && !req.user.modoTeste) await ifood.aoMudarStatus(o, para);
 
     await client.query(
       `UPDATE orders SET status = $1, entregador_id = $2, sale_id = $3, pago = $4, atualizado_em = now(),
@@ -423,6 +298,17 @@ router.post('/orders/:id/cancel', async (req, res) => {
     assertLocationAccess(req.user, o.location_id, 'cancelar pedidos desta loja');
     if (o.status === 'finalizado') throw new HttpError(409, 'o pedido já foi finalizado: cancele pela venda (Relatórios), que devolve o estoque');
     if (o.status === 'cancelado') throw new HttpError(400, 'este pedido já foi cancelado');
+    // Pedido do iFood com a loja conectada: o cancelamento e pedido ao iFood (motivo da lista dele); o pedido daqui
+    // e cancelado quando o iFood confirmar (evento de cancelamento), liberando a reserva de estoque.
+    if (!req.user.modoTeste) {
+      const pe = await ifood.pedidoExternoDoPedido(req.user.tenantId, o.id);
+      const integ = pe && pe.integracao_id ? (await client.query(`SELECT status FROM integracoes_delivery WHERE id = $1`, [pe.integracao_id])).rows[0] : null;
+      if (pe && integ && integ.status === 'conectado' && pe.status_externo !== 'CANCELLED') {
+        await client.query('ROLLBACK');
+        await ifood.solicitarCancelamento(req.user, pe, (req.body || {}).codigo_motivo, motivo);
+        return res.json(await pedidoCompleto(pool, req.user.tenantId, o.id));
+      }
+    }
     await client.query(
       `UPDATE orders SET status = 'cancelado', cancelado_em = now(), motivo_cancelamento = $1, atualizado_em = now() WHERE id = $2 AND tenant_id = $3`,
       [motivo, o.id, req.user.tenantId]

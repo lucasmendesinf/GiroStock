@@ -73,7 +73,34 @@ Acesse:
 
 - Numera as vendas existentes por empresa, na ordem em que foram feitas, e cria os campos de subtotal e desconto.
 
+## Módulos por plano e por empresa (painel Master)
+
+Cada cliente usa só os módulos (segmentos) que contratou. O Master define isso no **plano** (Configurações → Planos) e pode ajustar empresa por empresa (Empresas → ficha → Módulos liberados), inclusive já na criação da empresa.
+
+| Módulo | O que libera | Precisa de |
+|---|---|---|
+| Ponto de venda (PDV) | caixa, venda no balcão, sangria/suprimento, desconto, cancelamento | — |
+| Lanchonete e cozinha | ficha técnica, insumos com baixa automática, comanda da cozinha | PDV |
+| Pedidos | mesa, retirada, entrega, WhatsApp, entregadores | PDV |
+| Clientes | base de clientes, segmentos e mensagens | — |
+| iFood e 99Food *(em breve)* | pedidos das plataformas na tela de Pedidos | Pedidos |
+| Casa de shows e eventos *(em breve)* | eventos, PDVs e estoque do evento | PDV |
+| Loja virtual *(em breve)* | catálogo online e delivery | — |
+| Financeiro *(em breve)* | contas a pagar/receber e fluxo de caixa | — |
+
+- Sempre incluído em qualquer plano: Início, Produtos & Estoque, Fornecedores, Lojas & PDVs, Usuários e Relatórios.
+- Planos prontos: **Só PDV** (varejo/distribuidora), **Lanchonete**, **Básico** e **Completo**. O Master cria novos planos e remove os que nenhuma empresa usa (o Completo é o padrão e não pode ser removido).
+- Ligar um módulo liga junto o que ele precisa; desligar desliga junto o que depende dele. O servidor recusa combinações inválidas.
+- Módulo desligado vale **na hora** para todos os usuários da empresa, inclusive o Administrador: some do menu e das telas, e a API responde 403 ("não faz parte do plano"). As permissões desses módulos também somem da tela de usuários.
+- Módulos "em breve" já podem ser liberados: passam a valer quando ficarem prontos.
+- Catálogo em `backend/src/config/modulos.js`. A migração `024_modulos_por_plano.sql` não muda nada para quem já usa: os planos existentes mantêm PDV e Lanchonete, Pedidos/Clientes seguem como estavam.
+
 ## Teste ponta a ponta
+
+```bash
+cd backend
+API_URL=http://localhost:3000 npm run test:e2e:modulos   # módulos por plano/empresa
+```
 
 Com um banco de teste recém-criado (`npm run migrate && npm run seed`) e a API rodando:
 

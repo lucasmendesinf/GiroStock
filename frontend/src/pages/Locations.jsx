@@ -3,10 +3,14 @@ import { api } from '../api/client';
 import { useToast, useConfirm } from '../context/UiContext.jsx';
 import { Field } from '../components/ui.jsx';
 import ConfigCupom from './ConfigCupom.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
+import { temModulo } from '../utils/permissions.js';
 
 // Lojas/locais de estoque e os PDVs (terminais com caixa) de cada uma.
 export default function Locations() {
   const toast = useToast();
+  const { user } = useAuth();
+  const moduloPedidos = temModulo(user, 'pedidos');
   const confirmar = useConfirm();
   const [locations, setLocations] = useState([]);
   const [terminals, setTerminals] = useState([]);
@@ -121,9 +125,11 @@ export default function Locations() {
           <label className="check" style={{ alignSelf: 'center' }}>
             <input type="checkbox" checked={novaComanda} onChange={(e) => setNovaComanda(e.target.checked)} /> Usar número de pedido (comanda)
           </label>
-          <label className="check" style={{ alignSelf: 'center' }}>
-            <input type="checkbox" checked={novaPedidos} onChange={(e) => setNovaPedidos(e.target.checked)} /> Usar pedidos (lanchonete)
-          </label>
+          {moduloPedidos && (
+            <label className="check" style={{ alignSelf: 'center' }}>
+              <input type="checkbox" checked={novaPedidos} onChange={(e) => setNovaPedidos(e.target.checked)} /> Usar pedidos (lanchonete)
+            </label>
+          )}
           <button type="submit" className="btn-primario">Criar loja</button>
         </form>
         <p className="form-hint" style={{ marginTop: '10px' }}>
@@ -152,11 +158,11 @@ export default function Locations() {
               </label>
               <button className="btn-link" onClick={() => setConfigurando(l)}>Configurar cupom e comanda</button>
             </div>
-            <div className="loja-config-linha">
+            {moduloPedidos && <div className="loja-config-linha">
               <label className="check">
                 <input type="checkbox" checked={!!l.usa_pedidos} onChange={() => alternarPedidos(l)} /> Usar pedidos — o cliente pede, a cozinha prepara e só depois sai a venda (reserva o estoque ao gerar o pedido)
               </label>
-            </div>
+            </div>}
 
             {daLoja.map((t) => (
               <div className="terminal-row" key={t.id}>

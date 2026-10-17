@@ -10,7 +10,7 @@ const numeroParaCampo = (n) => String(n).replace('.', ',');
 
 // Edicao do produto: so os dados cadastrais. Produto comum tem o botao "Tratar estoque →";
 // produto controlado por insumos mostra a receita (e abre ja rolado ate ela).
-export default function EditarProduto({ productId, categories, suppliers, ingredients, reload, onClose, onTratarEstoque }) {
+export default function EditarProduto({ productId, categories, suppliers, ingredients, reload, onClose, onTratarEstoque, lanchonete = true }) {
   const toast = useToast();
   const confirmar = useConfirm();
   const [p, setP] = useState(null);
@@ -160,7 +160,7 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
           </Field>
         </div>
 
-        {!compostoOriginal && semSaldo && (
+        {lanchonete && !compostoOriginal && semSaldo && (
           <label className="check">
             <input type="checkbox" checked={viraComposto} onChange={(e) => setViraComposto(e.target.checked)} /> Passar a controlar este produto por insumos (lanche / receita)
           </label>

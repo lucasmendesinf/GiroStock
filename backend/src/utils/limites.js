@@ -1,6 +1,8 @@
-// Plano da empresa: limites (lojas, usuarios, PDVs) e recursos (Pedidos, Clientes).
-// Valor efetivo = override da empresa (tenants.limites / tenants.recursos), senao o do plano (tabela planos).
+// Plano da empresa: limites (lojas, usuarios, PDVs) e recursos = modulos liberados (PDV, Lanchonete, Pedidos...).
+// Valor efetivo = override da empresa (tenants.limites / tenants.recursos), senao o do plano (tabela planos),
+// senao o padrao do modulo (config/modulos.js). Modulo sem a dependencia ligada fica desligado.
 const { HttpError } = require('./http');
+const { MODULOS, aplicarDependencias } = require('../config/modulos');
 
 const NOME_LIMITE = { lojas: 'lojas', usuarios: 'usuários', pdvs: 'PDVs' };
 
@@ -14,27 +16,29 @@ async function dadosDaEmpresa(db, tenantId) {
   return rows[0] || null;
 }
 
-// { limites: {lojas, usuarios, pdvs}, recursos: {pedidos, clientes}, origem: {...} } a partir da linha de dadosDaEmpresa.
+// Modulos de um plano (recursos JSONB), com o padrao de cada modulo para as chaves que o plano nao tem.
+function modulosDoPlano(recursosPlano) {
+  const pr = recursosPlano || {};
+  return Object.fromEntries(MODULOS.map((m) => [m.chave, typeof pr[m.chave] === 'boolean' ? pr[m.chave] : m.padrao]));
+}
+
+// { limites: {lojas, usuarios, pdvs}, recursos: {pdv, lanchonete, pedidos, ...}, origem: {...} } a partir da linha de dadosDaEmpresa.
 function efetivos(e) {
   const ov = e.limites || {};
   const ovr = e.recursos || {};
-  const pr = e.plano_recursos || {};
+  const doPlano = modulosDoPlano(e.plano_recursos);
   const num = (v, padrao) => (Number.isFinite(Number(v)) && v !== null && v !== undefined ? Number(v) : padrao);
   const limites = {
     lojas: num(ov.lojas, e.max_lojas),
     usuarios: num(ov.usuarios, e.max_usuarios),
     pdvs: num(ov.pdvs, e.max_pdvs),
   };
-  const recursos = {
-    pedidos: typeof ovr.pedidos === 'boolean' ? ovr.pedidos : !!pr.pedidos,
-    clientes: typeof ovr.clientes === 'boolean' ? ovr.clientes : !!pr.clientes,
-  };
+  const recursos = aplicarDependencias(Object.fromEntries(MODULOS.map((m) => [m.chave, typeof ovr[m.chave] === 'boolean' ? ovr[m.chave] : doPlano[m.chave]])));
   const origem = {
     lojas: ov.lojas !== undefined && ov.lojas !== null ? 'empresa' : 'plano',
     usuarios: ov.usuarios !== undefined && ov.usuarios !== null ? 'empresa' : 'plano',
     pdvs: ov.pdvs !== undefined && ov.pdvs !== null ? 'empresa' : 'plano',
-    pedidos: typeof ovr.pedidos === 'boolean' ? 'empresa' : 'plano',
-    clientes: typeof ovr.clientes === 'boolean' ? 'empresa' : 'plano',
+    ...Object.fromEntries(MODULOS.map((m) => [m.chave, typeof ovr[m.chave] === 'boolean' ? 'empresa' : 'plano'])),
   };
   return { limites, recursos, origem };
 }
@@ -60,12 +64,14 @@ async function checarLimite(db, tenantId, tipo, adicionar = 1) {
   }
 }
 
-// Areas do usuario com os recursos da empresa aplicados: recurso desligado = area false para todos da empresa.
+// Areas do usuario com os modulos da empresa aplicados: modulo desligado = suas areas false para todos da empresa.
 function aplicarRecursos(areas, recursos) {
   const r = { ...areas };
-  if (recursos && recursos.pedidos === false) r.Pedidos = false;
-  if (recursos && recursos.clientes === false) r.Clientes = false;
+  if (!recursos) return r;
+  for (const m of MODULOS) {
+    if (recursos[m.chave] === false) for (const a of m.areas) r[a] = false;
+  }
   return r;
 }
 
-module.exports = { dadosDaEmpresa, efetivos, uso, checarLimite, aplicarRecursos };
+module.exports = { dadosDaEmpresa, efetivos, uso, checarLimite, aplicarRecursos, modulosDoPlano };

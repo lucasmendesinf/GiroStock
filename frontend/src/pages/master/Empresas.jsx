@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api/client';
 import { useToast } from '../../context/UiContext.jsx';
 import { Modal } from '../../components/ui.jsx';
@@ -6,6 +6,7 @@ import { baixarArquivo, gerarSenha, quando } from './util.js';
 import SenhaUnicaModal from './SenhaUnicaModal.jsx';
 import NovoUsuarioModal from './NovoUsuarioModal.jsx';
 import SuporteModal from './SuporteModal.jsx';
+import { ListaModulos, alternarModulo, resumoModulos, useCatalogoModulos, usePlanos } from './Modulos.jsx';
 
 const NOME_LIMITE = { lojas: 'Lojas', usuarios: 'Usuários', pdvs: 'PDVs' };
 
@@ -21,15 +22,23 @@ export default function Empresas() {
   const [suporteDe, setSuporteDe] = useState(null); // empresa para entrar como suporte
   const [historico, setHistorico] = useState([]);
   const [verTeste, setVerTeste] = useState(false);
+  const [salvandoModulo, setSalvandoModulo] = useState(false);
+  const catalogo = useCatalogoModulos();
+  const planos = usePlanos();
 
   const carregar = useCallback(async () => {
     try { setDados(await api.get(`/master/empresas${verTeste ? '?teste=1' : ''}`)); } catch (err) { toast.erro(err); }
   }, [toast, verTeste]);
   useEffect(() => { carregar(); }, [carregar]);
 
+  // Empresa aberta no painel: um recarregamento que termina depois de fechar o painel nao o reabre.
+  const aberta = useRef(null);
+  const fechar = () => { aberta.current = null; setFicha(null); };
   const abrir = useCallback(async (id) => {
+    aberta.current = id;
     try {
-      setFicha(await api.get(`/master/empresas/${id}`));
+      const f = await api.get(`/master/empresas/${id}`);
+      if (aberta.current === id) setFicha(f);
       api.get(`/master/empresas/${id}/suporte`).then((r) => setHistorico(r.sessoes)).catch(() => setHistorico([]));
     } catch (err) { toast.erro(err); }
   }, [toast]);
@@ -40,7 +49,7 @@ export default function Empresas() {
       toast.sucesso(`Dados de ${f.nome} exportados (${Object.values(r.contagens).reduce((a, n) => a + n, 0)} registros).`);
     } catch (err) { toast.erro(err); }
   }
-  async function atualizarFicha(id) { await carregar(); await abrir(id); }
+  async function atualizarFicha(id) { await carregar(); if (aberta.current === id) await abrir(id); }
 
   const lista = useMemo(() => {
     if (!dados) return [];
@@ -48,12 +57,22 @@ export default function Empresas() {
     return dados.empresas.filter((e) => !t || e.nome.toLowerCase().includes(t) || (e.documento || '').includes(t.replace(/\D/g, '') || '§'));
   }, [dados, busca]);
 
-  async function alternarRecurso(chave) {
+  // Liga/desliga um modulo so para esta empresa (com as dependencias). Valor igual ao do plano = volta a seguir o plano.
+  async function alternarModuloDaEmpresa(chave, ligar) {
+    const { valores, junto } = alternarModulo(catalogo, ficha.recursos, chave, ligar);
+    const noPlano = Object.fromEntries(ficha.modulos.map((m) => [m.chave, m.no_plano]));
+    const recursos = {};
+    for (const m of catalogo) if (valores[m.chave] !== ficha.recursos[m.chave]) recursos[m.chave] = valores[m.chave] === noPlano[m.chave] ? null : valores[m.chave];
+    setSalvandoModulo(true);
     try {
-      await api.patch(`/master/empresas/${ficha.id}`, { recursos: { [chave]: !ficha.recursos[chave] } });
-      toast.sucesso(`Recurso ${chave} ${!ficha.recursos[chave] ? 'liberado' : 'bloqueado'} para ${ficha.nome}`);
+      await api.patch(`/master/empresas/${ficha.id}`, { recursos });
       await atualizarFicha(ficha.id);
-    } catch (err) { toast.erro(err); }
+      const nome = catalogo.find((m) => m.chave === chave).nome;
+      toast.sucesso(`${nome} ${ligar ? 'liberado' : 'bloqueado'} para ${ficha.nome}${junto.length ? ` (junto: ${junto.join(', ')})` : ''}`);
+    } catch (err) { toast.erro(err); } finally { setSalvandoModulo(false); }
+  }
+  async function voltarAoPlano(chave) {
+    try { await api.patch(`/master/empresas/${ficha.id}`, { recursos: { [chave]: null } }); await atualizarFicha(ficha.id); toast.sucesso('O módulo volta a seguir o plano'); } catch (err) { toast.erro(err); }
   }
   async function trocarPlano(plano) {
     try { await api.patch(`/master/empresas/${ficha.id}`, { plano }); toast.sucesso('Plano alterado'); await atualizarFicha(ficha.id); } catch (err) { toast.erro(err); }
@@ -107,17 +126,16 @@ export default function Empresas() {
       </div>
 
       {ficha && (
-        <div className="ped-ov" onMouseDown={(e) => { if (e.target === e.currentTarget) setFicha(null); }}>
+        <div className="ped-ov" onMouseDown={(e) => { if (e.target === e.currentTarget) fechar(); }}>
           <aside className="ped-drawer" role="dialog" aria-label={`Empresa ${ficha.nome}`}>
-            <button type="button" className="modal-close" style={{ float: 'right' }} aria-label="Fechar" onClick={() => setFicha(null)}>×</button>
+            <button type="button" className="modal-close" style={{ float: 'right' }} aria-label="Fechar" onClick={fechar}>×</button>
             <h3>{ficha.nome}</h3>
             {ficha.contato && (ficha.contato.responsavel || ficha.contato.email_contato || ficha.contato.telefone) && <div className="cl-sub">Contato: {[ficha.contato.responsavel, ficha.contato.telefone, ficha.contato.email_contato].filter(Boolean).join(' · ')}</div>}
             <div className="cl-sub">{ficha.documento || 'sem CNPJ'} · cliente desde {new Date(ficha.criado_em).toLocaleDateString('pt-BR')}</div>
             <div style={{ margin: '10px 0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span className={`ped-pill ${ficha.status === 'ativa' ? 'ok' : 'err'}`}>{ficha.status === 'ativa' ? 'Ativa' : 'Suspensa'}</span>
               <select value={ficha.plano} onChange={(e) => trocarPlano(e.target.value)} aria-label="Plano" style={{ width: 'auto' }}>
-                <option value="basico">Básico</option>
-                <option value="completo">Completo</option>
+                {(planos || [{ codigo: ficha.plano, nome: ficha.plano_nome }]).map((p) => <option key={p.codigo} value={p.codigo}>{p.nome}</option>)}
               </select>
               {ficha.status === 'suspensa' && ficha.suspenso_motivo && <span className="cl-sub" style={{ margin: 0 }}>· {ficha.suspenso_motivo}</span>}
             </div>
@@ -147,15 +165,18 @@ export default function Empresas() {
               <button type="button" className="btn-link" style={{ marginTop: 8 }} onClick={() => setNovoUsuario(ficha.id)}>+ Usuário nesta empresa</button>
             </div>
 
-            <div className="ped-sec"><span className="ped-rotulo">Recursos liberados</span>
-              <div className="cl-sw" style={{ marginBottom: 8 }}>
-                <button type="button" role="switch" aria-checked={ficha.recursos.pedidos} className={ficha.recursos.pedidos ? 'on' : ''} onClick={() => alternarRecurso('pedidos')} />
-                <span>Pedidos (lanchonete)<div className="cl-sub">{ficha.recursos.origem.pedidos === 'empresa' ? 'definido para esta empresa' : 'segue o plano'}</div></span>
-              </div>
-              <div className="cl-sw">
-                <button type="button" role="switch" aria-checked={ficha.recursos.clientes} className={ficha.recursos.clientes ? 'on' : ''} onClick={() => alternarRecurso('clientes')} />
-                <span>Clientes e mensagens<div className="cl-sub">{ficha.recursos.origem.clientes === 'empresa' ? 'definido para esta empresa' : 'segue o plano'}</div></span>
-              </div>
+            <div className="ped-sec"><span className="ped-rotulo">Módulos liberados</span>
+              <ListaModulos catalogo={catalogo} valores={ficha.recursos} desabilitado={salvandoModulo} onAlternar={alternarModuloDaEmpresa}
+                detalhe={(m) => {
+                  const info = ficha.modulos.find((x) => x.chave === m.chave);
+                  if (!info || info.origem !== 'empresa') return <div className="cl-sub mod-origem">segue o plano</div>;
+                  return (
+                    <div className="cl-sub mod-origem personalizado">
+                      {info.ligado ? 'liberado só para esta empresa' : 'bloqueado só para esta empresa'} (no plano: {info.no_plano ? 'ligado' : 'desligado'}) ·{' '}
+                      <button type="button" className="btn-link" onClick={() => voltarAoPlano(m.chave)}>voltar ao plano</button>
+                    </div>
+                  );
+                }} />
             </div>
 
             <div className="cl-linha-btn" style={{ justifyContent: 'flex-start', marginTop: 18, flexWrap: 'wrap' }}>
@@ -212,7 +233,20 @@ function NovaEmpresaModal({ onClose, onCriada }) {
   const [passo, setPasso] = useState(1);
   const [f, setF] = useState({ nome: '', documento: '', plano: 'basico', loja_nome: 'Loja única', admin_nome: '', admin_email: '', senha: gerarSenha() });
   const [salvando, setSalvando] = useState(false);
+  const catalogo = useCatalogoModulos();
+  const planos = usePlanos();
+  const plano = (planos || []).find((p) => p.codigo === f.plano);
+  const [mods, setMods] = useState(null); // modulos escolhidos (comeca igual ao plano)
+  useEffect(() => { if (plano) setMods({ ...plano.recursos }); }, [plano]);
+  // Plano pre-selecionado que nao existe mais (removido em Configuracoes): usa o primeiro da lista.
+  useEffect(() => { if (planos && planos.length && !plano) setF((x) => ({ ...x, plano: planos[0].codigo })); }, [planos, plano]);
   const mudar = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  // So o que difere do plano vai como liberacao da empresa.
+  const diferencas = () => {
+    if (!plano || !mods) return undefined;
+    const d = Object.fromEntries(Object.keys(mods).filter((k) => mods[k] !== plano.recursos[k]).map((k) => [k, mods[k]]));
+    return Object.keys(d).length ? d : undefined;
+  };
 
   function proximo() {
     if (f.nome.trim().length < 2) { toast.erro('Informe o nome da empresa'); return; }
@@ -225,7 +259,7 @@ function NovaEmpresaModal({ onClose, onCriada }) {
     setSalvando(true);
     try {
       const resp = await api.post('/master/empresas', {
-        nome: f.nome, documento: f.documento, plano: f.plano, loja_nome: f.loja_nome,
+        nome: f.nome, documento: f.documento, plano: f.plano, loja_nome: f.loja_nome, recursos: diferencas(),
         admin: { nome: f.admin_nome, email: f.admin_email, senha: f.senha },
       });
       onCriada(resp);
@@ -241,9 +275,14 @@ function NovaEmpresaModal({ onClose, onCriada }) {
           <label className="field"><span className="field-label">CNPJ</span><input value={f.documento} onChange={mudar('documento')} placeholder="00.000.000/0000-00" /></label>
           <div className="form-grid">
             <label className="field"><span className="field-label">Plano</span>
-              <select value={f.plano} onChange={mudar('plano')}><option value="basico">Básico</option><option value="completo">Completo</option></select>
+              <select value={f.plano} onChange={mudar('plano')}>{(planos || []).map((p) => <option key={p.codigo} value={p.codigo}>{p.nome}</option>)}</select>
             </label>
             <label className="field"><span className="field-label">Primeira loja</span><input value={f.loja_nome} onChange={mudar('loja_nome')} /></label>
+          </div>
+          <div className="ped-sec" style={{ marginTop: 4 }}><span className="ped-rotulo">Módulos que o cliente vai usar</span>
+            <p className="cl-sub" style={{ margin: '0 0 6px' }}>Começa igual ao plano escolhido; o que você mudar aqui vale só para esta empresa.</p>
+            {mods && <ListaModulos catalogo={catalogo} valores={mods} onAlternar={(k, v) => setMods(alternarModulo(catalogo, mods, k, v).valores)}
+              detalhe={(m) => (plano && mods[m.chave] !== plano.recursos[m.chave] ? <div className="cl-sub mod-origem personalizado">{mods[m.chave] ? 'liberado' : 'bloqueado'} só para esta empresa</div> : null)} />}
           </div>
           <div className="ped-nota">Todo usuário pertence a uma empresa. Por isso o <b>administrador da empresa</b> é criado junto, no próximo passo.</div>
           <div className="modal-actions"><button type="button" onClick={onClose}>Cancelar</button><button type="button" onClick={proximo}>Próximo</button></div>
@@ -252,7 +291,8 @@ function NovaEmpresaModal({ onClose, onCriada }) {
         <form className="form-stack" onSubmit={criar}>
           <div className="ped-nota" style={{ marginTop: 0 }}>
             <div className="ped-linha"><span>Empresa</span><b>{f.nome}</b></div>
-            <div className="ped-linha"><span>Plano · primeira loja</span><b>{f.plano === 'basico' ? 'Básico' : 'Completo'} · {f.loja_nome || 'Loja única'}</b></div>
+            <div className="ped-linha"><span>Plano · primeira loja</span><b>{plano ? plano.nome : f.plano} · {f.loja_nome || 'Loja única'}</b></div>
+            <div className="ped-linha"><span>Módulos</span><b style={{ textAlign: 'right' }}>{resumoModulos(catalogo, mods)}</b></div>
           </div>
           <label className="field"><span className="field-label">Nome do administrador</span><input autoFocus value={f.admin_nome} onChange={mudar('admin_nome')} /></label>
           <label className="field"><span className="field-label">E-mail (será o login)</span><input type="email" value={f.admin_email} onChange={mudar('admin_email')} placeholder="admin@empresa.com" /></label>

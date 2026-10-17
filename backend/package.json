@@ -23,7 +23,8 @@
     "test:e2e:master-fase2": "node scripts/e2e-master-fase2.mjs",
     "test:e2e:master-fase3": "node scripts/e2e-master-fase3.mjs",
     "test:e2e:master-fase4": "node scripts/e2e-master-fase4.mjs",
-    "test:e2e:redefinir-senha": "node scripts/e2e-redefinir-senha.mjs"
+    "test:e2e:redefinir-senha": "node scripts/e2e-redefinir-senha.mjs",
+    "test:e2e:modulos": "node scripts/e2e-modulos.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

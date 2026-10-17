@@ -15,7 +15,7 @@ const textoCustoReceita = (ficha, ingredients) => {
   return sem.length ? `Soma dos insumos (atualiza ao mudar a receita). Sem custo: ${sem.join(', ')} — dê entrada informando o custo.` : 'Soma dos insumos (atualiza ao mudar a receita)';
 };
 
-export default function FormProduto({ categories, suppliers, ingredients, reload, onClose, onSalvo }) {
+export default function FormProduto({ categories, suppliers, ingredients, reload, onClose, onSalvo, lanchonete = true }) {
   const toast = useToast();
   const [form, setForm] = useState({
     nome: '', categoria_id: '', unidade: 'UN', barcode: '', preco_custo: '', preco_venda: '', supplier_id: '', supplier_ids: [],
@@ -119,9 +119,11 @@ export default function FormProduto({ categories, suppliers, ingredients, reload
           </Field>
         </div>
 
-        <label className="check">
-          <input type="checkbox" checked={composto} onChange={(e) => setComposto(e.target.checked)} /> Produto controlado por insumos (lanche / receita)
-        </label>
+        {lanchonete && (
+          <label className="check">
+            <input type="checkbox" checked={composto} onChange={(e) => setComposto(e.target.checked)} /> Produto controlado por insumos (lanche / receita)
+          </label>
+        )}
 
         {composto && <ReceitaEditor ficha={ficha} setFicha={setFicha} ingredients={ingredients} onErro={setErro} />}
 

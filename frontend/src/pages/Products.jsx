@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useToast } from '../context/UiContext.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
+import { temModulo } from '../utils/permissions.js';
 import ListaProdutos from './produtos/ListaProdutos.jsx';
 import Movimentacoes from './produtos/Movimentacoes.jsx';
 import EntradaNota from './produtos/EntradaNota.jsx';
@@ -17,8 +19,12 @@ const ABAS = [
 // Dados compartilhados entre as abas; cada aba recarrega o que precisar via reload().
 export default function Products() {
   const toast = useToast();
+  const { user } = useAuth();
+  // Sem o modulo Lanchonete nao ha insumos nem ficha tecnica: some a aba e nada de insumo e carregado.
+  const lanchonete = temModulo(user, 'lanchonete');
+  const abas = ABAS.filter((a) => a.id !== 'insumos' || lanchonete);
   const [params, setParams] = useSearchParams();
-  const aba = ABAS.some((a) => a.id === params.get('aba')) ? params.get('aba') : 'produtos';
+  const aba = abas.some((a) => a.id === params.get('aba')) ? params.get('aba') : 'produtos';
   const [dados, setDados] = useState({ products: [], categories: [], locations: [], suppliers: [], ingredients: [], alertas: [] });
   const [carregado, setCarregado] = useState(false);
 
@@ -26,22 +32,22 @@ export default function Products() {
     try {
       const [products, categories, locations, suppliers, ingredients, alertas] = await Promise.all([
         api.get('/products'), api.get('/categories'), api.get('/locations'), api.get('/suppliers'),
-        api.get('/ingredients'), api.get('/stock/alerts'),
+        lanchonete ? api.get('/ingredients') : Promise.resolve([]), api.get('/stock/alerts'),
       ]);
       setDados({ products, categories, locations, suppliers, ingredients, alertas });
       setCarregado(true);
     } catch (err) { toast.erro(err); }
-  }, [toast]);
+  }, [toast, lanchonete]);
 
   useEffect(() => { reload(); }, [reload]);
 
-  const props = { ...dados, reload, carregado };
+  const props = { ...dados, reload, carregado, lanchonete };
 
   return (
     <div className="page">
       <h2>Produtos &amp; Estoque</h2>
       <div className="pe-tabs" role="tablist">
-        {ABAS.map((a) => (
+        {abas.map((a) => (
           <button key={a.id} role="tab" aria-selected={aba === a.id} className={`pe-tab ${aba === a.id ? 'active' : ''}`}
             onClick={() => setParams(a.id === 'produtos' ? {} : { aba: a.id })}>
             {a.label}{a.id === 'estoque' && dados.alertas.length > 0 ? ` (${dados.alertas.length})` : ''}

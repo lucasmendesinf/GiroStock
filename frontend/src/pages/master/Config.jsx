@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../api/client';
 import { useConfirm, useToast } from '../../context/UiContext.jsx';
 import { Field } from '../../components/ui.jsx';
+import { ListaModulos, alternarModulo, resumoModulos, useCatalogoModulos } from './Modulos.jsx';
 
 const ROTULO_STATUS = { ok: ['ok', 'Operando'], erro: ['err', 'Com problema'], nao_configurado: ['warn', 'Não configurado'], nao_contratado: ['warn', 'Não contratado'], futuro: ['warn', 'Etapa futura'], indisponivel: ['warn', 'Indisponível'] };
 
@@ -144,38 +145,55 @@ function Parametros() {
 
 function Planos() {
   const toast = useToast();
+  const confirmar = useConfirm();
+  const catalogo = useCatalogoModulos();
   const [lista, setLista] = useState(null);
-  const [editando, setEditando] = useState(null);
+  const [editando, setEditando] = useState(null); // { novo: bool, codigo, nome, max_*, recursos }
   const carregar = useCallback(() => api.get('/master/planos').then((r) => setLista(r.planos)).catch((e) => toast.erro(e)), [toast]);
   useEffect(() => { carregar(); }, [carregar]);
+  function novoPlano() {
+    const recursos = Object.fromEntries((catalogo || []).map((m) => [m.chave, m.chave === 'pdv']));
+    setEditando({ novo: true, nome: '', max_lojas: 1, max_usuarios: 3, max_pdvs: 1, recursos });
+  }
   async function salvar(e) {
     e.preventDefault();
+    const corpo = {
+      nome: editando.nome, max_lojas: Number(editando.max_lojas), max_usuarios: Number(editando.max_usuarios), max_pdvs: Number(editando.max_pdvs),
+      recursos: Object.fromEntries((catalogo || []).map((m) => [m.chave, !!editando.recursos[m.chave]])),
+    };
     try {
-      const r = await api.put(`/master/planos/${editando.codigo}`, {
-        nome: editando.nome, max_lojas: Number(editando.max_lojas), max_usuarios: Number(editando.max_usuarios), max_pdvs: Number(editando.max_pdvs),
-        recursos: { pedidos: !!editando.recursos.pedidos, clientes: !!editando.recursos.clientes },
-      });
+      const r = editando.novo ? await api.post('/master/planos', corpo) : await api.put(`/master/planos/${editando.codigo}`, corpo);
       if (r.empresas_acima_do_limite.length > 0) toast.erro(`${r.empresas_acima_do_limite.length} empresa(s) já excedem o novo limite (continuam funcionando, mas não cadastram mais): ${r.empresas_acima_do_limite.slice(0, 3).join(', ')}${r.empresas_acima_do_limite.length > 3 ? '…' : ''}`);
-      else toast.sucesso('Plano salvo.');
+      else toast.sucesso(editando.novo ? `Plano "${r.nome}" criado.` : 'Plano salvo.');
       setEditando(null); carregar();
     } catch (err) { toast.erro(err); }
   }
+  async function remover(pl) {
+    if (!(await confirmar({ titulo: `Remover o plano "${pl.nome}"?`, confirmar: 'Remover', perigo: true }))) return;
+    try { await api.del(`/master/planos/${pl.codigo}`); toast.sucesso('Plano removido.'); carregar(); } catch (err) { toast.erro(err); }
+  }
   return (
     <div className="card">
-      <h4 style={{ margin: '0 0 8px' }}>Planos</h4>
-      <p className="cl-sub" style={{ margin: '0 0 8px' }}>A mudança vale para as empresas sem ajuste próprio. Quem já excede o novo limite continua funcionando; só não consegue cadastrar mais.</p>
+      <div className="ped-head" style={{ margin: '0 0 8px' }}>
+        <h4 style={{ margin: 0 }}>Planos</h4>
+        <button type="button" className="btn-link" onClick={novoPlano} disabled={!catalogo}>+ Novo plano</button>
+      </div>
+      <p className="cl-sub" style={{ margin: '0 0 8px' }}>Cada plano define limites e os módulos (segmentos) que o cliente usa. A mudança vale para as empresas sem ajuste próprio. Quem já excede o novo limite continua funcionando; só não consegue cadastrar mais.</p>
       {lista ? (
         <div className="tabela-wrap">
           <table>
-            <thead><tr><th>Plano</th><th>Lojas</th><th>Usuários</th><th>PDVs</th><th>Recursos</th><th>Empresas</th><th /></tr></thead>
+            <thead><tr><th>Plano</th><th>Lojas</th><th>Usuários</th><th>PDVs</th><th>Módulos</th><th>Empresas</th><th /></tr></thead>
             <tbody>
               {lista.map((pl) => (
                 <tr key={pl.codigo}>
                   <td><b>{pl.nome}</b><span className="cl-sub">{pl.codigo}</span></td>
                   <td>{pl.max_lojas}</td><td>{pl.max_usuarios}</td><td>{pl.max_pdvs}</td>
-                  <td>{[pl.recursos.pedidos && 'Pedidos', pl.recursos.clientes && 'Clientes'].filter(Boolean).join(', ') || '—'}</td>
+                  <td style={{ maxWidth: 320 }}>{resumoModulos(catalogo, pl.recursos)}</td>
                   <td>{pl.empresas}{pl.empresas_acima_do_limite.length > 0 && <span className="ped-pill warn" style={{ marginLeft: 6 }}>{pl.empresas_acima_do_limite.length} acima</span>}</td>
-                  <td style={{ textAlign: 'right' }}><button type="button" className="btn-link" onClick={() => setEditando({ ...pl, recursos: { pedidos: !!pl.recursos.pedidos, clientes: !!pl.recursos.clientes } })}>Editar</button></td>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <button type="button" className="btn-link" onClick={() => setEditando({ ...pl, novo: false, recursos: { ...pl.recursos } })}>Editar</button>
+                    {pl.empresas === 0 && <button type="button" className="btn-link perigo" onClick={() => remover(pl)}>Remover</button>}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -183,17 +201,17 @@ function Planos() {
         </div>
       ) : <p className="muted">Carregando…</p>}
       {editando && (
-        <form onSubmit={salvar} className="form-stack" style={{ maxWidth: 560, marginTop: 12 }}>
-          <h4 style={{ margin: 0 }}>Editar plano {editando.codigo}</h4>
+        <form onSubmit={salvar} className="form-stack" style={{ maxWidth: 640, marginTop: 12 }}>
+          <h4 style={{ margin: 0 }}>{editando.novo ? 'Novo plano' : `Editar plano ${editando.codigo}`}</h4>
           <div className="form-grid">
-            <Field label="Nome"><input value={editando.nome} onChange={(e) => setEditando({ ...editando, nome: e.target.value })} required /></Field>
+            <Field label="Nome"><input value={editando.nome} onChange={(e) => setEditando({ ...editando, nome: e.target.value })} placeholder="Ex.: Só PDV" required /></Field>
             <Field label="Máx. de lojas"><input type="number" min="1" value={editando.max_lojas} onChange={(e) => setEditando({ ...editando, max_lojas: e.target.value })} required /></Field>
             <Field label="Máx. de usuários"><input type="number" min="1" value={editando.max_usuarios} onChange={(e) => setEditando({ ...editando, max_usuarios: e.target.value })} required /></Field>
             <Field label="Máx. de PDVs"><input type="number" min="0" value={editando.max_pdvs} onChange={(e) => setEditando({ ...editando, max_pdvs: e.target.value })} required /></Field>
           </div>
-          <label className="check-linha"><input type="checkbox" checked={editando.recursos.pedidos} onChange={(e) => setEditando({ ...editando, recursos: { ...editando.recursos, pedidos: e.target.checked } })} /> Pedidos (lanchonete)</label>
-          <label className="check-linha"><input type="checkbox" checked={editando.recursos.clientes} onChange={(e) => setEditando({ ...editando, recursos: { ...editando.recursos, clientes: e.target.checked } })} /> Clientes e mensagens</label>
-          <div className="modal-actions" style={{ justifyContent: 'flex-start' }}><button type="button" onClick={() => setEditando(null)}>Cancelar</button><button type="submit">Salvar plano</button></div>
+          <ListaModulos catalogo={catalogo} valores={editando.recursos}
+            onAlternar={(k, v) => { const r = alternarModulo(catalogo, editando.recursos, k, v); setEditando({ ...editando, recursos: r.valores }); if (r.junto.length) toast.sucesso(`Junto: ${r.junto.join(', ')} ${v ? 'ligado' : 'desligado'}`); }} />
+          <div className="modal-actions" style={{ justifyContent: 'flex-start' }}><button type="button" onClick={() => setEditando(null)}>Cancelar</button><button type="submit">{editando.novo ? 'Criar plano' : 'Salvar plano'}</button></div>
         </form>
       )}
     </div>

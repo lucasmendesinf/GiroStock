@@ -30,7 +30,7 @@ function IconeImagem() {
 }
 
 export default function ListaProdutos(props) {
-  const { products, categories, suppliers, locations, ingredients, carregado } = props;
+  const { products, categories, suppliers, locations, ingredients, carregado, lanchonete = true } = props;
   const [busca, setBusca] = useState('');
   const [lojaId, setLojaId] = useState('');
   const [categoria, setCategoria] = useState('');
@@ -117,7 +117,7 @@ export default function ListaProdutos(props) {
       </div>
 
       <div className="es-chips" role="group" aria-label="Situação do estoque">
-        {CHIPS.map(([id, nome]) => (
+        {CHIPS.filter(([id]) => id !== 'insumos' || lanchonete).map(([id, nome]) => (
           <button key={id} type="button" className={`es-chip ${chip === id ? 'on' : ''}`} aria-pressed={chip === id}
             onClick={() => { setChip(id); setVisiveis(POR_PAGINA); }}>{nome}</button>
         ))}

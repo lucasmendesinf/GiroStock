@@ -1,12 +1,14 @@
 const express = require('express');
 const pool = require('../db/pool');
-const { requireArea } = require('../middleware/permissions');
+const { requireArea, requireModulo } = require('../middleware/permissions');
 const { logAudit } = require('../utils/audit');
 const { getOwned, getOwnedLocation } = require('../utils/tenant');
 const { assertLocationAccess, filtroLocais } = require('../utils/access');
 const { HttpError } = require('../utils/http');
 
 const router = express.Router();
+// Insumos e consumo so existem para quem contratou o modulo Lanchonete (ficha tecnica).
+router.use(['/ingredients', '/consumption-feed'], requireModulo('lanchonete'));
 
 // Insumos tem saldo por local (ingredient_balances), como os produtos.
 // O custo por unidade continua unico por insumo (media ponderada de todas as entradas).

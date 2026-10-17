@@ -1,6 +1,6 @@
 const express = require('express');
 const pool = require('../db/pool');
-const { requireArea } = require('../middleware/permissions');
+const { requireArea, requireModulo } = require('../middleware/permissions');
 const { isValidBarcode, UNIDADES_INTEIRAS, isQuantidadeValidaParaUnidade } = require('../utils/validators');
 const { logAudit } = require('../utils/audit');
 const { getOwned, getOwnedLocation, isUuid } = require('../utils/tenant');
@@ -297,6 +297,9 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
   const { custo, venda } = validarPrecos(body.preco_custo, body.preco_venda);
 
   const fichaItems = Array.isArray(ficha_tecnica) ? ficha_tecnica : [];
+  if (fichaItems.length > 0 && !(req.user.modulos && req.user.modulos.lanchonete)) {
+    return res.status(403).json({ erro: 'O módulo Lanchonete e cozinha não faz parte do plano da sua empresa: produto com ficha técnica indisponível', modulo: 'lanchonete' });
+  }
   for (const item of fichaItems) {
     if (!item.ingredient_id || !(Number(item.quantidade_por_unidade) > 0)) {
       return res.status(400).json({ erro: 'cada insumo da ficha técnica precisa de ingredient_id e quantidade_por_unidade (>0)' });
@@ -532,7 +535,7 @@ router.put('/products/:id/minimum', requireArea('Estoque'), async (req, res) => 
 });
 
 // Ficha tecnica
-router.post('/products/:id/ingredients', requireArea('Estoque'), async (req, res) => {
+router.post('/products/:id/ingredients', requireArea('Estoque'), requireModulo('lanchonete'), async (req, res) => {
   const { ingredient_id, quantidade_por_unidade } = req.body || {};
   const qtd = Number(quantidade_por_unidade);
   if (!ingredient_id || !(qtd > 0)) {
@@ -565,7 +568,7 @@ router.post('/products/:id/ingredients', requireArea('Estoque'), async (req, res
   res.status(201).json(rows[0]);
 });
 
-router.delete('/products/:id/ingredients/:ingredientId', requireArea('Estoque'), async (req, res) => {
+router.delete('/products/:id/ingredients/:ingredientId', requireArea('Estoque'), requireModulo('lanchonete'), async (req, res) => {
   await pool.query(
     `DELETE FROM product_ingredients WHERE product_id = $1 AND ingredient_id = $2 AND tenant_id = $3`,
     [req.params.id, req.params.ingredientId, req.user.tenantId]

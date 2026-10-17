@@ -44,7 +44,8 @@ const DE_LOGIN = `FROM users u JOIN tenants t ON t.id = u.tenant_id LEFT JOIN lo
 // Conclui o login (senha ok e, se houver, 2FA ok): grava ultimo acesso e devolve { token, usuario }.
 async function concluirLogin(user, empresa) {
   await db.query(`UPDATE users SET ultimo_login = now(), falhas_login = 0 WHERE id = $1`, [user.id]);
-  user.areasEfetivas = aplicarRecursos(areasEfetivas(user.perfil, user.permissoes), empresa ? efetivos(empresa).recursos : null);
+  user.modulos = empresa ? efetivos(empresa).recursos : null;
+  user.areasEfetivas = aplicarRecursos(areasEfetivas(user.perfil, user.permissoes), user.modulos);
   user.extras = await lojasExtras(user.id);
   user.usa_pedidos = await usaPedidos(user.tenant_id, [user.location_id, ...user.extras.map((e) => e.id)].filter(Boolean), user.perfil);
   return { token: assinar(user), usuario: { ...dadosDoUsuario(user), parametros: await config.parametrosPublicos() } };
@@ -141,6 +142,8 @@ function dadosDoUsuario(user) {
     empresaNome: user.empresa_nome,
     doisFatores: { ativo: !!user.totp_ativo, exigido: master || !!user.totp_exigido, codigosRestantes: user.codigos_restantes || 0 },
     areas: user.areasEfetivas || areasEfetivas(user.perfil, user.permissoes),
+    // Modulos contratados pela empresa (PDV, Lanchonete, Pedidos...): o front esconde o que nao faz parte do plano.
+    modulos: user.modulos || null,
   };
 }
 
@@ -160,6 +163,7 @@ router.get('/me', authRequired, async (req, res) => {
   rows[0].usa_pedidos = await usaPedidos(req.user.tenantId, req.user.locationIds, req.user.perfil);
   rows[0].modoTeste = req.user.modoTeste;
   rows[0].areasEfetivas = req.user.areas;
+  rows[0].modulos = req.user.modulos;
   if (req.user.suporte) {
     // Sessao de suporte: o front ve o Master como Administrador da empresa acessada (mais o estado do suporte).
     Object.assign(rows[0], { perfil: 'Administrador', location_id: null, location_nome: null, empresa_nome: req.user.suporte.empresaNome, extras: [], permissoes: null });

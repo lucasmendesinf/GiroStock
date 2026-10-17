@@ -1,3 +1,5 @@
+const { POR_CHAVE } = require('../config/modulos');
+
 // Permissoes: cada perfil tem um padrao (MATRIX) e cada usuario pode ter ajustes
 // individuais (users.permissoes) que liberam ou bloqueiam permissoes especificas.
 const MATRIX = {
@@ -62,4 +64,15 @@ function requireArea(area) {
   };
 }
 
-module.exports = { requireArea, MATRIX, PERMISSOES, areasEfetivas, normalizarOverrides };
+// Modulo contratado pela empresa (plano/liberacao do Master). Vale para todos os usuarios dela, inclusive o Administrador.
+function requireModulo(chave) {
+  return (req, res, next) => {
+    if (!req.user || !req.user.modulos || !req.user.modulos[chave]) {
+      const nome = POR_CHAVE[chave] ? POR_CHAVE[chave].nome : chave;
+      return res.status(403).json({ erro: `O módulo ${nome} não faz parte do plano da sua empresa`, modulo: chave });
+    }
+    next();
+  };
+}
+
+module.exports = { requireArea, requireModulo, MATRIX, PERMISSOES, areasEfetivas, normalizarOverrides };

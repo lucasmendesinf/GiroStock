@@ -57,8 +57,9 @@ async function authRequired(req, res, next) {
   }
   const extras = await prod.query(`SELECT location_id FROM user_locations WHERE user_id = $1`, [user.id]);
   const locationIds = [user.location_id, ...extras.rows.map((r) => r.location_id)].filter(Boolean);
-  // Recursos da empresa (Pedidos/Clientes) valem para todos os usuarios dela, num ponto so.
-  const areasProd = aplicarRecursos(areasEfetivas(user.perfil, user.permissoes), empresa ? efetivos(empresa).recursos : null);
+  // Modulos da empresa (PDV, Lanchonete, Pedidos, Clientes...) valem para todos os usuarios dela, num ponto so.
+  const modulosProd = empresa ? efetivos(empresa).recursos : null;
+  const areasProd = aplicarRecursos(areasEfetivas(user.perfil, user.permissoes), modulosProd);
   req.user = {
     id: user.id,
     tenantId: user.tenant_id,
@@ -67,6 +68,7 @@ async function authRequired(req, res, next) {
     locationIds,
     areas: areasProd,
     areasProd,
+    modulos: modulosProd,
     master: user.perfil === 'Master',
     modoTeste: false,
   };
@@ -77,6 +79,7 @@ async function authRequired(req, res, next) {
     let ativa;
     try { ativa = await suporte.validarSessao(prod, payload.suporte.sessaoId, user, dadosDaEmpresa); } catch (err) { return res.status(err.status || 401).json({ erro: err.message, suporteEncerrado: true }); }
     const { sessao, empresa: emp } = ativa;
+    const modulosEmp = efetivos(emp).recursos;
     const caminho = req.originalUrl.split('?')[0].replace(/^\/api/, '');
     const bloqueio = verificarSuporte(req.method, caminho, sessao.edicao);
     if (bloqueio) return res.status(403).json({ erro: bloqueio, suporte: true });
@@ -86,7 +89,8 @@ async function authRequired(req, res, next) {
       perfil: 'Administrador',
       locationId: null,
       locationIds: [],
-      areas: aplicarRecursos({ ...MATRIX.Administrador, ModoTeste: false, Master: false }, efetivos(emp).recursos),
+      areas: aplicarRecursos({ ...MATRIX.Administrador, ModoTeste: false, Master: false }, modulosEmp),
+      modulos: modulosEmp,
       master: true,
       suporte: { sessaoId: sessao.id, edicao: sessao.edicao, expiraEm: sessao.expira_em, empresaNome: emp.nome, empresaId: sessao.tenant_id },
     };
@@ -116,9 +120,10 @@ async function authRequired(req, res, next) {
     req.user.perfil = 'Administrador';
     req.user.locationId = null;
     req.user.locationIds = [];
-    // Simula a empresa escolhida: os recursos dela (Pedidos/Clientes) tambem valem.
+    // Simula a empresa escolhida: os modulos dela (PDV, Pedidos, Clientes...) tambem valem.
     const empTeste = await dadosDaEmpresa(prod, payload.empresaTeste);
-    req.user.areas = aplicarRecursos({ ...MATRIX.Administrador, ModoTeste: true, Master: true }, empTeste ? efetivos(empTeste).recursos : null);
+    req.user.modulos = empTeste ? efetivos(empTeste).recursos : null;
+    req.user.areas = aplicarRecursos({ ...MATRIX.Administrador, ModoTeste: true, Master: true }, req.user.modulos);
   }
   return pool.executarEmTeste(() => next());
 }

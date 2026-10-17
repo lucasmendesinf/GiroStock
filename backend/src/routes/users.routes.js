@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const pool = require('../db/pool');
 const { requireArea, MATRIX, PERMISSOES, areasEfetivas, normalizarOverrides } = require('../middleware/permissions');
+const { MODULOS } = require('../config/modulos');
 const { logAudit } = require('../utils/audit');
 const { getOwnedLocation } = require('../utils/tenant');
 const { HttpError } = require('../utils/http');
@@ -10,8 +11,11 @@ const { PERFIS, criarUsuario, lojasAdicionais, gravarLojasAdicionais, resetarDoi
 const router = express.Router();
 
 // Padrao de cada perfil e lista de permissoes ajustaveis (a tela de usuarios monta os checkboxes com isso).
+// Permissoes de modulos que a empresa nao contratou nao aparecem (ex.: sem PDV, some "dar desconto").
 router.get('/users/permissoes', requireArea('Configuracoes'), (req, res) => {
-  res.json({ permissoes: PERMISSOES, padrao: MATRIX });
+  const fora = new Set(MODULOS.filter((m) => req.user.modulos && req.user.modulos[m.chave] === false).flatMap((m) => m.areas));
+  const permissoes = Object.fromEntries(Object.entries(PERMISSOES).filter(([k]) => !fora.has(k)));
+  res.json({ permissoes, padrao: MATRIX });
 });
 
 router.get('/users', requireArea('Configuracoes'), async (req, res) => {

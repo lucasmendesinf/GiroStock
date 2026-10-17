@@ -3,6 +3,8 @@ import { api } from '../api/client';
 import { useToast } from '../context/UiContext.jsx';
 import { Field, Modal } from '../components/ui.jsx';
 import { CupomCliente, ComandaCozinha, SenhaCliente, CONFIG_PADRAO } from '../components/Cupom.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
+import { temModulo } from '../utils/permissions.js';
 
 // Venda de exemplo para a previa (nao grava nada).
 function vendaExemplo(loja) {
@@ -41,6 +43,8 @@ function CampoImpressora({ valor, onChange }) {
 
 // Configuracao do cupom do cliente, da comanda da cozinha e da senha do cliente de uma loja, com previa ao vivo.
 export default function ConfigCupom({ loja, onClose, onSalvo }) {
+  const { user } = useAuth();
+  const cozinha = temModulo(user, 'lanchonete'); // comanda da cozinha e do modulo Lanchonete
   const toast = useToast();
   const salvo = loja.cupom_config || {};
   const [cfg, setCfg] = useState({
@@ -74,7 +78,7 @@ export default function ConfigCupom({ loja, onClose, onSalvo }) {
     <Modal titulo={`Cupom e comanda — ${loja.nome}`} subtitulo="O que é impresso nesta loja: cupom do cliente, comanda da cozinha e senha do cliente" onClose={onClose} largura="xml">
       <div className="segmentado" style={{ marginBottom: 12 }}>
         <button type="button" className={aba === 'cliente' ? 'ativo' : ''} onClick={() => setAba('cliente')}>Cupom do cliente</button>
-        <button type="button" className={aba === 'cozinha' ? 'ativo' : ''} onClick={() => setAba('cozinha')}>Comanda da cozinha</button>
+        {cozinha && <button type="button" className={aba === 'cozinha' ? 'ativo' : ''} onClick={() => setAba('cozinha')}>Comanda da cozinha</button>}
         <button type="button" className={aba === 'senha' ? 'ativo' : ''} onClick={() => setAba('senha')}>Senha do cliente</button>
       </div>
       <Opcao rotulo="Imprimir cada via em uma impressão separada (permite mandar o cupom, a comanda e a senha para impressoras diferentes)" valor={cfg.geral.impressao_separada} onChange={(v) => setCfg({ ...cfg, geral: { ...cfg.geral, impressao_separada: v } })} />

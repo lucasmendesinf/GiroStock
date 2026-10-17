@@ -11,6 +11,8 @@ const { exportarEmpresa, caminhoDaExportacao } = require('../services/exportacao
 const manutencao = require('../services/manutencao');
 const totp = require('../services/totp');
 const { verificarMigracoes } = require('../services/saude');
+const { modulosDoPlano } = require('../utils/limites');
+const { CHAVES, conflitoDeDependencia } = require('../config/modulos');
 
 // Painel Master, fase 3: backups e dados, manutencao segura, configuracoes globais (aviso, manutencao, parametros, planos).
 // Segredos (senhas, chaves, DATABASE_URL*) nunca saem daqui: so "configurado / nao configurado".
@@ -217,42 +219,84 @@ async function empresasQueExcedem(codigo, plano) {
 }
 async function planoComUso(p) {
   const empresas = (await db.query(`SELECT COUNT(*)::int AS n FROM tenants WHERE plano = $1 AND nome <> 'Plataforma'`, [p.codigo])).rows[0].n;
-  return { ...p, empresas, empresas_acima_do_limite: await empresasQueExcedem(p.codigo, p) };
+  // recursos sempre com todos os modulos (o padrao de cada modulo preenche as chaves que o plano ainda nao tem).
+  return { ...p, recursos: modulosDoPlano(p.recursos), empresas, empresas_acima_do_limite: await empresasQueExcedem(p.codigo, p) };
 }
+const SQL_PLANO = `SELECT codigo, nome, max_lojas, max_usuarios, max_pdvs, recursos FROM planos`;
 router.get('/master/planos', async (req, res) => {
-  const { rows } = await db.query(`SELECT codigo, nome, max_lojas, max_usuarios, max_pdvs, recursos FROM planos ORDER BY max_lojas, codigo`);
+  const { rows } = await db.query(`${SQL_PLANO} ORDER BY max_lojas, codigo`);
   res.json({ planos: await Promise.all(rows.map(planoComUso)) });
 });
 router.get('/master/planos/:codigo', async (req, res) => {
-  const { rows } = await db.query(`SELECT codigo, nome, max_lojas, max_usuarios, max_pdvs, recursos FROM planos WHERE codigo = $1`, [req.params.codigo]);
+  const { rows } = await db.query(`${SQL_PLANO} WHERE codigo = $1`, [req.params.codigo]);
   if (rows.length === 0) throw new HttpError(404, 'plano não encontrado');
   res.json(await planoComUso(rows[0]));
 });
-router.put('/master/planos/:codigo', async (req, res) => {
-  const b = req.body || {};
-  const { rows } = await db.query(`SELECT codigo, nome, max_lojas, max_usuarios, max_pdvs, recursos FROM planos WHERE codigo = $1`, [req.params.codigo]);
-  if (rows.length === 0) throw new HttpError(404, 'plano não encontrado');
-  const atual = rows[0];
-  const nome = b.nome === undefined ? atual.nome : String(b.nome).trim();
-  if (nome.length < 2) throw new HttpError(400, 'informe o nome do plano');
+
+// Valida nome, limites e modulos de um plano (base = valores atuais na edicao, padroes na criacao).
+function camposDoPlano(b, base) {
+  const nome = b.nome === undefined ? base.nome : String(b.nome).trim();
+  if (!nome || nome.length < 2) throw new HttpError(400, 'informe o nome do plano');
   const inteiro = (v, padrao, min, rotulo) => {
     if (v === undefined) return padrao;
     const n = Number(v);
     if (!Number.isInteger(n) || n < min) throw new HttpError(400, `${rotulo} inválido: use um número inteiro de ${min} em diante`);
     return n;
   };
-  const max_lojas = inteiro(b.max_lojas, atual.max_lojas, 1, 'limite de lojas');
-  const max_usuarios = inteiro(b.max_usuarios, atual.max_usuarios, 1, 'limite de usuários');
-  const max_pdvs = inteiro(b.max_pdvs, atual.max_pdvs, 0, 'limite de PDVs');
-  let recursos = atual.recursos || {};
+  const max_lojas = inteiro(b.max_lojas, base.max_lojas, 1, 'limite de lojas');
+  const max_usuarios = inteiro(b.max_usuarios, base.max_usuarios, 1, 'limite de usuários');
+  const max_pdvs = inteiro(b.max_pdvs, base.max_pdvs, 0, 'limite de PDVs');
+  let recursos = modulosDoPlano(base.recursos);
   if (b.recursos !== undefined) {
     const r = b.recursos;
-    if (!r || typeof r !== 'object' || Array.isArray(r) || Object.entries(r).some(([k, v]) => !['pedidos', 'clientes'].includes(k) || typeof v !== 'boolean')) throw new HttpError(400, 'recursos inválidos');
+    if (!r || typeof r !== 'object' || Array.isArray(r)) throw new HttpError(400, 'módulos inválidos');
+    for (const [k, v] of Object.entries(r)) {
+      if (!CHAVES.includes(k)) throw new HttpError(400, `módulo desconhecido: ${k}`);
+      if (typeof v !== 'boolean') throw new HttpError(400, 'módulos inválidos');
+    }
     recursos = { ...recursos, ...r };
   }
+  const conflito = conflitoDeDependencia(recursos);
+  if (conflito) throw new HttpError(400, conflito);
+  return { nome, max_lojas, max_usuarios, max_pdvs, recursos };
+}
+
+router.put('/master/planos/:codigo', async (req, res) => {
+  const { rows } = await db.query(`${SQL_PLANO} WHERE codigo = $1`, [req.params.codigo]);
+  if (rows.length === 0) throw new HttpError(404, 'plano não encontrado');
+  const atual = rows[0];
+  const { nome, max_lojas, max_usuarios, max_pdvs, recursos } = camposDoPlano(req.body || {}, atual);
   await db.query(`UPDATE planos SET nome = $2, max_lojas = $3, max_usuarios = $4, max_pdvs = $5, recursos = $6 WHERE codigo = $1`, [atual.codigo, nome, max_lojas, max_usuarios, max_pdvs, JSON.stringify(recursos)]);
   await audit(req, 'master_plano_editar', 'planos', null, { codigo: atual.codigo, antes: { nome: atual.nome, max_lojas: atual.max_lojas, max_usuarios: atual.max_usuarios, max_pdvs: atual.max_pdvs, recursos: atual.recursos }, depois: { nome, max_lojas, max_usuarios, max_pdvs, recursos } });
   res.json(await planoComUso({ codigo: atual.codigo, nome, max_lojas, max_usuarios, max_pdvs, recursos }));
+});
+
+// Novo plano (pacote vendido): codigo gerado do nome (ex.: "Só PDV" -> so_pdv), limites e modulos.
+router.post('/master/planos', async (req, res) => {
+  const b = req.body || {};
+  // Plano novo: so liga o que foi marcado (os padroes antigos de PDV/Lanchonete valem so para planos ja existentes).
+  const campos = camposDoPlano(b, { nome: undefined, max_lojas: 1, max_usuarios: 3, max_pdvs: 1, recursos: Object.fromEntries(CHAVES.map((k) => [k, false])) });
+  const codigo = String(b.codigo || campos.nome).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+  if (!codigo) throw new HttpError(400, 'informe o nome do plano');
+  const existe = await db.query(`SELECT 1 FROM planos WHERE codigo = $1 OR lower(nome) = lower($2)`, [codigo, campos.nome]);
+  if (existe.rows.length > 0) throw new HttpError(409, 'já existe um plano com este nome');
+  await db.query(`INSERT INTO planos (codigo, nome, max_lojas, max_usuarios, max_pdvs, recursos) VALUES ($1, $2, $3, $4, $5, $6)`,
+    [codigo, campos.nome, campos.max_lojas, campos.max_usuarios, campos.max_pdvs, JSON.stringify(campos.recursos)]);
+  await audit(req, 'master_plano_criar', 'planos', null, { codigo, ...campos });
+  res.status(201).json(await planoComUso({ codigo, ...campos }));
+});
+
+// Remover plano so quando nenhuma empresa usa (o plano e referencia de tenants.plano).
+router.delete('/master/planos/:codigo', async (req, res) => {
+  const { rows } = await db.query(`${SQL_PLANO} WHERE codigo = $1`, [req.params.codigo]);
+  if (rows.length === 0) throw new HttpError(404, 'plano não encontrado');
+  if (rows[0].codigo === 'completo') throw new HttpError(409, 'o plano Completo é o padrão do sistema e não pode ser removido');
+  const usando = (await db.query(`SELECT COUNT(*)::int AS n FROM tenants WHERE plano = $1`, [req.params.codigo])).rows[0].n;
+  if (usando > 0) throw new HttpError(409, `plano em uso por ${usando} empresa(s): troque o plano delas antes de remover`);
+  await db.query(`DELETE FROM planos WHERE codigo = $1`, [req.params.codigo]);
+  await audit(req, 'master_plano_remover', 'planos', null, { codigo: rows[0].codigo, nome: rows[0].nome });
+  res.status(204).end();
 });
 
 module.exports = router;

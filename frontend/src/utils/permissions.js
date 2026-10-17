@@ -13,6 +13,11 @@ export const TELAS = [
   { path: '/relatorios', label: 'Relatórios', area: 'Relatorios' },
 ];
 
+// Modulo contratado pela empresa (PDV, Lanchonete, Pedidos...). Sessao antiga sem `modulos` = tudo liberado (o servidor confere de novo).
+export function temModulo(user, chave) {
+  return !!user && (!user.modulos || user.modulos[chave] !== false);
+}
+
 export function podeAcessar(user, area) {
   if (!user) return false;
   if (!area) return true;

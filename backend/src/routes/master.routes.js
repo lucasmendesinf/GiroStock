@@ -6,7 +6,8 @@ const { HttpError } = require('../utils/http');
 const { logAudit } = require('../utils/audit');
 const { isUuid } = require('../utils/tenant');
 const { isValidDocumento, onlyDigits } = require('../utils/validators');
-const { dadosDaEmpresa, efetivos, uso } = require('../utils/limites');
+const { dadosDaEmpresa, efetivos, uso, modulosDoPlano } = require('../utils/limites');
+const { CHAVES, catalogo, conflitoDeDependencia } = require('../config/modulos');
 const { criarUsuario, resetarDoisFatores, validarNovoEmail } = require('../services/usuarios');
 const { copiarProducao, status } = require('../services/copiaProducao');
 const modoTeste = require('../services/modoTeste');
@@ -73,6 +74,11 @@ router.get('/master/empresas', async (req, res) => {
   });
 });
 
+// Catalogo de modulos (segmentos) que podem ser liberados por plano ou por empresa.
+router.get('/master/modulos', async (req, res) => {
+  res.json({ modulos: catalogo() });
+});
+
 router.get('/master/empresas/:id', async (req, res) => {
   await empresaOuErro(req.params.id);
   const e = await dadosDaEmpresa(db, req.params.id);
@@ -89,7 +95,9 @@ router.get('/master/empresas/:id', async (req, res) => {
     cliente_2fa: usuarios.rows.some((u) => u.ativo && u.totp_ativo),
     contato: (await db.query(`SELECT email_contato, telefone, responsavel FROM tenants WHERE id = $1`, [req.params.id])).rows[0],
     limites: ['lojas', 'usuarios', 'pdvs'].map((k) => ({ chave: k, limite: ef.limites[k], usado: usados[k], origem: ef.origem[k] })),
-    recursos: { pedidos: ef.recursos.pedidos, clientes: ef.recursos.clientes, origem: { pedidos: ef.origem.pedidos, clientes: ef.origem.clientes } },
+    // Modulos liberados (valor efetivo), de onde vem cada um (plano ou liberacao da empresa) e o que o plano daria sozinho.
+    recursos: { ...ef.recursos, origem: Object.fromEntries(CHAVES.map((k) => [k, ef.origem[k]])) },
+    modulos: catalogo().map((m) => ({ ...m, ligado: ef.recursos[m.chave], origem: ef.origem[m.chave], no_plano: modulosDoPlano(e.plano_recursos)[m.chave] })),
     overrides: { limites: e.limites || null, recursos: e.recursos || null },
     lojas: lojas.rows,
     usuarios: usuarios.rows,
@@ -97,7 +105,7 @@ router.get('/master/empresas/:id', async (req, res) => {
 });
 
 async function planoOuErro(codigo) {
-  const { rows } = await db.query(`SELECT codigo, max_lojas, max_usuarios FROM planos WHERE codigo = $1`, [codigo]);
+  const { rows } = await db.query(`SELECT codigo, max_lojas, max_usuarios, recursos FROM planos WHERE codigo = $1`, [codigo]);
   if (rows.length === 0) throw new HttpError(400, 'plano inválido');
   return rows[0];
 }
@@ -118,6 +126,13 @@ router.post('/master/empresas', async (req, res) => {
   const documento = validarDocumento(b.documento);
   const plano = await planoOuErro(b.plano || 'completo');
   if (plano.max_lojas < 1 || plano.max_usuarios < 1) throw new HttpError(409, 'o plano escolhido não permite criar a primeira loja e o administrador');
+  // Modulos ja na criacao: o que difere do plano escolhido fica como liberacao da empresa.
+  const recursos = b.recursos === undefined ? null : validarRecursos(b.recursos);
+  if (recursos) {
+    const plano_ = modulosDoPlano(plano.recursos);
+    const conflito = conflitoDeDependencia(Object.fromEntries(CHAVES.map((k) => [k, typeof recursos[k] === 'boolean' ? recursos[k] : plano_[k]])));
+    if (conflito) throw new HttpError(400, conflito);
+  }
   const adm = b.admin || {};
   if (!String(adm.nome || '').trim()) throw new HttpError(400, 'informe o nome do administrador');
   const senha = adm.senha ? String(adm.senha) : gerarSenha();
@@ -126,7 +141,7 @@ router.post('/master/empresas', async (req, res) => {
   try {
     await client.query('BEGIN');
     const vipPadrao = await config.obter('vip_limite_padrao'); // valor inicial; cada empresa mantem o seu depois
-    const t = await client.query(`INSERT INTO tenants (nome, documento, plano, clientes_vip_limite) VALUES ($1, $2, $3, $4) RETURNING id, nome, documento, plano, status, criado_em`, [nome, documento, plano.codigo, vipPadrao]);
+    const t = await client.query(`INSERT INTO tenants (nome, documento, plano, clientes_vip_limite, recursos) VALUES ($1, $2, $3, $4, $5) RETURNING id, nome, documento, plano, status, criado_em`, [nome, documento, plano.codigo, vipPadrao, recursos ? JSON.stringify(recursos) : null]);
     const empresa = t.rows[0];
     await client.query(`INSERT INTO locations (tenant_id, nome) VALUES ($1, $2)`, [empresa.id, String(b.loja_nome || '').trim() || 'Loja única']);
     const administrador = await criarUsuario(client, {
@@ -134,7 +149,7 @@ router.post('/master/empresas', async (req, res) => {
       deveTrocarSenha: true,
       auditoria: { tenantId: empresa.id, usuarioId: req.user.id, acao: 'master_criar_usuario', detalhes: { perfil: 'Administrador', primeiro_administrador: true } },
     });
-    await logAudit(client, { tenantId: empresa.id, usuarioId: req.user.id, acao: 'master_criar_empresa', recurso: 'tenants', recursoId: empresa.id, detalhes: { plano: plano.codigo } });
+    await logAudit(client, { tenantId: empresa.id, usuarioId: req.user.id, acao: 'master_criar_empresa', recurso: 'tenants', recursoId: empresa.id, detalhes: { plano: plano.codigo, recursos } });
     await client.query('COMMIT');
     // A senha temporaria aparece UMA vez, nesta resposta; nunca e registrada em log ou auditoria.
     res.status(201).json({ empresa, administrador: { id: administrador.id, nome: administrador.nome, email: administrador.email }, senha_temporaria: senha });
@@ -163,7 +178,7 @@ function validarRecursos(rec) {
   if (typeof rec !== 'object' || Array.isArray(rec)) throw new HttpError(400, 'recursos inválidos');
   const r = {};
   for (const [k, v] of Object.entries(rec)) {
-    if (!['pedidos', 'clientes'].includes(k)) throw new HttpError(400, 'recursos inválidos');
+    if (!CHAVES.includes(k)) throw new HttpError(400, `módulo desconhecido: ${k}`);
     if (v === null || v === undefined) continue; // volta ao plano
     if (typeof v !== 'boolean') throw new HttpError(400, 'recursos inválidos');
     r[k] = v;
@@ -187,8 +202,24 @@ router.patch('/master/empresas/:id', async (req, res) => {
   if (b.documento !== undefined) { add('documento', validarDocumento(b.documento)); mudou.documento = true; }
   if (b.plano !== undefined) { add('plano', (await planoOuErro(b.plano)).codigo); mudou.plano = b.plano; }
   if (b.limites !== undefined) { const l = validarLimites(b.limites); add('limites', l ? JSON.stringify(l) : null); mudou.limites = l; }
-  if (b.recursos !== undefined) { const r = validarRecursos(b.recursos); add('recursos', r ? JSON.stringify(r) : null); mudou.recursos = r; }
+  if (b.recursos !== undefined) {
+    // Liberacao parcial ({"pedidos": true}) soma as que a empresa ja tinha; null em um modulo volta ao plano; recursos: null limpa tudo.
+    const atual = (await db.query(`SELECT recursos FROM tenants WHERE id = $1`, [emp.id])).rows[0].recursos || {};
+    const entrada = b.recursos === null ? null : { ...atual, ...b.recursos };
+    const r = validarRecursos(entrada);
+    add('recursos', r ? JSON.stringify(r) : null); mudou.recursos = r;
+  }
   if (sets.length === 0) throw new HttpError(400, 'nada para alterar');
+  if (b.recursos !== undefined || b.plano !== undefined) {
+    // Confere o resultado (plano novo + liberacoes da empresa): modulo ligado sem a dependencia e recusado com explicacao.
+    const planoCodigo = b.plano !== undefined ? b.plano : (await dadosDaEmpresa(db, emp.id)).plano;
+    const pl = (await db.query(`SELECT recursos FROM planos WHERE codigo = $1`, [planoCodigo])).rows[0];
+    const ovr = b.recursos !== undefined ? (mudou.recursos || {}) : ((await db.query(`SELECT recursos FROM tenants WHERE id = $1`, [emp.id])).rows[0].recursos || {});
+    const plano = modulosDoPlano(pl && pl.recursos);
+    const final = Object.fromEntries(CHAVES.map((k) => [k, typeof ovr[k] === 'boolean' ? ovr[k] : plano[k]]));
+    const conflito = conflitoDeDependencia(final);
+    if (conflito) throw new HttpError(400, conflito);
+  }
   params.push(emp.id);
   await db.query(`UPDATE tenants SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
   await logAudit(db, { tenantId: emp.id, usuarioId: req.user.id, acao: 'master_alterar_empresa', recurso: 'tenants', recursoId: emp.id, detalhes: mudou });

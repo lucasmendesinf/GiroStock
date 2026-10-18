@@ -15,6 +15,8 @@ const LABELS = {
   orders: 'pedido',
   couriers: 'entregador',
   customers: 'cliente',
+  fin_categorias: 'categoria financeira',
+  fin_contas: 'conta financeira',
 };
 
 function isUuid(id) {

@@ -1443,3 +1443,36 @@ body.suporte-leitura main .btn-primario, body.suporte-leitura main form button[t
   table.es-tabela .es-acoes { display: flex; gap: 6px; }
   table.es-tabela .es-acoes .es-ico { width: 42px; height: 42px; }
 }
+
+/* ===== Financeiro ===== */
+.fin-atraso { color: var(--err) !important; font-weight: 700; }
+.fin-tabela tr.cancelado td { opacity: .55; text-decoration: line-through; }
+.fin-tabela tr.cancelado td:last-child, .fin-tabela tr.cancelado td:nth-child(4) { text-decoration: none; }
+.fin-btn-baixa { padding: 8px 14px; }
+.fin-fluxo tr.previsto td { color: var(--muted); }
+.fin-fluxo tr.previsto td b { color: var(--ivory); font-weight: 600; }
+.fin-fluxo tr.hoje td { background: var(--accent-soft); }
+.fin-dre-linha { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.fin-dre-linha.sub { padding-left: 14px; color: var(--muted); font-size: 13px; }
+.fin-dre-linha.sub b { font-weight: 600; }
+.fin-dre-linha.forte { font-weight: 800; font-size: 15px; border-bottom-width: 2px; }
+.fin-dre-linha.pos b { color: var(--ok); }
+.fin-dre-linha.neg b { color: var(--err); }
+.fin-formas input.es-min, .fin-formas select { max-width: 160px; }
+/* barras de uma serie: marca fina com ponta arredondada no lado do valor, linha do zero, valor ao tocar */
+.fin-barras { margin: 6px 0 4px; }
+.fin-barras-dica { min-height: 22px; font-size: 13px; margin-bottom: 6px; }
+.fin-barras-area { position: relative; display: flex; align-items: stretch; gap: 2px; border-bottom: 1px solid var(--line); }
+.fin-barras-zero { position: absolute; left: 0; right: 0; border-top: 1px solid var(--line); pointer-events: none; }
+.fin-barra { flex: 1 1 0 !important; min-width: 0 !important; width: auto !important; min-height: 0 !important; height: auto !important; position: relative; padding: 0 !important; margin: 0 !important; border: none !important; border-radius: 0 !important; background: transparent !important; box-shadow: none !important; cursor: pointer; }
+.fin-barra:hover, .fin-barra.on { background: color-mix(in srgb, var(--gold-light) 12%, transparent) !important; }
+.fin-barra-marca { position: absolute; left: 15%; right: 15%; background: var(--gold-light); border-radius: 4px 4px 0 0; }
+.fin-barra-marca.neg { background: var(--err); border-radius: 0 0 4px 4px; }
+.fin-barra.destaque .fin-barra-marca { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--ivory); }
+.fin-barras-eixo { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 4px; }
+@media (max-width: 640px) {
+  .fin-titulos .ped-kpis, .fin-resumo .ped-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .fin-btn-baixa { flex: 1 1 100%; min-height: 44px; }
+}
+.ped-kpi b { white-space: nowrap; }
+.fin-barra-marca { left: 50%; right: auto; width: min(70%, 44px); transform: translateX(-50%); }

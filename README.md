@@ -99,7 +99,7 @@ Cada cliente usa só os módulos (segmentos) que contratou. O Master define isso
 | iFood e 99Food | pedidos das plataformas na tela de Pedidos | Pedidos |
 | Casa de shows e eventos *(em breve)* | eventos, PDVs e estoque do evento | PDV |
 | Loja virtual *(em breve)* | catálogo online e delivery | — |
-| Financeiro *(em breve)* | contas a pagar/receber e fluxo de caixa | — |
+| Financeiro | contas a pagar/receber, fluxo de caixa, resultado do mês | Financeiro |
 
 - Sempre incluído em qualquer plano: Início, Produtos & Estoque, Fornecedores, Lojas & PDVs, Usuários e Relatórios.
 - Planos prontos: **Só PDV** (varejo/distribuidora), **Lanchonete**, **Básico** e **Completo**. O Master cria novos planos e remove os que nenhuma empresa usa (o Completo é o padrão e não pode ser removido).
@@ -194,6 +194,22 @@ curl -X POST localhost:4998/_sim/pedidos -H 'content-type: application/json' \
   -d '{"app_shop_id":"GS...","itens":[{"nome":"X-Burguer","codigo":"PRD-0002","quantidade":1,"preco":2500}]}'
 ```
 
+## Financeiro (módulo "Financeiro")
+
+Liberado pelo Master por plano ou por empresa; acesso pela permissão **Financeiro** (perfis Administrador e Financeiro; dá para liberar a outros usuários em Usuários). Menu **Financeiro**, com as abas:
+
+- **Resumo**: saldo de hoje (soma das contas), a pagar (vencido, hoje, 7 dias), a receber em 7 dias (contas + vendas no cartão/apps a cair), resultado do mês, saldo previsto dos próximos 30 dias (com o menor saldo e o dia) e o que está vencendo.
+- **Contas a pagar / a receber**: lançamento único, **parcelado** (divide o valor; centavos na 1ª parcela) ou **todo mês** (mesmo valor, ex.: aluguel), com categoria, fornecedor/cliente, loja, documento e mês de competência. Pagar/receber com data, valor (juros ou desconto), conta e forma; estornar; editar (só em aberto); cancelar com motivo (opção de cancelar as parcelas seguintes). Nada é apagado; tudo fica na auditoria. Em "a receber", também as **vendas a cair** no cartão e nos apps.
+- **Fluxo de caixa**: dia a dia, realizado até hoje e previsto depois (vendas no cartão/apps a cair + contas em aberto pelo vencimento; atrasadas entram em hoje), com o saldo no fim de cada dia.
+- **Resultado do mês** (competência): vendas − descontos − taxas de cartão/apps − custo das mercadorias vendidas = lucro bruto; − despesas por categoria + outras receitas = resultado. Filtro por loja e evolução de 6 meses.
+- **Cadastros**: **contas** (banco, cofre, carteira digital) com saldo de um dia; **formas de pagamento das vendas** (em quantos dias cai, taxa % e em qual conta — crédito, débito, pix, dinheiro, iFood, 99Food); **categorias** de despesa e receita.
+
+Regras:
+- As **vendas não viram lançamentos**: o financeiro lê as vendas do PDV/pedidos e calcula quando e quanto cai, pelo prazo e taxa da forma de pagamento. Venda paga online é separada em iFood/99Food pelo pedido de origem.
+- **Compra de mercadorias** fica fora do resultado (o custo dela já entra pelo custo das mercadorias vendidas; contar as duas vezes seria em dobro), mas entra no fluxo de caixa.
+- **NF-e → contas a pagar**: ao importar o XML da nota (Produtos & Estoque → Entrada por nota), quem tem o Financeiro vê as **duplicatas** da nota (número, vencimento, valor) prontas para lançar como contas a pagar do fornecedor, na categoria Compra de mercadorias. Nota sem duplicata: uma parcela com o total, em 30 dias (ajustável).
+- Datas pelo fuso de São Paulo (o "hoje" vem do servidor, não do relógio do aparelho).
+
 ## Teste ponta a ponta
 
 ```bash
@@ -201,6 +217,7 @@ cd backend
 API_URL=http://localhost:3000 npm run test:e2e:ifood     # iFood (com o simulador rodando e a API apontando para ele)
 API_URL=http://localhost:3000 npm run test:e2e:99food    # 99Food (idem, com o simulador da 99Food)
 API_URL=http://localhost:3000 npm run test:e2e:combos    # combos e complementos
+API_URL=http://localhost:3000 npm run test:e2e:financeiro # financeiro (contas, fluxo, resultado)
 ```
 
 

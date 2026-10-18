@@ -290,8 +290,8 @@ const aguaDepois = (await r('GET', `/products/${agua.id}`, null, A)).j;
 check('saldo da Tabacaria nao mudou apos nota recusada', Number(aguaDepois.saldos_por_local.find((x) => x.location_nome === 'Tabacaria').saldo) === 10);
 check('nota sem itens -> 400', st(await r('POST', '/stock-entries', { location_id: L.Tabacaria, itens: [] }, A), 400));
 
-const hoje = new Date();
-const dia = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+// "Hoje" no fuso de Sao Paulo (o mesmo dos relatorios), nao no do servidor: entre 21h e 0h o dia em UTC ja virou.
+const dia = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 const resumoHoje = (await r('GET', `/reports/sales-summary?data_inicio=${dia}&data_fim=${dia}`, null, A)).j;
 const resumoAntigo = (await r('GET', '/reports/sales-summary?data_inicio=2020-01-01&data_fim=2020-01-31', null, A)).j;
 check('relatorio filtra por periodo', resumoHoje.numero_vendas > 0 && resumoAntigo.numero_vendas === 0, { hoje: resumoHoje.numero_vendas, antigo: resumoAntigo.numero_vendas });

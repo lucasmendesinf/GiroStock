@@ -29,6 +29,7 @@ const masterRoutes = require('./routes/master.routes');
 const masterVisaoRoutes = require('./routes/master.visao.routes');
 const masterConfigRoutes = require('./routes/master.config.routes');
 const integracoesRoutes = require('./routes/integracoes.routes');
+const financeiroRoutes = require('./routes/financeiro.routes');
 const webhooksRoutes = require('./routes/webhooks.routes');
 const { router: complementosRoutes } = require('./routes/complementos.routes');
 
@@ -57,6 +58,7 @@ app.use('/api', authRequired, ingredientsRoutes);
 app.use('/api', authRequired, locationsRoutes);
 app.use('/api', authRequired, cashRoutes);
 app.use('/api', authRequired, integracoesRoutes);
+app.use('/api', authRequired, financeiroRoutes);
 app.use('/api', authRequired, salesRoutes);
 app.use('/api', authRequired, reportsRoutes);
 app.use('/api', authRequired, ordersRoutes);

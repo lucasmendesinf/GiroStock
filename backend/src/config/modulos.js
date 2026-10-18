@@ -43,9 +43,9 @@ const MODULOS = [
     areas: [],
   },
   {
-    chave: 'financeiro', nome: 'Financeiro', padrao: false, disponivel: false, requer: [],
-    descricao: 'Contas a pagar e a receber, fluxo de caixa e indicadores.',
-    areas: [],
+    chave: 'financeiro', nome: 'Financeiro', padrao: false, disponivel: true, requer: [],
+    descricao: 'Contas a pagar e a receber (com parcelas e duplicatas da nota), fluxo de caixa com as vendas e o prazo de cada forma de pagamento, resultado do mês e indicadores.',
+    areas: ['Financeiro'],
   },
 ];
 

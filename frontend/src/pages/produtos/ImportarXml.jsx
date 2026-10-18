@@ -1,4 +1,7 @@
 import { useRef, useState } from 'react';
+import { useAuth } from '../../context/AuthContext.jsx';
+import { podeAcessar, temModulo } from '../../utils/permissions';
+import ContasDaNota from './ContasDaNota.jsx';
 import { api } from '../../api/client';
 import { useToast } from '../../context/UiContext.jsx';
 import { Field, Modal } from '../../components/ui.jsx';
@@ -54,7 +57,13 @@ function lerNfe(texto) {
       quantidade: qCom, custo: qCom > 0 ? Math.round((vProd / qCom) * 10000) / 10000 : 0,
     };
   });
+  // Duplicatas (parcelas do boleto) e total da nota: viram contas a pagar no Financeiro.
+  const duplicatas = [...inf.getElementsByTagName('dup')].map((d) => ({ numero: tag(d, 'nDup'), vencimento: tag(d, 'dVenc').slice(0, 10), valor: Number(tag(d, 'vDup')) }))
+    .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d.vencimento) && d.valor > 0);
+  const tot = inf.getElementsByTagName('ICMSTot')[0];
+  const ide = inf.getElementsByTagName('ide')[0];
   return {
+    duplicatas, totalNota: Number(tag(tot, 'vNF')) || 0, emissao: (tag(ide, 'dhEmi') || tag(ide, 'dEmi')).slice(0, 10),
     numero: tag(inf.getElementsByTagName('ide')[0], 'nNF'),
     emitente: tag(emit, 'xNome'), cnpj: soDigitos(tag(emit, 'CNPJ') || tag(emit, 'CPF')),
     fone: soDigitos(tag(emit, 'fone')), email: tag(emit, 'email'),
@@ -67,6 +76,9 @@ function lerNfe(texto) {
 // com CNPJ desconhecido pode virar fornecedor novo. Nada e gravado antes da confirmacao.
 export default function ImportarXml({ products, suppliers, locations, categories, locationId, onLancado }) {
   const toast = useToast();
+  const { user } = useAuth();
+  const usaFinanceiro = temModulo(user, 'financeiro') && podeAcessar(user, 'Financeiro');
+  const [contasNota, setContasNota] = useState(null); // nota lancada no estoque: oferecer as contas a pagar
   const inputRef = useRef(null);
   const [nota, setNota] = useState(null);
   const [linhas, setLinhas] = useState([]);
@@ -212,6 +224,7 @@ export default function ImportarXml({ products, suppliers, locations, categories
       });
       lembrarLoja(loja);
       toast.sucesso(`NF-e ${nota.numero} importada: ${r.itens} produto(s) (${novos.length} novo(s)), ${brl(r.valor_total)}.`);
+      if (usaFinanceiro) setContasNota({ ...nota, supplierId: supplierId || null, valorEstoque: r.valor_total });
       setNota(null);
       onLancado();
     } catch (err) {
@@ -224,6 +237,7 @@ export default function ImportarXml({ products, suppliers, locations, categories
     <>
       <input ref={inputRef} type="file" accept=".xml,text/xml,application/xml" onChange={abrir} style={{ display: 'none' }} />
       <button type="button" className="es-btn-ghost" onClick={() => inputRef.current.click()} title="Importar o XML da nota fiscal (NF-e)">Importar XML da NF-e</button>
+      {contasNota && <ContasDaNota nota={contasNota} onClose={() => setContasNota(null)} />}
       {nota && (
         <Modal titulo="Conferir importação da NF-e" subtitulo={`Nota ${nota.numero || '—'} · ${nota.emitente || 'emitente não informado'}`} onClose={() => setNota(null)} largura="xml">
           <div className="form-stack" onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault(); }}>

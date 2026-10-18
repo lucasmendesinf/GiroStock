@@ -24,6 +24,7 @@ import Products from './pages/Products.jsx';
 import Users from './pages/Users.jsx';
 import Suppliers from './pages/Suppliers.jsx';
 import Reports from './pages/Reports.jsx';
+import Financeiro from './pages/Financeiro.jsx';
 import Locations from './pages/Locations.jsx';
 import Master from './pages/Master.jsx';
 import TrocaObrigatoria from './pages/TrocaObrigatoria.jsx';
@@ -208,6 +209,7 @@ export default function App() {
       <Route path="/lojas" element={<Private area="Configuracoes"><Locations /></Private>} />
       <Route path="/usuarios" element={<Private area="Configuracoes"><Users /></Private>} />
       <Route path="/relatorios" element={<Private area="Relatorios"><Reports /></Private>} />
+      <Route path="/financeiro/*" element={<Private area="Financeiro"><Financeiro /></Private>} />
       <Route path="*" element={<Inicial />} />
     </Routes>
   );

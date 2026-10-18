@@ -13,7 +13,7 @@ const MATRIX = {
   'Master':               { Vendas: false, Estoque: false, Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: false, Pedidos: false, Clientes: false, ModoTeste: true,  Master: true },
 };
 
-// Permissoes que podem ser ajustadas por usuario (Financeiro ainda nao tem tela). 'Master' nao entra aqui:
+// Permissoes que podem ser ajustadas por usuario. 'Master' nao entra aqui:
 // o perfil Master so existe por script e nao pode ser concedido por ajuste individual.
 const PERMISSOES = {
   Vendas: 'PDV: abrir o caixa e vender',
@@ -25,6 +25,7 @@ const PERMISSOES = {
   ModoTeste: 'Modo teste: trabalhar em um banco de teste separado da produção',
   Estoque: 'Produtos, fornecedores, insumos, entradas e transferências',
   Relatorios: 'Relatórios e histórico de vendas',
+  Financeiro: 'Financeiro: contas a pagar e a receber, fluxo de caixa e resultado',
   Configuracoes: 'Usuários, lojas e PDVs',
   CancelarVendas: 'Cancelar vendas (estorna estoque e caixa)',
 };

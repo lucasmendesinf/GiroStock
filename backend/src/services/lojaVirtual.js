@@ -48,6 +48,135 @@ async function lojaPorChave(chave) {
   return rows[0];
 }
 
+// ---------- endereco da loja (subdominio, dominio proprio, pre-visualizacao) ----------
+// O mesmo servidor atende o sistema e todas as lojas: a loja e escolhida pelo endereco acessado.
+// LOJA_DOMINIO_BASE: dominio da plataforma para os subdominios gratis (ex.: lojas.calutec.com.br -> joao.lojas.calutec.com.br).
+const dominioBase = () => String(process.env.LOJA_DOMINIO_BASE || '').trim().toLowerCase().replace(/^\*\./, '');
+const SUBDOMINIO_RE = /^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])?$/;
+const SUBDOMINIOS_RESERVADOS = ['www', 'api', 'admin', 'app', 'sistema', 'painel', 'mail', 'email', 'ftp', 'cpanel', 'webmail', 'loja', 'lojas', 'master', 'suporte'];
+
+function normalizarSubdominio(v) {
+  const s = String(v || '').trim().toLowerCase();
+  if (!SUBDOMINIO_RE.test(s)) throw new HttpError(400, 'subdomínio inválido: de 3 a 40 letras, números ou hífen (sem acento nem espaço)');
+  if (SUBDOMINIOS_RESERVADOS.includes(s)) throw new HttpError(400, `o subdomínio "${s}" é reservado`);
+  return s;
+}
+// Sugestao de subdominio a partir do nome da empresa ("JA Conveniência" -> "ja-conveniencia").
+const sugerirSubdominio = (nome) => semAcento(nome).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'loja';
+
+function normalizarDominio(v) {
+  const d = String(v || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/[/?#].*$/, '').replace(/:\d+$/, '').replace(/\.$/, '');
+  if (!/^(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/.test(d)) throw new HttpError(400, `domínio inválido: "${v}" (ex.: www.minhaloja.com.br)`);
+  const base = dominioBase();
+  if (base && (d === base || d.endsWith(`.${base}`))) throw new HttpError(400, 'use o campo subdomínio para endereços da própria plataforma');
+  return d;
+}
+
+// Cache curto (o roteamento consulta a cada pagina aberta): host -> id da loja ou null.
+const cacheHost = new Map();
+const limparCacheHost = () => cacheHost.clear();
+async function lojaIdDoHost(host) {
+  const h = String(host || '').toLowerCase().replace(/:\d+$/, '').replace(/\.$/, '');
+  if (!h) return null;
+  const c = cacheHost.get(h);
+  if (c && Date.now() - c.em < 30000) return c.id;
+  let id = null;
+  const base = dominioBase();
+  if (base && h.endsWith(`.${base}`)) {
+    const sub = h.slice(0, -(base.length + 1));
+    if (SUBDOMINIO_RE.test(sub)) id = ((await db().query(`SELECT id FROM lv_lojas WHERE lower(subdominio) = $1`, [sub])).rows[0] || {}).id || null;
+  } else {
+    // www.x.com e x.com valem como o mesmo dominio
+    const alternativo = h.startsWith('www.') ? h.slice(4) : `www.${h}`;
+    id = ((await db().query(`SELECT loja_id FROM lv_dominios WHERE dominio = $1 OR dominio = $2 ORDER BY dominio = $1 DESC LIMIT 1`, [h, alternativo])).rows[0] || {}).loja_id || null;
+  }
+  if (cacheHost.size > 5000) cacheHost.clear();
+  cacheHost.set(h, { id, em: Date.now() });
+  return id;
+}
+
+async function lojaValida(where, param) {
+  const { rows } = await db().query(`SELECT * FROM lv_lojas WHERE ${where}`, [param]);
+  if (rows.length === 0) throw new HttpError(404, 'loja não encontrada');
+  if (!(await moduloLigado(rows[0].tenant_id))) throw new HttpError(403, 'loja virtual indisponível para esta empresa');
+  return rows[0];
+}
+const lojaPorSubdominio = (sub) => lojaValida('lower(subdominio) = $1', String(sub || '').toLowerCase());
+async function lojaPorHost(host) {
+  const id = await lojaIdDoHost(host);
+  if (!id) throw new HttpError(404, 'loja não encontrada');
+  return lojaValida('id = $1', id);
+}
+
+// Loja da empresa (cria a configuracao na primeira vez, com um subdominio sugerido pelo nome e ainda livre).
+async function lojaDaEmpresa(dbc, tenantId) {
+  const atual = (await dbc.query(`SELECT * FROM lv_lojas WHERE tenant_id = $1`, [tenantId])).rows[0];
+  if (atual) return atual;
+  const t = (await dbc.query(`SELECT nome FROM tenants WHERE id = $1`, [tenantId])).rows[0];
+  const nome = t ? t.nome : '';
+  let sub = sugerirSubdominio(nome);
+  if (sub.length < 3 || SUBDOMINIOS_RESERVADOS.includes(sub)) sub = `loja-${sub}`.slice(0, 40);
+  for (let i = 2; (await dbc.query(`SELECT 1 FROM lv_lojas WHERE lower(subdominio) = $1`, [sub])).rows.length > 0; i++) sub = `${sugerirSubdominio(nome).slice(0, 35)}-${i}`;
+  const { rows } = await dbc.query(
+    `INSERT INTO lv_lojas (tenant_id, nome, subdominio) VALUES ($1, $2, $3)
+     ON CONFLICT (tenant_id) DO UPDATE SET tenant_id = EXCLUDED.tenant_id RETURNING *`,
+    [tenantId, nome, sub]
+  );
+  return rows[0];
+}
+const dominiosDaLoja = async (dbc, lojaId) => (await dbc.query(`SELECT dominio FROM lv_dominios WHERE loja_id = $1 ORDER BY criado_em, dominio`, [lojaId])).rows.map((r) => r.dominio);
+
+// Enderecos da loja (para o painel e para o Master).
+function enderecosDaLoja(loja, dominios = []) {
+  const base = dominioBase();
+  return {
+    subdominio: loja.subdominio || null,
+    url_subdominio: base && loja.subdominio ? `https://${loja.subdominio}.${base}` : null,
+    dominios,
+    urls_dominios: dominios.map((d) => `https://${d}`),
+    dominio_base: base || null,
+  };
+}
+
+// ---------- tema (layout) ----------
+const COR_RE = /^#[0-9a-f]{6}$/i;
+const MODELOS = ['classico', 'vitrine', 'compacto'];
+const FONTES = ['moderna', 'classica', 'arredondada'];
+const BLOCOS = ['banners', 'categorias', 'destaques', 'promocoes', 'produtos'];
+const TEMA_PADRAO = {
+  modelo: 'classico', cor_primaria: '#b5121b', cor_fundo: '#ffffff', cor_texto: '#1d1d1f', cor_destaque: '#1f7a4d',
+  fonte: 'moderna', cantos: 'arredondados',
+  blocos: BLOCOS.map((tipo) => ({ tipo, ativo: true, titulo: '' })),
+  exclusivo: null,
+};
+// Mescla o tema guardado com o padrao (campos novos ganham o valor padrao sem migracao).
+function temaEfetivo(t) {
+  const x = t && typeof t === 'object' ? t : {};
+  const blocos = Array.isArray(x.blocos) ? x.blocos.filter((b) => b && BLOCOS.includes(b.tipo)) : TEMA_PADRAO.blocos.map((b) => ({ ...b }));
+  for (const tipo of BLOCOS) if (!blocos.some((b) => b.tipo === tipo)) blocos.push({ tipo, ativo: false, titulo: '' });
+  return {
+    ...TEMA_PADRAO, ...Object.fromEntries(Object.entries(x).filter(([k]) => k in TEMA_PADRAO && k !== 'blocos')),
+    blocos: blocos.map((b) => ({ tipo: b.tipo, ativo: b.ativo !== false, titulo: String(b.titulo || '').slice(0, 60) })),
+  };
+}
+// Valida o que o cliente envia (o tema exclusivo so o Master define).
+function normalizarTema(entrada, atual) {
+  if (!entrada || typeof entrada !== 'object' || Array.isArray(entrada)) throw new HttpError(400, 'tema inválido');
+  const t = temaEfetivo({ ...temaEfetivo(atual), ...entrada, exclusivo: temaEfetivo(atual).exclusivo });
+  if (!MODELOS.includes(t.modelo)) throw new HttpError(400, 'modelo de layout inválido');
+  if (!FONTES.includes(t.fonte)) throw new HttpError(400, 'fonte inválida');
+  if (!['arredondados', 'retos'].includes(t.cantos)) throw new HttpError(400, 'cantos inválidos');
+  for (const k of ['cor_primaria', 'cor_fundo', 'cor_texto', 'cor_destaque']) {
+    if (!COR_RE.test(t[k])) throw new HttpError(400, `cor inválida em ${k.replace('cor_', '')}: use #RRGGBB`);
+    t[k] = t[k].toLowerCase();
+  }
+  if (Array.isArray(entrada.blocos)) {
+    const ordem = entrada.blocos.map((b) => b && b.tipo).filter((x) => BLOCOS.includes(x));
+    t.blocos.sort((a, b) => (ordem.indexOf(a.tipo) + 99 * (ordem.indexOf(a.tipo) < 0)) - (ordem.indexOf(b.tipo) + 99 * (ordem.indexOf(b.tipo) < 0)));
+  }
+  return t;
+}
+
 // ---------- horario ----------
 // Agora em Sao Paulo: dia da semana (0 = domingo), minutos do dia e data AAAA-MM-DD.
 function agoraSP(d = new Date()) {
@@ -185,6 +314,10 @@ async function catalogo(loja, base, filtros = {}) {
     where += ` AND (p.nome ILIKE $${params.length} OR lp.nome_site ILIKE $${params.length} OR lp.descricao ILIKE $${params.length})`;
   }
   if (filtros.destaque) where += ' AND lp.destaque';
+  if (filtros.promocao) {
+    params.push(agoraSP().data);
+    where += ` AND lp.preco_promocional IS NOT NULL AND lp.preco_promocional < p.preco_venda AND (lp.promo_inicio IS NULL OR lp.promo_inicio <= $${params.length}::date) AND (lp.promo_fim IS NULL OR lp.promo_fim >= $${params.length}::date)`;
+  }
   if (filtros.ids) {
     params.push(filtros.ids);
     where += ` AND p.id = ANY($${params.length}::uuid[])`;
@@ -232,8 +365,10 @@ async function dadosPublicos(loja, base) {
   const pag = loja.pagamentos || {};
   const mpOk = !!(loja.mp_access_token_cript && loja.mp_public_key);
   return {
+    id: loja.id,
     nome: loja.nome,
     descricao: loja.descricao,
+    tema: temaEfetivo(loja.tema),
     logo: loja.logo_id ? urlImagem(base, loja.logo_id) : null,
     banners: (loja.banners || []).map((b) => ({ imagem: urlImagem(base, b.imagem_id), titulo: b.titulo || '', link: b.link || '' })),
     contato: { telefone: loja.telefone, whatsapp: loja.whatsapp, email: loja.email, endereco: loja.endereco, instagram: loja.instagram },
@@ -676,7 +811,8 @@ function iniciarVarredura() {
 }
 
 module.exports = {
-  db, gerarChave, hashChave, moduloLigado, lojaPorChave, agoraSP, normalizarHorarios, situacaoHorario, recebendoPedidos, precoDoProduto,
+  db, gerarChave, hashChave, moduloLigado, lojaPorChave, lojaPorHost, lojaPorSubdominio, lojaIdDoHost, limparCacheHost, dominioBase,
+  lojaDaEmpresa, dominiosDaLoja, normalizarSubdominio, sugerirSubdominio, normalizarDominio, enderecosDaLoja, temaEfetivo, normalizarTema, TEMA_PADRAO, MODELOS, FONTES, BLOCOS, agoraSP, normalizarHorarios, situacaoHorario, recebendoPedidos, precoDoProduto,
   catalogo, produto, categorias, dadosPublicos, urlImagem, calcularCarrinho, entregaDoBairro, validarCupom, descontoDoCupom, semAcento,
   guardarCredenciaisMp, tokenMp, cobrar, pagamentoPublico, aplicarPagamentoMp, estornarPedido, receberAvisoMp, varrerPagamentos, cancelarPedido,
   iniciarVarredura, SITUACAO_MP, n2,

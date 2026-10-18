@@ -62,7 +62,7 @@ export default function Geral({ dados, onMudou }) {
 
       <DadosDaLoja c={c} salvar={salvar} />
       <Funcionamento c={c} locais={dados.locais} salvar={salvar} />
-      <Integracao c={c} salvar={salvar} onMudou={onMudou} />
+      <Integracao c={c} onMudou={onMudou} />
     </div>
   );
 }
@@ -187,13 +187,13 @@ function Funcionamento({ c, locais, salvar }) {
   );
 }
 
-function Integracao({ c, salvar, onMudou }) {
+function Integracao({ c, onMudou }) {
   const toast = useToast();
   const confirmar = useConfirm();
-  const [dominios, setDominios] = useState((c.dominios || []).join(', '));
   const [novaChave, setNovaChave] = useState(null);
+  const enderecos = [c.url_subdominio, ...(c.urls_dominios || [])].filter(Boolean);
   async function gerar() {
-    if (c.chave && !(await confirmar({ titulo: 'Gerar uma nova chave?', mensagem: 'A chave atual para de funcionar na hora: o site fica fora até receber a nova chave.', confirmar: 'Gerar nova chave', perigo: true }))) return;
+    if (c.chave && !(await confirmar({ titulo: 'Gerar uma nova chave?', mensagem: 'A chave atual para de funcionar na hora: um site externo que use a chave fica fora até receber a nova.', confirmar: 'Gerar nova chave', perigo: true }))) return;
     try {
       setNovaChave((await api.post('/loja-virtual/chave')).chave);
       await onMudou();
@@ -204,30 +204,33 @@ function Integracao({ c, salvar, onMudou }) {
   }
   return (
     <div className="card form-stack">
-      <h3 style={{ margin: 0 }}>Ligação com o site</h3>
-      <p className="form-hint" style={{ margin: 0 }}>O site da loja busca produtos, preços, estoque e envia os pedidos por esta API. Entregue a chave e o endereço da API a quem publica o site.</p>
-      <div className="lv-campo-copiar">
-        <span className="ped-rotulo">Endereço da API</span>
-        <div><code>{c.url_api}</code> <button type="button" className="btn-link" onClick={() => copiar(c.url_api)}>Copiar</button></div>
-      </div>
-      <div className="lv-campo-copiar">
-        <span className="ped-rotulo">Chave da API</span>
-        <div>
-          {c.chave ? <><code>{c.chave.prefixo}…</code> <span className="muted">criada em {new Date(c.chave.criada_em).toLocaleDateString('pt-BR')}</span></> : <span className="muted">nenhuma chave ainda</span>}
-          {' '}<button type="button" className="btn-link" onClick={gerar}>{c.chave ? 'Gerar nova chave' : 'Gerar chave'}</button>
+      <h3 style={{ margin: 0 }}>Endereço da loja</h3>
+      {enderecos.length > 0 ? (
+        <div className="lv-campo-copiar">
+          {enderecos.map((u) => <div key={u}><a href={u} target="_blank" rel="noreferrer"><code>{u}</code></a> <button type="button" className="btn-link" onClick={() => copiar(u)}>Copiar</button></div>)}
         </div>
-      </div>
-      <form className="form-stack" onSubmit={(e) => { e.preventDefault(); salvar({ dominios }, 'Domínios salvos'); }}>
-        <Field label="Domínio(s) do site" hint="Ex.: www.minhaloja.com.br (separe com vírgula; até 5).">
-          <input value={dominios} onChange={(e) => setDominios(e.target.value)} placeholder="www.minhaloja.com.br" />
-        </Field>
-        <div><button type="submit">Salvar domínios</button></div>
-      </form>
+      ) : <p className="form-hint" style={{ margin: 0 }}>O endereço (subdomínio ou domínio próprio) é definido pelo suporte. Fale com a gente para colocar a loja no seu domínio.</p>}
+      {c.url_previa && <div><a className="btn-link" href={c.url_previa} target="_blank" rel="noreferrer">Pré-visualizar a loja ↗</a> <span className="form-hint">funciona mesmo com a loja fora do ar</span></div>}
+      <details className="lv-avancado">
+        <summary>Site externo (avançado): chave da API</summary>
+        <p className="form-hint">Só é necessária se a loja for montada num site feito à parte. O site padrão já funciona sem chave.</p>
+        <div className="lv-campo-copiar">
+          <span className="ped-rotulo">Endereço da API</span>
+          <div><code>{c.url_api}</code> <button type="button" className="btn-link" onClick={() => copiar(c.url_api)}>Copiar</button></div>
+        </div>
+        <div className="lv-campo-copiar">
+          <span className="ped-rotulo">Chave da API</span>
+          <div>
+            {c.chave ? <><code>{c.chave.prefixo}…</code> <span className="muted">criada em {new Date(c.chave.criada_em).toLocaleDateString('pt-BR')}</span></> : <span className="muted">nenhuma chave</span>}
+            {' '}<button type="button" className="btn-link" onClick={gerar}>{c.chave ? 'Gerar nova chave' : 'Gerar chave'}</button>
+          </div>
+        </div>
+      </details>
       {novaChave && (
         <Modal titulo="Chave da API gerada" subtitulo="Copie agora: por segurança ela não aparece de novo." onClose={() => setNovaChave(null)}
           acoes={<><button type="button" onClick={() => copiar(novaChave)}>Copiar chave</button><button type="button" className="btn-primario" onClick={() => setNovaChave(null)}>Já copiei</button></>}>
           <code className="lv-chave">{novaChave}</code>
-          <p className="form-hint">Configure no site o cabeçalho <code>X-Loja-Chave</code> com esta chave. Se ela vazar, gere uma nova (a antiga deixa de funcionar).</p>
+          <p className="form-hint">Configure no site externo o cabeçalho <code>X-Loja-Chave</code> com esta chave. Se ela vazar, gere uma nova (a antiga deixa de funcionar).</p>
         </Modal>
       )}
     </div>

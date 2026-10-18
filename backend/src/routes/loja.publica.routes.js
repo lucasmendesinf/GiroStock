@@ -1,5 +1,6 @@
 // API publica da loja virtual (/api/loja/v1): usada pelo site da loja (projeto separado, o mesmo para todas as empresas).
-// Toda chamada leva o cabecalho X-Loja-Chave (chave gerada em Loja virtual > Configuração). As rotas da conta e dos
+// O site servido pelo proprio GiroStock e reconhecido pelo endereco (subdominio ou dominio proprio); um site externo
+// manda o cabecalho X-Loja-Chave (chave gerada em Loja virtual > Visão geral). As rotas da conta e dos
 // pedidos levam tambem o token do cliente (Authorization: Bearer ...), recebido no cadastro/login.
 // Documentacao: docs/API_LOJA_VIRTUAL.md
 const express = require('express');
@@ -35,8 +36,12 @@ router.get('/imagens/:id', async (req, res) => {
 });
 
 // ---------- chave da loja ----------
+// Qual loja: a chave (site externo), a pre-visualizacao (/loja-previa/<subdominio>) ou o endereco acessado
+// (subdominio da plataforma ou dominio proprio, quando o site e servido pelo proprio GiroStock).
 router.use(async (req, res, next) => {
-  req.loja = await lv.lojaPorChave(req.get('x-loja-chave'));
+  if (req.get('x-loja-chave')) req.loja = await lv.lojaPorChave(req.get('x-loja-chave'));
+  else if (req.get('x-loja-subdominio')) req.loja = await lv.lojaPorSubdominio(req.get('x-loja-subdominio'));
+  else req.loja = await lv.lojaPorHost(req.hostname);
   next();
 });
 
@@ -116,7 +121,7 @@ router.get('/produtos', async (req, res) => {
   const q = req.query;
   if (q.categoria && !isUuid(q.categoria)) throw new HttpError(400, 'categoria inválida');
   res.json(await lv.catalogo(req.loja, baseUrl(req), {
-    categoria: q.categoria || null, busca: q.busca || null, destaque: q.destaque === 'true' || q.destaque === '1',
+    categoria: q.categoria || null, busca: q.busca || null, destaque: q.destaque === 'true' || q.destaque === '1', promocao: q.promocao === 'true' || q.promocao === '1',
     pagina: q.pagina, por_pagina: q.por_pagina, ordem: q.ordem,
   }));
 });

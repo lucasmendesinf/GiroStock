@@ -13,6 +13,7 @@ import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import http from 'node:http';
 import { tokenDoMasterComDoisFatores } from './e2e-2fa-helper.mjs';
 
 const raiz = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -88,19 +89,18 @@ check('estabelecimento sem "usa pedidos" -> 400 explicando', semPed.s === 400 &&
 await api('PATCH', `/locations/${L.Lanchonete}`, { usa_pedidos: true }, A);
 const put1 = await api('PUT', '/loja-virtual', {
   location_id: L.Lanchonete, nome: 'Lanchonete JA', descricao: 'Lanches e bebidas geladas', whatsapp: '11999990000', pedido_minimo: 0,
-  tempo_preparo_min: 20, tempo_entrega_min: 30, taxa_outros_bairros: null, dominios: 'https://www.lanchoneteja.com.br/ lanchoneteja.com.br',
+  tempo_preparo_min: 20, tempo_entrega_min: 30, taxa_outros_bairros: null,
   pagamentos: { pix_online: true, cartao_online: true, na_entrega: ['dinheiro', 'pix'] }, parcelas_max: 3,
 }, A);
-check('salva a configuracao (dominios normalizados)', put1.s === 200 && put1.j.location_id === L.Lanchonete && put1.j.dominios.join() === 'www.lanchoneteja.com.br,lanchoneteja.com.br', put1);
+check('salva a configuracao', put1.s === 200 && put1.j.location_id === L.Lanchonete && put1.j.nome === 'Lanchonete JA', put1);
+check('loja criada com subdominio sugerido pelo nome da empresa', /^[a-z0-9-]{3,}$/.test(put1.j.subdominio || '') && put1.j.url_previa && put1.j.url_previa.endsWith(`/loja-previa/${put1.j.subdominio}/`), put1.j);
 check('horario invalido -> 400', (await api('PUT', '/loja-virtual', { horarios: { 1: [{ de: '25:00', ate: '10:00' }] } }, A)).s === 400);
-const pubSem = await api('PUT', '/loja-virtual', { publicada: true }, A);
-check('publicar sem chave da API -> 400', pubSem.s === 400 && /chave/.test(pubSem.j.erro), pubSem);
 const k = await api('POST', '/loja-virtual/chave', null, A);
 check('gera a chave da API (mostrada uma vez)', k.s === 201 && /^lv_[0-9a-f]{48}$/.test(k.j.chave), k);
 const bancoK = (await prod.query(`SELECT api_chave_hash, api_chave_prefixo FROM lv_lojas WHERE tenant_id = $1`, [empresa])).rows[0];
 check('no banco fica so o hash da chave', bancoK.api_chave_hash && bancoK.api_chave_hash !== k.j.chave && k.j.chave.startsWith(bancoK.api_chave_prefixo));
 check('GET /loja-virtual mostra so o prefixo da chave', JSON.stringify((await api('GET', '/loja-virtual', null, A)).j).indexOf(k.j.chave) === -1);
-check('API publica sem chave -> 401', (await loja('GET', '/loja')).s === 401);
+check('API publica sem chave num endereco que nao e de loja -> 404', (await loja('GET', '/loja')).s === 404);
 CHAVE = 'lv_' + '0'.repeat(48);
 check('API publica com chave errada -> 401', (await loja('GET', '/loja')).s === 401);
 CHAVE = k.j.chave;
@@ -363,6 +363,50 @@ await api('PATCH', `/master/empresas/${empresa}`, { recursos: { loja_virtual: fa
 check('modulo desligado: API publica responde 403 ao site', (await loja('GET', '/loja')).s === 403);
 await api('PATCH', `/master/empresas/${empresa}`, { recursos: { loja_virtual: true } }, MAS);
 check('religado: volta a funcionar', (await loja('GET', '/loja')).s === 200);
+
+console.log('\n# 18. Endereco da loja (Master), dominio proprio, subdominio e tema');
+// Requisicao com outro Host (como se o navegador abrisse o dominio da loja).
+const comHost = (host, caminho, headers = {}) => new Promise((resolve) => {
+  const u = new URL(B);
+  const r = http.request({ hostname: u.hostname, port: u.port, path: caminho, method: 'GET', headers: { host, ...headers } }, (res) => {
+    let t = '';
+    res.on('data', (c) => { t += c; });
+    res.on('end', () => { let j = null; try { j = JSON.parse(t); } catch { /* html */ } resolve({ s: res.statusCode, t, j }); });
+  });
+  r.on('error', (e) => resolve({ s: 'CAIU', t: e.message }));
+  r.end();
+});
+const BASE_SUB = process.env.LOJA_DOMINIO_BASE || '';
+check('cliente (Administrador) nao mexe no endereco: rota do Master -> 403', (await api('PUT', `/master/empresas/${empresa}/loja-virtual`, { subdominio: 'x-loja' }, A)).s === 403);
+check('subdominio reservado -> 400', (await api('PUT', `/master/empresas/${empresa}/loja-virtual`, { subdominio: 'www' }, MAS)).s === 400);
+check('dominio invalido -> 400', (await api('PUT', `/master/empresas/${empresa}/loja-virtual`, { dominios: 'nao e dominio' }, MAS)).s === 400);
+const end = await api('PUT', `/master/empresas/${empresa}/loja-virtual`, { subdominio: 'LanchoneteJA', dominios: 'https://WWW.LanchoneteJA.com.br/\nlanchoneteja.com.br' }, MAS);
+check('Master define subdominio e dominios (normalizados)', end.s === 200 && end.j.subdominio === 'lanchoneteja' && end.j.dominios.join() === 'www.lanchoneteja.com.br,lanchoneteja.com.br' && end.j.modulo_ligado === true, end);
+const outra = (await prod.query(`INSERT INTO tenants (nome) VALUES ('Outra Empresa E2E') RETURNING id`)).rows[0].id;
+check('outra empresa ganha loja com subdominio proprio', (await api('GET', `/master/empresas/${outra}/loja-virtual`, null, MAS)).j.subdominio === 'outra-empresa-e2e');
+check('o mesmo dominio em outra empresa -> 409', (await api('PUT', `/master/empresas/${outra}/loja-virtual`, { dominios: 'www.lanchoneteja.com.br' }, MAS)).s === 409);
+check('o mesmo subdominio em outra empresa -> 409', (await api('PUT', `/master/empresas/${outra}/loja-virtual`, { subdominio: 'lanchoneteja' }, MAS)).s === 409);
+const cfgEnd = (await api('GET', '/loja-virtual', null, A)).j.config;
+check('painel do cliente mostra os enderecos da loja (sem poder editar)', cfgEnd.dominios.length === 2 && cfgEnd.urls_dominios[0] === 'https://www.lanchoneteja.com.br', cfgEnd);
+check('dns: consulta responde para cada dominio', (await api('GET', `/master/empresas/${empresa}/loja-virtual/dns`, null, MAS)).j.dominios.length === 2);
+const pagLoja = await comHost('www.lanchoneteja.com.br', '/');
+check('dominio proprio abre o site da loja (nao o sistema)', pagLoja.s === 200 && pagLoja.t.includes('/loja-assets/'), pagLoja.t.slice(0, 200));
+check('sem o www tambem abre a loja', (await comHost('lanchoneteja.com.br', '/produto/qualquer')).t.includes('/loja-assets/'));
+if (BASE_SUB) check('subdominio da plataforma abre a loja', (await comHost(`lanchoneteja.${BASE_SUB}`, '/')).t.includes('/loja-assets/'));
+const pagSistema = await comHost(new URL(B).host, '/login');
+check('o endereco do sistema continua abrindo o sistema', pagSistema.s === 200 && !pagSistema.t.includes('/loja-assets/'), pagSistema.t.slice(0, 200));
+check('pre-visualizacao pelo endereco do sistema', (await comHost(new URL(B).host, '/loja-previa/lanchoneteja/')).t.includes('/loja-assets/'));
+const apiHost = await comHost('www.lanchoneteja.com.br', '/api/loja/v1/loja');
+check('API da loja pelo dominio, sem chave', apiHost.s === 200 && apiHost.j.nome === 'Lanchonete JA', apiHost.t.slice(0, 200));
+check('API da loja pela pre-visualizacao (subdominio no cabecalho)', (await comHost(new URL(B).host, '/api/loja/v1/loja', { 'x-loja-subdominio': 'lanchoneteja' })).j.nome === 'Lanchonete JA');
+check('dominio desconhecido -> 404', (await comHost('www.naoexiste.com.br', '/api/loja/v1/loja')).s === 404);
+check('cor invalida no tema -> 400', (await api('PUT', '/loja-virtual', { tema: { cor_primaria: 'vermelho' } }, A)).s === 400);
+const tema = await api('PUT', '/loja-virtual', { tema: { modelo: 'compacto', cor_primaria: '#123456', exclusivo: 'invasao', blocos: [{ tipo: 'produtos', ativo: true, titulo: 'Cardápio' }, { tipo: 'banners', ativo: false }] } }, A);
+check('salva o tema (modelo, cor, ordem dos blocos)', tema.s === 200 && tema.j.tema.modelo === 'compacto' && tema.j.tema.blocos[0].tipo === 'produtos' && tema.j.tema.blocos[0].titulo === 'Cardápio' && tema.j.tema.blocos.find((b) => b.tipo === 'banners').ativo === false, tema.j && tema.j.tema);
+const temaSite = (await comHost('www.lanchoneteja.com.br', '/api/loja/v1/loja')).j.tema;
+check('site recebe o tema; o cliente nao define tema exclusivo', temaSite.cor_primaria === '#123456' && temaSite.exclusivo === null && temaSite.blocos.length === 5, temaSite);
+await prod.query(`DELETE FROM lv_lojas WHERE tenant_id = $1`, [outra]).catch(() => {});
+await prod.query(`DELETE FROM tenants WHERE id = $1`, [outra]).catch(() => {}); // pode ficar se houver auditoria
 
 console.log(`\n${pass} ok, ${fail} falha(s)`);
 await prod.end();

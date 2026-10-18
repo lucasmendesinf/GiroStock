@@ -1,6 +1,6 @@
 # API da Loja Virtual (v1)
 
-API pública que o **site da loja** usa para falar com o GiroStock. O site é um projeto separado, **o mesmo para todas as empresas**: só o layout (tema) muda de cliente para cliente. Toda a regra (preço, estoque, entrega, cupom, pagamento) fica no GiroStock.
+API pública que o **site da loja** usa para falar com o GiroStock. O site padrão fica em `loja/` (neste repositório), é **o mesmo para todas as empresas** e é servido pelo próprio GiroStock no endereço de cada loja; só o layout (tema) muda de cliente para cliente. Toda a regra (preço, estoque, entrega, cupom, pagamento) fica no GiroStock.
 
 - **Endereço:** `https://<servidor-do-girostock>/api/loja/v1`
 - **Formato:** JSON (UTF-8). Valores em reais com 2 casas (`12.5` = R$ 12,50). Datas em ISO 8601.
@@ -9,9 +9,9 @@ API pública que o **site da loja** usa para falar com o GiroStock. O site é um
 | Status | Quando |
 |---|---|
 | 400 | dado inválido (campo faltando, formato errado) |
-| 401 | chave da loja ausente/errada, ou token do cliente ausente/expirado |
+| 401 | chave da loja errada, ou token do cliente ausente/expirado |
+| 404 | endereço que não é de nenhuma loja (ou produto/pedido/endereço não encontrado) |
 | 403 | módulo Loja virtual desligado para a empresa (ou empresa suspensa) |
-| 404 | produto/pedido/endereço não encontrado |
 | 409 | conflito: loja fechada/pausada, sem estoque, pedido já em preparo, e-mail já cadastrado |
 | 422 | regra de negócio: cupom inválido, bairro sem entrega, pedido mínimo, forma de pagamento não aceita |
 | 429 | muitas tentativas (login, cadastro, recuperação de senha) |
@@ -19,7 +19,7 @@ API pública que o **site da loja** usa para falar com o GiroStock. O site é um
 
 ## Autenticação
 
-1. **Chave da loja** — cabeçalho `X-Loja-Chave: lv_...` em **todas** as chamadas (menos `/imagens`). É gerada em *Loja virtual → Visão geral → Ligação com o site* e identifica a empresa. Gerar uma nova chave desativa a anterior na hora.
+1. **Qual loja** — o site padrão não manda nada: a loja é reconhecida pelo **endereço** (subdomínio `nome.<LOJA_DOMINIO_BASE>` ou domínio próprio cadastrado pelo Master). Na pré-visualização (`/loja-previa/<subdominio>/`) o site manda o cabeçalho `X-Loja-Subdominio`. Um site **externo** (feito à parte) manda o cabeçalho `X-Loja-Chave: lv_...` em todas as chamadas (menos `/imagens`). É gerada em *Loja virtual → Visão geral → Ligação com o site* e identifica a empresa. Gerar uma nova chave desativa a anterior na hora.
 2. **Token do cliente** — `Authorization: Bearer <token>` nas rotas de conta e pedidos. Vem do cadastro, login ou redefinição de senha. Vale 30 dias; trocar/redefinir a senha encerra as outras sessões; conta bloqueada pela loja perde o acesso na hora (401).
 
 > A chave identifica a loja, não dá acesso a dados de clientes: tudo o que é do cliente exige o token dele. Preços e totais são sempre recalculados no servidor.
@@ -30,7 +30,9 @@ API pública que o **site da loja** usa para falar com o GiroStock. O site é um
 Dados para montar o site.
 ```json
 {
-  "nome": "Lanchonete JA", "descricao": "...", "logo": "https://.../api/loja/v1/imagens/<id>",
+  "id": "...", "nome": "Lanchonete JA", "descricao": "...",
+  "tema": { "modelo": "classico", "cor_primaria": "#b5121b", "cor_fundo": "#ffffff", "cor_texto": "#1d1d1f", "cor_destaque": "#1f7a4d",
+            "fonte": "moderna", "cantos": "arredondados", "blocos": [{ "tipo": "banners", "ativo": true, "titulo": "" }], "exclusivo": null }, "logo": "https://.../api/loja/v1/imagens/<id>",
   "banners": [{ "imagem": "https://...", "titulo": "", "link": "" }],
   "contato": { "telefone": "", "whatsapp": "11999990000", "email": "", "endereco": "", "instagram": "" },
   "aviso": "Entregas até as 23h",
@@ -55,7 +57,7 @@ Dados para montar o site.
 `[{ "id", "nome", "pai_id", "produtos" }]` — só categorias com produto publicado (as categorias-pai somam as filhas).
 
 ### `GET /produtos`
-Parâmetros: `categoria` (id; inclui as subcategorias), `busca`, `destaque=1`, `ordem` (`nome` | `menor_preco` | `maior_preco`; padrão: destaques primeiro), `pagina`, `por_pagina` (até 100, padrão 24).
+Parâmetros: `categoria` (id; inclui as subcategorias), `busca`, `destaque=1`, `promocao=1`, `ordem` (`nome` | `menor_preco` | `maior_preco`; padrão: destaques primeiro), `pagina`, `por_pagina` (até 100, padrão 24).
 ```json
 { "pagina": 1, "por_pagina": 24, "total": 2, "paginas": 1, "produtos": [ {
   "id": "...", "nome": "Refrigerante lata", "descricao": "Lata 350 ml", "unidade": "UN",

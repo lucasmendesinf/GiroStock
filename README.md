@@ -206,7 +206,13 @@ Teste: `npm run test:e2e:relatorios`.
 
 ## Loja virtual (módulo "Loja virtual")
 
-O site da loja é um **projeto separado, igual para todas as empresas** (só o layout muda). Ele conversa com o GiroStock pela API pública `/api/loja/v1`, identificado pela chave da loja. Uma loja por empresa; requer o módulo Pedidos. Permissão: **Loja virtual** (padrão só Administrador).
+O site da loja fica **neste mesmo repositório** (`loja/`) e é **um só para todas as empresas**: o mesmo servidor atende o sistema e todas as lojas, e escolhe a loja pelo endereço acessado. Uma atualização (deploy) vale para o sistema e para todas as lojas. Os dados ficam no mesmo banco, separados por empresa. Uma loja por empresa; requer o módulo Pedidos. Permissão: **Loja virtual** (padrão só Administrador).
+
+- **Endereço** (definido pelo Master, na ficha da empresa): subdomínio grátis `nome.<LOJA_DOMINIO_BASE>` e domínios próprios (`www.lojadocliente.com.br`). Um domínio só pode pertencer a uma empresa. O cliente aponta o DNS (CNAME do www para `LOJA_DNS_ALVO`); o Master confere o DNS pela tela. No cPanel, cada domínio próprio é adicionado como "domínio adicional/alias" do mesmo app para o AutoSSL gerar o certificado.
+- **Pré-visualização:** `https://<sistema>/loja-previa/<subdominio>/` (abre mesmo com a loja fora do ar; não aceita pedido).
+- **Aparência** (painel do cliente): modelo de layout (Clássico, Vitrine, Cardápio), cores (com paletas prontas), fonte, cantos, banners e blocos da página inicial (ordem, títulos). Tema exclusivo de um cliente: pasta própria em `loja/`, definida pelo Master.
+- **Site da loja (`loja/`)**: vitrine com banners, categorias, destaques e promoções; busca; produto com fotos e adicionais; carrinho com cupom; conta (cadastro, login, recuperação de senha, endereços); checkout com entrega/retirada, Pix (QR code), cartão (formulário seguro do Mercado Pago) ou pagamento na entrega; acompanhamento do pedido. Pensado primeiro para celular.
+- **Site externo (opcional):** a API pública `/api/loja/v1` também aceita a chave da loja (`X-Loja-Chave`), para quem quiser montar um site à parte.
 
 Tela **Loja virtual** (gerenciamento):
 - **Visão geral** — situação (publicar, pausar, tirar do ar), o que falta configurar, dados que aparecem no site (logo, contato, aviso), estabelecimento de onde sai o estoque, retirada/entrega, tempos, pedido mínimo, horários (inclusive passando da meia-noite), endereço da API e **chave da API** (mostrada uma vez; gerar outra desativa a anterior).
@@ -218,7 +224,7 @@ Tela **Loja virtual** (gerenciamento):
 
 Pedidos do site entram na tela **Pedidos** como canal "Loja virtual" (com aviso sonoro), reservam o estoque e viram venda ao finalizar, com o preço promocional e o desconto do cupom. Pago pelo site: o preparo só começa com o pagamento aprovado; Pix não pago no prazo cancela o pedido sozinho; cancelar pedido pago estorna no Mercado Pago. Os avisos de pagamento chegam em `/api/webhooks/mercadopago/<loja>` (conferidos na API do Mercado Pago e, com o segredo cadastrado, pela assinatura).
 
-Documentação da API para quem faz o site: [docs/API_LOJA_VIRTUAL.md](docs/API_LOJA_VIRTUAL.md). Variáveis novas no `.env`: `URL_PUBLICA` e `SMTP_*` (veja `.env.example`). Teste: `npm run mp:simulador` + `npm run test:e2e:loja-virtual`.
+Documentação da API: [docs/API_LOJA_VIRTUAL.md](docs/API_LOJA_VIRTUAL.md). Variáveis novas no `.env`: `URL_PUBLICA`, `SMTP_*`, `LOJA_DOMINIO_BASE`, `LOJA_DNS_ALVO`, `LOJA_DNS_IP` (veja `.env.example`). Desenvolvimento do site: `cd loja && npm install && npm run build` (o backend serve `loja/dist`). Teste: `npm run mp:simulador` + `npm run test:e2e:loja-virtual`.
 
 ## Financeiro (módulo "Financeiro")
 

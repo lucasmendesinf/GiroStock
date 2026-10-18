@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { useToast } from '../context/UiContext.jsx';
 import Geral from './lojavirtual/Geral.jsx';
 import Produtos from './lojavirtual/Produtos.jsx';
+import Aparencia from './lojavirtual/Aparencia.jsx';
 import Entrega from './lojavirtual/Entrega.jsx';
 import Cupons from './lojavirtual/Cupons.jsx';
 import Pagamentos from './lojavirtual/Pagamentos.jsx';
@@ -11,6 +12,7 @@ import Clientes from './lojavirtual/Clientes.jsx';
 
 const ABAS = [
   { to: '/loja-virtual/geral', label: 'Visão geral' },
+  { to: '/loja-virtual/aparencia', label: 'Aparência' },
   { to: '/loja-virtual/produtos', label: 'Produtos no site' },
   { to: '/loja-virtual/entrega', label: 'Entrega' },
   { to: '/loja-virtual/cupons', label: 'Cupons' },
@@ -18,8 +20,8 @@ const ABAS = [
   { to: '/loja-virtual/clientes', label: 'Clientes do site' },
 ];
 
-// Gerenciamento da loja virtual. O site (projeto separado, o mesmo para todas as empresas) le tudo pela API
-// com a chave gerada aqui; os pedidos do site caem na tela de Pedidos.
+// Gerenciamento da loja virtual. O site e o mesmo para todas as empresas e e servido pelo proprio GiroStock no
+// endereco da loja (subdominio ou dominio proprio, definidos pelo Master); os pedidos do site caem na tela de Pedidos.
 export default function LojaVirtual() {
   const toast = useToast();
   const { pathname } = useLocation();
@@ -42,6 +44,7 @@ export default function LojaVirtual() {
       {!dados ? <p className="muted">Carregando…</p> : (
         <Routes>
           <Route path="geral" element={<Geral dados={dados} onMudou={recarregar} />} />
+          <Route path="aparencia" element={<Aparencia key={dados.config.id} config={dados.config} onMudou={recarregar} />} />
           <Route path="produtos" element={<Produtos config={dados.config} />} />
           <Route path="entrega" element={<Entrega config={dados.config} onMudou={recarregar} />} />
           <Route path="cupons" element={<Cupons />} />

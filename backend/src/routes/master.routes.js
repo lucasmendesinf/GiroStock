@@ -14,6 +14,8 @@ const modoTeste = require('../services/modoTeste');
 const config = require('../services/config');
 const { mostrarTeste, semDadosDeTeste } = require('../utils/dadosTeste');
 const pool = require('../db/pool');
+const lojaVirtual = require('../services/lojaVirtual');
+const dnsLoja = require('../services/dnsLoja');
 
 // Painel Master. Todas as rotas exigem a area Master e usam SEMPRE a producao (pool.producao), mesmo em modo teste.
 // Nada aqui le ou devolve vendas, pedidos, clientes ou produtos das empresas: o Master administra a plataforma.
@@ -240,6 +242,71 @@ router.post('/master/empresas/:id/reativar', async (req, res) => {
   await db.query(`UPDATE tenants SET status = 'ativa', suspenso_motivo = NULL, suspenso_em = NULL WHERE id = $1`, [emp.id]);
   await logAudit(db, { tenantId: emp.id, usuarioId: req.user.id, acao: 'master_reativar_empresa', recurso: 'tenants', recursoId: emp.id });
   res.json({ status: 'ativa' });
+});
+
+// ---------------------------------------------------------------- Loja virtual (endereco)
+// O Master define o subdominio gratis (joao.<LOJA_DOMINIO_BASE>) e os dominios proprios da loja da empresa.
+// O cliente so aponta o DNS; o resto (layout, produtos, pagamentos) ele configura no proprio painel.
+async function lojaDoMaster(emp) {
+  const loja = await lojaVirtual.lojaDaEmpresa(db, emp.id);
+  const dominios = await lojaVirtual.dominiosDaLoja(db, loja.id);
+  return {
+    modulo_ligado: !!efetivos(await dadosDaEmpresa(db, emp.id)).recursos.loja_virtual,
+    publicada: loja.publicada, nome: loja.nome,
+    ...lojaVirtual.enderecosDaLoja(loja, dominios),
+    dns_alvo: dnsLoja.alvo(),
+  };
+}
+
+router.get('/master/empresas/:id/loja-virtual', async (req, res) => {
+  res.json(await lojaDoMaster(await empresaOuErro(req.params.id)));
+});
+
+router.put('/master/empresas/:id/loja-virtual', async (req, res) => {
+  const emp = await empresaOuErro(req.params.id);
+  const b = req.body || {};
+  const loja = await lojaVirtual.lojaDaEmpresa(db, emp.id);
+  const sub = b.subdominio === undefined ? loja.subdominio : b.subdominio === null || b.subdominio === '' ? null : lojaVirtual.normalizarSubdominio(b.subdominio);
+  let dominios;
+  if (b.dominios !== undefined) {
+    const lista = Array.isArray(b.dominios) ? b.dominios : String(b.dominios || '').split(/[\s,;]+/);
+    dominios = [...new Set(lista.map((d) => String(d).trim()).filter(Boolean).map(lojaVirtual.normalizarDominio))];
+    if (dominios.length > 5) throw new HttpError(400, 'no máximo 5 domínios por loja');
+  }
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    if (sub) {
+      const outra = await client.query(`SELECT 1 FROM lv_lojas WHERE lower(subdominio) = $1 AND id <> $2`, [sub, loja.id]);
+      if (outra.rows.length) throw new HttpError(409, `o subdomínio "${sub}" já é de outra empresa`);
+    }
+    await client.query(`UPDATE lv_lojas SET subdominio = $2, atualizado_em = now() WHERE id = $1`, [loja.id, sub]);
+    if (dominios) {
+      const outros = await client.query(`SELECT dominio FROM lv_dominios WHERE dominio = ANY($1::text[]) AND loja_id <> $2`, [dominios, loja.id]);
+      if (outros.rows.length) throw new HttpError(409, `o domínio ${outros.rows[0].dominio} já está ligado à loja de outra empresa`);
+      await client.query(`DELETE FROM lv_dominios WHERE loja_id = $1`, [loja.id]);
+      // clock_timestamp: cada linha com a sua hora (a lista volta na ordem em que foi digitada)
+      for (const d of dominios) await client.query(`INSERT INTO lv_dominios (dominio, loja_id, criado_em) VALUES ($1, $2, clock_timestamp())`, [d, loja.id]);
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    if (err.code === '23505') throw new HttpError(409, 'subdomínio ou domínio já usado por outra empresa');
+    throw err;
+  } finally {
+    client.release();
+  }
+  lojaVirtual.limparCacheHost();
+  await logAudit(db, { tenantId: emp.id, usuarioId: req.user.id, acao: 'master_loja_endereco', recurso: 'lv_lojas', recursoId: loja.id, detalhes: { subdominio: sub, dominios } });
+  res.json(await lojaDoMaster(emp));
+});
+
+// Confere se os dominios proprios ja apontam para o servidor (consulta DNS publica).
+router.get('/master/empresas/:id/loja-virtual/dns', async (req, res) => {
+  const emp = await empresaOuErro(req.params.id);
+  const loja = await lojaVirtual.lojaDaEmpresa(db, emp.id);
+  const dominios = await lojaVirtual.dominiosDaLoja(db, loja.id);
+  res.json({ alvo: dnsLoja.alvo(), dominios: await Promise.all(dominios.map((d) => dnsLoja.conferir(d))) });
 });
 
 // ---------------------------------------------------------------- Usuarios & seguranca

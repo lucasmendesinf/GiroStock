@@ -28,27 +28,19 @@ const valorOuNulo = (v, nome, { min = 0 } = {}) => {
 };
 const baseUrl = (req) => (process.env.URL_PUBLICA || `${req.get('x-forwarded-proto') || req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
 
-// Loja da empresa (cria a configuracao na primeira vez).
-async function lojaDaEmpresa(db, tenantId) {
-  let { rows } = await db.query(`SELECT * FROM lv_lojas WHERE tenant_id = $1`, [tenantId]);
-  if (rows.length === 0) {
-    const t = (await db.query(`SELECT nome FROM tenants WHERE id = $1`, [tenantId])).rows[0];
-    ({ rows } = await db.query(
-      `INSERT INTO lv_lojas (tenant_id, nome) VALUES ($1, $2) ON CONFLICT (tenant_id) DO UPDATE SET tenant_id = EXCLUDED.tenant_id RETURNING *`,
-      [tenantId, t ? t.nome : '']
-    ));
-  }
-  return rows[0];
-}
+const lojaDaEmpresa = lv.lojaDaEmpresa;
 
 // Configuracao para a tela (sem segredos).
-function configTela(l, base) {
+async function configTela(l, base) {
   return {
+    ...lv.enderecosDaLoja(l, await lv.dominiosDaLoja(pool, l.id)),
+    url_previa: l.subdominio ? `${base}/loja-previa/${l.subdominio}/` : null,
+    tema: lv.temaEfetivo(l.tema),
     id: l.id, location_id: l.location_id, publicada: l.publicada, pausada: l.pausada, nome: l.nome, descricao: l.descricao,
     logo_id: l.logo_id, logo_url: l.logo_id ? lv.urlImagem(base, l.logo_id) : null,
     banners: (l.banners || []).map((b) => ({ ...b, url: lv.urlImagem(base, b.imagem_id) })),
     telefone: l.telefone, whatsapp: l.whatsapp, email: l.email, endereco: l.endereco, instagram: l.instagram, aviso: l.aviso,
-    dominios: l.dominios || [], horarios: l.horarios || {}, aceita_retirada: l.aceita_retirada, aceita_entrega: l.aceita_entrega,
+    horarios: l.horarios || {}, aceita_retirada: l.aceita_retirada, aceita_entrega: l.aceita_entrega,
     pedido_minimo: n2(l.pedido_minimo), tempo_preparo_min: l.tempo_preparo_min, tempo_entrega_min: l.tempo_entrega_min,
     taxa_outros_bairros: l.taxa_outros_bairros === null ? null : n2(l.taxa_outros_bairros),
     pagamentos: l.pagamentos || {}, parcelas_max: l.parcelas_max, pix_expira_min: l.pix_expira_min,
@@ -86,13 +78,13 @@ router.get('/loja-virtual', async (req, res) => {
   const pendencias = [];
   if (!l.location_id) pendencias.push('escolha o estabelecimento de onde sai o estoque');
   else if (!(locais.find((x) => x.id === l.location_id) || {}).usa_pedidos) pendencias.push('ative "usa pedidos" no estabelecimento da loja (Lojas & PDVs)');
-  if (!l.api_chave_prefixo) pendencias.push('gere a chave da API e entregue a quem publica o site');
+  if (!l.subdominio && (await lv.dominiosDaLoja(pool, l.id)).length === 0) pendencias.push('peça ao suporte para definir o endereço (domínio) da loja');
   if (Number(resumo.produtos_publicados) === 0) pendencias.push('publique produtos no site');
   if (l.aceita_entrega && Number(resumo.bairros) === 0 && l.taxa_outros_bairros === null) pendencias.push('cadastre os bairros de entrega (ou uma taxa para qualquer bairro)');
   const pag = l.pagamentos || {};
   if ((pag.pix_online || pag.cartao_online) && !l.mp_access_token_cript) pendencias.push('conecte a conta do Mercado Pago para receber Pix/cartão pelo site');
   if (!pag.pix_online && !pag.cartao_online && !(pag.na_entrega || []).length) pendencias.push('escolha ao menos uma forma de pagamento');
-  res.json({ config: configTela(l, baseUrl(req)), resumo: { ...resumo, vendido_mes: n2(resumo.vendido_mes) }, situacao, pendencias, locais });
+  res.json({ config: await configTela(l, baseUrl(req)), resumo: { ...resumo, vendido_mes: n2(resumo.vendido_mes) }, situacao, pendencias, locais });
 });
 
 router.put('/loja-virtual', async (req, res) => {
@@ -121,9 +113,6 @@ router.put('/loja-virtual', async (req, res) => {
     if (!Number.isInteger(n) || n < min || n > max) throw new HttpError(400, `${nome}: use um número inteiro de ${min} a ${max}`);
     return n;
   };
-  const dominios = b.dominios === undefined ? atual.dominios : (Array.isArray(b.dominios) ? b.dominios : String(b.dominios || '').split(/[\s,;]+/))
-    .map((d) => String(d).trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '')).filter(Boolean).slice(0, 5);
-  if (dominios.some((d) => !/^[a-z0-9.-]+\.[a-z]{2,}(:\d+)?$/.test(d) && !/^localhost(:\d+)?$/.test(d))) throw new HttpError(400, 'domínio inválido (ex.: www.minhaloja.com.br)');
   let banners = atual.banners;
   if (b.banners !== undefined) {
     if (!Array.isArray(b.banners) || b.banners.length > 8) throw new HttpError(400, 'banners inválidos (até 8)');
@@ -153,11 +142,11 @@ router.put('/loja-virtual', async (req, res) => {
     pagamentos: JSON.stringify(pagamentos),
     parcelas_max: v('parcelas_max', inteiro('parcelas', 1, 12)),
     pix_expira_min: v('pix_expira_min', inteiro('prazo do Pix (minutos)', 5, 1440)),
-    dominios, banners: JSON.stringify(banners), logo_id: logoId,
+    banners: JSON.stringify(banners), logo_id: logoId,
+    tema: JSON.stringify(b.tema === undefined ? lv.temaEfetivo(atual.tema) : lv.normalizarTema(b.tema, atual.tema)),
   };
   if (!dados.aceita_retirada && !dados.aceita_entrega) throw new HttpError(400, 'aceite ao menos retirada ou entrega');
   if (dados.publicada && !dados.location_id) throw new HttpError(400, 'para publicar, escolha o estabelecimento de onde sai o estoque');
-  if (dados.publicada && !atual.api_chave_hash) throw new HttpError(400, 'para publicar, gere antes a chave da API');
   const cols = Object.keys(dados);
   const { rows } = await pool.query(
     `UPDATE lv_lojas SET ${cols.map((c, i) => `${c} = $${i + 2}`).join(', ')}, atualizado_em = now() WHERE id = $1 RETURNING *`,
@@ -167,7 +156,7 @@ router.put('/loja-virtual', async (req, res) => {
     tenantId: t, usuarioId: req.user.id, acao: 'loja_virtual_config', recurso: 'lv_lojas', recursoId: atual.id,
     detalhes: { publicada: dados.publicada, pausada: dados.pausada, location_id: dados.location_id },
   });
-  res.json(configTela(rows[0], baseUrl(req)));
+  res.json(await configTela(rows[0], baseUrl(req)));
 });
 
 // Nova chave da API (mostrada uma unica vez). A anterior para de funcionar na hora.
@@ -202,7 +191,7 @@ router.put('/loja-virtual/mercadopago', async (req, res) => {
     [l.id, cript.mp_access_token_cript, publicKey, segredo !== undefined, cript.mp_webhook_secret_cript, [conta.nickname, conta.email].filter(Boolean).join(' · ') || String(conta.id)]
   );
   await logAudit(pool, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'loja_virtual_mercadopago', recurso: 'lv_lojas', recursoId: l.id, detalhes: { conta: conta.id, teste: token.startsWith('TEST-') } });
-  res.json(configTela((await pool.query(`SELECT * FROM lv_lojas WHERE id = $1`, [l.id])).rows[0], baseUrl(req)));
+  res.json(await configTela((await pool.query(`SELECT * FROM lv_lojas WHERE id = $1`, [l.id])).rows[0], baseUrl(req)));
 });
 
 router.delete('/loja-virtual/mercadopago', async (req, res) => {

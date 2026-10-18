@@ -1,5 +1,5 @@
 # Deploy automatico (lado do GitHub): a cada push na main, confere a sintaxe do backend, compila o frontend e publica o
-# resultado na branch "producao" (main + frontend/dist). O servidor (cron do cPanel) so puxa essa branch.
+# resultado na branch "producao" (main + frontend/dist + loja/dist). O servidor (cron do cPanel) so puxa essa branch.
 name: Publicar build (branch producao)
 
 on:
@@ -26,6 +26,7 @@ jobs:
           cache-dependency-path: |
             backend/package-lock.json
             frontend/package-lock.json
+            loja/package-lock.json
       - name: Backend - instalar e conferir sintaxe
         run: |
           cd backend && npm ci
@@ -33,11 +34,13 @@ jobs:
           for f in $(git ls-files 'backend/*.js' 'backend/*.mjs'); do node --check "$f" || exit 1; done
       - name: Frontend - compilar
         run: cd frontend && npm ci && npm run build
+      - name: Loja virtual (site das lojas) - compilar
+        run: cd loja && npm ci && npm run build
       - name: Publicar na branch producao
         run: |
           git config user.name "deploy-bot"
           git config user.email "deploy-bot@users.noreply.github.com"
           git checkout -B producao
-          git add -f frontend/dist
+          git add -f frontend/dist loja/dist
           git commit -m "Build de produção de ${GITHUB_SHA}"
           git push -f origin producao

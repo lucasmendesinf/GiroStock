@@ -11,6 +11,7 @@ const lv = require('../services/lojaVirtual');
 const email = require('../services/email');
 const { criarPedido } = require('../services/pedidos');
 const pedidosSite = require('../services/pedidosSite');
+const frete = require('../services/frete');
 const { usuarioSistema } = require('../integracoes/comum');
 const { inserirCliente } = require('./customers.routes');
 const { HttpError } = require('../utils/http');
@@ -136,16 +137,27 @@ router.get('/produtos/:id', async (req, res) => {
 router.post('/carrinho', async (req, res) => {
   const conta = await contaDoToken(req, false);
   const b = req.body || {};
-  let bairro = b.bairro || null;
+  let local = { bairro: b.bairro || null, cidade: b.cidade || null, cep: b.cep || null };
   if (b.endereco_id && conta) {
-    const e = (await db().query(`SELECT bairro FROM lv_enderecos WHERE id = $1 AND conta_id = $2`, [b.endereco_id, conta.id])).rows[0];
-    if (e) bairro = e.bairro;
+    const e = (await db().query(`SELECT bairro, cidade, cep FROM lv_enderecos WHERE id = $1 AND conta_id = $2`, [b.endereco_id, conta.id])).rows[0];
+    if (e) local = { bairro: e.bairro, cidade: e.cidade, cep: e.cep || null };
   }
-  const r = await lv.calcularCarrinho(db(), req.loja, conta, { ...b, bairro }, 'previa');
+  const r = await lv.calcularCarrinho(db(), req.loja, conta, { ...b, ...local }, 'previa');
   const situacao = lv.recebendoPedidos(req.loja);
   if (!situacao.ok) { r.avisos.unshift(situacao.motivo); r.pode_finalizar = false; }
-  const { linhas, ...resto } = r; // eslint-disable-line no-unused-vars
+  const { linhas, frete_interno: fi, ...resto } = r; // eslint-disable-line no-unused-vars
   res.json(resto);
+});
+
+// Calcular o frete pelo CEP (pagina do produto e carrinho, antes do checkout): transportadoras e entrega da loja.
+// b: { cep, itens: [...como no carrinho...] }
+router.post('/frete', limitar('lv-frete', 60, 5 * 60 * 1000), async (req, res) => {
+  const b = req.body || {};
+  const cep = String(b.cep || '').replace(/\D/g, '');
+  if (cep.length !== 8) throw new HttpError(400, 'CEP inválido');
+  if (!frete.envioDisponivel(req.loja)) throw new HttpError(422, 'esta loja não envia por transportadora');
+  const r = await lv.calcularCarrinho(db(), req.loja, null, { itens: b.itens, tipo: 'entrega', cep }, 'previa');
+  res.json({ cep, opcoes: (r.envio && r.envio.opcoes) || [], avisos: r.avisos.filter((a) => /frete|CEP|transportadora/.test(a)) });
 });
 
 // ---------- conta ----------
@@ -424,7 +436,8 @@ async function pedidoPublico(loja, orderId, contaId, base) {
       ? { tipo: 'online', metodo: o.pagamento_online, situacao: o.pagamento_status, detalhe: lv.pagamentoPublico(pagamento) }
       : { tipo: 'na_entrega', forma: o.forma_pagamento_prevista, troco_para: o.troco_para === null ? null : n2(o.troco_para), situacao: o.pago ? 'pago' : 'a_pagar' },
     fluxo: o.lv_fluxo === 'ecommerce' ? 'loja_online' : 'cardapio',
-    rastreio: o.tipo === 'entrega' && (o.transportadora || o.rastreio_codigo) ? { transportadora: o.transportadora, codigo: o.rastreio_codigo, url: o.rastreio_url } : null,
+    frete: o.frete_servico_id ? { servico: o.frete_servico_nome, prazo_dias: o.frete_prazo_dias } : null,
+    rastreio: o.tipo === 'entrega' && ['saiu_entrega', 'finalizado'].includes(o.status) && (o.transportadora || o.rastreio_codigo) ? { transportadora: o.transportadora, codigo: o.rastreio_codigo, url: o.rastreio_url } : null,
     historico: log.map((l) => ({ etapa: l.para === 'novo' ? 'recebido' : o.lv_fluxo === 'ecommerce' ? etapa({ ...o, status: l.para, pagamento_status: 'aprovado' }) : l.para, em: l.criado_em })),
     criado_em: o.criado_em,
     previsao_min: ['finalizado', 'cancelado'].includes(o.status) || o.lv_fluxo === 'ecommerce' ? null : previsto,
@@ -465,7 +478,10 @@ router.post('/pedidos', comConta, limitar('lv-pedido', 30, 10 * 60 * 1000), asyn
   let pedido;
   try {
     await client.query('BEGIN');
-    const c = await lv.calcularCarrinho(client, loja, conta, { ...b, tipo, bairro: endereco ? endereco.bairro : null }, 'pedido');
+    const c = await lv.calcularCarrinho(client, loja, conta, {
+      ...b, tipo, bairro: endereco ? endereco.bairro : null, cidade: endereco ? endereco.cidade : null, cep: endereco ? endereco.cep || null : null,
+    }, 'pedido');
+    if (metodo === 'na_entrega' && c.entrega.servico) throw new HttpError(422, 'envio por transportadora: pague pelo site (Pix ou cartão)');
     let troco = null;
     if (formaEntrega === 'dinheiro' && pag.troco_para !== undefined && pag.troco_para !== null && pag.troco_para !== '') {
       troco = lv.n2(pag.troco_para);
@@ -485,6 +501,19 @@ router.post('/pedidos', comConta, limitar('lv-pedido', 30, 10 * 60 * 1000), asyn
         trocoPara: troco, pagamentoOnline: metodo === 'na_entrega' ? null : metodo, fluxo: lv.fluxoDaLoja(loja),
       },
     });
+    // Envio por transportadora: servico, prazo, cotacao e o destinatario em campos (para a etiqueta).
+    if (c.entrega.servico) {
+      const destino = {
+        nome: conta.nome, telefone: conta.telefone, email: conta.email, documento: conta.cpf || null,
+        cep: endereco.cep, logradouro: endereco.logradouro, numero: endereco.numero, complemento: endereco.complemento,
+        bairro: endereco.bairro, cidade: endereco.cidade, uf: endereco.uf,
+      };
+      await client.query(
+        `UPDATE orders SET frete_servico_id = $2, frete_servico_nome = $3, frete_prazo_dias = $4, frete_custo = $5, frete_cep = $6, frete_volumes = $7, frete_destino = $8 WHERE id = $1`,
+        [r.orderId, c.entrega.servico.id, c.entrega.servico.nome, c.entrega.servico.prazo_dias, c.frete_interno.custo, String(endereco.cep || '').replace(/\D/g, ''),
+          JSON.stringify(c.frete_interno.pacotes || []), JSON.stringify(destino)]
+      );
+    }
     await client.query('COMMIT');
     pedido = { id: r.orderId, numero: r.numero, total: c.total };
   } catch (err) {

@@ -531,6 +531,110 @@ await api('PATCH', `/master/empresas/${empresa}`, { recursos: { pedidos: true } 
 const vendaSite = (await prod.query(`SELECT id FROM sales WHERE id = (SELECT sale_id FROM orders WHERE id = $1)`, [r1.id])).rows[0];
 check('venda do site (sem caixa) pode ser cancelada em Vendas', (await api('POST', `/sales/${vendaSite.id}/cancel`, { motivo: 'devolucao teste' }, A)).s === 200);
 
+
+console.log('\n# 20. Frete por transportadora (Melhor Envio)');
+const MESIM = process.env.ME_SIM_URL || 'http://localhost:4996';
+await api('POST', '/stock-movements', { product_id: REFRI.id, tipo: 'entrada', quantidade: 30, location_destino_id: L.Lanchonete, motivo: 'abastecer e2e frete' }, A);
+const mesim = (m, r) => req(m, `${MESIM}${r}`);
+const envioAtivoSemConta = await api('PUT', '/loja-virtual/envio', { ativo: true }, A);
+check('ligar o envio sem conta conectada -> 422', envioAtivoSemConta.s === 422, envioAtivoSemConta);
+check('token invalido -> 422 explicando', (await api('PUT', '/loja-virtual/envio/conta', { token: 'token-invalido-0000000000' }, A)).s === 422);
+const con = await api('PUT', '/loja-virtual/envio/conta', { token: `token-simulado-e2e-${crypto.randomUUID()}`, sandbox: true }, A);
+check('conecta a conta do Melhor Envio (conta e saldo)', con.s === 200 && /Loja Simulada/.test(con.j.conta) && con.j.saldo === 500, con);
+check('token guardado cifrado (nao aparece no banco nem na tela)', !(await prod.query(`SELECT me_token_cript FROM lv_lojas WHERE tenant_id = $1`, [empresa])).rows[0].me_token_cript.includes('token-simulado') && !JSON.stringify((await api('GET', '/loja-virtual', null, A)).j).includes('token-simulado'));
+const servs = await api('GET', '/loja-virtual/envio/servicos', null, A);
+check('lista os servicos da conta', servs.s === 200 && servs.j.servicos.length === 4 && servs.j.servicos.some((x) => x.id === 1 && x.transportadora === 'Correios'), servs.j);
+check('ligar sem CEP de origem -> 422', (await api('PUT', '/loja-virtual/envio', { ativo: true }, A)).s === 422);
+check('CPF/CNPJ do remetente invalido -> 400', (await api('PUT', '/loja-virtual/envio', { remetente: { documento: '123' } }, A)).s === 400);
+const REMET = { nome: 'Lanchonete JA LTDA', telefone: '11999990000', email: 'contato@ja.com', documento: '11.222.333/0001-81', cep: '01310-100', logradouro: 'Av. Paulista', numero: '1000', bairro: 'Bela Vista', cidade: 'São Paulo', uf: 'sp' };
+const cfgEnv = await api('PUT', '/loja-virtual/envio', { ativo: true, remetente: REMET, servicos: [1, 2, 3], dias_extra: 2, acrescimo: 3, gratis_acima: null, declaracao: true, padrao: { peso_kg: 0.3, altura_cm: 4, largura_cm: 12, comprimento_cm: 16 } }, A);
+check('configura o envio (remetente, servicos, prazo extra, acrescimo)', cfgEnv.s === 200 && cfgEnv.j.disponivel === true && cfgEnv.j.remetente.uf === 'SP' && cfgEnv.j.remetente.documento === '11222333000181' && cfgEnv.j.servicos.join() === '1,2,3', cfgEnv.j);
+const simu = await api('POST', '/loja-virtual/envio/simular', { cep: '20040-002' }, A);
+check('simular no painel: servicos escolhidos, custo e preco com acrescimo', simu.s === 200 && simu.j.opcoes.length === 3 && simu.j.opcoes.every((o) => igual(o.preco, o.custo + 3)), simu.j);
+check('peso do produto invalido -> 400', (await api('PUT', `/loja-virtual/produtos/${REFRI.id}`, { peso_kg: 99 }, A)).s === 400);
+const med = await api('PUT', `/loja-virtual/produtos/${REFRI.id}`, { peso_kg: 0.4, altura_cm: 12, largura_cm: 7, comprimento_cm: 7 }, A);
+check('peso e medidas do produto no site', med.s === 200 && Number(med.j.peso_kg) === 0.4 && Number(med.j.altura_cm) === 12, med.j);
+const pubEnv = (await loja('GET', '/loja')).j.entrega;
+check('site sabe que ha envio por transportadora (e onde vale a entrega da loja)', pubEnv.aceita && pubEnv.transportadora && pubEnv.transportadora.cidade_entrega_local === 'São Paulo', pubEnv);
+const ITREFRI = [{ product_id: REFRI.id, quantidade: 2 }];
+const fr = await loja('POST', '/frete', { cep: '20040-002', itens: ITREFRI });
+const cotRio = (await mesim('GET', '/_sim/cotacoes')).j.slice(-1)[0];
+check('calcular frete pelo CEP: opcoes do mais barato ao mais caro, prazo com os dias de separacao', fr.s === 200 && fr.j.opcoes.length === 3 && fr.j.opcoes[0].preco <= fr.j.opcoes[1].preco && fr.j.opcoes.every((o) => o.prazo_dias >= 4) && cotRio.servicos === '1,2,3', { fr: fr.j, cotRio });
+check('custo da transportadora nao vai para o site', fr.j.opcoes.every((o) => o.custo === undefined && o.pacotes === undefined));
+const frAm = await loja('POST', '/frete', { cep: '69000-000', itens: ITREFRI });
+check('servico que nao atende o CEP fica de fora', frAm.j.opcoes.length === 2 && !frAm.j.opcoes.some((o) => o.id === 3), frAm.j);
+check('CEP invalido -> 400', (await loja('POST', '/frete', { cep: '123', itens: ITREFRI })).s === 400);
+const endRio = (await loja('POST', '/conta/enderecos', { rotulo: 'Rio', cep: '20040-002', logradouro: 'Rua do Ouvidor', numero: '50', bairro: 'Centro', cidade: 'Rio de Janeiro', uf: 'RJ' }, TJ)).j;
+let car = (await loja('POST', '/carrinho', { itens: ITREFRI, tipo: 'entrega', endereco_id: endRio.id }, TJ)).j;
+check('outra cidade: entrega da loja indisponivel, transportadoras oferecidas, precisa escolher', car.envio.local && car.envio.local.disponivel === false && /só em São Paulo/.test(car.envio.local.motivo) && car.envio.opcoes.length === 3 && !car.pode_finalizar && car.avisos.some((a) => /escolha uma opção de frete/.test(a)), car);
+const pac = car.envio.opcoes.find((o) => o.id === 1);
+car = (await loja('POST', '/carrinho', { itens: ITREFRI, tipo: 'entrega', endereco_id: endRio.id, frete_servico: 1 }, TJ)).j;
+check('escolhe o PAC: frete no total', car.pode_finalizar && igual(car.taxa_entrega, pac.preco) && car.entrega.servico.id === 1 && igual(car.total, car.subtotal + pac.preco), car);
+const carSP = (await loja('POST', '/carrinho', { itens: ITREFRI, tipo: 'entrega', endereco_id: endJ.id }, TJ)).j;
+check('mesma cidade da loja: entrega da loja pelo bairro continua (e as transportadoras tambem)', carSP.envio.local.disponivel === true && carSP.envio.opcoes.length >= 1 && carSP.pode_finalizar && carSP.entrega.bairro, carSP);
+await api('PUT', '/loja-virtual/envio', { gratis_acima: 9 }, A);
+const carGratis = (await loja('POST', '/frete', { cep: '20040002', itens: ITREFRI })).j;
+check('frete gratis a partir do valor: o mais barato sai gratis', carGratis.opcoes[0].gratis === true && carGratis.opcoes[0].preco === 0 && carGratis.opcoes[1].preco > 0, carGratis);
+await api('PUT', '/loja-virtual/envio', { gratis_acima: null }, A);
+check('pagar na entrega nao vale para transportadora -> 422', (await loja('POST', '/pedidos', { itens: ITREFRI, tipo: 'entrega', endereco_id: endRio.id, frete_servico: 1, pagamento: { metodo: 'na_entrega', forma: 'dinheiro' } }, TJ, IP())).s === 422);
+check('servico que nao atende o CEP -> 422', (await loja('POST', '/pedidos', { itens: ITREFRI, tipo: 'entrega', endereco_id: endRio.id, frete_servico: 17, pagamento: { metodo: 'pix' } }, TJ, IP())).s === 422);
+
+// Pedido com SEDEX (Correios: codigo de rastreio sai na geracao da etiqueta)
+const f1 = (await loja('POST', '/pedidos', { itens: ITREFRI, tipo: 'entrega', endereco_id: endRio.id, frete_servico: 2, pagamento: { metodo: 'cartao', cartao: { token: 'cartao-aprovado', payment_method_id: 'master', parcelas: 1 } } }, TJ, IP())).j;
+const sedex = car.envio.opcoes.find((o) => o.id === 2);
+check('pedido com SEDEX: cliente ve o servico e o prazo', f1.frete && f1.frete.servico === 'Correios SEDEX' && f1.frete.prazo_dias === sedex.prazo_dias && igual(f1.taxa_entrega, sedex.preco), f1);
+const dbF1 = (await prod.query(`SELECT frete_servico_id, frete_custo, frete_cep, frete_destino, frete_volumes FROM orders WHERE id = $1`, [f1.id])).rows[0];
+check('pedido guarda servico, custo cotado, destinatario e pacote para a etiqueta', dbF1.frete_servico_id === 2 && igual(dbF1.frete_custo, sedex.preco - 3) && dbF1.frete_cep === '20040002' && dbF1.frete_destino.cidade === 'Rio de Janeiro' && dbF1.frete_destino.uf === 'RJ' && dbF1.frete_volumes.length === 1, dbF1);
+check('etiqueta antes da separacao -> 409', (await api('POST', `/loja-virtual/pedidos/${f1.id}/etiqueta`, {}, A)).s === 409);
+await avancar(f1.id, { para: 'em_preparo' });
+const et1 = await api('POST', `/loja-virtual/pedidos/${f1.id}/etiqueta`, {}, A);
+const simEt1 = (await mesim('GET', '/_sim/envios')).j.find((x) => x.id === (et1.j.frete && et1.j.frete.etiqueta && et1.j.frete.etiqueta.id));
+check('compra a etiqueta (remetente, destinatario, volume, declaracao de conteudo)', et1.s === 200 && et1.j.frete.etiqueta.status === 'released' && simEt1 && simEt1.service_id === 2 && simEt1.from.company_document === '11222333000181' && simEt1.to.city === 'Rio de Janeiro' && simEt1.options.non_commercial === true && simEt1.volumes.length === 1, { et: et1.j, simEt1 });
+check('saldo do Melhor Envio debitado', (await api('GET', '/loja-virtual/envio/servicos', null, A)).j.saldo < 500);
+check('etiqueta repetida -> 409', (await api('POST', `/loja-virtual/pedidos/${f1.id}/etiqueta`, {}, A)).s === 409);
+const pdf = await api('GET', `/loja-virtual/pedidos/${f1.id}/etiqueta`, null, A);
+check('link para imprimir a etiqueta', pdf.s === 200 && /\/imprimir\//.test(pdf.j.url), pdf.j);
+check('cliente ainda nao ve rastreio (nao foi enviado)', (await ver(f1.id)).rastreio === null);
+await avancar(f1.id, { para: 'pronto' });
+const env1 = await avancar(f1.id, { para: 'saiu_entrega' });
+check('enviar com etiqueta: transportadora e codigo vem da etiqueta', env1.s === 200 && env1.j.rastreio.transportadora === 'Correios SEDEX' && /^SM\d+BR$/.test(env1.j.rastreio.codigo) && /melhorrastreio/.test(env1.j.rastreio.url), env1.j);
+const v1c = await ver(f1.id);
+check('cliente ve "Enviado" com o codigo de rastreio', v1c.etapa === 'enviado' && v1c.rastreio.codigo === env1.j.rastreio.codigo, v1c);
+await mesim('POST', `/_sim/envios/${simEt1.id}/postar`);
+await mesim('POST', `/_sim/envios/${simEt1.id}/entregar`);
+const entregue = await ate(async () => { const v = await ver(f1.id); return v.etapa === 'entregue' ? v : null; }, 15000);
+check('transportadora entregou: pedido vira "Entregue" sozinho', !!entregue, await ver(f1.id));
+
+// Jadlog: codigo so depois da postagem
+const f2 = (await loja('POST', '/pedidos', { itens: [{ product_id: REFRI.id, quantidade: 1 }], tipo: 'entrega', endereco_id: endRio.id, frete_servico: 3, pagamento: { metodo: 'cartao', cartao: { token: 'cartao-aprovado', payment_method_id: 'master', parcelas: 1 } } }, TJ, IP())).j;
+await avancar(f2.id, { para: 'em_preparo' });
+const et2 = (await api('POST', `/loja-virtual/pedidos/${f2.id}/etiqueta`, {}, A)).j;
+check('Jadlog: etiqueta sem codigo ainda', et2.frete.etiqueta && !et2.rastreio, et2);
+await mesim('POST', `/_sim/envios/${et2.frete.etiqueta.id}/postar`);
+const comCodigo = await ate(async () => { const d = (await api('GET', `/loja-virtual/pedidos/${f2.id}`, null, A)).j; return d.rastreio && /^JD/.test(d.rastreio.codigo) ? d : null; }, 15000);
+check('postado: o codigo de rastreio entra sozinho no pedido', comCodigo && comCodigo.frete.etiqueta.status === 'posted', comCodigo);
+
+// Cancelar pedido com etiqueta nao postada: cancela a etiqueta (saldo volta) e estorna o pagamento
+const f3 = (await loja('POST', '/pedidos', { itens: [{ product_id: REFRI.id, quantidade: 1 }], tipo: 'entrega', endereco_id: endRio.id, frete_servico: 1, pagamento: { metodo: 'cartao', cartao: { token: 'cartao-aprovado', payment_method_id: 'master', parcelas: 1 } } }, TJ, IP())).j;
+await avancar(f3.id, { para: 'em_preparo' });
+const et3 = (await api('POST', `/loja-virtual/pedidos/${f3.id}/etiqueta`, {}, A)).j;
+const saldoAntes = (await api('GET', '/loja-virtual/envio/servicos', null, A)).j.saldo;
+const c3e = await api('POST', `/loja-virtual/pedidos/${f3.id}/cancelar`, { motivo: 'cliente desistiu' }, A);
+const simEt3 = (await mesim('GET', '/_sim/envios')).j.find((x) => x.id === et3.frete.etiqueta.id);
+check('cancelar pedido: cancela a etiqueta no Melhor Envio (saldo volta) e estorna o pagamento', c3e.s === 200 && c3e.j.situacao === 'cancelado' && c3e.j.pagamento.situacao === 'estornado' && simEt3.status === 'canceled' && (await api('GET', '/loja-virtual/envio/servicos', null, A)).j.saldo > saldoAntes, { c: c3e.j, simEt3 });
+check('pedido com etiqueta postada nao cancela -> 409', (await api('POST', `/loja-virtual/pedidos/${f2.id}/cancelar`, { motivo: 'teste' }, A)).s === 409);
+
+// Conta sem saldo e NF-e obrigatoria
+await api('PUT', '/loja-virtual/envio/conta', { token: `token-semsaldo-e2e-${crypto.randomUUID()}`, sandbox: true }, A);
+await api('PUT', '/loja-virtual/envio', { declaracao: false }, A);
+const f4 = (await loja('POST', '/pedidos', { itens: [{ product_id: REFRI.id, quantidade: 1 }], tipo: 'entrega', endereco_id: endRio.id, frete_servico: 1, pagamento: { metodo: 'cartao', cartao: { token: 'cartao-aprovado', payment_method_id: 'master', parcelas: 1 } } }, TJ, IP())).j;
+await avancar(f4.id, { para: 'em_preparo' });
+check('sem declaracao de conteudo: pede a chave da NF-e -> 400', (await api('POST', `/loja-virtual/pedidos/${f4.id}/etiqueta`, {}, A)).s === 400);
+const semSaldo = await api('POST', `/loja-virtual/pedidos/${f4.id}/etiqueta`, { nfe: '3'.repeat(44) }, A);
+check('sem saldo no Melhor Envio: recusa explicando', semSaldo.s === 422 && /[Ss]aldo/.test(semSaldo.j.erro), semSaldo);
+await api('POST', `/loja-virtual/pedidos/${f4.id}/cancelar`, { motivo: 'teste' }, A);
+check('desconectar desliga o envio no site', (await api('DELETE', '/loja-virtual/envio/conta', null, A)).s === 204 && (await loja('GET', '/loja')).j.entrega.transportadora === null);
+
 await prod.query(`DELETE FROM lv_lojas WHERE tenant_id = $1`, [outra]).catch(() => {});
 await prod.query(`DELETE FROM tenants WHERE id = $1`, [outra]).catch(() => {}); // pode ficar se houver auditoria
 

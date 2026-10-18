@@ -21,8 +21,8 @@ const NEUTRAS = {
   users: { totp_segredo_cript: 'NULL', totp_ativo: 'false', totp_ativado_em: 'NULL', totp_ultimo_passo: 'NULL', totp_falhas: '0', totp_bloqueado_ate: 'NULL' },
   // Tokens do iFood/99Food nunca vao para o teste: la a integracao fica desconectada (o teste nao recebe pedidos reais).
   integracoes_delivery: { access_token_cript: 'NULL', refresh_token_cript: 'NULL', verificador_token_cript: 'NULL', token_expira_em: 'NULL', status: "'desconectado'" },
-  // Loja virtual: no teste nao ha chave da API nem conta do Mercado Pago (o site e os pagamentos reais ficam so na producao).
-  lv_lojas: { api_chave_hash: 'NULL', api_chave_prefixo: 'NULL', mp_access_token_cript: 'NULL', mp_webhook_secret_cript: 'NULL', mp_public_key: 'NULL', publicada: 'false' },
+  // Loja virtual: no teste nao ha chave da API nem conta do Mercado Pago ou do Melhor Envio (o site e os pagamentos reais ficam so na producao).
+  lv_lojas: { api_chave_hash: 'NULL', api_chave_prefixo: 'NULL', mp_access_token_cript: 'NULL', mp_webhook_secret_cript: 'NULL', mp_public_key: 'NULL', me_token_cript: 'NULL', envio_ativo: 'false', publicada: 'false' },
   lv_contas: { senha_hash: "'-'", reset_codigo_hash: 'NULL', cpf: 'NULL' },
 };
 

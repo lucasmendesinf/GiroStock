@@ -369,3 +369,16 @@ body:not(.modelo-cardapio) .produto-foto { background: #fff; }
 body:not(.modelo-cardapio) .produto-foto img { object-fit: contain; }
 body:not(.modelo-cardapio) .produto-info .preco b { font-size: 1.9rem; color: var(--texto); }
 body:not(.modelo-cardapio) .produto-info .preco .parcelas { font-size: .92rem; }
+
+/* ---------- frete (checkout) ---------- */
+.frete-opcao { align-items: center; }
+.frete-logo { width: 44px; height: 28px; object-fit: contain; flex: 0 0 auto; }
+.frete-nome { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.frete-nome small { color: var(--suave); }
+.frete-preco { white-space: nowrap; }
+.calcular-frete { display: flex; gap: 8px; margin-top: 8px; }
+.calcular-frete input { max-width: 160px; }
+.calcular-frete .botao { min-height: 44px; flex: 0 0 auto; }
+.lista-frete { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 6px; font-size: .92rem; }
+.lista-frete li { display: flex; justify-content: space-between; gap: 10px; }
+.lista-frete small { color: var(--suave); display: block; }

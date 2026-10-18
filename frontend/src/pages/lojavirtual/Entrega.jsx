@@ -3,6 +3,7 @@ import { api } from '../../api/client';
 import { useConfirm, useToast } from '../../context/UiContext.jsx';
 import { Field, Modal, Vazio } from '../../components/ui.jsx';
 import { brl, parseNumero } from '../../utils/format';
+import EnvioTransportadora from './EnvioTransportadora.jsx';
 
 const valor = (v) => (v === null || v === undefined ? '' : String(v).replace('.', ','));
 
@@ -31,10 +32,11 @@ export default function Entrega({ config, onMudou }) {
 
   return (
     <div className="form-stack">
-      {!config.aceita_entrega && <div className="ped-nota">A entrega está desligada em <b>Visão geral → Funcionamento</b>: o site só oferece retirada.</div>}
+      {config.tipo !== 'cardapio' && <EnvioTransportadora config={config} onMudou={onMudou} />}
+      {!config.aceita_entrega && <div className="ped-nota">A entrega da loja (motoboy, pelos bairros) está desligada em <b>Visão geral → Funcionamento</b>.</div>}
       <div className="card">
         <div className="ped-head" style={{ marginBottom: 6 }}>
-          <h3 style={{ margin: 0 }}>Bairros e taxas de entrega</h3>
+          <h3 style={{ margin: 0 }}>{config.tipo !== 'cardapio' ? 'Entrega da loja: bairros e taxas' : 'Bairros e taxas de entrega'}</h3>
           <button type="button" className="btn-primario" onClick={() => setEditando({})}>+ Bairros</button>
         </div>
         <p className="form-hint" style={{ marginTop: 0 }}>O cliente informa o endereço e o site cobra a taxa do bairro. O nome é comparado sem acento e sem diferenciar maiúsculas.</p>

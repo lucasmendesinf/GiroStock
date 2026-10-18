@@ -27,7 +27,7 @@ const pagamentoTexto = (pg, tipo) => (pg.tipo === 'online'
   ? `${METODO[pg.metodo] || pg.metodo} pelo site · ${SIT_PAG[pg.situacao] || pg.situacao}`
   : `${NA_LOJA[pg.forma] || pg.forma || 'A combinar'} na ${tipo === 'entrega' ? 'entrega' : 'retirada'}${pg.pago ? ' · pago' : ''}`);
 
-export default function PedidosSite({ onMudou }) {
+export default function PedidosSite({ config, onMudou }) {
   const toast = useToast();
   const [filtro, setFiltro] = useState('abertos');
   const [busca, setBusca] = useState('');
@@ -62,7 +62,7 @@ export default function PedidosSite({ onMudou }) {
                 <tr key={p.id} className="linha-clicavel" onClick={() => setAberto(p.id)}>
                   <td><b>nº {p.numero}</b><div className="celula-sub">{dataHora(p.criado_em)}</div></td>
                   <td>{p.cliente_nome}<div className="celula-sub">{fmtTel(p.cliente_telefone)}</div></td>
-                  <td>{p.tipo === 'entrega' ? 'Envio' : 'Retirada'}<div className="celula-sub">{p.itens} {p.itens === 1 ? 'item' : 'itens'}</div></td>
+                  <td>{p.tipo === 'entrega' ? (p.frete ? p.frete.servico : 'Entrega da loja') : 'Retirada'}<div className="celula-sub">{p.itens} {p.itens === 1 ? 'item' : 'itens'}{p.frete && p.frete.etiqueta ? ' · etiqueta ok' : ''}</div></td>
                   <td className="num">{brl(p.total)}</td>
                   <td>{pagamentoTexto(p.pagamento, p.tipo)}</td>
                   <td><span className={`ped-pill ${COR[p.situacao] || ''}`}>{p.situacao_nome}</span>{p.rastreio && p.rastreio.codigo && <div className="celula-sub">{p.rastreio.codigo}</div>}</td>
@@ -73,18 +73,19 @@ export default function PedidosSite({ onMudou }) {
           </table>
         </div>
       )}
-      {aberto && <DetalhePedido id={aberto} onClose={() => setAberto(null)} onMudou={mudou} />}
+      {aberto && <DetalhePedido id={aberto} config={config} onClose={() => setAberto(null)} onMudou={mudou} />}
     </div>
   );
 }
 
-function DetalhePedido({ id, onClose, onMudou }) {
+function DetalhePedido({ id, config, onClose, onMudou }) {
   const toast = useToast();
   const [p, setP] = useState(null);
   const [envio, setEnvio] = useState(null); // formulario de envio/rastreio
   const [forma, setForma] = useState('');
   const [cancelando, setCancelando] = useState(null);
   const [salvando, setSalvando] = useState(false);
+  const [nfe, setNfe] = useState(null); // chave da NF-e ao comprar a etiqueta (quando a loja nao usa declaracao de conteudo)
   useEffect(() => { api.get(`/loja-virtual/pedidos/${id}`).then(setP).catch((err) => { toast.erro(err); onClose(); }); }, [id, toast, onClose]);
   if (!p) return <Modal titulo="Pedido do site" onClose={onClose}><p className="muted">Carregando…</p></Modal>;
 
@@ -93,8 +94,18 @@ function DetalhePedido({ id, onClose, onMudou }) {
     setSalvando(true);
     try { setP(await fn()); toast.sucesso(msg); onMudou(); setEnvio(null); setCancelando(null); } catch (err) { toast.erro(err); } finally { setSalvando(false); }
   }
+  const etiqueta = p.frete && p.frete.etiqueta;
+  function comprarEtiqueta() {
+    if (config && config.envio && !config.envio.declaracao && nfe === null) return setNfe('');
+    return executar(() => api.post(`/loja-virtual/pedidos/${p.id}/etiqueta`, { nfe: nfe || undefined }), 'Etiqueta comprada: imprima e cole na embalagem');
+  }
+  async function imprimirEtiqueta() {
+    const janela = window.open('', '_blank');
+    try { const r = await api.get(`/loja-virtual/pedidos/${p.id}/etiqueta`); if (janela) janela.location = r.url; else window.location.href = r.url; } catch (err) { if (janela) janela.close(); toast.erro(err); }
+  }
   function avancar() {
-    if (p.proxima === 'saiu_entrega') return setEnvio({ transportadora: 'Correios', rastreio_codigo: '', rastreio_url: '' });
+    if (p.proxima === 'saiu_entrega' && etiqueta) return executar(() => api.post(`/loja-virtual/pedidos/${p.id}/avancar`, { para: 'saiu_entrega' }), 'Pedido enviado: o cliente foi avisado');
+    if (p.proxima === 'saiu_entrega') return setEnvio({ transportadora: p.frete ? p.frete.servico : 'Correios', rastreio_codigo: '', rastreio_url: '' });
     const corpo = { para: p.proxima };
     if (precisaForma) {
       const f = p.pagamento.forma === 'cartao' ? forma : p.pagamento.forma;
@@ -149,6 +160,27 @@ function DetalhePedido({ id, onClose, onMudou }) {
         )}
         {precisaForma && <p className="form-hint" style={{ margin: 0 }}>O pagamento é recebido na {p.tipo === 'entrega' ? 'entrega' : 'retirada'}: a venda entra no caixa aberto da loja.</p>}
 
+        {p.frete && (
+          <div className="lv-etiqueta">
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div className="field-label">Envio escolhido pelo cliente</div>
+              <b>{p.frete.servico}</b>{p.frete.prazo_dias ? ` · até ${p.frete.prazo_dias} dias úteis` : ''}
+              <div className="celula-sub">Cobrado do cliente: {p.taxa_entrega > 0 ? brl(p.taxa_entrega) : 'grátis'}{p.frete.custo !== null ? ` · cotado: ${brl(p.frete.custo)}` : ''}</div>
+              {etiqueta && <div className="celula-sub">Etiqueta: {etiqueta.nome_status}{etiqueta.comprada_em ? ` · ${dataHora(etiqueta.comprada_em)}` : ''}</div>}
+            </div>
+            {etiqueta ? (
+              <button type="button" onClick={imprimirEtiqueta}>Imprimir etiqueta</button>
+            ) : ['em_separacao', 'aguardando_envio'].includes(p.situacao) && (
+              <button type="button" className="btn-primario" onClick={comprarEtiqueta} disabled={salvando}>Comprar etiqueta</button>
+            )}
+            {nfe !== null && !etiqueta && (
+              <div className="botoes-linha" style={{ width: '100%' }}>
+                <input value={nfe} onChange={(ev) => setNfe(ev.target.value.replace(/\D/g, '').slice(0, 44))} placeholder="Chave da NF-e (44 números)" aria-label="Chave da NF-e" style={{ flex: 1 }} />
+                <button type="button" className="btn-primario" onClick={comprarEtiqueta} disabled={salvando || nfe.length !== 44}>Confirmar compra</button>
+              </div>
+            )}
+          </div>
+        )}
         {envio && (
           <form className="card form-stack" onSubmit={enviar} style={{ margin: 0 }}>
             <b>Dados do envio</b>
@@ -221,7 +253,7 @@ function DetalhePedido({ id, onClose, onMudou }) {
         </div>
         <div className="lv-resumo-pedido">
           <div><span>Produtos</span><span>{brl(p.subtotal)}</span></div>
-          {p.tipo === 'entrega' && <div><span>Frete</span><span>{p.taxa_entrega > 0 ? brl(p.taxa_entrega) : 'Grátis'}</span></div>}
+          {p.tipo === 'entrega' && <div><span>{p.frete ? `Frete (${p.frete.servico})` : 'Entrega'}</span><span>{p.taxa_entrega > 0 ? brl(p.taxa_entrega) : 'Grátis'}</span></div>}
           {p.desconto > 0 && <div><span>Desconto{p.cupom ? ` (${p.cupom})` : ''}</span><span>− {brl(p.desconto)}</span></div>}
           <div className="total"><span>Total</span><b>{brl(p.total)}</b></div>
           <div className="celula-sub">

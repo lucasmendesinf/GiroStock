@@ -83,18 +83,25 @@ Prévia com os preços e regras atuais. Problemas que o cliente resolve viram `a
 ```json
 { "itens": [ { "product_id": "...", "quantidade": 2 },
              { "product_id": "...", "quantidade": 1, "complementos": [{ "id": "...", "quantidade": 2 }], "observacao": "sem cebola" } ],
-  "tipo": "entrega", "endereco_id": "...", "cupom": "PROMO10" }
+  "tipo": "entrega", "endereco_id": "...", "frete_servico": 1, "cupom": "PROMO10" }
 ```
-Em vez de `endereco_id` (cliente logado) dá para mandar `"bairro": "Centro"` (visitante). Resposta:
+Em vez de `endereco_id` (cliente logado) dá para mandar `"bairro": "Centro"`, `"cidade"` e `"cep"` (visitante). `frete_servico` (opcional) é o id de uma das `envio.opcoes` (transportadora); sem ele, vale a entrega da própria loja pelo bairro. Resposta:
 ```json
 { "itens": [{ "product_id", "nome", "quantidade", "preco_unitario", "preco_base", "preco_original", "complementos": [...], "observacao", "subtotal" }],
   "subtotal": 34, "taxa_entrega": 5, "desconto": 3.4, "total": 35.6,
   "cupom": { "id": "...", "codigo": "PROMO10", "descricao": "", "tipo": "percentual", "valido": true, "motivo": null },
-  "entrega": { "tipo": "entrega", "taxa": 5, "bairro": "Jardim América", "regiao_id": "...", "tempo_estimado_min": 50 },
+  "entrega": { "tipo": "entrega", "taxa": 5, "bairro": "Jardim América", "regiao_id": "...", "tempo_estimado_min": 50, "servico": null },
+  "envio": { "transportadora": true,
+             "opcoes": [{ "id": 1, "nome": "Correios PAC", "servico": "PAC", "transportadora": "Correios", "logo": "https://...", "preco": 24.9, "prazo_dias": 8, "gratis": false }],
+             "local": { "disponivel": true, "bairro": "Jardim América", "taxa": 5, "tempo_estimado_min": 50, "motivo": null } },
   "pedido_minimo": 0, "avisos": [], "pode_finalizar": true }
 ```
+- **Frete por transportadora** (loja online com o Melhor Envio ligado — `GET /loja → entrega.transportadora`): com o CEP do endereço vêm as `envio.opcoes` (do mais barato ao mais caro; `prazo_dias` já soma os dias de separação da loja; `gratis` no mais barato a partir do valor da loja). Escolhido um serviço, `entrega.servico = { id, nome, prazo_dias, gratis }` e `taxa_entrega` é o frete. A entrega da própria loja (`envio.local`) só vale na cidade da loja. Sem escolher nada, o aviso "escolha uma opção de frete" bloqueia o pedido.
 - Cupom inválido: `cupom.valido = false` com `motivo` (vencido, já usado, só primeira compra, entre na conta...).
 - Erros 422 só para carrinho impossível (complemento fora das regras do grupo, produto que saiu do site).
+
+### `POST /frete` — calcular o frete pelo CEP (página do produto e carrinho)
+`{ "cep": "20040-002", "itens": [ ...como no carrinho... ] }` → `{ "cep": "20040002", "opcoes": [ ...como em envio.opcoes... ], "avisos": [] }`. Só em loja com envio por transportadora (senão 422).
 
 ## Conta do cliente
 
@@ -133,6 +140,8 @@ Obrigatórios: `logradouro`, `numero` (ou "s/n"), `bairro`. O primeiro endereço
 - `"pix"` — gera o Pix no Mercado Pago. A resposta traz `pagamento.detalhe.pix` com `copia_e_cola`, `qr_code_base64` (PNG) e `expira_em`.
 - `"cartao"` + `cartao`: `{ "token", "payment_method_id", "issuer_id", "parcelas", "identificacao": { "tipo": "CPF", "numero" } }`. O `token` é gerado **no navegador** pelo Mercado Pago JS / Card Payment Brick com `pagamentos.mercadopago_public_key` — o número do cartão nunca passa pelo site nem pelo GiroStock. Até `parcelas_max` parcelas.
 
+Entrega por transportadora: mande também `frete_servico` (o mesmo id escolhido no carrinho; o frete é recotado no servidor). Nesse caso o pagamento é só pelo site (Pix ou cartão). O endereço precisa ter CEP.
+
 Responde `201` com o **pedido** (abaixo). Falta de estoque, loja fechada, cupom ou mínimo inválidos recusam o pedido (409/422). Se o Mercado Pago falhar, o pedido é cancelado e volta `502` — o cliente pode tentar de novo.
 
 ### `GET /pedidos?pagina=1` (token) — histórico do cliente: `{ pagina, total, pedidos: [{ id, numero, etapa, etapa_nome, tipo, itens, total, criado_em }] }`
@@ -145,7 +154,7 @@ Responde `201` com o **pedido** (abaixo). Falta de estoque, loja fechada, cupom 
   "subtotal": 34, "taxa_entrega": 5, "desconto": 3.4, "total": 35.6, "cupom": "PROMO10", "observacao": "...",
   "pagamento": { "tipo": "online", "metodo": "pix", "situacao": "pendente",
                  "detalhe": { "id", "metodo", "situacao", "valor", "parcelas", "bandeira", "final_cartao", "motivo_recusa", "pix": { "copia_e_cola", "qr_code_base64", "expira_em" }, "aprovado_em", "criado_em" } },
-  "fluxo": "loja_online", "rastreio": { "transportadora": "Correios", "codigo": "AA123456789BR", "url": "https://..." },
+  "fluxo": "loja_online", "frete": { "servico": "Correios SEDEX", "prazo_dias": 4 }, "rastreio": { "transportadora": "Correios", "codigo": "AA123456789BR", "url": "https://..." },
   "historico": [{ "etapa": "recebido", "em": "..." }],
   "criado_em": "...", "previsao_min": 50, "cancelado_em": null, "motivo_cancelamento": null,
   "pode_cancelar": true, "pode_pagar": true }

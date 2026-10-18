@@ -21,6 +21,8 @@ const {
 } = require('./consumo');
 const { cifrar, decifrar } = require('./totp');
 const mp = require('../integracoes/mercadopago');
+const frete = require('./frete');
+const meApi = require('../integracoes/melhorenvio');
 
 const db = () => pool.producao;
 const FUSO = 'America/Sao_Paulo';
@@ -415,7 +417,13 @@ async function dadosPublicos(loja, base) {
     horarios: loja.horarios || {},
     retirada: { aceita: !!loja.aceita_retirada, tempo_estimado_min: loja.tempo_preparo_min },
     entrega: {
-      aceita: !!loja.aceita_entrega,
+      aceita: !!loja.aceita_entrega || frete.envioDisponivel(loja),
+      local: !!loja.aceita_entrega,
+      // envio por transportadora (Melhor Envio): cotacao pelo CEP no carrinho/checkout
+      transportadora: frete.envioDisponivel(loja) ? {
+        gratis_acima: loja.envio_gratis_acima === null ? null : n2(loja.envio_gratis_acima),
+        cidade_entrega_local: loja.aceita_entrega ? (loja.envio_remetente || {}).cidade || null : null,
+      } : null,
       tempo_estimado_min: loja.tempo_preparo_min + loja.tempo_entrega_min,
       bairros: regioes.map((r) => ({ id: r.id, nome: r.nome, taxa: n2(r.taxa), tempo_estimado_min: loja.tempo_preparo_min + loja.tempo_entrega_min + r.tempo_extra_min, pedido_minimo: r.pedido_minimo === null ? null : n2(r.pedido_minimo) })),
       outros_bairros: loja.taxa_outros_bairros === null ? null : { taxa: n2(loja.taxa_outros_bairros) },
@@ -482,7 +490,8 @@ function descontoDoCupom(c, subtotal, taxa) {
 }
 
 // Calcula o carrinho com os precos e regras da loja.
-// b: { itens: [{ product_id, quantidade, complementos: [{ id, quantidade }], observacao }], tipo: 'entrega'|'retirada', bairro, cupom }
+// b: { itens: [{ product_id, quantidade, complementos: [{ id, quantidade }], observacao }], tipo: 'entrega'|'retirada', bairro, cidade, cep,
+//      frete_servico (id do servico da transportadora; sem ele, entrega local pelo bairro), cupom }
 // modo 'previa': problemas de cupom/minimo/estoque viram avisos (o site mostra); modo 'pedido': lanca erro.
 async function calcularCarrinho(dbc, loja, conta, b, modo = 'previa') {
   const avisos = [];
@@ -490,7 +499,8 @@ async function calcularCarrinho(dbc, loja, conta, b, modo = 'previa') {
   if (!Array.isArray(b.itens) || b.itens.length === 0) throw new HttpError(400, 'o carrinho está vazio');
   if (b.itens.length > 60) throw new HttpError(400, 'carrinho com itens demais');
   const tipo = b.tipo === 'entrega' ? 'entrega' : 'retirada';
-  if (tipo === 'entrega' && !loja.aceita_entrega) throw new HttpError(422, 'esta loja não faz entrega');
+  const envio = frete.envioDisponivel(loja);
+  if (tipo === 'entrega' && !loja.aceita_entrega && !envio) throw new HttpError(422, 'esta loja não faz entrega');
   if (tipo === 'retirada' && !loja.aceita_retirada) throw new HttpError(422, 'esta loja não aceita retirada');
 
   const linhas = b.itens.map((i) => {
@@ -543,22 +553,53 @@ async function calcularCarrinho(dbc, loja, conta, b, modo = 'previa') {
     falha(409, 'a loja ainda não está configurada para receber pedidos');
   }
 
-  let entrega = { tipo, taxa: 0, bairro: null, regiao_id: null, tempo_estimado_min: loja.tempo_preparo_min };
+  let entrega = { tipo, taxa: 0, bairro: null, regiao_id: null, tempo_estimado_min: loja.tempo_preparo_min, servico: null };
   let minimo = n2(loja.pedido_minimo);
+  let opcoesEnvio = null; // transportadoras (Melhor Envio) para o CEP
+  let local = null; // entrega da propria loja pelo bairro
+  let freteInterno = null; // custo e pacotes da cotacao (vao para o pedido/etiqueta; nao para o site)
   if (tipo === 'entrega') {
-    if (b.bairro) {
+    if (loja.aceita_entrega && b.bairro) {
+      if (!frete.entregaLocalNaCidade(loja, b.cidade)) {
+        local = { disponivel: false, motivo: `a entrega da loja é só em ${(loja.envio_remetente || {}).cidade}` };
+      } else {
+        try {
+          const e = await entregaDoBairro(dbc, loja, b.bairro);
+          local = { disponivel: true, bairro: e.bairro, regiao_id: e.regiao_id, taxa: e.taxa, pedido_minimo: e.pedido_minimo, tempo_estimado_min: loja.tempo_preparo_min + loja.tempo_entrega_min + e.tempo_extra_min };
+        } catch (err) {
+          if (err.status !== 422) throw err;
+          local = { disponivel: false, motivo: err.message };
+        }
+      }
+    }
+    if (envio && b.cep) {
       try {
-        const e = await entregaDoBairro(dbc, loja, b.bairro);
-        entrega = { tipo, taxa: e.taxa, bairro: e.bairro, regiao_id: e.regiao_id, tempo_estimado_min: loja.tempo_preparo_min + loja.tempo_entrega_min + e.tempo_extra_min };
-        if (e.pedido_minimo !== null) minimo = e.pedido_minimo;
+        opcoesEnvio = await frete.opcoesDeEnvio(dbc, loja, b.cep, itens.map((i) => ({ product_id: i.product_id, quantidade: i.quantidade, preco_unitario: i.preco_unitario })), subtotal);
+        if (opcoesEnvio.length === 0) avisos.push('nenhuma transportadora atende este CEP');
       } catch (err) {
-        if (modo === 'pedido' || err.status !== 422) throw err;
+        if (modo === 'pedido' && b.frete_servico) throw err;
         avisos.push(err.message);
       }
-    } else if (modo === 'pedido') {
-      throw new HttpError(400, 'informe o endereço da entrega');
-    } else {
+    }
+    if (b.frete_servico) {
+      const o = opcoesEnvio && opcoesEnvio.find((x) => x.id === Number(b.frete_servico));
+      if (!envio) throw new HttpError(422, 'esta loja não envia por transportadora');
+      if (!o) {
+        falha(422, 'o frete escolhido não está disponível para este CEP: escolha outro');
+      } else {
+        entrega = { tipo, taxa: o.preco, bairro: null, regiao_id: null, tempo_estimado_min: null, servico: { id: o.id, nome: o.nome, prazo_dias: o.prazo_dias, gratis: o.gratis } };
+        freteInterno = { custo: o.custo, pacotes: o.pacotes };
+      }
+    } else if (local && local.disponivel) {
+      entrega = { tipo, taxa: local.taxa, bairro: local.bairro, regiao_id: local.regiao_id, tempo_estimado_min: local.tempo_estimado_min, servico: null };
+      if (local.pedido_minimo !== null) minimo = local.pedido_minimo;
+    } else if (!b.bairro && !b.cep) {
+      if (modo === 'pedido') throw new HttpError(400, 'informe o endereço da entrega');
       entrega.tempo_estimado_min = loja.tempo_preparo_min + loja.tempo_entrega_min;
+    } else if (opcoesEnvio && opcoesEnvio.length) {
+      falha(422, local && !local.disponivel && !envio ? local.motivo : 'escolha uma opção de frete');
+    } else {
+      falha(422, local && !local.disponivel ? local.motivo : 'não entregamos neste endereço');
     }
   }
   if (subtotal < minimo) falha(422, `pedido mínimo de R$ ${minimo.toFixed(2).replace('.', ',')}`);
@@ -576,7 +617,12 @@ async function calcularCarrinho(dbc, loja, conta, b, modo = 'previa') {
     }
   }
   const total = n2(subtotal + entrega.taxa - desconto);
-  return { itens, linhas, subtotal, taxa_entrega: entrega.taxa, desconto, total, cupom, entrega, pedido_minimo: minimo, avisos, pode_finalizar: avisos.length === 0 };
+  const envioSite = tipo === 'entrega' && (envio || local) ? {
+    transportadora: envio,
+    opcoes: opcoesEnvio ? opcoesEnvio.map(({ id, nome, servico, transportadora, logo, preco, prazo_dias, gratis }) => ({ id, nome, servico, transportadora, logo, preco, prazo_dias, gratis })) : null,
+    local: local ? { disponivel: local.disponivel, bairro: local.bairro || null, taxa: local.disponivel ? local.taxa : null, tempo_estimado_min: local.tempo_estimado_min || null, motivo: local.motivo || null } : null,
+  } : null;
+  return { itens, linhas, frete_interno: freteInterno, subtotal, taxa_entrega: entrega.taxa, desconto, total, cupom, entrega, envio: envioSite, pedido_minimo: minimo, avisos: [...new Set(avisos)], pode_finalizar: avisos.length === 0 };
 }
 
 // ---------- Mercado Pago ----------
@@ -833,6 +879,69 @@ async function cancelarPedido(loja, orderId, motivo, opcoes = {}) {
   return { estornado };
 }
 
+// Etiquetas do Melhor Envio em andamento: atualiza a situacao e o codigo de rastreio (Jadlog e outras so tem codigo
+// depois da postagem) e marca como entregue o pedido enviado que ja virou venda.
+async function varrerEnvios() {
+  const { rows } = await db().query(
+    `SELECT o.id, o.tenant_id, o.numero, o.status, o.sale_id, o.me_envio_id, o.me_status, o.rastreio_codigo, o.transportadora, l.id AS loja_id
+     FROM orders o JOIN lv_lojas l ON l.tenant_id = o.tenant_id
+     WHERE o.me_envio_id IS NOT NULL AND o.status IN ('em_preparo', 'pronto', 'saiu_entrega') AND COALESCE(o.me_status, '') NOT IN ('delivered', 'canceled', 'expired')
+       AND l.me_token_cript IS NOT NULL
+     ORDER BY o.atualizado_em LIMIT 200`
+  );
+  const porLoja = new Map();
+  for (const r of rows) { if (!porLoja.has(r.loja_id)) porLoja.set(r.loja_id, []); porLoja.get(r.loja_id).push(r); }
+  for (const [lojaId, pedidos] of porLoja) {
+    const loja = (await db().query(`SELECT * FROM lv_lojas WHERE id = $1`, [lojaId])).rows[0];
+    let sit;
+    try { sit = await meApi.rastrear(frete.cfgMe(loja), pedidos.map((p) => p.me_envio_id)); } catch (err) { console.error('loja virtual: rastreio Melhor Envio', err.message); continue; }
+    for (const p of pedidos) {
+      const t = sit[p.me_envio_id];
+      if (!t) continue;
+      const codigo = t.codigo || p.rastreio_codigo;
+      await db().query(
+        `UPDATE orders SET me_status = $2, rastreio_codigo = $3,
+                rastreio_url = CASE WHEN $3::text IS NOT NULL AND (rastreio_url IS NULL OR rastreio_codigo IS DISTINCT FROM $3) THEN $4 ELSE rastreio_url END,
+                atualizado_em = CASE WHEN me_status IS DISTINCT FROM $2 OR rastreio_codigo IS DISTINCT FROM $3 THEN now() ELSE atualizado_em END
+         WHERE id = $1`,
+        [p.id, t.status, codigo, meApi.urlRastreio(codigo)]
+      );
+      // entregue pela transportadora: pedido enviado (ja e venda) vira entregue
+      if (t.status === 'delivered' && p.status === 'saiu_entrega' && p.sale_id) {
+        const client = await db().connect();
+        try {
+          await client.query('BEGIN');
+          const atual = (await client.query(`SELECT status FROM orders WHERE id = $1 FOR UPDATE`, [p.id])).rows[0];
+          if (atual.status === 'saiu_entrega') {
+            await client.query(`UPDATE orders SET status = 'finalizado', finalizado_em = now(), atualizado_em = now() WHERE id = $1`, [p.id]);
+            await client.query(`INSERT INTO order_status_log (order_id, de, para, usuario_id) VALUES ($1, 'saiu_entrega', 'finalizado', NULL)`, [p.id]);
+            await logAudit(client, { tenantId: p.tenant_id, usuarioId: null, acao: 'pedido_site_entregue', recurso: 'orders', recursoId: p.id, detalhes: { numero: p.numero, por: 'Melhor Envio' } });
+          }
+          await client.query('COMMIT');
+        } catch (err) {
+          await client.query('ROLLBACK');
+          console.error('loja virtual: marcar entregue', err.message);
+        } finally {
+          client.release();
+        }
+      }
+    }
+  }
+}
+
+let varreduraEnvios = null;
+function iniciarVarreduraEnvios() {
+  if (varreduraEnvios || process.env.LOJA_VARREDURA === 'desligado') return;
+  const seg = Math.max(Number(process.env.LOJA_VARREDURA_ENVIOS_SEGUNDOS) || 900, 2);
+  let rodando = false;
+  varreduraEnvios = setInterval(async () => {
+    if (rodando) return;
+    rodando = true;
+    try { await varrerEnvios(); } catch (err) { console.error('loja virtual: varredura de envios', err.message); } finally { rodando = false; }
+  }, seg * 1000);
+  varreduraEnvios.unref();
+}
+
 let varredura = null;
 function iniciarVarredura() {
   if (varredura || process.env.LOJA_VARREDURA === 'desligado') return;
@@ -851,5 +960,5 @@ module.exports = {
   lojaDaEmpresa, dominiosDaLoja, normalizarSubdominio, sugerirSubdominio, normalizarDominio, enderecosDaLoja, temaEfetivo, normalizarTema, TEMA_PADRAO, MODELOS, tipoValido, fluxoDaLoja, FONTES, BLOCOS, agoraSP, normalizarHorarios, situacaoHorario, recebendoPedidos, precoDoProduto,
   catalogo, produto, categorias, dadosPublicos, urlImagem, calcularCarrinho, entregaDoBairro, validarCupom, descontoDoCupom, semAcento,
   guardarCredenciaisMp, tokenMp, cobrar, pagamentoPublico, aplicarPagamentoMp, estornarPedido, receberAvisoMp, varrerPagamentos, cancelarPedido,
-  iniciarVarredura, SITUACAO_MP, n2,
+  iniciarVarredura, iniciarVarreduraEnvios, varrerEnvios, SITUACAO_MP, n2,
 };

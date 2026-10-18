@@ -10,6 +10,7 @@ const lv = require('../services/lojaVirtual');
 const mp = require('../integracoes/mercadopago');
 const QRCode = require('qrcode');
 const pedidosSite = require('../services/pedidosSite');
+const frete = require('../services/frete');
 
 const router = express.Router();
 router.use('/loja-virtual', requireModulo('loja_virtual'), requireArea('LojaVirtual'));
@@ -52,6 +53,12 @@ async function configTela(l, base) {
     mercadopago: l.mp_access_token_cript ? { conectado: true, conta: l.mp_conta, public_key: l.mp_public_key, webhook_secret: !!l.mp_webhook_secret_cript, conectado_em: l.mp_conectado_em } : { conectado: false },
     url_api: `${base}/api/loja/v1`,
     url_webhook_mp: `${base}/api/webhooks/mercadopago/${l.id}`,
+    envio: {
+      conectado: !!l.me_token_cript, conta: l.me_conta, sandbox: !!l.me_sandbox, conectado_em: l.me_conectado_em,
+      ativo: !!l.envio_ativo, disponivel: frete.envioDisponivel(l), servicos: l.envio_servicos || [], remetente: l.envio_remetente || {},
+      dias_extra: l.envio_dias_extra, acrescimo: n2(l.envio_acrescimo), gratis_acima: l.envio_gratis_acima === null ? null : n2(l.envio_gratis_acima),
+      declaracao: !!l.envio_declaracao, padrao: l.envio_padrao, pendencias: frete.pendenciasEnvio(l),
+    },
   };
 }
 
@@ -93,6 +100,7 @@ router.get('/loja-virtual', async (req, res) => {
   const pag = l.pagamentos || {};
   if ((pag.pix_online || pag.cartao_online) && !l.mp_access_token_cript) pendencias.push('conecte a conta do Mercado Pago para receber Pix/cartão pelo site');
   if (!pag.pix_online && !pag.cartao_online && !(pag.na_entrega || []).length) pendencias.push('escolha ao menos uma forma de pagamento');
+  if (!cardapio) pendencias.push(...frete.pendenciasEnvio(l));
   res.json({ config: await configTela(l, baseUrl(req)), resumo: { ...resumo, vendido_mes: n2(resumo.vendido_mes) }, situacao, pendencias, locais });
 });
 
@@ -270,7 +278,8 @@ router.get('/loja-virtual/produtos', async (req, res) => {
   const { rows } = await pool.query(
     `SELECT p.id, p.codigo_interno, p.nome, p.unidade, p.preco_venda, c.nome AS categoria_nome,
             COALESCE(lp.publicado, false) AS publicado, lp.nome_site, COALESCE(lp.descricao, '') AS descricao, COALESCE(lp.imagens, '{}') AS imagens,
-            lp.preco_promocional, lp.promo_inicio::text, lp.promo_fim::text, COALESCE(lp.destaque, false) AS destaque, COALESCE(lp.ordem, 0) AS ordem
+            lp.preco_promocional, lp.promo_inicio::text, lp.promo_fim::text, COALESCE(lp.destaque, false) AS destaque, COALESCE(lp.ordem, 0) AS ordem,
+            lp.peso_kg, lp.altura_cm, lp.largura_cm, lp.comprimento_cm
      ${base} ORDER BY COALESCE(lp.publicado, false) DESC, p.nome, p.id LIMIT ${limite} OFFSET ${offset}`,
     params
   );
@@ -325,6 +334,22 @@ async function salvarProdutoSite(client, t, productId, b) {
     [productId, t, v('publicado', (x) => !!x, true), nomeSite, v('descricao', (x) => texto(x, 2000), ''), imagens, promo, promo === null ? null : ini, promo === null ? null : fim,
       v('destaque', (x) => !!x, false), v('ordem', (x) => { const n = Number(x); if (!Number.isInteger(n)) throw new HttpError(400, 'ordem inválida'); return n; }, 0)]
   );
+  // Peso e medidas para o frete (vazio = embalagem padrao da loja).
+  const medidas = [['peso_kg', 'peso (kg)', 30], ['altura_cm', 'altura (cm)', 100], ['largura_cm', 'largura (cm)', 100], ['comprimento_cm', 'comprimento (cm)', 100]];
+  if (medidas.some(([k]) => b[k] !== undefined)) {
+    const val = medidas.map(([k, nome, max]) => {
+      if (b[k] === undefined) return rows[0][k];
+      const x = valorOuNulo(b[k], nome, { min: 0.001 });
+      if (x !== null && x > max) throw new HttpError(400, `${nome}: no máximo ${max}`);
+      return k === 'peso_kg' && b[k] !== null && b[k] !== '' ? Number(Number(b[k]).toFixed(3)) : x;
+    });
+    const up = await client.query(
+      `UPDATE lv_produtos SET peso_kg = $2, altura_cm = $3, largura_cm = $4, comprimento_cm = $5 WHERE product_id = $1
+       RETURNING *, promo_inicio::text AS promo_inicio, promo_fim::text AS promo_fim`,
+      [productId, ...val]
+    );
+    return up.rows[0];
+  }
   return rows[0];
 }
 
@@ -592,6 +617,86 @@ router.get('/loja-virtual/pagamentos', async (req, res) => {
   res.json(rows.map((r) => ({ ...r, valor: n2(r.valor), situacao: lv.SITUACAO_MP[r.status] || r.status })));
 });
 
+// ---------- envio por transportadora (Melhor Envio) ----------
+// Conta do lojista: token pessoal do Melhor Envio (cifrado). Conferido na hora de salvar.
+router.put('/loja-virtual/envio/conta', async (req, res) => {
+  const t = req.user.tenantId;
+  const l = await lojaDaEmpresa(pool, t);
+  if (lv.fluxoDaLoja(l) === 'cardapio') throw new HttpError(409, 'loja do tipo cardápio: a entrega é só pelos bairros');
+  const b = req.body || {};
+  const token = String(b.token || '').trim();
+  if (token.length < 20) throw new HttpError(400, 'cole o token gerado no Melhor Envio (Integrações › Permissões de acesso)');
+  const sandbox = !!b.sandbox;
+  let conta;
+  try {
+    conta = await frete.me.conta({ token, sandbox });
+  } catch (err) {
+    throw new HttpError(422, `não foi possível conectar: ${err.message}`);
+  }
+  const nome = [conta.nome, conta.email].filter(Boolean).join(' · ').slice(0, 160);
+  await pool.query(
+    `UPDATE lv_lojas SET me_token_cript = $2, me_sandbox = $3, me_conta = $4, me_conectado_em = now(), atualizado_em = now() WHERE id = $1`,
+    [l.id, frete.cifrar(token), sandbox, nome]
+  );
+  await logAudit(pool, { tenantId: t, usuarioId: req.user.id, acao: 'loja_melhor_envio_conectar', recurso: 'lv_lojas', recursoId: l.id, detalhes: { conta: nome, sandbox } });
+  res.json({ conta: nome, saldo: conta.saldo, sandbox });
+});
+router.delete('/loja-virtual/envio/conta', async (req, res) => {
+  const l = await lojaDaEmpresa(pool, req.user.tenantId);
+  await pool.query(`UPDATE lv_lojas SET me_token_cript = NULL, me_conta = NULL, me_conectado_em = NULL, envio_ativo = false, atualizado_em = now() WHERE id = $1`, [l.id]);
+  await logAudit(pool, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'loja_melhor_envio_desconectar', recurso: 'lv_lojas', recursoId: l.id });
+  res.status(204).end();
+});
+// Servicos da conta (para escolher os oferecidos) e saldo atual.
+router.get('/loja-virtual/envio/servicos', async (req, res) => {
+  const l = await lojaDaEmpresa(pool, req.user.tenantId);
+  const cfg = frete.cfgMe(l);
+  try {
+    const [servicos, conta] = await Promise.all([frete.me.servicos(cfg), frete.me.conta(cfg)]);
+    res.json({ servicos, saldo: conta.saldo });
+  } catch (err) {
+    throw new HttpError(502, err.message);
+  }
+});
+// Regras do envio: ligar, servicos, remetente, prazo extra, acrescimo, frete gratis, declaracao de conteudo, embalagem padrao.
+router.put('/loja-virtual/envio', async (req, res) => {
+  const t = req.user.tenantId;
+  const l = await lojaDaEmpresa(pool, t);
+  const b = req.body || {};
+  const servicos = b.servicos === undefined ? l.envio_servicos : (() => {
+    if (!Array.isArray(b.servicos) || b.servicos.some((x) => !Number.isInteger(Number(x)) || Number(x) <= 0)) throw new HttpError(400, 'serviços inválidos');
+    return [...new Set(b.servicos.map(Number))];
+  })();
+  const remetente = b.remetente === undefined ? l.envio_remetente : frete.normalizarRemetente(b.remetente);
+  const padrao = b.padrao === undefined ? l.envio_padrao : frete.normalizarPadrao(b.padrao);
+  const dias = b.dias_extra === undefined ? l.envio_dias_extra : Number(b.dias_extra);
+  if (!Number.isInteger(dias) || dias < 0 || dias > 30) throw new HttpError(400, 'dias para separar: de 0 a 30');
+  const acrescimo = b.acrescimo === undefined ? n2(l.envio_acrescimo) : (valorOuNulo(b.acrescimo, 'acréscimo no frete') || 0);
+  const gratis = b.gratis_acima === undefined ? l.envio_gratis_acima : valorOuNulo(b.gratis_acima, 'frete grátis a partir de', { min: 0.01 });
+  const declaracao = b.declaracao === undefined ? l.envio_declaracao : !!b.declaracao;
+  const ativo = b.ativo === undefined ? l.envio_ativo : !!b.ativo;
+  if (ativo) {
+    if (lv.fluxoDaLoja(l) === 'cardapio') throw new HttpError(409, 'loja do tipo cardápio: a entrega é só pelos bairros');
+    if (!l.me_token_cript) throw new HttpError(422, 'conecte a conta do Melhor Envio antes de ligar o envio');
+    if (String(remetente.cep || '').length !== 8) throw new HttpError(422, 'informe o CEP de origem (de onde sai a mercadoria)');
+  }
+  const { rows } = await pool.query(
+    `UPDATE lv_lojas SET envio_ativo = $2, envio_servicos = $3, envio_remetente = $4, envio_dias_extra = $5, envio_acrescimo = $6, envio_gratis_acima = $7,
+            envio_declaracao = $8, envio_padrao = $9, atualizado_em = now() WHERE id = $1 RETURNING *`,
+    [l.id, ativo, servicos, JSON.stringify(remetente), dias, acrescimo, gratis, declaracao, JSON.stringify(padrao)]
+  );
+  await logAudit(pool, { tenantId: t, usuarioId: req.user.id, acao: 'loja_envio_config', recurso: 'lv_lojas', recursoId: l.id, detalhes: { ativo, servicos } });
+  res.json((await configTela(rows[0], baseUrl(req))).envio);
+});
+// Simular a cotacao (painel): um pacote com a embalagem padrao ate um CEP.
+router.post('/loja-virtual/envio/simular', async (req, res) => {
+  const l = await lojaDaEmpresa(pool, req.user.tenantId);
+  if (!l.me_token_cript) throw new HttpError(422, 'conecte a conta do Melhor Envio');
+  if (String((l.envio_remetente || {}).cep || '').length !== 8) throw new HttpError(422, 'informe e salve o CEP de origem');
+  const cep = String((req.body || {}).cep || '').replace(/\D/g, '');
+  res.json({ cep, opcoes: await frete.simularPadrao(l, cep) });
+});
+
 // ---------- pedidos do site (loja online / varejo) ----------
 // Separacao, envio com rastreio e entrega, sem a tela de Pedidos (services/pedidosSite.js).
 router.get('/loja-virtual/pedidos', async (req, res) => {
@@ -606,10 +711,21 @@ router.post('/loja-virtual/pedidos/:id/avancar', async (req, res) => {
 router.put('/loja-virtual/pedidos/:id/rastreio', async (req, res) => {
   res.json(await pedidosSite.atualizarRastreio(pool, req.user, req.params.id, req.body || {}));
 });
+// Etiqueta do Melhor Envio: comprar (saldo da conta da loja) e o link do PDF para imprimir.
+router.post('/loja-virtual/pedidos/:id/etiqueta', async (req, res) => {
+  if (req.user.modoTeste) throw new HttpError(409, 'no modo teste não se compra etiqueta');
+  res.json(await pedidosSite.comprarEtiqueta(pool, req.user, await lojaDaEmpresa(pool, req.user.tenantId), req.params.id, req.body || {}));
+});
+router.get('/loja-virtual/pedidos/:id/etiqueta', async (req, res) => {
+  res.json({ url: await pedidosSite.linkEtiqueta(pool, req.user, await lojaDaEmpresa(pool, req.user.tenantId), req.params.id) });
+});
 router.post('/loja-virtual/pedidos/:id/cancelar', async (req, res) => {
   const motivo = texto((req.body || {}).motivo, 200);
   if (motivo.length < 3) throw new HttpError(400, 'motivo do cancelamento é obrigatório (mínimo 3 caracteres)');
   const o = await pedidosSite.carregar(pool, req.user.tenantId, req.params.id);
+  if (o.sale_id || ['finalizado', 'cancelado'].includes(o.status)) throw new HttpError(409, 'este pedido não pode mais ser cancelado');
+  // etiqueta comprada e nao postada: cancela no Melhor Envio (o valor volta para o saldo) antes do pedido
+  if (!req.user.modoTeste) await pedidosSite.cancelarEtiqueta(pool, req.user, await lojaDaEmpresa(pool, req.user.tenantId), o.id, motivo);
   if (req.user.modoTeste) await pedidosSite.cancelarTeste(pool, req.user, o.id, motivo);
   else await lv.cancelarPedido(await lojaDaEmpresa(pool, req.user.tenantId), o.id, motivo, { usuarioId: req.user.id });
   res.json(await pedidosSite.detalhe(pool, req.user.tenantId, o.id));

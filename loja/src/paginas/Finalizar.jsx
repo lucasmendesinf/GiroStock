@@ -15,13 +15,15 @@ export default function Finalizar() {
   const navegar = useNavigate();
   const pag = loja.pagamentos;
   const [tipo, setTipo] = useState(loja.entrega.aceita ? 'entrega' : 'retirada');
+  const [frete, setFrete] = useState(null); // 'local' | id do servico da transportadora
+  const servicoAtual = tipo === 'entrega' && frete && frete !== 'local' ? frete : null;
   const [enderecos, setEnderecos] = useState(null);
   const [enderecoId, setEnderecoId] = useState(null);
   const [novoEndereco, setNovoEndereco] = useState(false);
   const formas = [
     ...(pag.pix_online ? [['pix', 'Pix (pague agora)']] : []),
     ...(pag.cartao_online ? [['cartao', 'Cartão de crédito']] : []),
-    ...(pag.na_entrega.length ? [['na_entrega', tipo === 'entrega' ? 'Pagar na entrega' : 'Pagar na retirada']] : []),
+    ...(pag.na_entrega.length && !servicoAtual ? [['na_entrega', tipo === 'entrega' ? 'Pagar na entrega' : 'Pagar na retirada']] : []),
   ];
   const [metodo, setMetodo] = useState(formas[0] ? formas[0][0] : null);
   const [formaEntrega, setFormaEntrega] = useState(pag.na_entrega[0] || 'dinheiro');
@@ -40,18 +42,36 @@ export default function Finalizar() {
       if (padrao) setEnderecoId(padrao.id); else setNovoEndereco(true);
     }).catch(() => setEnderecos([]));
   }, [conta]);
+  const servico = servicoAtual || undefined;
+  useEffect(() => { if (metodo === 'na_entrega' && servicoAtual && formas[0]) setMetodo(formas[0][0]); }, [servicoAtual]); // eslint-disable-line react-hooks/exhaustive-deps
   const atualizarPrevia = useCallback(() => {
     if (carrinho.length === 0) return;
-    api.post('/carrinho', { itens: itensParaApi(carrinho), tipo, endereco_id: tipo === 'entrega' ? enderecoId || undefined : undefined, cupom })
+    api.post('/carrinho', { itens: itensParaApi(carrinho), tipo, endereco_id: tipo === 'entrega' ? enderecoId || undefined : undefined, cupom, frete_servico: servico })
       .then(setPrevia).catch((e) => setErro(e.message));
-  }, [carrinho, tipo, enderecoId, cupom]);
+  }, [carrinho, tipo, enderecoId, cupom, servico]);
   useEffect(() => { atualizarPrevia(); }, [atualizarPrevia]);
+  useEffect(() => { setFrete(null); }, [enderecoId]);
+  // Escolha do frete: mantem a do cliente se ainda vale; senao, a entrega da loja ou a transportadora mais barata.
+  const envio = previa && previa.envio;
+  useEffect(() => {
+    if (!envio) return;
+    const valeLocal = envio.local && envio.local.disponivel;
+    const ops = envio.opcoes || [];
+    const valeAtual = frete === 'local' ? valeLocal : ops.some((o) => o.id === frete);
+    if (!valeAtual) {
+      const novo = valeLocal ? 'local' : ops[0] ? ops[0].id : null;
+      if (novo !== frete) setFrete(novo);
+    }
+  }, [envio, frete]);
 
   if (!conta) return <Navigate to="/entrar?depois=/finalizar" replace />;
   if (carrinho.length === 0) return <Navigate to="/carrinho" replace />;
 
   const semEndereco = tipo === 'entrega' && !enderecoId;
-  const avisos = previa ? previa.avisos.filter((a) => !(semEndereco && /bairro|endereço/.test(a))) : [];
+  const escolhendo = tipo === 'entrega' && !!loja.entrega.transportadora && envio && frete === null && ((envio.opcoes || []).length > 0 || (envio.local && envio.local.disponivel));
+  const avisos = previa ? previa.avisos.filter((a) => !(semEndereco && /bairro|endereço/.test(a)) && !(escolhendo && /escolha uma opção de frete/.test(a))) : [];
+  const transp = loja.entrega.transportadora;
+  const enderecoSel = enderecos && enderecos.find((e) => e.id === enderecoId);
   const podePedir = previa && previa.pode_finalizar && !semEndereco && metodo && !enviando;
 
   async function pedir(cartao) {
@@ -61,7 +81,7 @@ export default function Finalizar() {
       const pagamento = metodo === 'na_entrega'
         ? { metodo, forma: formaEntrega, troco_para: formaEntrega === 'dinheiro' && troco.trim() ? parseValor(troco) : undefined }
         : { metodo, cartao };
-      const p = await api.post('/pedidos', { itens: itensParaApi(carrinho), tipo, endereco_id: tipo === 'entrega' ? enderecoId : undefined, cupom, observacao: obs.trim() || undefined, pagamento });
+      const p = await api.post('/pedidos', { itens: itensParaApi(carrinho), tipo, endereco_id: tipo === 'entrega' ? enderecoId : undefined, frete_servico: servico, cupom, observacao: obs.trim() || undefined, pagamento });
       esvaziar();
       try { sessionStorage.removeItem('lv_cupom'); } catch { /* */ }
       navegar(`/pedidos/${p.id}`, { replace: true });
@@ -81,7 +101,7 @@ export default function Finalizar() {
       {loja.retirada.aceita && loja.entrega.aceita && (
         <div className="opcoes-2" role="radiogroup" aria-label="Como receber">
           <button type="button" role="radio" aria-checked={tipo === 'entrega'} className={`opcao-grande ${tipo === 'entrega' ? 'on' : ''}`} onClick={() => setTipo('entrega')}>
-            <b>🛵 Entrega</b><small>{loja.entrega.tempo_estimado_min ? `cerca de ${loja.entrega.tempo_estimado_min} min` : ''}</small>
+            {transp ? <><b>📦 Receber em casa</b><small>frete calculado pelo CEP</small></> : <><b>🛵 Entrega</b><small>{loja.entrega.tempo_estimado_min ? `cerca de ${loja.entrega.tempo_estimado_min} min` : ''}</small></>}
           </button>
           <button type="button" role="radio" aria-checked={tipo === 'retirada'} className={`opcao-grande ${tipo === 'retirada' ? 'on' : ''}`} onClick={() => setTipo('retirada')}>
             <b>🛍 Retirar na loja</b><small>{loja.retirada.tempo_estimado_min ? `pronto em ~${loja.retirada.tempo_estimado_min} min` : ''}</small>
@@ -105,8 +125,31 @@ export default function Finalizar() {
               ) : <button type="button" className="link" onClick={() => setNovoEndereco(true)}>+ Novo endereço</button>}
             </>
           )}
+          {transp && enderecoSel && !enderecoSel.cep && <p className="erro-texto">Este endereço está sem CEP: cadastre um endereço com CEP para calcular o frete.</p>}
         </div>
-      ) : (
+      ) : null}
+
+      {tipo === 'entrega' && transp && enderecoId && envio && ((envio.opcoes || []).length > 0 || envio.local) ? (
+        <div className="painel">
+          <h2>Frete</h2>
+          {envio.local && (envio.local.disponivel ? (
+            <label className={`endereco-opcao frete-opcao ${frete === 'local' ? 'on' : ''}`}>
+              <input type="radio" name="frete" checked={frete === 'local'} onChange={() => setFrete('local')} />
+              <span className="frete-nome"><b>Entrega da loja</b><small>{envio.local.bairro}{envio.local.tempo_estimado_min ? ` · cerca de ${envio.local.tempo_estimado_min} min` : ''}</small></span>
+              <b className="frete-preco">{envio.local.taxa > 0 ? brl(envio.local.taxa) : 'Grátis'}</b>
+            </label>
+          ) : !(envio.opcoes || []).length && <p className="dica">{envio.local.motivo}</p>)}
+          {(envio.opcoes || []).map((o) => (
+            <label key={o.id} className={`endereco-opcao frete-opcao ${frete === o.id ? 'on' : ''}`}>
+              <input type="radio" name="frete" checked={frete === o.id} onChange={() => setFrete(o.id)} />
+              {o.logo && <img className="frete-logo" src={o.logo} alt="" loading="lazy" onError={(ev) => { ev.currentTarget.style.display = 'none'; }} />}
+              <span className="frete-nome"><b>{o.nome}</b><small>{o.prazo_dias ? `chega em até ${o.prazo_dias} dia${o.prazo_dias > 1 ? 's' : ''} úteis` : 'prazo da transportadora'}</small></span>
+              <b className={`frete-preco ${o.gratis ? 'ok-texto' : ''}`}>{o.gratis ? 'Grátis' : brl(o.preco)}</b>
+            </label>
+          ))}
+          {transp && transp.gratis_acima && previa.subtotal < transp.gratis_acima && <p className="dica">Frete grátis a partir de {brl(transp.gratis_acima)} em produtos.</p>}
+        </div>
+      ) : tipo === 'entrega' ? null : (
         <div className="painel"><h2>Retirada</h2><p>{loja.contato.endereco || 'Retire o pedido na loja.'}</p></div>
       )}
 
@@ -134,10 +177,12 @@ export default function Finalizar() {
       {previa && (
         <div className="resumo">
           <div><span>Produtos</span><span>{brl(previa.subtotal)}</span></div>
-          {tipo === 'entrega' && <div><span>Entrega{previa.entrega.bairro ? ` (${previa.entrega.bairro})` : ''}</span><span>{semEndereco ? '—' : previa.taxa_entrega > 0 ? brl(previa.taxa_entrega) : 'Grátis'}</span></div>}
+          {tipo === 'entrega' && <div><span>{previa.entrega.servico ? `Frete (${previa.entrega.servico.nome})` : `Entrega${previa.entrega.bairro ? ` (${previa.entrega.bairro})` : ''}`}</span><span>{semEndereco || escolhendo ? '—' : previa.taxa_entrega > 0 ? brl(previa.taxa_entrega) : 'Grátis'}</span></div>}
           {previa.desconto > 0 && <div className="ok-texto"><span>Desconto{previa.cupom && previa.cupom.valido ? ` (${previa.cupom.codigo})` : ''}</span><span>− {brl(previa.desconto)}</span></div>}
           <div className="resumo-total"><span>Total</span><b>{brl(previa.total)}</b></div>
-          {!semEndereco && <div className="dica"><span>Previsão: cerca de {previa.entrega.tempo_estimado_min} min</span></div>}
+          {!semEndereco && (previa.entrega.servico
+            ? previa.entrega.servico.prazo_dias && <div className="dica"><span>Previsão: até {previa.entrega.servico.prazo_dias} dias úteis após o pagamento</span></div>
+            : previa.entrega.tempo_estimado_min && <div className="dica"><span>Previsão: cerca de {previa.entrega.tempo_estimado_min} min</span></div>)}
         </div>
       )}
       {avisos.map((a) => <p key={a} className="erro-texto">⚠ {a}</p>)}

@@ -9,6 +9,8 @@ const { HttpError } = require('../utils/http');
 const { logAudit } = require('../utils/audit');
 const { registrarVenda } = require('./vendas');
 const email = require('./email');
+const frete = require('./frete');
+const me = require('../integracoes/melhorenvio');
 
 const n2 = (v) => Number(Number(v || 0).toFixed(2));
 const FUSO = 'America/Sao_Paulo';
@@ -54,12 +56,14 @@ function proxima(o) {
   if (o.status === 'saiu_entrega') return 'finalizado';
   return null;
 }
+const ETIQUETA = { pending: 'no carrinho', released: 'paga, pronta para imprimir', posted: 'postada', delivered: 'entregue', canceled: 'cancelada', expired: 'expirada' };
 const pagoNoSite = (o) => !!o.pagamento_online && o.pagamento_status === 'aprovado';
 
 const SELECT = `
   SELECT o.id, o.numero, o.status, o.tipo, o.endereco, o.taxa_entrega, o.desconto, o.observacao, o.cliente_nome, o.cliente_telefone,
          o.forma_pagamento_prevista, o.troco_para, o.pago, o.pagamento_online, o.pagamento_status, o.cupom_codigo, o.sale_id, o.location_id,
          o.transportadora, o.rastreio_codigo, o.rastreio_url, o.enviado_em, o.criado_em, o.finalizado_em, o.cancelado_em, o.motivo_cancelamento,
+         o.frete_servico_id, o.frete_servico_nome, o.frete_prazo_dias, o.frete_custo, o.frete_destino, o.frete_volumes, o.me_envio_id, o.me_status, o.me_etiqueta_em,
          a.email AS cliente_email, s.numero AS venda_numero,
          COALESCE((SELECT SUM(oi.subtotal) FROM order_items oi WHERE oi.order_id = o.id), 0) AS subtotal,
          (SELECT COUNT(*)::int FROM order_items oi WHERE oi.order_id = o.id) AS qtd_itens
@@ -78,6 +82,11 @@ function resumo(o) {
       ? { tipo: 'online', metodo: o.pagamento_online, situacao: o.pagamento_status }
       : { tipo: o.tipo === 'entrega' ? 'na_entrega' : 'na_retirada', forma: o.forma_pagamento_prevista, troco_para: o.troco_para === null ? null : n2(o.troco_para), pago: o.pago },
     rastreio: o.rastreio_codigo || o.transportadora ? { transportadora: o.transportadora, codigo: o.rastreio_codigo, url: o.rastreio_url } : null,
+    // envio por transportadora (Melhor Envio): servico escolhido pelo cliente e a etiqueta
+    frete: o.frete_servico_id ? {
+      servico_id: o.frete_servico_id, servico: o.frete_servico_nome, prazo_dias: o.frete_prazo_dias, custo: o.frete_custo === null ? null : n2(o.frete_custo),
+      etiqueta: o.me_envio_id && o.me_status !== 'canceled' ? { id: o.me_envio_id, status: o.me_status, nome_status: ETIQUETA[o.me_status] || o.me_status, comprada_em: o.me_etiqueta_em } : null,
+    } : null,
     venda_numero: o.venda_numero || null,
     criado_em: o.criado_em, enviado_em: o.enviado_em, finalizado_em: o.finalizado_em, cancelado_em: o.cancelado_em,
     proxima: ['aguardando_pagamento', 'cancelado'].includes(sit) ? null : proxima(o),
@@ -206,7 +215,14 @@ async function avancar(pool, user, id, b = {}) {
     if (!para || b.para !== para) throw new HttpError(409, `não é possível ir de "${SITUACOES[situacao(o)]}" para "${b.para}" neste pedido`);
     if (o.pagamento_online && o.pagamento_status !== 'aprovado') throw new HttpError(409, 'aguardando o pagamento do cliente no site');
     let rastreio = null;
-    if (para === 'saiu_entrega') rastreio = dadosRastreio(b);
+    if (para === 'saiu_entrega') {
+      // etiqueta do Melhor Envio: transportadora e codigo ja vem da etiqueta (o lojista pode corrigir)
+      if (o.me_envio_id && o.me_status !== 'canceled' && !b.transportadora) {
+        const codigo = b.rastreio_codigo || o.rastreio_codigo || null;
+        b = { ...b, transportadora: o.frete_servico_nome || 'Transportadora', rastreio_codigo: codigo, rastreio_url: b.rastreio_url || me.urlRastreio(codigo) };
+      }
+      rastreio = dadosRastreio(b);
+    }
     let saleId = o.sale_id;
     // Vira venda quando a mercadoria sai: pago no site ao enviar/retirar; a pagar, ao finalizar (recebido).
     if (!saleId && (para === 'finalizado' || (para === 'saiu_entrega' && pagoNoSite(o)))) {
@@ -279,4 +295,41 @@ async function cancelarTeste(pool, user, id, motivo) {
   await pool.query(`INSERT INTO order_status_log (order_id, de, para, usuario_id) VALUES ($1, $2, 'cancelado', $3)`, [o.id, o.status, user.id]);
 }
 
-module.exports = { listar, detalhe, avancar, atualizarRastreio, cancelarTeste, carregar, situacao, SITUACOES, FUSO };
+// ---------- etiqueta (Melhor Envio) ----------
+// Compra a etiqueta do servico que o cliente escolheu (saldo da conta do lojista). Depois de separado e pago.
+async function comprarEtiqueta(pool, user, loja, id, b = {}) {
+  const o = await carregar(pool, user.tenantId, id);
+  if (!['em_preparo', 'pronto'].includes(o.status)) throw new HttpError(409, 'compre a etiqueta depois de iniciar a separação (e antes de enviar)');
+  if (o.pagamento_online && o.pagamento_status !== 'aprovado') throw new HttpError(409, 'aguardando o pagamento do cliente');
+  const r = await frete.comprarEtiqueta(pool, loja, o, { nfe: b.nfe });
+  await pool.query(
+    `UPDATE orders SET me_envio_id = $2, me_status = $3, me_etiqueta_em = now(), rastreio_codigo = COALESCE($4, rastreio_codigo), atualizado_em = now() WHERE id = $1`,
+    [o.id, r.id, r.status || 'released', r.codigo || null]
+  );
+  await logAudit(pool, { tenantId: user.tenantId, usuarioId: user.id, acao: 'pedido_site_etiqueta', recurso: 'orders', recursoId: o.id, detalhes: { numero: o.numero, me_envio_id: r.id, servico: o.frete_servico_nome } });
+  return detalhe(pool, user.tenantId, id);
+}
+async function linkEtiqueta(pool, user, loja, id) {
+  const o = await carregar(pool, user.tenantId, id);
+  if (!o.me_envio_id || o.me_status === 'canceled') throw new HttpError(404, 'este pedido não tem etiqueta');
+  try {
+    return await me.linkEtiqueta(frete.cfgMe(loja), o.me_envio_id);
+  } catch (err) {
+    throw new HttpError(502, err.message);
+  }
+}
+// Cancela a etiqueta ainda nao postada (o valor volta para o saldo do Melhor Envio). Usado ao cancelar o pedido.
+async function cancelarEtiqueta(pool, user, loja, id, motivo) {
+  const o = await carregar(pool, user.tenantId, id);
+  if (!o.me_envio_id || ['canceled'].includes(o.me_status)) return false;
+  if (['posted', 'delivered'].includes(o.me_status)) throw new HttpError(409, 'a etiqueta já foi postada: não dá para cancelar o pedido aqui');
+  try {
+    await me.cancelarEtiqueta(frete.cfgMe(loja), o.me_envio_id, motivo);
+  } catch (err) {
+    throw new HttpError(502, `não foi possível cancelar a etiqueta no Melhor Envio: ${err.message}`);
+  }
+  await pool.query(`UPDATE orders SET me_status = 'canceled', rastreio_codigo = NULL, atualizado_em = now() WHERE id = $1`, [o.id]);
+  return true;
+}
+
+module.exports = { listar, detalhe, avancar, atualizarRastreio, cancelarTeste, carregar, situacao, comprarEtiqueta, linkEtiqueta, cancelarEtiqueta, SITUACOES, ETIQUETA, FUSO };

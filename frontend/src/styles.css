@@ -1602,3 +1602,12 @@ body.suporte-leitura main .btn-primario, body.suporte-leitura main form button[t
 .lv-historico li { display: flex; justify-content: space-between; gap: 12px; }
 .modal-content form button.perigo { background: var(--err); border-color: var(--err); color: #fff; }
 .lv-contador { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 6px; border-radius: 999px; background: var(--err); color: #fff; font-size: 11px; font-weight: 800; }
+.lv-passos { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 13px; }
+.lv-conta-me { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.lv-servicos { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.lv-servicos img { width: 34px; height: 20px; object-fit: contain; }
+.lv-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 720px) { .lv-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.lv-linha-simular { display: flex; gap: 8px; }
+.lv-linha-simular input { max-width: 200px; }
+.lv-etiqueta { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 10px; }

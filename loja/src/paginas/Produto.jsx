@@ -4,6 +4,7 @@ import { api } from '../api';
 import { useLoja } from '../estado.jsx';
 import { Preco } from '../componentes/CartaoProduto.jsx';
 import { brl } from '../util';
+import CalcularFrete from '../componentes/CalcularFrete.jsx';
 
 // Pagina do produto: fotos, descricao, complementos (respeitando minimo/maximo de cada grupo), quantidade.
 export default function Produto() {
@@ -98,6 +99,7 @@ export default function Produto() {
             <button type="button" className="botao largo" onClick={colocar}>{loja.tipo === 'cardapio' ? `Adicionar · ${brl(unitario * qtd)}` : 'Comprar'}</button>
           </div>
         ) : <p className="esgotado-aviso">Produto esgotado no momento.</p>}
+        {p.disponivel && p.complementos.length === 0 && <CalcularFrete itens={[{ product_id: p.id, quantidade: qtd }]} />}
       </div>
     </article>
   );

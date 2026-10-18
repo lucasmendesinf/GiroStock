@@ -99,17 +99,19 @@ export default function Produtos({ config }) {
           </>
         )}
       </div>
-      {editando && <EditarProduto p={editando} onClose={() => setEditando(null)} onSalvo={async () => { setEditando(null); await carregar(offset); }} />}
+      {editando && <EditarProduto p={editando} frete={config.tipo !== 'cardapio'} onClose={() => setEditando(null)} onSalvo={async () => { setEditando(null); await carregar(offset); }} />}
     </div>
   );
 }
 
-function EditarProduto({ p, onClose, onSalvo }) {
+const medida = (v) => (v === null || v === undefined ? '' : String(Number(v)).replace('.', ','));
+function EditarProduto({ p, frete, onClose, onSalvo }) {
   const toast = useToast();
   const [f, setF] = useState({
     publicado: p.publicado,
     nome_site: p.nome_site || '', descricao: p.descricao || '', destaque: p.destaque,
     preco_promocional: p.preco_promocional ? String(p.preco_promocional).replace('.', ',') : '', promo_inicio: p.promo_inicio || '', promo_fim: p.promo_fim || '',
+    peso_kg: medida(p.peso_kg), altura_cm: medida(p.altura_cm), largura_cm: medida(p.largura_cm), comprimento_cm: medida(p.comprimento_cm),
   });
   const [fotos, setFotos] = useState(p.imagens);
   const [enviando, setEnviando] = useState(0);
@@ -133,6 +135,7 @@ function EditarProduto({ p, onClose, onSalvo }) {
       await api.put(`/loja-virtual/produtos/${p.id}`, {
         publicado: f.publicado, nome_site: f.nome_site, descricao: f.descricao, destaque: f.destaque, imagens: fotos.map((x) => x.id),
         preco_promocional: promo, promo_inicio: promo ? f.promo_inicio || null : null, promo_fim: promo ? f.promo_fim || null : null,
+        ...(frete ? Object.fromEntries(['peso_kg', 'altura_cm', 'largura_cm', 'comprimento_cm'].map((k) => [k, f[k].trim() ? parseNumero(f[k]) : null])) : {}),
       });
       toast.sucesso('Produto salvo');
       await onSalvo();
@@ -173,6 +176,18 @@ function EditarProduto({ p, onClose, onSalvo }) {
         </div>
         {promo > 0 && <p className="form-hint" style={{ margin: 0 }}>{promo < Number(p.preco_venda) ? `De ${brl(p.preco_venda)} por ${brl(promo)} (${Math.round((1 - promo / Number(p.preco_venda)) * 100)}% off)${f.promo_inicio || f.promo_fim ? `, ${f.promo_inicio ? `de ${diaBR(f.promo_inicio)} ` : ''}${f.promo_fim ? `até ${diaBR(f.promo_fim)}` : ''}` : ', sem data para acabar'}.` : 'O preço promocional precisa ser menor que o preço de venda.'}</p>}
         <label className="check"><input type="checkbox" checked={f.destaque} onChange={mudar('destaque')} /> Destaque (aparece primeiro e na vitrine de destaques)</label>
+        {frete && (
+          <div>
+            <span className="ped-rotulo">Peso e medidas da embalagem (frete por transportadora)</span>
+            <div className="form-grid lv-grid-4">
+              <Field label="Peso (kg)"><input inputMode="decimal" value={f.peso_kg} onChange={mudar('peso_kg')} placeholder="padrão" /></Field>
+              <Field label="Altura (cm)"><input inputMode="decimal" value={f.altura_cm} onChange={mudar('altura_cm')} placeholder="padrão" /></Field>
+              <Field label="Largura (cm)"><input inputMode="decimal" value={f.largura_cm} onChange={mudar('largura_cm')} placeholder="padrão" /></Field>
+              <Field label="Comprimento (cm)"><input inputMode="decimal" value={f.comprimento_cm} onChange={mudar('comprimento_cm')} placeholder="padrão" /></Field>
+            </div>
+            <p className="form-hint" style={{ margin: 0 }}>Vazio = a embalagem padrão da loja (Entrega). Medidas do produto já embalado.</p>
+          </div>
+        )}
         <div className="modal-actions">
           <button type="button" onClick={onClose}>Cancelar</button>
           <button type="submit" className="btn-primario" disabled={enviando > 0}>Salvar</button>

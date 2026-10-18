@@ -55,7 +55,7 @@ export default function LojaVirtual() {
           <Route path="cupons" element={<Cupons />} />
           <Route path="pagamentos" element={<Pagamentos config={dados.config} onMudou={recarregar} />} />
           <Route path="clientes" element={<Clientes />} />
-          {dados.config.tipo !== 'cardapio' && <Route path="pedidos" element={<PedidosSite onMudou={recarregar} />} />}
+          {dados.config.tipo !== 'cardapio' && <Route path="pedidos" element={<PedidosSite config={dados.config} onMudou={recarregar} />} />}
           <Route path="*" element={<Navigate to="/loja-virtual/geral" replace />} />
         </Routes>
       )}

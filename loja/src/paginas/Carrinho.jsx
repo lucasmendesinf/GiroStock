@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useLoja } from '../estado.jsx';
+import CalcularFrete from '../componentes/CalcularFrete.jsx';
 import { brl, chaveItem } from '../util';
 
 export const itensParaApi = (carrinho) => carrinho.map((i) => ({
@@ -83,6 +84,7 @@ export default function Carrinho() {
           <div className="resumo-total"><span>Total</span><b>{brl(previa.total)}</b></div>
         </div>
       )}
+      <CalcularFrete itens={itensParaApi(carrinho)} />
       <button type="button" className="botao largo" disabled={!previa || !loja.recebendo_pedidos}
         onClick={() => navegar(conta ? '/finalizar' : '/entrar?depois=/finalizar')}>
         {loja.recebendo_pedidos ? 'Continuar' : 'Loja fechada no momento'}

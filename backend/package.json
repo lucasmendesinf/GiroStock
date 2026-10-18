@@ -33,6 +33,7 @@
     "test:e2e:financeiro": "node scripts/e2e-financeiro.mjs",
     "test:e2e:relatorios": "node scripts/e2e-relatorios.mjs",
     "mp:simulador": "node scripts/mercadopago-simulador.mjs",
+    "me:simulador": "node scripts/melhorenvio-simulador.mjs",
     "test:e2e:loja-virtual": "node scripts/e2e-loja-virtual.mjs"
   },
   "dependencies": {

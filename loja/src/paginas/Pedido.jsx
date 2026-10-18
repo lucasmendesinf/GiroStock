@@ -108,6 +108,7 @@ export default function Pedido() {
       <div className="painel">
         <h2>{p.tipo === 'entrega' ? 'Entrega' : 'Retirada'}</h2>
         <p>{p.tipo === 'entrega' ? p.endereco : (loja.contato.endereco || 'Retirar na loja')}</p>
+        {p.frete && <p className="dica">{p.frete.servico}{p.frete.prazo_dias ? ` · chega em até ${p.frete.prazo_dias} dias úteis após o pagamento` : ''}</p>}
       </div>
 
       <div className="painel">

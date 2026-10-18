@@ -27,12 +27,13 @@ export function corSobre(hex) {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.45 ? '#111' : '#fff';
 }
 
-// Mistura uma cor com branco/preto (0..1) para fundos suaves derivados da cor da loja.
-export function misturar(hex, alvo, peso) {
-  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || '');
-  if (!m) return hex;
-  const t = alvo === 'preto' ? 0 : 255;
-  return `#${m.slice(1).map((x) => Math.round(parseInt(x, 16) * (1 - peso) + t * peso).toString(16).padStart(2, '0')).join('')}`;
+// Mistura duas cores #RRGGBB (peso = quanto de `b` entra). Os tons suaves partem do fundo da loja,
+// entao funcionam tanto em tema claro quanto escuro.
+export function misturar(a, b, peso) {
+  const ca = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(a || '');
+  const cb = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(b || '');
+  if (!ca || !cb) return a;
+  return `#${[1, 2, 3].map((i) => Math.round(parseInt(ca[i], 16) * (1 - peso) + parseInt(cb[i], 16) * peso).toString(16).padStart(2, '0')).join('')}`;
 }
 
 const FONTES = {
@@ -46,14 +47,14 @@ export function aplicarTema(tema, nome) {
   const r = document.documentElement.style;
   r.setProperty('--primaria', tema.cor_primaria);
   r.setProperty('--sobre-primaria', corSobre(tema.cor_primaria));
-  r.setProperty('--primaria-suave', misturar(tema.cor_primaria, 'branco', 0.9));
+  r.setProperty('--primaria-suave', misturar(tema.cor_primaria, tema.cor_fundo, 0.86));
   r.setProperty('--fundo', tema.cor_fundo);
   r.setProperty('--texto', tema.cor_texto);
   r.setProperty('--destaque', tema.cor_destaque);
   r.setProperty('--sobre-destaque', corSobre(tema.cor_destaque));
-  r.setProperty('--linha', misturar(tema.cor_texto, 'branco', 0.86));
-  r.setProperty('--painel', misturar(tema.cor_fundo, 'preto', 0.03));
-  r.setProperty('--suave', misturar(tema.cor_texto, 'branco', 0.42));
+  r.setProperty('--linha', misturar(tema.cor_texto, tema.cor_fundo, 0.86));
+  r.setProperty('--painel', misturar(tema.cor_texto, tema.cor_fundo, 0.95));
+  r.setProperty('--suave', misturar(tema.cor_texto, tema.cor_fundo, 0.4));
   r.setProperty('--fonte', FONTES[tema.fonte] || FONTES.moderna);
   r.setProperty('--raio', tema.cantos === 'retos' ? '2px' : '14px');
   document.body.className = `modelo-${tema.modelo}`;

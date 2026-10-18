@@ -12,6 +12,7 @@ export const TELAS = [
   { path: '/usuarios', label: 'Usuários', area: 'Configuracoes' },
   { path: '/relatorios', label: 'Relatórios', area: 'Relatorios' },
   { path: '/financeiro', label: 'Financeiro', area: 'Financeiro' },
+  { path: '/loja-virtual', label: 'Loja virtual', area: 'LojaVirtual' },
 ];
 
 // Modulo contratado pela empresa (PDV, Lanchonete, Pedidos...). Sessao antiga sem `modulos` = tudo liberado (o servidor confere de novo).

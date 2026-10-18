@@ -3,14 +3,14 @@ const { POR_CHAVE } = require('../config/modulos');
 // Permissoes: cada perfil tem um padrao (MATRIX) e cada usuario pode ter ajustes
 // individuais (users.permissoes) que liberam ou bloqueiam permissoes especificas.
 const MATRIX = {
-  'Administrador':        { Vendas: true,  Estoque: true,  Financeiro: true,  Relatorios: true,  Configuracoes: true,  CancelarVendas: true,  SangriaSuprimento: true,  Desconto: true,  FecharCaixa: true,  Pedidos: true, Clientes: true, ModoTeste: false, Master: false },
-  'Gerente':              { Vendas: true,  Estoque: true,  Financeiro: false, Relatorios: true,  Configuracoes: false, CancelarVendas: true,  SangriaSuprimento: true,  Desconto: true,  FecharCaixa: true,  Pedidos: true, Clientes: true, ModoTeste: false, Master: false },
-  'Caixa/Operador':       { Vendas: true,  Estoque: false, Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: true,  Pedidos: true, Clientes: false, ModoTeste: false, Master: false },
-  'Estoque':              { Vendas: false, Estoque: true,  Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: false, Pedidos: false, Clientes: false, ModoTeste: false, Master: false },
-  'Lanchonete/Cozinha':   { Vendas: true,  Estoque: true,  Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: true,  Pedidos: true, Clientes: false, ModoTeste: false, Master: false },
-  'Financeiro':           { Vendas: false, Estoque: false, Financeiro: true,  Relatorios: true,  Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: false, Pedidos: false, Clientes: false, ModoTeste: false, Master: false },
+  'Administrador':        { Vendas: true,  Estoque: true,  Financeiro: true,  Relatorios: true,  Configuracoes: true,  CancelarVendas: true,  SangriaSuprimento: true,  Desconto: true,  FecharCaixa: true,  Pedidos: true, Clientes: true, LojaVirtual: true, ModoTeste: false, Master: false },
+  'Gerente':              { Vendas: true,  Estoque: true,  Financeiro: false, Relatorios: true,  Configuracoes: false, CancelarVendas: true,  SangriaSuprimento: true,  Desconto: true,  FecharCaixa: true,  Pedidos: true, Clientes: true, LojaVirtual: false, ModoTeste: false, Master: false },
+  'Caixa/Operador':       { Vendas: true,  Estoque: false, Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: true,  Pedidos: true, Clientes: false, LojaVirtual: false, ModoTeste: false, Master: false },
+  'Estoque':              { Vendas: false, Estoque: true,  Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: false, Pedidos: false, Clientes: false, LojaVirtual: false, ModoTeste: false, Master: false },
+  'Lanchonete/Cozinha':   { Vendas: true,  Estoque: true,  Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: true,  Pedidos: true, Clientes: false, LojaVirtual: false, ModoTeste: false, Master: false },
+  'Financeiro':           { Vendas: false, Estoque: false, Financeiro: true,  Relatorios: true,  Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: false, Pedidos: false, Clientes: false, LojaVirtual: false, ModoTeste: false, Master: false },
   // Dono da plataforma: nenhuma area de empresa; so o painel Master e o modo teste.
-  'Master':               { Vendas: false, Estoque: false, Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: false, Pedidos: false, Clientes: false, ModoTeste: true,  Master: true },
+  'Master':               { Vendas: false, Estoque: false, Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: false, Pedidos: false, Clientes: false, LojaVirtual: false, ModoTeste: true,  Master: true },
 };
 
 // Permissoes que podem ser ajustadas por usuario. 'Master' nao entra aqui:
@@ -26,6 +26,7 @@ const PERMISSOES = {
   Estoque: 'Produtos, fornecedores, insumos, entradas e transferências',
   Relatorios: 'Relatórios e histórico de vendas',
   Financeiro: 'Financeiro: contas a pagar e a receber, fluxo de caixa e resultado',
+  LojaVirtual: 'Loja virtual: produtos no site, entrega, cupons, pagamentos online e clientes do site',
   Configuracoes: 'Usuários, lojas e PDVs',
   CancelarVendas: 'Cancelar vendas (estorna estoque e caixa)',
 };

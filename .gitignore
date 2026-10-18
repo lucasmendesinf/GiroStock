@@ -8,3 +8,4 @@ deploy/
 
 # Dados de importacao pontual (nao versionar)
 backend/dados-importacao/
+backend/tmp/

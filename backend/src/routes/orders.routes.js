@@ -9,6 +9,7 @@ const { configEfetiva } = require('../utils/cupom');
 const { registrarVenda } = require('../services/vendas');
 const { criarPedido, ORIGENS } = require('../services/pedidos');
 const comum = require('../integracoes/comum');
+const lojaVirtual = require('../services/lojaVirtual');
 const { FUSO } = require('../utils/query');
 const { inserirCliente } = require('./customers.routes');
 
@@ -27,6 +28,7 @@ const SELECT_PEDIDO = `
          o.tipo, o.endereco, o.taxa_entrega, o.observacao, o.forma_pagamento_prevista, o.pago, o.status,
          o.entregador_id, c.nome AS entregador_nome, o.sale_id, o.criado_por, u.nome AS criado_por_nome, o.customer_id, o.valor_recebido,
          o.criado_em, o.atualizado_em, o.finalizado_em, o.cancelado_em, o.motivo_cancelamento,
+         o.cupom_codigo, o.troco_para, o.pagamento_online, o.pagamento_status,
          COALESCE((SELECT SUM(oi.subtotal) FROM order_items oi WHERE oi.order_id = o.id), 0) + o.taxa_entrega - o.desconto AS total,
          (SELECT json_build_object('id', pe.id, 'plataforma', pe.plataforma, 'confirmado', pe.confirmado, 'status_externo', pe.status_externo,
                  'entrega_pela_plataforma', pe.entrega_pela_plataforma, 'faltas_estoque', pe.faltas_estoque, 'disputa', pe.disputa)
@@ -213,6 +215,10 @@ router.post('/orders/:id/status', async (req, res) => {
     if (!permitidos.includes(para)) {
       throw new HttpError(409, `não é possível ir de "${o.status}" para "${para}" neste pedido`);
     }
+    // Loja virtual com pagamento pelo site: so prepara depois do pagamento aprovado.
+    if (o.origem === 'loja_virtual' && o.pagamento_online && o.pagamento_status !== 'aprovado') {
+      throw new HttpError(409, 'aguardando o pagamento online do cliente: o pedido só pode ser preparado depois de pago');
+    }
 
     let entregadorId = o.entregador_id;
     if (para === 'saiu_entrega') {
@@ -239,7 +245,8 @@ router.post('/orders/:id/status', async (req, res) => {
         terminalId = cx.rows[0].id;
       }
       const itens = await client.query(`SELECT product_id, quantidade, observacao, preco_unitario, complementos FROM order_items WHERE order_id = $1`, [o.id]);
-      const externo = !!o.origem_externa_id; // pedido de plataforma: vale o preco e o desconto da plataforma
+      // pedido de plataforma ou da loja virtual: vale o preco (promocao) e o desconto (cupom) do pedido
+      const externo = !!o.origem_externa_id || o.origem === 'loja_virtual';
       let forma = b.forma_pagamento;
       if (o.pago) {
         const prev = o.forma_pagamento_prevista;
@@ -299,12 +306,19 @@ router.post('/orders/:id/cancel', async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const { rows } = await client.query(`SELECT id, numero, status, location_id FROM orders WHERE id = $1 AND tenant_id = $2 FOR UPDATE`, [req.params.id, req.user.tenantId]);
+    const { rows } = await client.query(`SELECT id, numero, status, location_id, origem FROM orders WHERE id = $1 AND tenant_id = $2 FOR UPDATE`, [req.params.id, req.user.tenantId]);
     if (rows.length === 0) throw new HttpError(404, 'pedido não encontrado');
     const o = rows[0];
     assertLocationAccess(req.user, o.location_id, 'cancelar pedidos desta loja');
     if (o.status === 'finalizado') throw new HttpError(409, 'o pedido já foi finalizado: cancele pela venda (Relatórios), que devolve o estoque');
     if (o.status === 'cancelado') throw new HttpError(400, 'este pedido já foi cancelado');
+    // Pedido da loja virtual (producao): cancela pelo servico da loja, que estorna antes o pagamento feito no site.
+    if (o.origem === 'loja_virtual' && !req.user.modoTeste) {
+      await client.query('ROLLBACK');
+      const loja = (await pool.query(`SELECT * FROM lv_lojas WHERE tenant_id = $1`, [req.user.tenantId])).rows[0];
+      await lojaVirtual.cancelarPedido(loja, o.id, motivo, { usuarioId: req.user.id });
+      return res.json(await pedidoCompleto(pool, req.user.tenantId, o.id));
+    }
     // Pedido do iFood/99Food com a loja conectada: o cancelamento e pedido a plataforma (motivo da lista dela); o pedido
     // daqui e cancelado quando ela confirmar, liberando a reserva de estoque.
     if (!req.user.modoTeste) {

@@ -1489,3 +1489,51 @@ body.suporte-leitura main .btn-primario, body.suporte-leitura main form button[t
   .rel-part { justify-content: flex-end; min-width: 0; }
   .rel-trilha { width: 60px; }
 }
+.ped-tag.lojav { background: #2f6f4f; color: #fff; border-color: #2f6f4f; }
+
+/* Loja virtual (gerenciamento) */
+.lv-acoes { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.lv-acoes-linha { white-space: nowrap; }
+.lv-acoes-linha .btn-link + .btn-link { margin-left: 10px; }
+.lv-pendencias { margin: 6px 0 0; padding-left: 20px; }
+.lv-pendencias li { margin: 2px 0; }
+.lv-logo { display: flex; gap: 14px; align-items: center; }
+.lv-logo-img { width: 88px; height: 88px; border-radius: 12px; border: 1px dashed var(--line); display: flex; align-items: center; justify-content: center; overflow: hidden; background: var(--panel-alt); flex: 0 0 auto; font-size: 12px; }
+.lv-logo-img img { width: 100%; height: 100%; object-fit: contain; }
+.lv-arquivo { position: relative; overflow: hidden; cursor: pointer; display: inline-block; margin-right: 10px; }
+.lv-arquivo input, .lv-foto-nova input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.lv-linha-checks { display: flex; gap: 18px; flex-wrap: wrap; }
+.lv-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.lv-horarios { display: grid; gap: 6px; margin-top: 8px; }
+.lv-dia { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; }
+.lv-dia > .check { min-width: 110px; }
+.lv-dia.fechado { opacity: 0.7; }
+.lv-faixas { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.lv-faixa { display: inline-flex; gap: 6px; align-items: center; }
+.lv-faixa input[type=time] { width: auto; min-width: 0; padding: 6px 8px; }
+.lv-campo-copiar code, .lv-codigo { background: var(--panel-alt); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; font-size: 13px; word-break: break-all; }
+.lv-campo-copiar > div { margin-top: 4px; }
+.lv-chave { display: block; padding: 12px; font-size: 14px; background: var(--panel-alt); border: 1px solid var(--line); border-radius: 8px; word-break: break-all; user-select: all; }
+.lv-lote { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; padding: 8px 10px; border-radius: 10px; background: var(--panel-alt); }
+.lv-col-marca { width: 34px; }
+.lv-prod { display: flex; gap: 10px; align-items: center; }
+.lv-thumb { width: 44px; height: 44px; border-radius: 8px; overflow: hidden; background: var(--panel-alt); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; flex: 0 0 auto; font-size: 18px; }
+.lv-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.lv-mini { margin-left: 6px; font-size: 10px; padding: 1px 6px; }
+.lv-switch { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; white-space: nowrap; }
+.lv-switch input { width: 18px; height: 18px; }
+.lv-fotos { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+.lv-foto { position: relative; width: 104px; height: 104px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); background: var(--panel-alt); }
+.lv-foto img { width: 100%; height: 100%; object-fit: cover; }
+.lv-foto:first-child { outline: 2px solid var(--gold-light); outline-offset: 1px; }
+.lv-foto-acoes { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; background: rgba(0, 0, 0, 0.45); }
+.lv-foto-acoes button { background: none !important; border: none !important; color: #fff !important; padding: 4px 10px !important; min-height: 0 !important; font-size: 16px; line-height: 1; box-shadow: none !important; }
+.lv-foto-acoes button:disabled { opacity: 0.35; }
+.lv-foto-nova { display: flex; align-items: center; justify-content: center; cursor: pointer; border-style: dashed; font-weight: 700; font-size: 13px; outline: none !important; }
+.lv-pag-grupos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.lv-pag-grupos .check { display: flex; margin-top: 6px; }
+@media (max-width: 760px) {
+  .lv-grid-3, .lv-pag-grupos { grid-template-columns: 1fr; }
+  .lv-dia > .check { min-width: 0; }
+  .lv-prod { align-items: flex-start; }
+}

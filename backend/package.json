@@ -31,7 +31,9 @@
     "test:e2e:99food": "node scripts/e2e-99food.mjs",
     "food99:simulador": "node scripts/food99-simulador.mjs",
     "test:e2e:financeiro": "node scripts/e2e-financeiro.mjs",
-    "test:e2e:relatorios": "node scripts/e2e-relatorios.mjs"
+    "test:e2e:relatorios": "node scripts/e2e-relatorios.mjs",
+    "mp:simulador": "node scripts/mercadopago-simulador.mjs",
+    "test:e2e:loja-virtual": "node scripts/e2e-loja-virtual.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -41,6 +43,7 @@
     "express-async-errors": "^3.1.1",
     "helmet": "6.2.0",
     "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^6.10.1",
     "pg": "8.11.3",
     "pg-copy-streams": "^7.0.0",
     "qrcode": "^1.5.4"

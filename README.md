@@ -98,7 +98,7 @@ Cada cliente usa só os módulos (segmentos) que contratou. O Master define isso
 | Clientes | base de clientes, segmentos e mensagens | — |
 | iFood e 99Food | pedidos das plataformas na tela de Pedidos | Pedidos |
 | Casa de shows e eventos *(em breve)* | eventos, PDVs e estoque do evento | PDV |
-| Loja virtual *(em breve)* | catálogo online e delivery | — |
+| Loja virtual | site da loja ligado por API, produtos com fotos, cupons, entrega por bairro, Pix/cartão (Mercado Pago) | Pedidos |
 | Financeiro | contas a pagar/receber, fluxo de caixa, resultado do mês | Financeiro |
 
 - Sempre incluído em qualquer plano: Início, Produtos & Estoque, Fornecedores, Lojas & PDVs, Usuários e Relatórios.
@@ -203,6 +203,22 @@ Além de **Vendas** e **Fechamentos de caixa**, a tela tem três abas novas (res
 - **Estoque** — valor do estoque por loja (a custo e a preço de venda), produtos abaixo do mínimo, produtos com saldo e sem venda no período (valor parado) e **curva ABC** (A = 80% do faturamento, B = próximos 15%, C = o resto). Exporta CSV. API: `GET /api/reports/estoque`.
 
 Teste: `npm run test:e2e:relatorios`.
+
+## Loja virtual (módulo "Loja virtual")
+
+O site da loja é um **projeto separado, igual para todas as empresas** (só o layout muda). Ele conversa com o GiroStock pela API pública `/api/loja/v1`, identificado pela chave da loja. Uma loja por empresa; requer o módulo Pedidos. Permissão: **Loja virtual** (padrão só Administrador).
+
+Tela **Loja virtual** (gerenciamento):
+- **Visão geral** — situação (publicar, pausar, tirar do ar), o que falta configurar, dados que aparecem no site (logo, contato, aviso), estabelecimento de onde sai o estoque, retirada/entrega, tempos, pedido mínimo, horários (inclusive passando da meia-noite), endereço da API e **chave da API** (mostrada uma vez; gerar outra desativa a anterior).
+- **Produtos no site** — escolhe o que vai para o site (um a um ou em lote), com até 8 fotos (reduzidas no navegador), nome e descrição para o site, preço promocional com período e destaque. Preço de venda e estoque continuam os do cadastro; a disponibilidade desconta os pedidos em aberto (ficha técnica, combo e complementos pela mesma regra do PDV).
+- **Entrega** — bairros com taxa, tempo a mais e pedido mínimo próprio; taxa opcional para qualquer outro bairro.
+- **Cupons** — porcentagem (com teto), valor ou frete grátis; pedido mínimo, período, limite total e por cliente, só primeira compra; usos e desconto dado.
+- **Pagamentos** — Pix e cartão pelo site (Mercado Pago, com as credenciais **da própria empresa**: o dinheiro cai direto na conta dela; token guardado cifrado), pagamento na entrega (dinheiro com troco, Pix, cartão), parcelas e prazo do Pix; últimos pagamentos.
+- **Clientes do site** — contas (login por e-mail e senha), pedidos e total gasto; bloquear/desbloquear. Cada conta fica ligada ao cadastro de Clientes pelo telefone.
+
+Pedidos do site entram na tela **Pedidos** como canal "Loja virtual" (com aviso sonoro), reservam o estoque e viram venda ao finalizar, com o preço promocional e o desconto do cupom. Pago pelo site: o preparo só começa com o pagamento aprovado; Pix não pago no prazo cancela o pedido sozinho; cancelar pedido pago estorna no Mercado Pago. Os avisos de pagamento chegam em `/api/webhooks/mercadopago/<loja>` (conferidos na API do Mercado Pago e, com o segredo cadastrado, pela assinatura).
+
+Documentação da API para quem faz o site: [docs/API_LOJA_VIRTUAL.md](docs/API_LOJA_VIRTUAL.md). Variáveis novas no `.env`: `URL_PUBLICA` e `SMTP_*` (veja `.env.example`). Teste: `npm run mp:simulador` + `npm run test:e2e:loja-virtual`.
 
 ## Financeiro (módulo "Financeiro")
 

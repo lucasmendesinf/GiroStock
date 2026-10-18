@@ -9,7 +9,7 @@ import { brl, qtd } from '../utils/format';
 export const NOME_PLATAFORMA = { ifood: 'iFood', '99food': '99Food' };
 export const nomePlataforma = (chave) => NOME_PLATAFORMA[chave] || chave;
 // Classe da etiqueta colorida da plataforma (iFood vermelho, 99Food amarelo).
-export const classePlataforma = (chave) => (chave === 'ifood' ? 'ifood' : chave === '99food' ? 'food99' : '');
+export const classePlataforma = (chave) => (chave === 'ifood' ? 'ifood' : chave === '99food' ? 'food99' : chave === 'loja_virtual' ? 'lojav' : '');
 // "no iFood" / "na 99Food"
 const naPlataforma = (chave) => `${chave === '99food' ? 'na' : 'no'} ${nomePlataforma(chave)}`;
 

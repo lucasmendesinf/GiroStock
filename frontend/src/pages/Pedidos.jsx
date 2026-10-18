@@ -29,6 +29,9 @@ const entregaDaLoja = (p) => p.tipo === 'entrega' && !(p.externo && p.externo.en
 const proximo = (p) => ({ novo: 'em_preparo', em_preparo: 'pronto', pronto: entregaDaLoja(p) ? 'saiu_entrega' : 'finalizado', saiu_entrega: 'finalizado' })[p.status];
 const textoAcao = (p) => ({ novo: 'Iniciar preparo', em_preparo: 'Marcar pronto', pronto: entregaDaLoja(p) ? 'Saiu p/ entrega' : p.tipo === 'entrega' ? `Retirado pel${p.origem === '99food' ? 'a' : 'o'} ${nomePlataforma(p.origem)}` : 'Entregue ao cliente', saiu_entrega: 'Entregue ao cliente' })[p.status] || '';
 const aberto = (p) => !['finalizado', 'cancelado'].includes(p.status);
+// Loja virtual com pagamento pelo site ainda nao aprovado: a equipe espera (o servidor recusa iniciar o preparo).
+const aguardandoPagamento = (p) => p.origem === 'loja_virtual' && !!p.pagamento_online && p.pagamento_status !== 'aprovado' && p.status === 'novo';
+const ORIGEM_LOJA = [['loja_virtual', 'Loja virtual']]; // com o modulo "Loja virtual"
 
 
 export default function Pedidos() {
@@ -54,6 +57,7 @@ export default function Pedidos() {
   const [entregadores, setEntregadores] = useState([]);
   const [cupom, setCupom] = useState(null);
   const usaIfood = temModulo(user, 'delivery_apps');
+  const usaLoja = temModulo(user, 'loja_virtual');
   const [pendencias, setPendencias] = useState([]);
   const vistos = useRef(null); // pedidos do iFood ja vistos (para o aviso sonoro dos novos)
 
@@ -71,12 +75,14 @@ export default function Pedidos() {
     if (!lojaId) return;
     try {
       const lista = await api.get(`/orders?location_id=${lojaId}`);
-      // Aviso sonoro quando chega pedido novo do iFood/99Food (nao toca na primeira carga da tela).
-      const doIfood = lista.filter((p) => (p.origem === 'ifood' || p.origem === '99food') && p.status === 'novo').map((p) => p.id);
+      // Aviso sonoro quando chega pedido novo do iFood/99Food ou da loja virtual (ja pago, se for pago no site);
+      // nao toca na primeira carga da tela.
+      const chegou = (p) => p.status === 'novo' && (p.origem === 'ifood' || p.origem === '99food' || (p.origem === 'loja_virtual' && !aguardandoPagamento(p)));
+      const doIfood = lista.filter(chegou).map((p) => p.id);
       if (vistos.current && doIfood.some((id) => !vistos.current.has(id))) {
         bipe();
-        const novo = lista.find((p) => (p.origem === 'ifood' || p.origem === '99food') && p.status === 'novo' && !vistos.current.has(p.id));
-        toast.sucesso(`Novo pedido ${novo.origem === '99food' ? 'da' : 'do'} ${nomePlataforma(novo.origem)} #${novo.codigo_externo || novo.numero}`);
+        const novo = lista.find((p) => chegou(p) && !vistos.current.has(p.id));
+        toast.sucesso(novo.origem === 'loja_virtual' ? `Novo pedido da loja virtual #${novo.numero}` : `Novo pedido ${novo.origem === '99food' ? 'da' : 'do'} ${nomePlataforma(novo.origem)} #${novo.codigo_externo || novo.numero}`);
       }
       vistos.current = new Set([...(vistos.current || []), ...doIfood]);
       setPedidos(lista);
@@ -187,13 +193,13 @@ export default function Pedidos() {
         <div className="ped-its">{p.itens.map((i) => `${qtd(i.quantidade)}× ${i.product_nome}`).join(' · ')}</div>
         <div className="ped-r3">
           <span className="ped-tag">{p.tipo === 'entrega' ? '🛵 Entrega' : p.tipo === 'mesa' ? `🍽 ${p.endereco || 'Mesa'}` : '🛍 Retirada'}</span>
-          <span className={`ped-pill ${p.pago ? 'ok' : 'warn'}`}>{p.pago ? 'Pago' : 'Receber'}</span>
+          {aguardandoPagamento(p) ? <span className="ped-pill warn">Aguardando pagamento</span> : <span className={`ped-pill ${p.pago ? 'ok' : 'warn'}`}>{p.pago ? 'Pago' : 'Receber'}</span>}
           {aberto(p) && <span className="ped-tag">🔒 Reservado</span>}
           <span className="ped-tot">{brl(p.total)}</span>
         </div>
         {p.externo && <div className="ped-r3" style={{ marginTop: 6 }}><EtiquetasIfood p={p} /></div>}
         {p.entregador_nome && p.status === 'saiu_entrega' && <div className="ped-its" style={{ marginTop: 6 }}>Entregador: <b>{p.entregador_nome}</b></div>}
-        {a && aberto(p) && (
+        {a && aberto(p) && !aguardandoPagamento(p) && (
           <div className="ped-act" onClick={(e) => e.stopPropagation()}>
             <button type="button" onClick={() => avancar(p)}>{a}</button>
           </div>
@@ -226,7 +232,7 @@ export default function Pedidos() {
       {usaIfood && <PendenciasIfood pendencias={pendencias} onMudou={carregar} />}
 
       <div className="ped-bar">
-        {[...ORIGENS_FILTRO, ...(usaIfood ? ORIGENS_IFOOD : [])].map(([id, nome]) => (
+        {[...ORIGENS_FILTRO, ...(usaIfood ? ORIGENS_IFOOD : []), ...(usaLoja ? ORIGEM_LOJA : [])].map(([id, nome]) => (
           <button key={id} type="button" className={`ped-chip ${origem === id ? 'on' : ''}`} onClick={() => setOrigem(id)}>{nome}</button>
         ))}
         <input className="ped-busca" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nº, cliente ou telefone" aria-label="Buscar pedido" />
@@ -335,8 +341,11 @@ function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, onClose, onAva
   const quando = (status) => { const l = p.log.find((x) => x.para === status); return l ? dataHora(l.criado_em).slice(-5) : ''; };
   const a = textoAcao(p);
   const minutosEtapa = pedidoLista ? agoraMin(pedidoLista) : p.minutos_etapa;
-  const NOME_PAG = { dinheiro: 'Dinheiro', cartao: 'Cartão', cartao_debito: 'Cartão-Débito', cartao_credito: 'Cartão-Crédito', pix: 'Pix', online: `Online ${p.origem === '99food' ? 'na' : 'no'} ${nomePlataforma(p.origem)}` };
-  const pagLabel = p.pago ? `${NOME_PAG[p.forma_pagamento_prevista] || 'Pix'} (já pago)` : `Pagar ${NOME_PAG[p.forma_pagamento_prevista] || 'Dinheiro'} na retirada/entrega`;
+  const online = p.origem === 'loja_virtual' ? `Online no site (${p.pagamento_online === 'cartao' ? 'cartão' : 'Pix'})` : `Online ${p.origem === '99food' ? 'na' : 'no'} ${nomePlataforma(p.origem)}`;
+  const NOME_PAG = { dinheiro: 'Dinheiro', cartao: 'Cartão', cartao_debito: 'Cartão-Débito', cartao_credito: 'Cartão-Crédito', pix: 'Pix', online };
+  const pagLabel = aguardandoPagamento(p)
+    ? `Aguardando o pagamento online (${p.pagamento_online === 'cartao' ? 'cartão' : 'Pix'}) no site${p.pagamento_status === 'recusado' ? ' · última tentativa recusada' : ''}`
+    : p.pago ? `${NOME_PAG[p.forma_pagamento_prevista] || 'Pix'} (já pago)` : `Pagar ${NOME_PAG[p.forma_pagamento_prevista] || 'Dinheiro'} na retirada/entrega${p.troco_para ? ` · troco para ${brl(p.troco_para)}` : ''}`;
   const subtotal = p.itens.reduce((s, i) => s + Number(i.subtotal), 0);
   useEffect(() => {
     function onKey(e) { if (e.key === 'Escape') onClose(); }
@@ -387,14 +396,14 @@ function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, onClose, onAva
             </div>
           ))}
           {Number(p.taxa_entrega) > 0 && <div className="ped-linha"><span>Taxa de entrega</span><span>{brl(p.taxa_entrega)}</span></div>}
-          {Number(p.desconto) > 0 && <div className="ped-linha"><span>Desconto (da loja)</span><span>− {brl(p.desconto)}</span></div>}
+          {Number(p.desconto) > 0 && <div className="ped-linha"><span>{p.cupom_codigo ? `Desconto (cupom ${p.cupom_codigo})` : 'Desconto (da loja)'}</span><span>− {brl(p.desconto)}</span></div>}
           <div className="ped-linha ped-total"><span>Total</span><b>{brl(Number(p.total) || subtotal + Number(p.taxa_entrega))}</b></div>
           <div className="ped-linha"><span>Estoque</span><span className="ped-tag">{p.status === 'finalizado' ? 'Baixa definitiva' : p.status === 'cancelado' ? 'Reserva liberada' : '🔒 Reservado até finalizar'}</span></div>
-          <div className="ped-linha"><span>{pagLabel}</span><span className={`ped-pill ${p.pago ? 'ok' : 'warn'}`}>{p.pago ? 'Pago' : 'A receber'}</span></div>
+          <div className="ped-linha"><span>{pagLabel}</span><span className={`ped-pill ${p.pago ? 'ok' : 'warn'}`}>{p.pago ? 'Pago' : aguardandoPagamento(p) ? 'Aguardando' : 'A receber'}</span></div>
         </div>
 
         <div className="ped-botoes">
-          {a && aberto(p) && <button type="button" className="btn-primario" style={{ flex: 1 }} onClick={onAvancar}>{a}</button>}
+          {a && aberto(p) && !aguardandoPagamento(p) && <button type="button" className="btn-primario" style={{ flex: 1 }} onClick={onAvancar}>{a}</button>}
           <button type="button" onClick={onImprimir}>🖨 Imprimir comanda</button>
           {aberto(p) && p.status !== 'saiu_entrega' && !p.externo && <button type="button" onClick={onDestino}>Alterar destino</button>}
           {aberto(p) && !(p.externo && p.externo.status_externo === 'CANCELLATION_REQUESTED') && <button type="button" className="perigo" onClick={onCancelar}>Cancelar</button>}

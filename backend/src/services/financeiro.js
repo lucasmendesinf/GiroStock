@@ -7,7 +7,7 @@ const HOJE = `(now() AT TIME ZONE '${FUSO}')::date`;
 const SITUACAO = `CASE WHEN t.cancelado_em IS NOT NULL THEN 'cancelado' WHEN t.pago_em IS NOT NULL THEN 'pago'
                        WHEN t.vencimento < ${HOJE} THEN 'vencido' ELSE 'aberto' END`;
 
-// Formas de recebimento das vendas. "online" (pago no app) e separado por plataforma pelo pedido de origem.
+// Formas de recebimento das vendas. "online" (pago no app/site) e separado pelo canal do pedido de origem.
 const FORMAS = [
   { forma: 'dinheiro', nome: 'Dinheiro', prazo_dias: 0, taxa_pct: 0 },
   { forma: 'pix', nome: 'Pix', prazo_dias: 0, taxa_pct: 0 },
@@ -15,6 +15,8 @@ const FORMAS = [
   { forma: 'cartao_credito', nome: 'Cartão de crédito', prazo_dias: 30, taxa_pct: 3.49 },
   { forma: 'ifood', nome: 'Pago online no iFood', prazo_dias: 30, taxa_pct: 0 },
   { forma: '99food', nome: 'Pago online na 99Food', prazo_dias: 30, taxa_pct: 0 },
+  // Loja virtual: Pix/cartao pagos no site caem na conta do Mercado Pago da empresa (prazo e taxa conforme o plano dela no MP).
+  { forma: 'loja_virtual', nome: 'Pago online na loja virtual (Mercado Pago)', prazo_dias: 0, taxa_pct: 0.99 },
 ];
 const NOME_FORMA = Object.fromEntries(FORMAS.map((f) => [f.forma, f.nome]));
 
@@ -60,7 +62,7 @@ async function vendasRecebiveis(db, tenantId, { de, ate, locationId = null }) {
     `WITH v AS (
        SELECT s.total, (s.criado_em AT TIME ZONE '${FUSO}')::date AS dia,
               CASE WHEN s.forma_pagamento = 'online'
-                   THEN COALESCE((SELECT CASE WHEN o.origem = '99food' THEN '99food' ELSE 'ifood' END FROM orders o WHERE o.sale_id = s.id LIMIT 1), 'ifood')
+                   THEN COALESCE((SELECT CASE WHEN o.origem = '99food' THEN '99food' WHEN o.origem = 'loja_virtual' THEN 'loja_virtual' ELSE 'ifood' END FROM orders o WHERE o.sale_id = s.id LIMIT 1), 'ifood')
                    ELSE s.forma_pagamento::text END AS forma
        FROM sales s
        WHERE s.tenant_id = $1 AND s.status = 'concluida' AND ($4::uuid IS NULL OR s.location_id = $4)
@@ -171,7 +173,7 @@ async function resultado(db, tenantId, mes, { locationId = null } = {}) {
   const taxas = (await db.query(
     `SELECT COALESCE(SUM(round(s.total * COALESCE(f.taxa_pct, 0) / 100, 2)), 0) AS v
      FROM sales s LEFT JOIN fin_formas_recebimento f ON f.tenant_id = s.tenant_id AND f.forma =
-       CASE WHEN s.forma_pagamento = 'online' THEN COALESCE((SELECT CASE WHEN o.origem = '99food' THEN '99food' ELSE 'ifood' END FROM orders o WHERE o.sale_id = s.id LIMIT 1), 'ifood') ELSE s.forma_pagamento::text END
+       CASE WHEN s.forma_pagamento = 'online' THEN COALESCE((SELECT CASE WHEN o.origem = '99food' THEN '99food' WHEN o.origem = 'loja_virtual' THEN 'loja_virtual' ELSE 'ifood' END FROM orders o WHERE o.sale_id = s.id LIMIT 1), 'ifood') ELSE s.forma_pagamento::text END
      WHERE s.tenant_id = $1 AND s.status = 'concluida' AND ($3::uuid IS NULL OR s.location_id = $3)
        AND s.criado_em >= ($2::date::timestamp AT TIME ZONE '${FUSO}') AND s.criado_em < (($2::date + interval '1 month')::timestamp AT TIME ZONE '${FUSO}')`, p
   )).rows[0];

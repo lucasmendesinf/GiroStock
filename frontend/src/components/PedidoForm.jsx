@@ -13,7 +13,7 @@ export const ORIGENS = [
   { id: 'telefone', nome: 'Telefone' },
   { id: 'whatsapp', nome: 'WhatsApp' },
 ];
-export const NOME_ORIGEM = { balcao: 'Balcão', telefone: 'Telefone', whatsapp: 'WhatsApp', ifood: 'iFood', '99food': '99Food' };
+export const NOME_ORIGEM = { balcao: 'Balcão', telefone: 'Telefone', whatsapp: 'WhatsApp', ifood: 'iFood', '99food': '99Food', loja_virtual: 'Loja virtual' };
 
 // Pedido -> objeto no formato que o cupom/comanda ja sabe imprimir.
 export function vendaDoPedido(p) {

@@ -31,6 +31,8 @@ const masterConfigRoutes = require('./routes/master.config.routes');
 const integracoesRoutes = require('./routes/integracoes.routes');
 const financeiroRoutes = require('./routes/financeiro.routes');
 const webhooksRoutes = require('./routes/webhooks.routes');
+const lojaPublicaRoutes = require('./routes/loja.publica.routes');
+const lojaVirtualRoutes = require('./routes/lojaVirtual.routes');
 const { router: complementosRoutes } = require('./routes/complementos.routes');
 
 const app = express();
@@ -41,12 +43,16 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
 // Webhooks antes do express.json: a assinatura e conferida sobre o corpo bruto.
 app.use('/api/webhooks', webhooksRoutes);
+// Fotos da loja virtual: corpo binario (a tela ja reduz a imagem); o limite real (2 MB) e conferido na rota.
+app.use('/api/loja-virtual/imagens', express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: '3mb' }));
 app.use(express.json());
 app.use('/api', monitoramento.contarRequisicao);
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 app.use('/api/auth', authRoutes);
+// API publica do site da loja virtual (chave da loja; sem login do sistema).
+app.use('/api/loja/v1', lojaPublicaRoutes);
 
 app.use('/api', authRequired, empresaRoutes);
 app.use('/api', authRequired, usersRoutes);
@@ -59,6 +65,7 @@ app.use('/api', authRequired, locationsRoutes);
 app.use('/api', authRequired, cashRoutes);
 app.use('/api', authRequired, integracoesRoutes);
 app.use('/api', authRequired, financeiroRoutes);
+app.use('/api', authRequired, lojaVirtualRoutes);
 app.use('/api', authRequired, salesRoutes);
 app.use('/api', authRequired, reportsRoutes);
 app.use('/api', authRequired, ordersRoutes);

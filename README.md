@@ -98,7 +98,7 @@ Cada cliente usa só os módulos (segmentos) que contratou. O Master define isso
 | Clientes | base de clientes, segmentos e mensagens | — |
 | iFood e 99Food | pedidos das plataformas na tela de Pedidos | Pedidos |
 | Casa de shows e eventos *(em breve)* | eventos, PDVs e estoque do evento | PDV |
-| Loja virtual | site da loja ligado por API, produtos com fotos, cupons, entrega por bairro, Pix/cartão (Mercado Pago) | Pedidos |
+| Loja virtual | site da loja ligado por API, produtos com fotos, cupons, entrega por bairro, Pix/cartão (Mercado Pago), pedidos com separação, envio e rastreio | — (cardápio digital usa a tela de Pedidos) |
 | Financeiro | contas a pagar/receber, fluxo de caixa, resultado do mês | Financeiro |
 
 - Sempre incluído em qualquer plano: Início, Produtos & Estoque, Fornecedores, Lojas & PDVs, Usuários e Relatórios.
@@ -206,11 +206,11 @@ Teste: `npm run test:e2e:relatorios`.
 
 ## Loja virtual (módulo "Loja virtual")
 
-O site da loja fica **neste mesmo repositório** (`loja/`) e é **um só para todas as empresas**: o mesmo servidor atende o sistema e todas as lojas, e escolhe a loja pelo endereço acessado. Uma atualização (deploy) vale para o sistema e para todas as lojas. Os dados ficam no mesmo banco, separados por empresa. Uma loja por empresa; requer o módulo Pedidos. Permissão: **Loja virtual** (padrão só Administrador).
+O site da loja fica **neste mesmo repositório** (`loja/`) e é **um só para todas as empresas**: o mesmo servidor atende o sistema e todas as lojas, e escolhe a loja pelo endereço acessado. Uma atualização (deploy) vale para o sistema e para todas as lojas. Os dados ficam no mesmo banco, separados por empresa. Uma loja por empresa. Permissão: **Loja virtual** (padrão só Administrador).
 
 - **Endereço** (definido pelo Master, na ficha da empresa): subdomínio grátis `nome.<LOJA_DOMINIO_BASE>` e domínios próprios (`www.lojadocliente.com.br`). Um domínio só pode pertencer a uma empresa. O cliente aponta o DNS (CNAME do www para `LOJA_DNS_ALVO`); o Master confere o DNS pela tela. No cPanel, cada domínio próprio é adicionado como "domínio adicional/alias" do mesmo app para o AutoSSL gerar o certificado.
 - **Pré-visualização:** `https://<sistema>/loja-previa/<subdominio>/` (abre mesmo com a loja fora do ar; não aceita pedido).
-- **Aparência** (painel do cliente): modelo de layout (Clássico, Vitrine, Cardápio), cores (com paletas prontas), fonte, cantos, banners e blocos da página inicial (ordem, títulos). Tema exclusivo de um cliente: pasta própria em `loja/`, definida pelo Master.
+- **Aparência** (painel do cliente): modelo de layout (varejo: Grade, Vitrine ou Lista; cardápio digital: Cardápio), cores (com paletas prontas, incluindo a do cabeçalho), fonte, cantos, banners e blocos da página inicial (ordem, títulos). Tema exclusivo de um cliente: pasta própria em `loja/`, definida pelo Master.
 - **Site da loja (`loja/`)**: vitrine com banners, categorias, destaques e promoções; busca; produto com fotos e adicionais; carrinho com cupom; conta (cadastro, login, recuperação de senha, endereços); checkout com entrega/retirada, Pix (QR code), cartão (formulário seguro do Mercado Pago) ou pagamento na entrega; acompanhamento do pedido. Pensado primeiro para celular.
 - **Site externo (opcional):** a API pública `/api/loja/v1` também aceita a chave da loja (`X-Loja-Chave`), para quem quiser montar um site à parte.
 
@@ -221,8 +221,11 @@ Tela **Loja virtual** (gerenciamento):
 - **Cupons** — porcentagem (com teto), valor ou frete grátis; pedido mínimo, período, limite total e por cliente, só primeira compra; usos e desconto dado.
 - **Pagamentos** — Pix e cartão pelo site (Mercado Pago, com as credenciais **da própria empresa**: o dinheiro cai direto na conta dela; token guardado cifrado), pagamento na entrega (dinheiro com troco, Pix, cartão), parcelas e prazo do Pix; últimos pagamentos.
 - **Clientes do site** — contas (login por e-mail e senha), pedidos e total gasto; bloquear/desbloquear. Cada conta fica ligada ao cadastro de Clientes pelo telefone.
+- **Pedidos do site** (lojas de varejo / loja online) — sem a tela de Pedidos e sem o módulo Pedidos: a preparar → em separação → embalado / pronto para retirada → enviado (transportadora, código e link de rastreio) → entregue / retirado. Lista com filtros e contadores, busca (nº, cliente, telefone, rastreio), detalhe com itens e cliente, impressão da lista de separação, correção do rastreio e cancelamento (estorna o que foi pago no site). O cliente acompanha no site e recebe e-mail quando o pedido fica pronto para retirada ou é enviado. Pago no site: vira venda quando sai (enviado ou retirado), **sem passar pelo caixa** (aparece em Vendas como "Loja virtual (site)"); a pagar na retirada/entrega: vira venda ao finalizar, no caixa aberto da loja.
 
-Pedidos do site entram na tela **Pedidos** como canal "Loja virtual" (com aviso sonoro), reservam o estoque e viram venda ao finalizar, com o preço promocional e o desconto do cupom. Pago pelo site: o preparo só começa com o pagamento aprovado; Pix não pago no prazo cancela o pedido sozinho; cancelar pedido pago estorna no Mercado Pago. Os avisos de pagamento chegam em `/api/webhooks/mercadopago/<loja>` (conferidos na API do Mercado Pago e, com o segredo cadastrado, pela assinatura).
+**Tipo da loja** (definido pelo Master): **varejo** (loja online, aba Pedidos do site) ou **cardápio digital** (lanchonete/delivery: os pedidos caem na tela **Pedidos**, que precisa do módulo Pedidos e de "usa pedidos" no estabelecimento).
+
+Pedidos do cardápio digital entram na tela **Pedidos** como canal "Loja virtual" (com aviso sonoro), reservam o estoque e viram venda ao finalizar, com o preço promocional e o desconto do cupom. Pago pelo site: o preparo só começa com o pagamento aprovado; Pix não pago no prazo cancela o pedido sozinho; cancelar pedido pago estorna no Mercado Pago. Os avisos de pagamento chegam em `/api/webhooks/mercadopago/<loja>` (conferidos na API do Mercado Pago e, com o segredo cadastrado, pela assinatura).
 
 Documentação da API: [docs/API_LOJA_VIRTUAL.md](docs/API_LOJA_VIRTUAL.md). Variáveis novas no `.env`: `URL_PUBLICA`, `SMTP_*`, `LOJA_DOMINIO_BASE`, `LOJA_DNS_ALVO`, `LOJA_DNS_IP` (veja `.env.example`). Desenvolvimento do site: `cd loja && npm install && npm run build` (o backend serve `loja/dist`). Teste: `npm run mp:simulador` + `npm run test:e2e:loja-virtual`.
 

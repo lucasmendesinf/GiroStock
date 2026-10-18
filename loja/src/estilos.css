@@ -217,7 +217,9 @@ body:not(.modelo-cardapio) .cartao .preco b { color: var(--texto); }
 .etiqueta { display: inline-block; padding: 3px 10px; border-radius: 999px; background: var(--painel); font-size: 0.78rem; font-weight: 700; margin-left: 6px; white-space: nowrap; }
 .etapa-aguardando_pagamento { background: #fff3cd; color: #6b4e00; }
 .etapa-cancelado { background: #fdecea; color: var(--erro); }
-.etapa-entregue, .etapa-retirado { background: #e6f4ea; color: #1e6b35; }
+.etapa-entregue, .etapa-retirado, .etapa-pagamento_aprovado { background: #e6f4ea; color: #1e6b35; }
+.etapa-enviado { background: #e7f0ff; color: #1c4ed8; }
+.codigo-rastreio { font-family: ui-monospace, monospace; letter-spacing: .03em; }
 
 /* ---------- carrinho e checkout ---------- */
 .itens { list-style: none; margin: 0; padding: 0; }

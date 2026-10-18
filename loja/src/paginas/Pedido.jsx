@@ -7,6 +7,9 @@ import { brl, dataHora, soDigitos } from '../util';
 
 const PASSOS_ENTREGA = [['recebido', 'Recebido'], ['em_preparo', 'Em preparo'], ['pronto', 'Pronto'], ['saiu_entrega', 'Saiu para entrega'], ['entregue', 'Entregue']];
 const PASSOS_RETIRADA = [['recebido', 'Recebido'], ['em_preparo', 'Em preparo'], ['pronto_retirada', 'Pronto para retirar'], ['retirado', 'Retirado']];
+// Loja online (varejo): separacao, envio com rastreio e entrega.
+const ONLINE_ENTREGA = [['recebido', 'Pedido confirmado'], ['em_separacao', 'Em separação'], ['aguardando_envio', 'Embalado'], ['enviado', 'Enviado'], ['entregue', 'Entregue']];
+const ONLINE_RETIRADA = [['recebido', 'Pedido confirmado'], ['em_separacao', 'Em separação'], ['pronto_retirada', 'Pronto para retirar'], ['retirado', 'Retirado']];
 const NA_ENTREGA = { dinheiro: 'Dinheiro', pix: 'Pix', cartao: 'Cartão' };
 
 // Acompanhamento do pedido: atualiza sozinho; Pix com QR code e copia e cola; nova tentativa de pagamento; cancelar.
@@ -28,9 +31,13 @@ export default function Pedido() {
   if (erro) return <p className="vazio">Pedido não encontrado. <Link to="/pedidos">Meus pedidos</Link></p>;
   if (!p) return <div className="carregando" aria-label="Carregando" />;
 
-  const passos = p.tipo === 'entrega' ? PASSOS_ENTREGA : PASSOS_RETIRADA;
-  const atual = passos.findIndex(([k]) => k === p.etapa);
-  const quando = (k) => { const h = p.historico.find((x) => x.etapa === k || (k === 'pronto_retirada' && x.etapa === 'pronto') || ((k === 'entregue' || k === 'retirado') && x.etapa === 'finalizado')); return h ? dataHora(h.em).slice(-5) : ''; };
+  const online = p.fluxo === 'loja_online';
+  const passos = online ? (p.tipo === 'entrega' ? ONLINE_ENTREGA : ONLINE_RETIRADA) : p.tipo === 'entrega' ? PASSOS_ENTREGA : PASSOS_RETIRADA;
+  const atual = passos.findIndex(([k]) => k === (p.etapa === 'pagamento_aprovado' ? 'recebido' : p.etapa));
+  const quando = (k) => {
+    const h = [...p.historico].reverse().find((x) => x.etapa === k || (k === 'recebido' && x.etapa === 'pagamento_aprovado') || (k === 'pronto_retirada' && x.etapa === 'pronto') || ((k === 'entregue' || k === 'retirado') && x.etapa === 'finalizado'));
+    return h ? (online ? dataHora(h.em) : dataHora(h.em).slice(-5)) : '';
+  };
   const pix = p.pagamento.detalhe && p.pagamento.detalhe.pix;
   const pg = loja.pagamentos;
 
@@ -85,6 +92,17 @@ export default function Pedido() {
             <li key={k} className={i < atual ? 'feito' : i === atual ? 'atual' : ''}><span className="ponto" /><span>{nome}</span><small>{i <= atual ? quando(k) : ''}</small></li>
           ))}
         </ol>
+      )}
+
+      {p.rastreio && (
+        <div className="painel rastreio">
+          <h2>Rastreio</h2>
+          <p>Enviado por <b>{p.rastreio.transportadora}</b>{p.rastreio.codigo && <> · código <b className="codigo-rastreio">{p.rastreio.codigo}</b></>}</p>
+          <div className="botoes">
+            {p.rastreio.url && <a className="botao" href={p.rastreio.url} target="_blank" rel="noreferrer">Acompanhar entrega</a>}
+            {p.rastreio.codigo && <button type="button" className="botao botao-claro" onClick={() => navigator.clipboard.writeText(p.rastreio.codigo).then(() => avisar('Código copiado')).catch(() => {})}>Copiar código</button>}
+          </div>
+        </div>
       )}
 
       <div className="painel">

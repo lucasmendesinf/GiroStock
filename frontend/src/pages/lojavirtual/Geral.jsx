@@ -118,6 +118,7 @@ function faixasIniciais(h) {
 }
 
 function Funcionamento({ c, locais, salvar }) {
+  const cardapio = c.tipo === 'cardapio';
   const [f, setF] = useState({
     location_id: c.location_id || '', aceita_retirada: c.aceita_retirada, aceita_entrega: c.aceita_entrega,
     tempo_preparo_min: String(c.tempo_preparo_min), tempo_entrega_min: String(c.tempo_entrega_min), pedido_minimo: valor(c.pedido_minimo),
@@ -139,13 +140,13 @@ function Funcionamento({ c, locais, salvar }) {
   return (
     <form className="card form-stack" onSubmit={enviar}>
       <h3 style={{ margin: 0 }}>Funcionamento</h3>
-      <Field label="Estabelecimento da loja virtual *" hint="O estoque dele define o que aparece como disponível no site, e os pedidos caem na tela de Pedidos dele.">
+      <Field label="Estabelecimento da loja virtual *" hint={cardapio ? 'O estoque dele define o que aparece como disponível no site, e os pedidos caem na tela de Pedidos dele.' : 'O estoque dele define o que aparece como disponível no site. Os pedidos ficam na aba Pedidos do site.'}>
         <select value={f.location_id} onChange={mudar('location_id')}>
           <option value="">Escolha…</option>
-          {locais.map((l) => <option key={l.id} value={l.id}>{l.nome}{l.usa_pedidos ? '' : ' (ative "usar pedidos" em Lojas & PDVs)'}</option>)}
+          {locais.map((l) => <option key={l.id} value={l.id}>{l.nome}{l.usa_pedidos || !cardapio ? '' : ' (ative "usar pedidos" em Lojas & PDVs)'}</option>)}
         </select>
       </Field>
-      {local && !local.usa_pedidos && <p className="form-hint" style={{ color: 'var(--warn)', margin: 0 }}>Este estabelecimento ainda não usa pedidos: ative em Lojas &amp; PDVs antes de salvar.</p>}
+      {cardapio && local && !local.usa_pedidos && <p className="form-hint" style={{ color: 'var(--warn)', margin: 0 }}>Este estabelecimento ainda não usa pedidos: ative em Lojas &amp; PDVs antes de salvar.</p>}
       <div className="lv-linha-checks">
         <label className="check"><input type="checkbox" checked={f.aceita_retirada} onChange={mudar('aceita_retirada')} /> Retirada na loja</label>
         <label className="check"><input type="checkbox" checked={f.aceita_entrega} onChange={mudar('aceita_entrega')} /> Entrega (delivery)</label>

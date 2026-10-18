@@ -145,13 +145,18 @@ Responde `201` com o **pedido** (abaixo). Falta de estoque, loja fechada, cupom 
   "subtotal": 34, "taxa_entrega": 5, "desconto": 3.4, "total": 35.6, "cupom": "PROMO10", "observacao": "...",
   "pagamento": { "tipo": "online", "metodo": "pix", "situacao": "pendente",
                  "detalhe": { "id", "metodo", "situacao", "valor", "parcelas", "bandeira", "final_cartao", "motivo_recusa", "pix": { "copia_e_cola", "qr_code_base64", "expira_em" }, "aprovado_em", "criado_em" } },
+  "fluxo": "loja_online", "rastreio": { "transportadora": "Correios", "codigo": "AA123456789BR", "url": "https://..." },
   "historico": [{ "etapa": "recebido", "em": "..." }],
   "criado_em": "...", "previsao_min": 50, "cancelado_em": null, "motivo_cancelamento": null,
   "pode_cancelar": true, "pode_pagar": true }
 ```
 Pagamento na entrega: `pagamento = { "tipo": "na_entrega", "forma": "dinheiro", "troco_para": 50, "situacao": "a_pagar" | "pago" }`.
 
-**Etapas:** `aguardando_pagamento` → `recebido` → `em_preparo` → `pronto` (entrega: aguardando o entregador) / `pronto_retirada` → `saiu_entrega` → `entregue` / `retirado`; ou `cancelado`.
+**Etapas** — dependem do tipo da loja (`fluxo`):
+- **Loja online** (`fluxo: "loja_online"`, lojas de varejo): `aguardando_pagamento` → `pagamento_aprovado` (ou `recebido`, se paga na retirada/entrega) → `em_separacao` → `aguardando_envio` (embalado) / `pronto_retirada` → `enviado` (com `rastreio`) → `entregue` / `retirado`; ou `cancelado`. `previsao_min` é `null`.
+- **Cardápio digital** (`fluxo: "cardapio"`): `aguardando_pagamento` → `recebido` → `em_preparo` → `pronto` (entrega: aguardando o entregador) / `pronto_retirada` → `saiu_entrega` → `entregue` / `retirado`; ou `cancelado`.
+
+`rastreio` só aparece em pedido de entrega já enviado (`transportadora`, `codigo` e `url` opcionais).
 
 **Situação do pagamento online:** `pendente`, `aprovado`, `recusado` (cartão; ver `motivo_recusa`), `expirado` (Pix não pago no prazo), `estornado`.
 

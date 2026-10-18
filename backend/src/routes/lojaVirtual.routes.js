@@ -9,6 +9,7 @@ const { logAudit } = require('../utils/audit');
 const lv = require('../services/lojaVirtual');
 const mp = require('../integracoes/mercadopago');
 const QRCode = require('qrcode');
+const pedidosSite = require('../services/pedidosSite');
 
 const router = express.Router();
 router.use('/loja-virtual', requireModulo('loja_virtual'), requireArea('LojaVirtual'));
@@ -72,15 +73,20 @@ router.get('/loja-virtual', async (req, res) => {
             (SELECT COALESCE(SUM((SELECT SUM(oi.subtotal) FROM order_items oi WHERE oi.order_id = o.id) + o.taxa_entrega - o.desconto), 0)
                FROM orders o WHERE o.tenant_id = $1 AND o.origem = 'loja_virtual' AND o.status <> 'cancelado'
                  AND (o.criado_em AT TIME ZONE 'America/Sao_Paulo')::date >= date_trunc('month', now() AT TIME ZONE 'America/Sao_Paulo')::date) AS vendido_mes,
-            (SELECT COUNT(*)::int FROM lv_regioes WHERE tenant_id = $1 AND ativo) AS bairros`,
+            (SELECT COUNT(*)::int FROM lv_regioes WHERE tenant_id = $1 AND ativo) AS bairros,
+            (SELECT COUNT(*)::int FROM orders WHERE tenant_id = $1 AND lv_fluxo = 'ecommerce' AND status IN ('novo', 'em_preparo', 'pronto')
+               AND (pagamento_online IS NULL OR pagamento_status = 'aprovado')) AS pedidos_a_despachar`,
     [t]
   )).rows[0];
   const locais = (await pool.query(`SELECT id, nome, usa_pedidos FROM locations WHERE tenant_id = $1 AND ativo ORDER BY nome`, [t])).rows;
   const situacao = lv.recebendoPedidos(l);
   // O que falta para a loja funcionar (lista de passos na tela).
   const pendencias = [];
+  // Cardapio: os pedidos vao para a tela de Pedidos (cozinha). Varejo: aba Pedidos do site, sem o modulo Pedidos.
+  const cardapio = lv.fluxoDaLoja(l) === 'cardapio';
+  if (cardapio && req.user.modulos && req.user.modulos.pedidos === false) pendencias.push('loja do tipo cardápio: os pedidos vão para a tela de Pedidos, que não faz parte do plano (fale com o suporte)');
   if (!l.location_id) pendencias.push('escolha o estabelecimento de onde sai o estoque');
-  else if (!(locais.find((x) => x.id === l.location_id) || {}).usa_pedidos) pendencias.push('ative "usa pedidos" no estabelecimento da loja (Lojas & PDVs)');
+  else if (cardapio && !(locais.find((x) => x.id === l.location_id) || {}).usa_pedidos) pendencias.push('ative "usa pedidos" no estabelecimento da loja (Lojas & PDVs)');
   if (!l.subdominio && (await lv.dominiosDaLoja(pool, l.id)).length === 0) pendencias.push('peça ao suporte para definir o endereço (domínio) da loja');
   if (Number(resumo.produtos_publicados) === 0) pendencias.push('publique produtos no site');
   if (l.aceita_entrega && Number(resumo.bairros) === 0 && l.taxa_outros_bairros === null) pendencias.push('cadastre os bairros de entrega (ou uma taxa para qualquer bairro)');
@@ -101,7 +107,7 @@ router.put('/loja-virtual', async (req, res) => {
     else {
       const loc = await getOwned(pool, 'locations', b.location_id, t, { columns: 'id, ativo, usa_pedidos' });
       if (!loc.ativo) throw new HttpError(400, 'estabelecimento inativo');
-      if (!loc.usa_pedidos) throw new HttpError(400, 'este estabelecimento não usa pedidos: ative "usa pedidos" em Lojas & PDVs');
+      if (!loc.usa_pedidos && lv.fluxoDaLoja(atual) === 'cardapio') throw new HttpError(400, 'este estabelecimento não usa pedidos: ative "usa pedidos" em Lojas & PDVs');
       locationId = loc.id;
     }
   }
@@ -584,6 +590,29 @@ router.get('/loja-virtual/pagamentos', async (req, res) => {
     [req.user.tenantId]
   );
   res.json(rows.map((r) => ({ ...r, valor: n2(r.valor), situacao: lv.SITUACAO_MP[r.status] || r.status })));
+});
+
+// ---------- pedidos do site (loja online / varejo) ----------
+// Separacao, envio com rastreio e entrega, sem a tela de Pedidos (services/pedidosSite.js).
+router.get('/loja-virtual/pedidos', async (req, res) => {
+  res.json(await pedidosSite.listar(pool, req.user.tenantId, req.query));
+});
+router.get('/loja-virtual/pedidos/:id', async (req, res) => {
+  res.json(await pedidosSite.detalhe(pool, req.user.tenantId, req.params.id));
+});
+router.post('/loja-virtual/pedidos/:id/avancar', async (req, res) => {
+  res.json(await pedidosSite.avancar(pool, req.user, req.params.id, req.body || {}));
+});
+router.put('/loja-virtual/pedidos/:id/rastreio', async (req, res) => {
+  res.json(await pedidosSite.atualizarRastreio(pool, req.user, req.params.id, req.body || {}));
+});
+router.post('/loja-virtual/pedidos/:id/cancelar', async (req, res) => {
+  const motivo = texto((req.body || {}).motivo, 200);
+  if (motivo.length < 3) throw new HttpError(400, 'motivo do cancelamento é obrigatório (mínimo 3 caracteres)');
+  const o = await pedidosSite.carregar(pool, req.user.tenantId, req.params.id);
+  if (req.user.modoTeste) await pedidosSite.cancelarTeste(pool, req.user, o.id, motivo);
+  else await lv.cancelarPedido(await lojaDaEmpresa(pool, req.user.tenantId), o.id, motivo, { usuarioId: req.user.id });
+  res.json(await pedidosSite.detalhe(pool, req.user.tenantId, o.id));
 });
 
 module.exports = router;

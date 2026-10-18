@@ -75,7 +75,10 @@ await api('PUT', `/products/${XB.id}/complement-groups`, { grupos: [grupo.id] },
 console.log('\n# 1. Modulo e permissao');
 check('sem o modulo Loja virtual: 403', (await api('GET', '/loja-virtual', null, A)).s === 403);
 const semPedidos = await api('PATCH', `/master/empresas/${empresa}`, { recursos: { loja_virtual: true, pedidos: false } }, MAS);
-check('Loja virtual precisa do modulo Pedidos: recusado com explicacao', semPedidos.s === 400 && /Pedidos/.test(semPedidos.j.erro), semPedidos);
+check('Loja virtual (loja online) nao depende do modulo Pedidos', semPedidos.s === 200 && (await api('GET', '/loja-virtual', null, A)).s === 200, semPedidos);
+await api('PUT', `/master/empresas/${empresa}/loja-virtual`, { tipo: 'cardapio' }, MAS);
+const pendCard = (await api('GET', '/loja-virtual', null, A)).j;
+check('loja cardapio sem o modulo Pedidos: aparece a pendencia explicando', pendCard.pendencias.some((x) => /cardápio.*Pedidos/.test(x)), pendCard.pendencias);
 check('Master libera Pedidos + Loja virtual', (await api('PATCH', `/master/empresas/${empresa}`, { recursos: { loja_virtual: true, pedidos: true } }, MAS)).s === 200);
 const ger = await api('POST', '/users', { nome: 'Gerente LV', email: `ger.lv.${Date.now()}@girostock.local`, senha: 'Senha123!', perfil: 'Gerente' }, A);
 const G = ger.s === 201 ? (await api('POST', '/auth/login', { email: ger.j.email, senha: 'Senha123!' })).j.token : null;
@@ -85,7 +88,11 @@ check('primeira abertura cria a configuracao com o nome da empresa e lista o que
 
 console.log('\n# 2. Configuracao e chave da API');
 const semPed = await api('PUT', '/loja-virtual', { location_id: L.Distribuidora }, A);
-check('estabelecimento sem "usa pedidos" -> 400 explicando', semPed.s === 400 && /usa pedidos/.test(semPed.j.erro), semPed);
+check('cardapio: estabelecimento sem "usa pedidos" -> 400 explicando', semPed.s === 400 && /usa pedidos/.test(semPed.j.erro), semPed);
+await api('PUT', `/master/empresas/${empresa}/loja-virtual`, { tipo: 'varejo' }, MAS);
+check('loja online: estabelecimento sem "usa pedidos" e aceito', (await api('PUT', '/loja-virtual', { location_id: L.Distribuidora }, A)).s === 200);
+// Os passos seguintes testam o cardapio digital (pedidos na tela de Pedidos); a loja online e testada no fim.
+await api('PUT', `/master/empresas/${empresa}/loja-virtual`, { tipo: 'cardapio' }, MAS);
 await api('PATCH', `/locations/${L.Lanchonete}`, { usa_pedidos: true }, A);
 const put1 = await api('PUT', '/loja-virtual', {
   location_id: L.Lanchonete, nome: 'Lanchonete JA', descricao: 'Lanches e bebidas geladas', whatsapp: '11999990000', pedido_minimo: 0,
@@ -404,6 +411,7 @@ check('link no endereco do sistema (/loja/<subdominio>) abre a loja', (await com
 check('painel mostra o link principal para compartilhar', cfgEnd.link_principal === 'https://www.lanchoneteja.com.br' && cfgEnd.url_link.endsWith('/loja/lanchoneteja'), cfgEnd);
 const qr = await api('GET', `/loja-virtual/qrcode?url=${encodeURIComponent(cfgEnd.link_principal)}`, null, A);
 check('QR code do link da loja', qr.s === 200 && qr.j.qr.startsWith('data:image/png;base64,'), qr.s);
+await api('PUT', `/master/empresas/${empresa}/loja-virtual`, { tipo: 'varejo' }, MAS);
 check('modelo de cardapio nao vale em loja de varejo -> 400', (await api('PUT', '/loja-virtual', { tema: { modelo: 'cardapio' } }, A)).s === 400);
 check('tipo de loja invalido -> 400', (await api('PUT', `/master/empresas/${empresa}/loja-virtual`, { tipo: 'mercado' }, MAS)).s === 400);
 const cardap = await api('PUT', `/master/empresas/${empresa}/loja-virtual`, { tipo: 'cardapio' }, MAS);
@@ -430,6 +438,99 @@ const tema = await api('PUT', '/loja-virtual', { tema: { modelo: 'lista', cor_pr
 check('salva o tema (modelo, cor, ordem dos blocos)', tema.s === 200 && tema.j.tema.modelo === 'lista' && tema.j.tema.blocos[0].tipo === 'produtos' && tema.j.tema.blocos[0].titulo === 'Cardápio' && tema.j.tema.blocos.find((b) => b.tipo === 'banners').ativo === false, tema.j && tema.j.tema);
 const temaSite = (await comHost('www.lanchoneteja.com.br', '/api/loja/v1/loja')).j.tema;
 check('site recebe o tema; o cliente nao define tema exclusivo', temaSite.cor_primaria === '#123456' && temaSite.exclusivo === null && temaSite.blocos.length === 5, temaSite);
+
+console.log('\n# 19. Loja online (varejo): pedidos do site sem a tela de Pedidos');
+await api('PUT', `/master/empresas/${empresa}/loja-virtual`, { tipo: 'varejo' }, MAS);
+await api('PUT', '/loja-virtual', { pausada: false, pedido_minimo: 0, horarios: {} }, A);
+const cadJ = await loja('POST', '/conta/cadastro', { nome: 'João Souza', email: 'joao@teste.com', telefone: '11955554444', senha: 'Senha1234' }, null, IP());
+const TJ = cadJ.j.token;
+const endJ = (await loja('POST', '/conta/enderecos', { rotulo: 'Casa', cep: '01310-100', logradouro: 'Rua A', numero: '1', bairro: 'jardim america', cidade: 'São Paulo', uf: 'SP' }, TJ)).j;
+check('cliente novo com endereco', !!TJ && !!endJ.id, cadJ);
+const site = (r) => api('GET', `/loja-virtual/pedidos${r || ''}`, null, A);
+const avancar = (id, b) => api('POST', `/loja-virtual/pedidos/${id}/avancar`, b, A);
+const ver = async (id) => (await loja('GET', `/pedidos/${id}`, null, TJ)).j;
+const ultimoEmail = () => { const a = fs.readdirSync(dirEmails).sort(); return JSON.parse(fs.readFileSync(path.join(dirEmails, a[a.length - 1]), 'utf8')); };
+
+// Retirada paga com Pix
+const r1 = (await loja('POST', '/pedidos', { itens: [{ product_id: REFRI.id, quantidade: 2 }], tipo: 'retirada', pagamento: { metodo: 'pix' } }, TJ, IP())).j;
+check('pedido da loja online fica fora da tela de Pedidos', !(await api('GET', '/orders', null, A)).j.some((o) => o.id === r1.id) && (await api('GET', `/orders/${r1.id}`, null, A)).s === 404);
+check('tela de Pedidos nao mexe nele -> 409', (await api('POST', `/orders/${r1.id}/status`, { para: 'em_preparo' }, A)).s === 409);
+let lista = (await site('?situacao=aguardando_pagamento')).j;
+check('aba Pedidos do site: aguardando pagamento', lista.pedidos.some((x) => x.id === r1.id && x.situacao === 'aguardando_pagamento' && x.proxima === null) && lista.contagem.aguardando_pagamento >= 1, lista);
+check('nao separa antes do pagamento -> 409', (await avancar(r1.id, { para: 'em_preparo' })).s === 409);
+const mpR1 = (await sim('GET', '/_sim/pagamentos')).j.find((x) => x.external_reference === r1.id);
+await sim('POST', `/_sim/pagamentos/${mpR1.id}/aprovar`);
+const pagoR1 = await ate(async () => { const v = await ver(r1.id); return v.etapa === 'pagamento_aprovado' ? v : null; });
+check('pago: cliente ve "Pagamento aprovado" (fluxo loja online)', pagoR1 && pagoR1.fluxo === 'loja_online' && pagoR1.previsao_min === null, pagoR1);
+lista = (await site()).j;
+const itemR1 = lista.pedidos.find((x) => x.id === r1.id);
+check('aba: a preparar, proxima etapa = separacao', itemR1 && itemR1.situacao === 'a_preparar' && itemR1.proxima === 'em_preparo', itemR1);
+check('pular etapa -> 409', (await avancar(r1.id, { para: 'finalizado' })).s === 409);
+let a1 = await avancar(r1.id, { para: 'em_preparo' });
+check('iniciar separacao', a1.s === 200 && a1.j.situacao === 'em_separacao' && (await ver(r1.id)).etapa === 'em_separacao', a1.j);
+const qtdEmails = fs.readdirSync(dirEmails).length;
+a1 = await avancar(r1.id, { para: 'pronto' });
+check('pronto para retirada (cliente ve e recebe e-mail)', a1.s === 200 && a1.j.situacao === 'pronto_retirada' && (await ver(r1.id)).etapa === 'pronto_retirada', a1.j);
+const mailPronto = await ate(async () => (fs.readdirSync(dirEmails).length > qtdEmails ? ultimoEmail() : null), 4000);
+check('e-mail "pronto para retirada" para o cliente', mailPronto && mailPronto.para === 'joao@teste.com' && /pronto para retirada/.test(mailPronto.assunto), mailPronto);
+const dispAntes = (await loja('GET', `/produtos/${REFRI.id}`)).j.quantidade_maxima;
+a1 = await avancar(r1.id, { para: 'finalizado' });
+const vendaR1 = a1.s === 200 ? (await prod.query(`SELECT s.terminal_id, s.cash_session_id, s.forma_pagamento, s.total FROM sales s JOIN orders o ON o.sale_id = s.id WHERE o.id = $1`, [r1.id])).rows[0] : null;
+check('cliente retirou: vira venda paga online, sem caixa', a1.j.situacao === 'retirado' && vendaR1 && vendaR1.terminal_id === null && vendaR1.cash_session_id === null && vendaR1.forma_pagamento === 'online' && igual(vendaR1.total, 10), { a: a1.j, vendaR1 });
+check('estoque: a reserva vira baixa (disponivel nao muda)', (await loja('GET', `/produtos/${REFRI.id}`)).j.quantidade_maxima === dispAntes);
+check('cliente ve "Retirado"', (await ver(r1.id)).etapa === 'retirado');
+const vendaDet = (await api('GET', `/sales/${a1.j.venda_numero ? (await prod.query(`SELECT sale_id FROM orders WHERE id = $1`, [r1.id])).rows[0].sale_id : ''}`, null, A)).j;
+check('venda do site aparece em Vendas como "Loja virtual (site)"', vendaDet.terminal_nome === 'Loja virtual (site)' && vendaDet.caixa_aberto === true, vendaDet);
+
+// Envio pago no cartao
+const r2 = (await loja('POST', '/pedidos', { itens: [{ product_id: REFRI.id, quantidade: 3 }], tipo: 'entrega', endereco_id: endJ.id, pagamento: { metodo: 'cartao', cartao: { token: 'cartao-aprovado', payment_method_id: 'master', parcelas: 2 } } }, TJ, IP())).j;
+check('pedido de envio pago no cartao', r2.pagamento && r2.pagamento.situacao === 'aprovado', r2);
+await avancar(r2.id, { para: 'em_preparo' });
+a1 = await avancar(r2.id, { para: 'pronto' });
+check('embalado, aguardando envio', a1.j.situacao === 'aguardando_envio' && (await ver(r2.id)).etapa === 'aguardando_envio', a1.j);
+check('enviar sem transportadora -> 400', (await avancar(r2.id, { para: 'saiu_entrega' })).s === 400);
+check('link de rastreio invalido -> 400', (await avancar(r2.id, { para: 'saiu_entrega', transportadora: 'Correios', rastreio_url: 'javascript:alert(1)' })).s === 400);
+const disp2 = (await loja('GET', `/produtos/${REFRI.id}`)).j.quantidade_maxima;
+const qtd2 = fs.readdirSync(dirEmails).length;
+a1 = await avancar(r2.id, { para: 'saiu_entrega', transportadora: 'Correios', rastreio_codigo: 'AA123456789BR', rastreio_url: 'https://rastreamento.correios.com.br/' });
+const venda2 = (await prod.query(`SELECT s.cash_session_id, s.forma_pagamento, o.status FROM orders o JOIN sales s ON s.id = o.sale_id WHERE o.id = $1`, [r2.id])).rows[0];
+check('enviado com rastreio: vira venda na saida (sem caixa), pedido segue "enviado"', a1.s === 200 && a1.j.situacao === 'enviado' && a1.j.rastreio.codigo === 'AA123456789BR' && venda2 && venda2.cash_session_id === null && venda2.status === 'saiu_entrega', { a: a1.j, venda2 });
+check('estoque nao conta duas vezes (vendido sai da reserva)', (await loja('GET', `/produtos/${REFRI.id}`)).j.quantidade_maxima === disp2);
+const v2 = await ver(r2.id);
+check('cliente ve "Enviado" com transportadora, codigo e link', v2.etapa === 'enviado' && v2.rastreio.transportadora === 'Correios' && v2.rastreio.codigo === 'AA123456789BR' && v2.rastreio.url, v2);
+const mailEnv = await ate(async () => (fs.readdirSync(dirEmails).length > qtd2 ? ultimoEmail() : null), 4000);
+check('e-mail "enviado" com o codigo de rastreio', mailEnv && /enviado/.test(mailEnv.assunto) && /AA123456789BR/.test(mailEnv.texto), mailEnv);
+check('pedido enviado nao pode ser cancelado -> 409', (await api('POST', `/loja-virtual/pedidos/${r2.id}/cancelar`, { motivo: 'teste' }, A)).s === 409);
+check('corrigir o rastreio', (await api('PUT', `/loja-virtual/pedidos/${r2.id}/rastreio`, { transportadora: 'Correios', rastreio_codigo: 'BB987654321BR' }, A)).j.rastreio.codigo === 'BB987654321BR');
+a1 = await avancar(r2.id, { para: 'finalizado' });
+check('marcar como entregue (cliente ve "Entregue")', a1.j.situacao === 'entregue' && (await ver(r2.id)).etapa === 'entregue', a1.j);
+check('busca pelo codigo de rastreio', (await site('?situacao=todos&busca=BB98765')).j.pedidos.some((x) => x.id === r2.id));
+
+// Pagar na retirada (dinheiro): vira venda no caixa ao finalizar
+const r3 = (await loja('POST', '/pedidos', { itens: [{ product_id: REFRI.id, quantidade: 1 }], tipo: 'retirada', pagamento: { metodo: 'na_entrega', forma: 'dinheiro' } }, TJ, IP())).j;
+for (const para of ['em_preparo', 'pronto']) await avancar(r3.id, { para });
+const cxAberto = (await prod.query(`SELECT COUNT(*)::int AS n FROM cash_sessions cs JOIN cash_registers cr ON cr.id = cs.cash_register_id WHERE cr.terminal_id = $1 AND cs.fechado_em IS NULL`, [PDVL])).rows[0].n;
+if (!cxAberto) await api('POST', '/cash-sessions', { terminal_id: PDVL, valor_inicial: 0 }, A);
+a1 = await avancar(r3.id, { para: 'finalizado' });
+const venda3 = a1.s === 200 ? (await prod.query(`SELECT s.cash_session_id, s.forma_pagamento FROM orders o JOIN sales s ON s.id = o.sale_id WHERE o.id = $1`, [r3.id])).rows[0] : null;
+check('a pagar na retirada: venda em dinheiro no caixa aberto', venda3 && venda3.cash_session_id !== null && venda3.forma_pagamento === 'dinheiro', { a: a1.j, venda3 });
+
+// Cancelar pedido pago antes de enviar: estorna
+const r4 = (await loja('POST', '/pedidos', { itens: [{ product_id: REFRI.id, quantidade: 1 }], tipo: 'retirada', pagamento: { metodo: 'cartao', cartao: { token: 'cartao-aprovado', payment_method_id: 'master', parcelas: 1 } } }, TJ, IP())).j;
+await avancar(r4.id, { para: 'em_preparo' });
+check('cancelar sem motivo -> 400', (await api('POST', `/loja-virtual/pedidos/${r4.id}/cancelar`, {}, A)).s === 400);
+const c4 = await api('POST', `/loja-virtual/pedidos/${r4.id}/cancelar`, { motivo: 'sem estoque fisico' }, A);
+check('loja cancela pedido pago em separacao: estorna no Mercado Pago', c4.s === 200 && c4.j.situacao === 'cancelado' && c4.j.pagamento.situacao === 'estornado', c4.j);
+check('detalhe com itens, historico e cliente', (await api('GET', `/loja-virtual/pedidos/${r2.id}`, null, A)).j.historico.map((h) => h.para).join() === 'novo,em_preparo,pronto,saiu_entrega,finalizado');
+
+// Sem o modulo Pedidos a loja online continua funcionando
+await api('PATCH', `/master/empresas/${empresa}`, { recursos: { pedidos: false } }, MAS);
+const r5 = await loja('POST', '/pedidos', { itens: [{ product_id: REFRI.id, quantidade: 1 }], tipo: 'retirada', pagamento: { metodo: 'na_entrega', forma: 'dinheiro' } }, TJ, IP());
+check('sem o modulo Pedidos: site recebe e a aba gerencia', r5.s === 201 && (await avancar(r5.j.id, { para: 'em_preparo' })).s === 200 && (await api('GET', '/orders', null, A)).s === 403, r5.j);
+await api('PATCH', `/master/empresas/${empresa}`, { recursos: { pedidos: true } }, MAS);
+const vendaSite = (await prod.query(`SELECT id FROM sales WHERE id = (SELECT sale_id FROM orders WHERE id = $1)`, [r1.id])).rows[0];
+check('venda do site (sem caixa) pode ser cancelada em Vendas', (await api('POST', `/sales/${vendaSite.id}/cancel`, { motivo: 'devolucao teste' }, A)).s === 200);
+
 await prod.query(`DELETE FROM lv_lojas WHERE tenant_id = $1`, [outra]).catch(() => {});
 await prod.query(`DELETE FROM tenants WHERE id = $1`, [outra]).catch(() => {}); // pode ficar se houver auditoria
 

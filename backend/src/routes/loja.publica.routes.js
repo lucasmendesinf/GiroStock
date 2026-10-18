@@ -10,6 +10,7 @@ const jwt = require('jsonwebtoken');
 const lv = require('../services/lojaVirtual');
 const email = require('../services/email');
 const { criarPedido } = require('../services/pedidos');
+const pedidosSite = require('../services/pedidosSite');
 const { usuarioSistema } = require('../integracoes/comum');
 const { inserirCliente } = require('./customers.routes');
 const { HttpError } = require('../utils/http');
@@ -366,9 +367,18 @@ const ETAPAS = {
   entregue: 'Entregue',
   retirado: 'Retirado',
   cancelado: 'Cancelado',
+  // loja online (varejo)
+  pagamento_aprovado: 'Pagamento aprovado',
+  em_separacao: 'Em separação',
+  aguardando_envio: 'Embalado, aguardando envio',
+  enviado: 'Enviado',
 };
 function etapa(o) {
   if (o.status === 'novo' && o.pagamento_online && o.pagamento_status !== 'aprovado') return 'aguardando_pagamento';
+  if (o.lv_fluxo === 'ecommerce') {
+    const sit = pedidosSite.situacao(o);
+    return { a_preparar: o.pagamento_online ? 'pagamento_aprovado' : 'recebido' }[sit] || sit;
+  }
   if (o.status === 'novo') return 'recebido';
   if (o.status === 'pronto') return o.tipo === 'entrega' ? 'pronto' : 'pronto_retirada';
   if (o.status === 'finalizado') return o.tipo === 'entrega' ? 'entregue' : 'retirado';
@@ -413,9 +423,11 @@ async function pedidoPublico(loja, orderId, contaId, base) {
     pagamento: o.pagamento_online
       ? { tipo: 'online', metodo: o.pagamento_online, situacao: o.pagamento_status, detalhe: lv.pagamentoPublico(pagamento) }
       : { tipo: 'na_entrega', forma: o.forma_pagamento_prevista, troco_para: o.troco_para === null ? null : n2(o.troco_para), situacao: o.pago ? 'pago' : 'a_pagar' },
-    historico: log.map((l) => ({ etapa: l.para === 'novo' ? 'recebido' : l.para, em: l.criado_em })),
+    fluxo: o.lv_fluxo === 'ecommerce' ? 'loja_online' : 'cardapio',
+    rastreio: o.tipo === 'entrega' && (o.transportadora || o.rastreio_codigo) ? { transportadora: o.transportadora, codigo: o.rastreio_codigo, url: o.rastreio_url } : null,
+    historico: log.map((l) => ({ etapa: l.para === 'novo' ? 'recebido' : o.lv_fluxo === 'ecommerce' ? etapa({ ...o, status: l.para, pagamento_status: 'aprovado' }) : l.para, em: l.criado_em })),
     criado_em: o.criado_em,
-    previsao_min: ['finalizado', 'cancelado'].includes(o.status) ? null : previsto,
+    previsao_min: ['finalizado', 'cancelado'].includes(o.status) || o.lv_fluxo === 'ecommerce' ? null : previsto,
     cancelado_em: o.cancelado_em,
     motivo_cancelamento: o.status === 'cancelado' ? o.motivo_cancelamento : null,
     pode_cancelar: o.status === 'novo',
@@ -470,7 +482,7 @@ router.post('/pedidos', comConta, limitar('lv-pedido', 30, 10 * 60 * 1000), asyn
     }, {
       loja: {
         customerId: conta.customer_id, contaId: conta.id, cupomId: c.cupom ? c.cupom.id : null, cupomCodigo: c.cupom ? c.cupom.codigo : null,
-        trocoPara: troco, pagamentoOnline: metodo === 'na_entrega' ? null : metodo,
+        trocoPara: troco, pagamentoOnline: metodo === 'na_entrega' ? null : metodo, fluxo: lv.fluxoDaLoja(loja),
       },
     });
     await client.query('COMMIT');
@@ -497,7 +509,7 @@ router.post('/pedidos', comConta, limitar('lv-pedido', 30, 10 * 60 * 1000), asyn
 router.get('/pedidos', comConta, async (req, res) => {
   const pagina = Math.max(Number(req.query.pagina) || 1, 1);
   const { rows } = await db().query(
-    `SELECT o.id, o.numero, o.status, o.tipo, o.pagamento_online, o.pagamento_status, o.criado_em,
+    `SELECT o.id, o.numero, o.status, o.tipo, o.pagamento_online, o.pagamento_status, o.criado_em, o.lv_fluxo,
             COALESCE((SELECT SUM(oi.subtotal) FROM order_items oi WHERE oi.order_id = o.id), 0) + o.taxa_entrega - o.desconto AS total,
             (SELECT COUNT(*)::int FROM order_items oi WHERE oi.order_id = o.id) AS itens,
             COUNT(*) OVER()::int AS total_pedidos

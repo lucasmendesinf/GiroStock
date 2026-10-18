@@ -33,7 +33,8 @@ async function proximoNumero(client, tenantId, locationId) {
 // opcoes.inserirCliente: funcao de cadastro de cliente (vinda das rotas de clientes).
 // opcoes.loja: pedido do site (loja virtual): precos ja calculados pela loja (promocao + complementos), desconto do cupom,
 //   forma 'online' (pago no site), cliente ja identificado (customerId) e colunas extras do pedido (conta, cupom, pagamento).
-//   Falta de estoque recusa, como num pedido do balcao.
+//   Falta de estoque recusa, como num pedido do balcao. loja.fluxo 'ecommerce' (loja online): o pedido e gerenciado na
+//   Loja virtual (Pedidos do site), sem a tela de Pedidos, entao o local nao precisa usar pedidos.
 async function criarPedido(client, user, b, opcoes = {}) {
   const externo = opcoes.externo || null;
   const loja = opcoes.loja || null;
@@ -73,7 +74,7 @@ async function criarPedido(client, user, b, opcoes = {}) {
 
   const local = await getOwned(client, 'locations', locationId, user.tenantId, { columns: 'id, nome, ativo, usa_pedidos' });
   if (!local.ativo) throw new HttpError(400, 'esta loja está inativa');
-  if (!local.usa_pedidos) throw new HttpError(400, 'esta loja não usa pedidos (ative em Lojas & PDVs)');
+  if (!local.usa_pedidos && !(loja && loja.fluxo === 'ecommerce')) throw new HttpError(400, 'esta loja não usa pedidos (ative em Lojas & PDVs)');
   assertLocationAccess(user, locationId, 'criar pedidos nesta loja');
 
   const ids = [...new Set(linhas.map((l) => l.product_id))];
@@ -141,8 +142,9 @@ async function criarPedido(client, user, b, opcoes = {}) {
   const orderId = pedido.rows[0].id;
   if (loja) {
     await client.query(
-      `UPDATE orders SET lv_conta_id = $2, cupom_id = $3, cupom_codigo = $4, troco_para = $5, pagamento_online = $6, pagamento_status = $7 WHERE id = $1`,
-      [orderId, loja.contaId || null, loja.cupomId || null, loja.cupomCodigo || null, loja.trocoPara || null, loja.pagamentoOnline || null, loja.pagamentoOnline ? 'pendente' : null]
+      `UPDATE orders SET lv_conta_id = $2, cupom_id = $3, cupom_codigo = $4, troco_para = $5, pagamento_online = $6, pagamento_status = $7, lv_fluxo = $8 WHERE id = $1`,
+      [orderId, loja.contaId || null, loja.cupomId || null, loja.cupomCodigo || null, loja.trocoPara || null, loja.pagamentoOnline || null, loja.pagamentoOnline ? 'pendente' : null,
+        loja.fluxo === 'ecommerce' ? 'ecommerce' : 'cardapio']
     );
   }
   for (const l of linhas) {

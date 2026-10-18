@@ -57,10 +57,11 @@ router.post('/sales/:id/cancel', requireArea('Vendas'), async (req, res) => {
     if (sale.status !== 'concluida') throw new HttpError(400, 'esta venda já foi cancelada');
     assertLocationAccess(req.user, sale.location_id, 'cancelar vendas deste local');
 
-    const session = await client.query(
+    // Venda de pedido pago no site nao tem caixa (sem fechamento a proteger).
+    const session = sale.cash_session_id ? await client.query(
       `SELECT fechado_em FROM cash_sessions WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
       [sale.cash_session_id, req.user.tenantId]
-    );
+    ) : { rows: [{ fechado_em: null }] };
     if (session.rows[0].fechado_em) {
       throw new HttpError(400, 'o caixa desta venda já foi fechado; não e possível cancelá-la');
     }
@@ -178,11 +179,11 @@ function filtrosVendas(req) {
 router.get('/sales', requireArea('Vendas'), async (req, res) => {
   const { params, where } = filtrosVendas(req);
   const { rows } = await pool.query(
-    `SELECT s.id, s.numero, s.criado_em, u.nome AS operador_nome, t.nome AS terminal_nome, l.nome AS location_nome,
+    `SELECT s.id, s.numero, s.criado_em, u.nome AS operador_nome, COALESCE(t.nome, 'Loja virtual (site)') AS terminal_nome, l.nome AS location_nome,
             s.forma_pagamento, s.subtotal, s.desconto, s.total, s.status
      FROM sales s
      JOIN users u ON u.id = s.operador_id
-     JOIN terminals t ON t.id = s.terminal_id
+     LEFT JOIN terminals t ON t.id = s.terminal_id
      JOIN locations l ON l.id = s.location_id
      WHERE ${where}
      ORDER BY s.criado_em DESC LIMIT 500`,
@@ -200,14 +201,14 @@ router.get('/sales/:id', async (req, res) => {
   const venda = await pool.query(
     `SELECT s.id, s.numero, s.numero_pedido, s.criado_em, s.status, s.forma_pagamento, s.valor_recebido, s.troco, s.subtotal, s.desconto, s.taxa_entrega, s.total,
             tn.nome AS empresa_nome, l.usa_comanda, l.cupom_config,
-            s.location_id, l.nome AS location_nome, t.nome AS terminal_nome, u.nome AS operador_nome,
-            s.cash_session_id, cs.fechado_em IS NULL AS caixa_aberto,
+            s.location_id, l.nome AS location_nome, COALESCE(t.nome, 'Loja virtual (site)') AS terminal_nome, u.nome AS operador_nome,
+            s.cash_session_id, (s.cash_session_id IS NULL OR cs.fechado_em IS NULL) AS caixa_aberto,
             s.cancelado_em, s.motivo_cancelamento, uc.nome AS cancelado_por_nome
      FROM sales s
      JOIN locations l ON l.id = s.location_id
-     JOIN terminals t ON t.id = s.terminal_id
+     LEFT JOIN terminals t ON t.id = s.terminal_id
      JOIN users u ON u.id = s.operador_id
-     JOIN cash_sessions cs ON cs.id = s.cash_session_id
+     LEFT JOIN cash_sessions cs ON cs.id = s.cash_session_id
      JOIN tenants tn ON tn.id = s.tenant_id
      LEFT JOIN users uc ON uc.id = s.cancelado_por
      WHERE s.id = $1 AND s.tenant_id = $2`,

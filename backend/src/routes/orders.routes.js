@@ -16,6 +16,9 @@ const { inserirCliente } = require('./customers.routes');
 const router = express.Router();
 router.use(['/orders', '/couriers'], requireArea('Pedidos'));
 
+// Pedido do site no fluxo de loja online (varejo): fica fora da tela de Pedidos (gerenciado na Loja virtual).
+const MSG_LOJA_ONLINE = 'pedido da loja online: gerencie em Loja virtual › Pedidos do site';
+
 const FLUXO = {
   novo: ['em_preparo'],
   em_preparo: ['pronto'],
@@ -80,7 +83,7 @@ async function pedidoCompleto(db, tenantId, id) {
 router.get('/orders', async (req, res) => {
   const { location_id, status, origem, q, de, ate } = req.query;
   const params = [req.user.tenantId];
-  let where = 'o.tenant_id = $1';
+  let where = `o.tenant_id = $1 AND o.lv_fluxo IS DISTINCT FROM 'ecommerce'`;
   const locais = filtroLocais(req.user, location_id);
   if (locais) {
     params.push(locais);
@@ -129,7 +132,8 @@ router.get('/orders', async (req, res) => {
 });
 
 router.get('/orders/:id', async (req, res) => {
-  await getOwned(pool, 'orders', req.params.id, req.user.tenantId);
+  const dono = await getOwned(pool, 'orders', req.params.id, req.user.tenantId, { columns: 'id, lv_fluxo' });
+  if (dono.lv_fluxo === 'ecommerce') throw new HttpError(404, 'pedido não encontrado');
   const pedido = await pedidoCompleto(pool, req.user.tenantId, req.params.id);
   assertLocationAccess(req.user, pedido.location_id, 'ver pedidos desta loja');
   res.json(pedido);
@@ -153,8 +157,9 @@ router.post('/orders', async (req, res) => {
 
 // ---------- entregador ----------
 router.put('/orders/:id/entregador', async (req, res) => {
-  const pedido = await getOwned(pool, 'orders', req.params.id, req.user.tenantId, { columns: 'id, location_id, status, tipo' });
+  const pedido = await getOwned(pool, 'orders', req.params.id, req.user.tenantId, { columns: 'id, location_id, status, tipo, lv_fluxo' });
   assertLocationAccess(req.user, pedido.location_id, 'alterar pedidos desta loja');
+  if (pedido.lv_fluxo === 'ecommerce') throw new HttpError(409, MSG_LOJA_ONLINE);
   if (pedido.tipo !== 'entrega') throw new HttpError(400, 'este pedido é de retirada');
   if (['finalizado', 'cancelado'].includes(pedido.status)) throw new HttpError(400, 'pedido encerrado');
   const entregadorId = req.body && req.body.entregador_id ? req.body.entregador_id : null;
@@ -166,8 +171,9 @@ router.put('/orders/:id/entregador', async (req, res) => {
 // ---------- destino (retirada / entrega / mesa) ----------
 // O cliente pode mudar de ideia enquanto o pedido esta aberto. Entrega exige endereco; mesa exige a mesa.
 router.put('/orders/:id/destino', async (req, res) => {
-  const pedido = await getOwned(pool, 'orders', req.params.id, req.user.tenantId, { columns: 'id, numero, location_id, status, tipo' });
+  const pedido = await getOwned(pool, 'orders', req.params.id, req.user.tenantId, { columns: 'id, numero, location_id, status, tipo, lv_fluxo' });
   assertLocationAccess(req.user, pedido.location_id, 'alterar pedidos desta loja');
+  if (pedido.lv_fluxo === 'ecommerce') throw new HttpError(409, MSG_LOJA_ONLINE);
   if (['finalizado', 'cancelado'].includes(pedido.status)) throw new HttpError(400, 'pedido encerrado: não dá mais para mudar o destino');
   if (pedido.status === 'saiu_entrega') throw new HttpError(400, 'o pedido já saiu para entrega');
   const b = req.body || {};
@@ -202,6 +208,7 @@ router.post('/orders/:id/status', async (req, res) => {
     if (rows.length === 0) throw new HttpError(404, 'pedido não encontrado');
     const o = rows[0];
     assertLocationAccess(req.user, o.location_id, 'alterar pedidos desta loja');
+    if (o.lv_fluxo === 'ecommerce') throw new HttpError(409, MSG_LOJA_ONLINE);
     const para = b.para;
     if (para === 'cancelado') throw new HttpError(400, 'use a rota de cancelamento');
     // Entrega feita pela plataforma (iFood/99Food): a loja nao despacha (sem entregador proprio); de pronto vai direto a finalizado.
@@ -306,10 +313,11 @@ router.post('/orders/:id/cancel', async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const { rows } = await client.query(`SELECT id, numero, status, location_id, origem FROM orders WHERE id = $1 AND tenant_id = $2 FOR UPDATE`, [req.params.id, req.user.tenantId]);
+    const { rows } = await client.query(`SELECT id, numero, status, location_id, origem, lv_fluxo FROM orders WHERE id = $1 AND tenant_id = $2 FOR UPDATE`, [req.params.id, req.user.tenantId]);
     if (rows.length === 0) throw new HttpError(404, 'pedido não encontrado');
     const o = rows[0];
     assertLocationAccess(req.user, o.location_id, 'cancelar pedidos desta loja');
+    if (o.lv_fluxo === 'ecommerce') throw new HttpError(409, MSG_LOJA_ONLINE);
     if (o.status === 'finalizado') throw new HttpError(409, 'o pedido já foi finalizado: cancele pela venda (Relatórios), que devolve o estoque');
     if (o.status === 'cancelado') throw new HttpError(400, 'este pedido já foi cancelado');
     // Pedido da loja virtual (producao): cancela pelo servico da loja, que estorna antes o pagamento feito no site.

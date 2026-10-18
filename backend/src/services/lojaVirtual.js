@@ -5,7 +5,8 @@
 // - Horario: a loja recebe pedidos quando esta publicada, nao pausada e dentro do horario (fuso de Sao Paulo).
 // - Preco no site: preco de venda do sistema ou o promocional (dentro do periodo) + complementos escolhidos.
 // - Disponibilidade: a mesma regra do PDV/iFood (saldo do estabelecimento da loja - pedidos em aberto, ficha, combo).
-// - Pedido: vira um pedido comum (origem 'loja_virtual') que reserva o estoque e cai na tela de Pedidos.
+// - Pedido: vira um pedido comum (origem 'loja_virtual') que reserva o estoque. Loja cardapio: cai na tela de Pedidos;
+//   loja varejo: fluxo de loja online na aba Pedidos do site (services/pedidosSite.js), sem o modulo Pedidos.
 // - Pagamento online (Mercado Pago, conta do lojista): Pix ou cartao. Pedido pago so no site: o preparo so comeca
 //   com o pagamento aprovado; Pix nao pago no prazo cancela o pedido (libera a reserva).
 const crypto = require('crypto');
@@ -161,6 +162,8 @@ const TEMA_PADRAO = {
   fonte: 'moderna', cantos: 'arredondados', blocos: BLOCOS_PADRAO.varejo, exclusivo: null,
 };
 const tipoValido = (tipo) => (tipo === 'cardapio' ? 'cardapio' : 'varejo');
+// Fluxo dos pedidos do site: cardapio vai para a tela de Pedidos (cozinha); varejo e loja online (Pedidos do site).
+const fluxoDaLoja = (loja) => (tipoValido(loja.tipo) === 'cardapio' ? 'cardapio' : 'ecommerce');
 // Mescla o tema guardado com o padrao do tipo (campos novos ganham o valor padrao sem migracao).
 function temaEfetivo(t, tipo = 'varejo') {
   const tp = tipoValido(tipo);
@@ -791,9 +794,10 @@ async function varrerPagamentos() {
 
 // Cancela um pedido da loja (cliente, sistema ou equipe). Pago no site: estorna antes.
 async function cancelarPedido(loja, orderId, motivo, opcoes = {}) {
-  const atual = (await db().query(`SELECT id, numero, status, pagamento_status FROM orders WHERE id = $1 AND tenant_id = $2`, [orderId, loja.tenant_id])).rows[0];
+  const atual = (await db().query(`SELECT id, numero, status, pagamento_status, sale_id FROM orders WHERE id = $1 AND tenant_id = $2`, [orderId, loja.tenant_id])).rows[0];
   if (!atual) throw new HttpError(404, 'pedido não encontrado');
   if (['finalizado', 'cancelado'].includes(atual.status)) throw new HttpError(409, 'este pedido já foi encerrado');
+  if (atual.sale_id) throw new HttpError(409, 'o pedido já foi enviado e virou venda: para devolver, cancele a venda e estorne o pagamento');
   let estornado = false;
   if (atual.pagamento_status === 'aprovado') {
     try {
@@ -805,8 +809,8 @@ async function cancelarPedido(loja, orderId, motivo, opcoes = {}) {
   const client = await db().connect();
   try {
     await client.query('BEGIN');
-    const o = (await client.query(`SELECT id, numero, status FROM orders WHERE id = $1 FOR UPDATE`, [orderId])).rows[0];
-    if (['finalizado', 'cancelado'].includes(o.status)) throw new HttpError(409, 'este pedido já foi encerrado');
+    const o = (await client.query(`SELECT id, numero, status, sale_id FROM orders WHERE id = $1 FOR UPDATE`, [orderId])).rows[0];
+    if (['finalizado', 'cancelado'].includes(o.status) || o.sale_id) throw new HttpError(409, 'este pedido já foi encerrado');
     await client.query(
       `UPDATE orders SET status = 'cancelado', cancelado_em = now(), motivo_cancelamento = $2, atualizado_em = now(),
               pago = CASE WHEN $3 THEN false ELSE pago END,
@@ -844,7 +848,7 @@ function iniciarVarredura() {
 
 module.exports = {
   db, gerarChave, hashChave, moduloLigado, lojaPorChave, lojaPorHost, lojaPorSubdominio, lojaIdDoHost, limparCacheHost, dominioBase,
-  lojaDaEmpresa, dominiosDaLoja, normalizarSubdominio, sugerirSubdominio, normalizarDominio, enderecosDaLoja, temaEfetivo, normalizarTema, TEMA_PADRAO, MODELOS, tipoValido, FONTES, BLOCOS, agoraSP, normalizarHorarios, situacaoHorario, recebendoPedidos, precoDoProduto,
+  lojaDaEmpresa, dominiosDaLoja, normalizarSubdominio, sugerirSubdominio, normalizarDominio, enderecosDaLoja, temaEfetivo, normalizarTema, TEMA_PADRAO, MODELOS, tipoValido, fluxoDaLoja, FONTES, BLOCOS, agoraSP, normalizarHorarios, situacaoHorario, recebendoPedidos, precoDoProduto,
   catalogo, produto, categorias, dadosPublicos, urlImagem, calcularCarrinho, entregaDoBairro, validarCupom, descontoDoCupom, semAcento,
   guardarCredenciaisMp, tokenMp, cobrar, pagamentoPublico, aplicarPagamentoMp, estornarPedido, receberAvisoMp, varrerPagamentos, cancelarPedido,
   iniciarVarredura, SITUACAO_MP, n2,

@@ -52,7 +52,7 @@ input[type=radio], input[type=checkbox] { width: 20px; height: 20px; padding: 0;
 /* ---------- banners e categorias ---------- */
 .banners { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; margin: 0 -16px 22px; padding: 0 16px; scrollbar-width: none; }
 .banners::-webkit-scrollbar { display: none; }
-.banner { position: relative; flex: 0 0 92%; scroll-snap-align: center; border-radius: var(--raio); overflow: hidden; aspect-ratio: 16 / 7; background: var(--painel); }
+.banner { position: relative; flex: 0 0 92%; scroll-snap-align: center; border-radius: var(--raio); overflow: hidden; aspect-ratio: 8 / 3; background: var(--painel); }
 .banner img { width: 100%; height: 100%; object-fit: cover; }
 .banner-titulo { position: absolute; left: 12px; bottom: 12px; background: rgba(0,0,0,.55); color: #fff; padding: 6px 12px; border-radius: 999px; font-weight: 700; font-size: 0.95rem; }
 .banners .banner:only-child { flex-basis: 100%; }
@@ -222,7 +222,7 @@ input[type=radio], input[type=checkbox] { width: 20px; height: 20px; padding: 0;
   .modelo-vitrine .grade { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .modelo-lista .grade, .modelo-cardapio .grade { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 28px; }
   .cartao-desc { display: -webkit-box; }
-  .banner { flex-basis: 70%; aspect-ratio: 16 / 6; max-height: 360px; }
+  .banner { flex-basis: 70%; max-height: 360px; }
   .rodape-grade { grid-template-columns: repeat(3, 1fr); }
   .produto { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; align-items: start; }
   .produto-fotos { position: sticky; top: 90px; }

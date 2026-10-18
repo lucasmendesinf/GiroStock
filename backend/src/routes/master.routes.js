@@ -283,6 +283,13 @@ router.put('/master/empresas/:id/loja-virtual', async (req, res) => {
       if (outra.rows.length) throw new HttpError(409, `o subdomínio "${sub}" já é de outra empresa`);
     }
     await client.query(`UPDATE lv_lojas SET subdominio = $2, tipo = $3, atualizado_em = now() WHERE id = $1`, [loja.id, sub, tipo]);
+    // Mudou o tipo: a pagina inicial volta aos blocos padrao do novo tipo (cores e fonte continuam).
+    if (tipo !== lojaVirtual.tipoValido(loja.tipo)) {
+      const tema = { ...(loja.tema || {}) };
+      delete tema.blocos;
+      delete tema.modelo;
+      await client.query(`UPDATE lv_lojas SET tema = $2 WHERE id = $1`, [loja.id, JSON.stringify(tema)]);
+    }
     if (dominios) {
       const outros = await client.query(`SELECT dominio FROM lv_dominios WHERE dominio = ANY($1::text[]) AND loja_id <> $2`, [dominios, loja.id]);
       if (outros.rows.length) throw new HttpError(409, `o domínio ${outros.rows[0].dominio} já está ligado à loja de outra empresa`);

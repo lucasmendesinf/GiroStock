@@ -69,7 +69,7 @@ export default function Geral({ dados, onMudou }) {
 
 function DadosDaLoja({ c, salvar }) {
   const toast = useToast();
-  const [f, setF] = useState({ nome: c.nome, descricao: c.descricao, whatsapp: c.whatsapp, telefone: c.telefone, email: c.email, endereco: c.endereco, instagram: c.instagram, aviso: c.aviso });
+  const [f, setF] = useState({ nome: c.nome, descricao: c.descricao, whatsapp: c.whatsapp, telefone: c.telefone, email: c.email, endereco: c.endereco, instagram: c.instagram, aviso: c.aviso, site_maior_idade: !!c.site_maior_idade });
   const [logo, setLogo] = useState({ id: c.logo_id, url: c.logo_url });
   const [enviando, setEnviando] = useState(false);
   const mudar = (k) => (e) => setF({ ...f, [k]: e.target.value });
@@ -105,6 +105,7 @@ function DadosDaLoja({ c, salvar }) {
         <Field label="Instagram"><input value={f.instagram} onChange={mudar('instagram')} placeholder="@minhaloja" maxLength={80} /></Field>
       </div>
       <Field label="Aviso no topo do site" hint="Ex.: Entregas até as 23h. Deixe vazio para não mostrar."><input value={f.aviso} onChange={mudar('aviso')} maxLength={200} /></Field>
+      <label className="check"><input type="checkbox" checked={f.site_maior_idade} onChange={(e) => setF({ ...f, site_maior_idade: e.target.checked })} /> Site para maiores de 18 anos: perguntar a idade ao entrar (ex.: tabacaria)</label>
       <div><button type="submit" className="btn-primario">Salvar dados</button></div>
     </form>
   );

@@ -7,11 +7,13 @@ export function Preco({ p, completo }) {
   const { loja } = useLoja();
   const pg = loja.pagamentos;
   const parcelas = loja.tipo !== 'cardapio' && pg.cartao_online && pg.parcelas_max > 1 ? pg.parcelas_max : 0;
+  const pix = pg.pix_desconto_pct > 0 ? Math.round(p.preco * (100 - pg.pix_desconto_pct)) / 100 : null;
   return (
     <span className="preco">
       {p.preco_original && <s>De {brl(p.preco_original)}{completo ? '' : ' por'}</s>}
       <b>{brl(p.preco)}</b>
-      {parcelas > 0 && <small className="parcelas">em até {parcelas}x no cartão</small>}
+      {pix !== null && <small className="preco-pix"><b>{brl(pix)}</b> no Pix <span>({String(pg.pix_desconto_pct).replace('.', ',')}% off)</span></small>}
+      {parcelas > 0 && <small className="parcelas">ou em até {parcelas}x no cartão</small>}
     </span>
   );
 }
@@ -26,6 +28,7 @@ export default function CartaoProduto({ p }) {
     <>
       {p.imagens[0] ? <img src={p.imagens[0]} alt="" loading="lazy" /> : <span className="sem-foto" aria-hidden="true">🛍</span>}
       {off > 0 && <span className="selo selo-off">-{off}%</span>}
+      {p.maior_idade && <span className="selo selo-18" title="Venda para maiores de 18 anos">+18</span>}
       {!p.disponivel && <span className="selo selo-esgotado">Esgotado</span>}
     </>
   );

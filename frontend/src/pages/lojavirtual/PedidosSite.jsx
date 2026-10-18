@@ -254,7 +254,8 @@ function DetalhePedido({ id, config, onClose, onMudou }) {
         <div className="lv-resumo-pedido">
           <div><span>Produtos</span><span>{brl(p.subtotal)}</span></div>
           {p.tipo === 'entrega' && <div><span>{p.frete ? `Frete (${p.frete.servico})` : 'Entrega'}</span><span>{p.taxa_entrega > 0 ? brl(p.taxa_entrega) : 'Grátis'}</span></div>}
-          {p.desconto > 0 && <div><span>Desconto{p.cupom ? ` (${p.cupom})` : ''}</span><span>− {brl(p.desconto)}</span></div>}
+          {p.desconto - p.desconto_pix > 0.004 && <div><span>Desconto{p.cupom ? ` (${p.cupom})` : ''}</span><span>− {brl(p.desconto - p.desconto_pix)}</span></div>}
+          {p.desconto_pix > 0 && <div><span>Desconto no Pix</span><span>− {brl(p.desconto_pix)}</span></div>}
           <div className="total"><span>Total</span><b>{brl(p.total)}</b></div>
           <div className="celula-sub">
             {pagamentoTexto(p.pagamento, p.tipo)}
@@ -264,6 +265,7 @@ function DetalhePedido({ id, config, onClose, onMudou }) {
             {p.venda_numero ? ` · venda nº ${p.venda_numero}` : ''}
           </div>
         </div>
+        {p.maior_idade_declarada_em && <p className="form-hint" style={{ margin: 0 }}>+18: o cliente declarou ter 18 anos ou mais em {dataHora(p.maior_idade_declarada_em)}. Confira o documento na entrega/retirada.</p>}
         {p.observacao && <p style={{ margin: 0 }}><span className="field-label">Observação do cliente</span><br />{p.observacao}</p>}
         {p.motivo_cancelamento && <p style={{ margin: 0 }} className="erro-texto">Cancelado: {p.motivo_cancelamento}</p>}
 

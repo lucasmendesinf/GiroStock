@@ -82,6 +82,8 @@ export default function Carrinho() {
           {previa.desconto > 0 && <div className="ok-texto"><span>Desconto</span><span>− {brl(previa.desconto)}</span></div>}
           <div className="dica"><span>{loja.entrega.aceita ? 'Entrega calculada na próxima etapa' : 'Retirada na loja'}</span></div>
           <div className="resumo-total"><span>Total</span><b>{brl(previa.total)}</b></div>
+          {previa.pix && <div className="dica ok-texto"><span>No Pix: {brl(previa.pix.total_pix)} ({String(previa.pix.percentual).replace('.', ',')}% de desconto)</span></div>}
+          {previa.so_retirada && <div className="dica"><span>🛍 Há produto só para retirada na loja</span></div>}
         </div>
       )}
       <CalcularFrete itens={itensParaApi(carrinho)} />

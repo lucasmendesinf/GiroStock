@@ -21,7 +21,7 @@ export default function Finalizar() {
   const [enderecoId, setEnderecoId] = useState(null);
   const [novoEndereco, setNovoEndereco] = useState(false);
   const formas = [
-    ...(pag.pix_online ? [['pix', 'Pix (pague agora)']] : []),
+    ...(pag.pix_online ? [['pix', pag.pix_desconto_pct > 0 ? `Pix (pague agora) · ${String(pag.pix_desconto_pct).replace('.', ',')}% de desconto` : 'Pix (pague agora)']] : []),
     ...(pag.cartao_online ? [['cartao', 'Cartão de crédito']] : []),
     ...(pag.na_entrega.length && !servicoAtual ? [['na_entrega', tipo === 'entrega' ? 'Pagar na entrega' : 'Pagar na retirada']] : []),
   ];
@@ -29,6 +29,7 @@ export default function Finalizar() {
   const [formaEntrega, setFormaEntrega] = useState(pag.na_entrega[0] || 'dinheiro');
   const [troco, setTroco] = useState('');
   const [obs, setObs] = useState('');
+  const [maiorIdade, setMaiorIdade] = useState(false);
   const [previa, setPrevia] = useState(null);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState(null);
@@ -46,9 +47,12 @@ export default function Finalizar() {
   useEffect(() => { if (metodo === 'na_entrega' && servicoAtual && formas[0]) setMetodo(formas[0][0]); }, [servicoAtual]); // eslint-disable-line react-hooks/exhaustive-deps
   const atualizarPrevia = useCallback(() => {
     if (carrinho.length === 0) return;
-    api.post('/carrinho', { itens: itensParaApi(carrinho), tipo, endereco_id: tipo === 'entrega' ? enderecoId || undefined : undefined, cupom, frete_servico: servico })
+    api.post('/carrinho', { itens: itensParaApi(carrinho), tipo, endereco_id: tipo === 'entrega' ? enderecoId || undefined : undefined, cupom, frete_servico: servico, pagamento: metodo })
       .then(setPrevia).catch((e) => setErro(e.message));
-  }, [carrinho, tipo, enderecoId, cupom, servico]);
+  }, [carrinho, tipo, enderecoId, cupom, servico, metodo]);
+  // Produto so de retirada no carrinho: a entrega sai das opcoes.
+  const soRetirada = !!(previa && previa.so_retirada);
+  useEffect(() => { if (soRetirada && tipo === 'entrega' && loja.retirada.aceita) setTipo('retirada'); }, [soRetirada, tipo, loja.retirada.aceita]);
   useEffect(() => { atualizarPrevia(); }, [atualizarPrevia]);
   useEffect(() => { setFrete(null); }, [enderecoId]);
   // Escolha do frete: mantem a do cliente se ainda vale; senao, a entrega da loja ou a transportadora mais barata.
@@ -72,7 +76,7 @@ export default function Finalizar() {
   const avisos = previa ? previa.avisos.filter((a) => !(semEndereco && /bairro|endereço/.test(a)) && !(escolhendo && /escolha uma opção de frete/.test(a))) : [];
   const transp = loja.entrega.transportadora;
   const enderecoSel = enderecos && enderecos.find((e) => e.id === enderecoId);
-  const podePedir = previa && previa.pode_finalizar && !semEndereco && metodo && !enviando;
+  const podePedir = previa && previa.pode_finalizar && !semEndereco && metodo && !enviando && (!previa.maior_idade || maiorIdade);
 
   async function pedir(cartao) {
     setErro(null);
@@ -81,7 +85,7 @@ export default function Finalizar() {
       const pagamento = metodo === 'na_entrega'
         ? { metodo, forma: formaEntrega, troco_para: formaEntrega === 'dinheiro' && troco.trim() ? parseValor(troco) : undefined }
         : { metodo, cartao };
-      const p = await api.post('/pedidos', { itens: itensParaApi(carrinho), tipo, endereco_id: tipo === 'entrega' ? enderecoId : undefined, frete_servico: servico, cupom, observacao: obs.trim() || undefined, pagamento });
+      const p = await api.post('/pedidos', { itens: itensParaApi(carrinho), tipo, endereco_id: tipo === 'entrega' ? enderecoId : undefined, frete_servico: servico, cupom, observacao: obs.trim() || undefined, pagamento, maior_idade: previa && previa.maior_idade ? maiorIdade : undefined });
       esvaziar();
       try { sessionStorage.removeItem('lv_cupom'); } catch { /* */ }
       navegar(`/pedidos/${p.id}`, { replace: true });
@@ -98,7 +102,8 @@ export default function Finalizar() {
     <section className="bloco checkout">
       <h1>Finalizar pedido</h1>
 
-      {loja.retirada.aceita && loja.entrega.aceita && (
+      {soRetirada && <p className="painel aviso-retirada">🛍 Há produto no carrinho que é <b>só para retirada na loja</b>: este pedido não pode ser entregue.</p>}
+      {loja.retirada.aceita && loja.entrega.aceita && !soRetirada && (
         <div className="opcoes-2" role="radiogroup" aria-label="Como receber">
           <button type="button" role="radio" aria-checked={tipo === 'entrega'} className={`opcao-grande ${tipo === 'entrega' ? 'on' : ''}`} onClick={() => setTipo('entrega')}>
             {transp ? <><b>📦 Receber em casa</b><small>frete calculado pelo CEP</small></> : <><b>🛵 Entrega</b><small>{loja.entrega.tempo_estimado_min ? `cerca de ${loja.entrega.tempo_estimado_min} min` : ''}</small></>}
@@ -179,11 +184,16 @@ export default function Finalizar() {
           <div><span>Produtos</span><span>{brl(previa.subtotal)}</span></div>
           {tipo === 'entrega' && <div><span>{previa.entrega.servico ? `Frete (${previa.entrega.servico.nome})` : `Entrega${previa.entrega.bairro ? ` (${previa.entrega.bairro})` : ''}`}</span><span>{semEndereco || escolhendo ? '—' : previa.taxa_entrega > 0 ? brl(previa.taxa_entrega) : 'Grátis'}</span></div>}
           {previa.desconto > 0 && <div className="ok-texto"><span>Desconto{previa.cupom && previa.cupom.valido ? ` (${previa.cupom.codigo})` : ''}</span><span>− {brl(previa.desconto)}</span></div>}
+          {previa.pix && previa.pix.aplicado && <div className="ok-texto"><span>Desconto no Pix ({String(previa.pix.percentual).replace('.', ',')}%)</span><span>− {brl(previa.pix.desconto)}</span></div>}
           <div className="resumo-total"><span>Total</span><b>{brl(previa.total)}</b></div>
+          {previa.pix && !previa.pix.aplicado && pag.pix_online && <div className="dica"><span>Pagando com Pix: {brl(previa.pix.total_pix)}</span></div>}
           {!semEndereco && (previa.entrega.servico
             ? previa.entrega.servico.prazo_dias && <div className="dica"><span>Previsão: até {previa.entrega.servico.prazo_dias} dias úteis após o pagamento</span></div>
             : previa.entrega.tempo_estimado_min && <div className="dica"><span>Previsão: cerca de {previa.entrega.tempo_estimado_min} min</span></div>)}
         </div>
+      )}
+      {previa && previa.maior_idade && (
+        <label className="marcar declaracao-idade"><input type="checkbox" checked={maiorIdade} onChange={(e) => setMaiorIdade(e.target.checked)} /> Declaro que tenho 18 anos ou mais (há produto para maiores de 18 no pedido).</label>
       )}
       {avisos.map((a) => <p key={a} className="erro-texto">⚠ {a}</p>)}
       {erro && <p className="erro-texto">{erro}</p>}

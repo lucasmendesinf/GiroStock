@@ -635,6 +635,50 @@ check('sem saldo no Melhor Envio: recusa explicando', semSaldo.s === 422 && /[Ss
 await api('POST', `/loja-virtual/pedidos/${f4.id}/cancelar`, { motivo: 'teste' }, A);
 check('desconectar desliga o envio no site', (await api('DELETE', '/loja-virtual/envio/conta', null, A)).s === 204 && (await loja('GET', '/loja')).j.entrega.transportadora === null);
 
+
+console.log('\n# 21. Desconto no Pix, produtos +18 e so retirada');
+check('desconto no Pix acima de 30% -> 400', (await api('PUT', '/loja-virtual', { pix_desconto_pct: 31 }, A)).s === 400);
+check('salva 5% de desconto no Pix', (await api('PUT', '/loja-virtual', { pix_desconto_pct: 5 }, A)).j.pix_desconto_pct === 5);
+check('site recebe o % do Pix', (await loja('GET', '/loja')).j.pagamentos.pix_desconto_pct === 5);
+const IT2 = [{ product_id: REFRI.id, quantidade: 2 }];
+const semPix = (await loja('POST', '/carrinho', { itens: IT2, tipo: 'retirada' }, TJ)).j;
+check('carrinho mostra o total no Pix sem aplicar', semPix.pix && semPix.pix.aplicado === false && igual(semPix.pix.desconto, semPix.subtotal * 0.05) && igual(semPix.total, semPix.subtotal) && igual(semPix.pix.total_pix, semPix.subtotal * 0.95), semPix);
+const comPix = (await loja('POST', '/carrinho', { itens: IT2, tipo: 'retirada', pagamento: 'pix' }, TJ)).j;
+check('pagando com Pix: desconto no total', comPix.pix.aplicado === true && igual(comPix.total, comPix.subtotal * 0.95), comPix);
+const px = (await loja('POST', '/pedidos', { itens: IT2, tipo: 'retirada', pagamento: { metodo: 'pix' } }, TJ, IP())).j;
+const mpPx = (await sim('GET', '/_sim/pagamentos')).j.find((x) => x.external_reference === px.id);
+check('pedido no Pix: desconto gravado e cobranca com o valor com desconto', igual(px.desconto_pix, comPix.pix.desconto) && igual(px.total, comPix.total) && mpPx && igual(mpPx.transaction_amount, comPix.total), { px, mpPx });
+check('pedido com desconto do Pix nao pode ser pago no cartao -> 409', (await loja('POST', `/pedidos/${px.id}/pagamento`, { metodo: 'cartao', cartao: { token: 'cartao-aprovado', payment_method_id: 'master', parcelas: 1 } }, TJ)).s === 409);
+await sim('POST', `/_sim/pagamentos/${mpPx.id}/aprovar`);
+await ate(async () => ((await ver(px.id)).etapa === 'pagamento_aprovado'));
+for (const para of ['em_preparo', 'pronto', 'finalizado']) await avancar(px.id, { para });
+const vPx = (await prod.query(`SELECT s.desconto, s.total FROM orders o JOIN sales s ON s.id = o.sale_id WHERE o.id = $1`, [px.id])).rows[0];
+check('venda leva o desconto do Pix', vPx && igual(vPx.desconto, comPix.pix.desconto) && igual(vPx.total, comPix.total), vPx);
+const cartaoSemDesc = (await loja('POST', '/pedidos', { itens: IT2, tipo: 'retirada', pagamento: { metodo: 'cartao', cartao: { token: 'cartao-aprovado', payment_method_id: 'master', parcelas: 1 } } }, TJ, IP())).j;
+check('no cartao nao tem desconto do Pix', cartaoSemDesc.desconto_pix === 0 && igual(cartaoSemDesc.total, comPix.subtotal), cartaoSemDesc);
+await api('POST', `/loja-virtual/pedidos/${cartaoSemDesc.id}/cancelar`, { motivo: 'teste' }, A);
+await api('PUT', '/loja-virtual', { pix_desconto_pct: 0 }, A);
+
+await api('PUT', `/loja-virtual/produtos/${REFRI.id}`, { maior_idade: true }, A);
+check('produto +18 no site', (await loja('GET', `/produtos/${REFRI.id}`)).j.maior_idade === true);
+const c18 = (await loja('POST', '/carrinho', { itens: IT2, tipo: 'retirada' }, TJ)).j;
+check('carrinho avisa que ha produto +18', c18.maior_idade === true);
+check('pedido +18 sem declarar a idade -> 422', (await loja('POST', '/pedidos', { itens: IT2, tipo: 'retirada', pagamento: { metodo: 'na_entrega', forma: 'dinheiro' } }, TJ, IP())).s === 422);
+const p18 = await loja('POST', '/pedidos', { itens: IT2, tipo: 'retirada', maior_idade: true, pagamento: { metodo: 'na_entrega', forma: 'dinheiro' } }, TJ, IP());
+check('declarando 18+: pedido aceito e declaracao registrada (painel mostra)', p18.s === 201 && !!(await api('GET', `/loja-virtual/pedidos/${p18.j.id}`, null, A)).j.maior_idade_declarada_em, p18.j);
+await api('POST', `/loja-virtual/pedidos/${p18.j.id}/cancelar`, { motivo: 'teste' }, A);
+await api('PUT', `/loja-virtual/produtos/${REFRI.id}`, { maior_idade: false, so_retirada: true }, A);
+check('produto so retirada no site', (await loja('GET', `/produtos/${REFRI.id}`)).j.so_retirada === true);
+const cRet = (await loja('POST', '/carrinho', { itens: IT2, tipo: 'entrega', endereco_id: endJ.id }, TJ)).j;
+check('so retirada: entrega bloqueada com o motivo', cRet.so_retirada === true && cRet.pode_finalizar === false && cRet.avisos.some((a) => /só retirada/.test(a)), cRet);
+check('pedido de entrega com produto so retirada -> 422', (await loja('POST', '/pedidos', { itens: IT2, tipo: 'entrega', endereco_id: endJ.id, pagamento: { metodo: 'na_entrega', forma: 'dinheiro' } }, TJ, IP())).s === 422);
+const pRet = await loja('POST', '/pedidos', { itens: IT2, tipo: 'retirada', pagamento: { metodo: 'na_entrega', forma: 'dinheiro' } }, TJ, IP());
+check('retirada continua valendo', pRet.s === 201, pRet.j);
+await api('POST', `/loja-virtual/pedidos/${pRet.j.id}/cancelar`, { motivo: 'teste' }, A);
+await api('PUT', `/loja-virtual/produtos/${REFRI.id}`, { so_retirada: false }, A);
+check('site para maiores de 18: aviso de idade na entrada', (await api('PUT', '/loja-virtual', { site_maior_idade: true }, A)).j.site_maior_idade === true && (await loja('GET', '/loja')).j.maior_idade === true);
+await api('PUT', '/loja-virtual', { site_maior_idade: false }, A);
+
 await prod.query(`DELETE FROM lv_lojas WHERE tenant_id = $1`, [outra]).catch(() => {});
 await prod.query(`DELETE FROM tenants WHERE id = $1`, [outra]).catch(() => {}); // pode ficar se houver auditoria
 

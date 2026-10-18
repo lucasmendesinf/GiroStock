@@ -49,6 +49,7 @@ async function configTela(l, base) {
     pedido_minimo: n2(l.pedido_minimo), tempo_preparo_min: l.tempo_preparo_min, tempo_entrega_min: l.tempo_entrega_min,
     taxa_outros_bairros: l.taxa_outros_bairros === null ? null : n2(l.taxa_outros_bairros),
     pagamentos: l.pagamentos || {}, parcelas_max: l.parcelas_max, pix_expira_min: l.pix_expira_min,
+    pix_desconto_pct: Number(l.pix_desconto_pct || 0), site_maior_idade: !!l.site_maior_idade,
     chave: l.api_chave_prefixo ? { prefixo: l.api_chave_prefixo, criada_em: l.api_chave_criada_em } : null,
     mercadopago: l.mp_access_token_cript ? { conectado: true, conta: l.mp_conta, public_key: l.mp_public_key, webhook_secret: !!l.mp_webhook_secret_cript, conectado_em: l.mp_conectado_em } : { conectado: false },
     url_api: `${base}/api/loja/v1`,
@@ -159,6 +160,12 @@ router.put('/loja-virtual', async (req, res) => {
     pagamentos: JSON.stringify(pagamentos),
     parcelas_max: v('parcelas_max', inteiro('parcelas', 1, 12)),
     pix_expira_min: v('pix_expira_min', inteiro('prazo do Pix (minutos)', 5, 1440)),
+    pix_desconto_pct: v('pix_desconto_pct', (x) => {
+      const n = Number(String(x).replace(',', '.'));
+      if (!Number.isFinite(n) || n < 0 || n > 30) throw new HttpError(400, 'desconto no Pix: de 0 a 30%');
+      return Number(n.toFixed(2));
+    }),
+    site_maior_idade: v('site_maior_idade', (x) => !!x),
     banners: JSON.stringify(banners), logo_id: logoId,
     tema: JSON.stringify(b.tema === undefined ? lv.temaEfetivo(atual.tema, atual.tipo) : lv.normalizarTema(b.tema, atual.tema, atual.tipo)),
   };
@@ -279,7 +286,7 @@ router.get('/loja-virtual/produtos', async (req, res) => {
     `SELECT p.id, p.codigo_interno, p.nome, p.unidade, p.preco_venda, c.nome AS categoria_nome,
             COALESCE(lp.publicado, false) AS publicado, lp.nome_site, COALESCE(lp.descricao, '') AS descricao, COALESCE(lp.imagens, '{}') AS imagens,
             lp.preco_promocional, lp.promo_inicio::text, lp.promo_fim::text, COALESCE(lp.destaque, false) AS destaque, COALESCE(lp.ordem, 0) AS ordem,
-            lp.peso_kg, lp.altura_cm, lp.largura_cm, lp.comprimento_cm
+            lp.peso_kg, lp.altura_cm, lp.largura_cm, lp.comprimento_cm, COALESCE(lp.maior_idade, false) AS maior_idade, COALESCE(lp.so_retirada, false) AS so_retirada
      ${base} ORDER BY COALESCE(lp.publicado, false) DESC, p.nome, p.id LIMIT ${limite} OFFSET ${offset}`,
     params
   );
@@ -334,6 +341,14 @@ async function salvarProdutoSite(client, t, productId, b) {
     [productId, t, v('publicado', (x) => !!x, true), nomeSite, v('descricao', (x) => texto(x, 2000), ''), imagens, promo, promo === null ? null : ini, promo === null ? null : fim,
       v('destaque', (x) => !!x, false), v('ordem', (x) => { const n = Number(x); if (!Number.isInteger(n)) throw new HttpError(400, 'ordem inválida'); return n; }, 0)]
   );
+  // +18 e so retirada
+  if (b.maior_idade !== undefined || b.so_retirada !== undefined) {
+    const up = await client.query(
+      `UPDATE lv_produtos SET maior_idade = $2, so_retirada = $3 WHERE product_id = $1 RETURNING *, promo_inicio::text AS promo_inicio, promo_fim::text AS promo_fim`,
+      [productId, b.maior_idade === undefined ? rows[0].maior_idade : !!b.maior_idade, b.so_retirada === undefined ? rows[0].so_retirada : !!b.so_retirada]
+    );
+    rows[0] = up.rows[0];
+  }
   // Peso e medidas para o frete (vazio = embalagem padrao da loja).
   const medidas = [['peso_kg', 'peso (kg)', 30], ['altura_cm', 'altura (cm)', 100], ['largura_cm', 'largura (cm)', 100], ['comprimento_cm', 'comprimento (cm)', 100]];
   if (medidas.some(([k]) => b[k] !== undefined)) {

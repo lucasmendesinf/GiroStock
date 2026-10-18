@@ -75,7 +75,7 @@ export default function Produtos({ config }) {
                       <td>
                         <div className="lv-prod">
                           <span className="lv-thumb">{p.imagens[0] ? <img src={p.imagens[0].url} alt="" loading="lazy" /> : <span aria-hidden="true">📷</span>}</span>
-                          <span><b>{p.nome_site || p.nome}</b>{p.destaque && <span className="ped-pill ok lv-mini">destaque</span>}<div className="celula-sub">{p.codigo_interno}{p.categoria_nome ? ` · ${p.categoria_nome}` : ''}{p.nome_site ? ` · cadastro: ${p.nome}` : ''}</div></span>
+                          <span><b>{p.nome_site || p.nome}</b>{p.destaque && <span className="ped-pill ok lv-mini">destaque</span>}{p.maior_idade && <span className="ped-pill err lv-mini">+18</span>}{p.so_retirada && <span className="ped-pill warn lv-mini">só retirada</span>}<div className="celula-sub">{p.codigo_interno}{p.categoria_nome ? ` · ${p.categoria_nome}` : ''}{p.nome_site ? ` · cadastro: ${p.nome}` : ''}</div></span>
                         </div>
                       </td>
                       <td className="num">
@@ -111,7 +111,7 @@ function EditarProduto({ p, frete, onClose, onSalvo }) {
     publicado: p.publicado,
     nome_site: p.nome_site || '', descricao: p.descricao || '', destaque: p.destaque,
     preco_promocional: p.preco_promocional ? String(p.preco_promocional).replace('.', ',') : '', promo_inicio: p.promo_inicio || '', promo_fim: p.promo_fim || '',
-    peso_kg: medida(p.peso_kg), altura_cm: medida(p.altura_cm), largura_cm: medida(p.largura_cm), comprimento_cm: medida(p.comprimento_cm),
+    maior_idade: !!p.maior_idade, so_retirada: !!p.so_retirada, peso_kg: medida(p.peso_kg), altura_cm: medida(p.altura_cm), largura_cm: medida(p.largura_cm), comprimento_cm: medida(p.comprimento_cm),
   });
   const [fotos, setFotos] = useState(p.imagens);
   const [enviando, setEnviando] = useState(0);
@@ -135,6 +135,7 @@ function EditarProduto({ p, frete, onClose, onSalvo }) {
       await api.put(`/loja-virtual/produtos/${p.id}`, {
         publicado: f.publicado, nome_site: f.nome_site, descricao: f.descricao, destaque: f.destaque, imagens: fotos.map((x) => x.id),
         preco_promocional: promo, promo_inicio: promo ? f.promo_inicio || null : null, promo_fim: promo ? f.promo_fim || null : null,
+        maior_idade: f.maior_idade, so_retirada: f.so_retirada,
         ...(frete ? Object.fromEntries(['peso_kg', 'altura_cm', 'largura_cm', 'comprimento_cm'].map((k) => [k, f[k].trim() ? parseNumero(f[k]) : null])) : {}),
       });
       toast.sucesso('Produto salvo');
@@ -176,6 +177,8 @@ function EditarProduto({ p, frete, onClose, onSalvo }) {
         </div>
         {promo > 0 && <p className="form-hint" style={{ margin: 0 }}>{promo < Number(p.preco_venda) ? `De ${brl(p.preco_venda)} por ${brl(promo)} (${Math.round((1 - promo / Number(p.preco_venda)) * 100)}% off)${f.promo_inicio || f.promo_fim ? `, ${f.promo_inicio ? `de ${diaBR(f.promo_inicio)} ` : ''}${f.promo_fim ? `até ${diaBR(f.promo_fim)}` : ''}` : ', sem data para acabar'}.` : 'O preço promocional precisa ser menor que o preço de venda.'}</p>}
         <label className="check"><input type="checkbox" checked={f.destaque} onChange={mudar('destaque')} /> Destaque (aparece primeiro e na vitrine de destaques)</label>
+        <label className="check"><input type="checkbox" checked={f.maior_idade} onChange={mudar('maior_idade')} /> Venda para maiores de 18 anos (selo +18; o cliente declara a idade ao fechar o pedido)</label>
+        <label className="check"><input type="checkbox" checked={f.so_retirada} onChange={mudar('so_retirada')} /> Somente retirada na loja (não é entregue nem enviado; ex.: produtos de tabaco, cuja venda por via postal a lei proíbe)</label>
         {frete && (
           <div>
             <span className="ped-rotulo">Peso e medidas da embalagem (frete por transportadora)</span>

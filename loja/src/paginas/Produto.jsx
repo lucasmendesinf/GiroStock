@@ -64,6 +64,12 @@ export default function Produto() {
       <div className="produto-info">
         {p.categoria && <Link className="migalha" to={`/produtos?categoria=${p.categoria.id}`}>{p.categoria.pai ? `${p.categoria.pai.nome} › ` : ''}{p.categoria.nome}</Link>}
         <h1>{p.nome}</h1>
+        {(p.maior_idade || p.so_retirada) && (
+          <div className="selos-produto">
+            {p.maior_idade && <span className="selo-linha selo-18">+18 · venda para maiores de 18 anos</span>}
+            {p.so_retirada && <span className="selo-linha">🛍 Somente retirada na loja</span>}
+          </div>
+        )}
         <Preco p={p} />
         {p.promocao_ate && <p className="dica">Promoção válida até {p.promocao_ate.split('-').reverse().join('/')}</p>}
         {p.descricao && <p className="produto-desc">{p.descricao}</p>}
@@ -99,7 +105,7 @@ export default function Produto() {
             <button type="button" className="botao largo" onClick={colocar}>{loja.tipo === 'cardapio' ? `Adicionar · ${brl(unitario * qtd)}` : 'Comprar'}</button>
           </div>
         ) : <p className="esgotado-aviso">Produto esgotado no momento.</p>}
-        {p.disponivel && p.complementos.length === 0 && <CalcularFrete itens={[{ product_id: p.id, quantidade: qtd }]} />}
+        {p.disponivel && p.complementos.length === 0 && !p.so_retirada && <CalcularFrete itens={[{ product_id: p.id, quantidade: qtd }]} />}
       </div>
     </article>
   );

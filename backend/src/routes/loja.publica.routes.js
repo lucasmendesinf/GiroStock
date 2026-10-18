@@ -157,6 +157,7 @@ router.post('/frete', limitar('lv-frete', 60, 5 * 60 * 1000), async (req, res) =
   if (cep.length !== 8) throw new HttpError(400, 'CEP inválido');
   if (!frete.envioDisponivel(req.loja)) throw new HttpError(422, 'esta loja não envia por transportadora');
   const r = await lv.calcularCarrinho(db(), req.loja, null, { itens: b.itens, tipo: 'entrega', cep }, 'previa');
+  if (r.so_retirada) return res.json({ cep, opcoes: [], avisos: r.avisos.filter((a) => /só retirada/.test(a)) });
   res.json({ cep, opcoes: (r.envio && r.envio.opcoes) || [], avisos: r.avisos.filter((a) => /frete|CEP|transportadora/.test(a)) });
 });
 
@@ -429,6 +430,7 @@ async function pedidoPublico(loja, orderId, contaId, base) {
     subtotal: n2(o.subtotal),
     taxa_entrega: n2(o.taxa_entrega),
     desconto: n2(o.desconto),
+    desconto_pix: n2(o.desconto_pix), // ja somado em desconto
     total: n2(Number(o.subtotal) + Number(o.taxa_entrega) - Number(o.desconto)),
     cupom: o.cupom_codigo,
     observacao: o.observacao,
@@ -480,7 +482,10 @@ router.post('/pedidos', comConta, limitar('lv-pedido', 30, 10 * 60 * 1000), asyn
     await client.query('BEGIN');
     const c = await lv.calcularCarrinho(client, loja, conta, {
       ...b, tipo, bairro: endereco ? endereco.bairro : null, cidade: endereco ? endereco.cidade : null, cep: endereco ? endereco.cep || null : null,
+      pagamento: metodo,
     }, 'pedido');
+    if (c.maior_idade && b.maior_idade !== true) throw new HttpError(422, 'há produto para maiores de 18 anos: confirme que você tem 18 anos ou mais');
+    const descontoPix = c.pix && c.pix.aplicado ? c.pix.desconto : 0;
     if (metodo === 'na_entrega' && c.entrega.servico) throw new HttpError(422, 'envio por transportadora: pague pelo site (Pix ou cartão)');
     let troco = null;
     if (formaEntrega === 'dinheiro' && pag.troco_para !== undefined && pag.troco_para !== null && pag.troco_para !== '') {
@@ -491,7 +496,7 @@ router.post('/pedidos', comConta, limitar('lv-pedido', 30, 10 * 60 * 1000), asyn
     const user = await usuarioSistema(loja.tenant_id);
     const r = await criarPedido(client, user, {
       location_id: loja.location_id, origem: 'loja_virtual', tipo,
-      endereco: endereco ? enderecoTexto(endereco) : '', taxa_entrega: c.taxa_entrega, desconto: c.desconto, observacao: obs,
+      endereco: endereco ? enderecoTexto(endereco) : '', taxa_entrega: c.taxa_entrega, desconto: lv.n2(c.desconto + descontoPix), observacao: obs,
       forma_pagamento_prevista: metodo === 'na_entrega' ? formaEntrega : null, pago: false,
       cliente_nome: conta.nome, cliente_telefone: conta.telefone,
       itens: c.linhas.map((l) => ({ product_id: l.product_id, quantidade: l.quantidade, observacao: l.observacao, preco_unitario: l.preco_unitario, complementos: l.complementos_pedidos })),
@@ -501,6 +506,9 @@ router.post('/pedidos', comConta, limitar('lv-pedido', 30, 10 * 60 * 1000), asyn
         trocoPara: troco, pagamentoOnline: metodo === 'na_entrega' ? null : metodo, fluxo: lv.fluxoDaLoja(loja),
       },
     });
+    if (descontoPix || c.maior_idade) {
+      await client.query(`UPDATE orders SET desconto_pix = $2, maior_idade_declarada_em = CASE WHEN $3 THEN now() END WHERE id = $1`, [r.orderId, descontoPix, !!c.maior_idade]);
+    }
     // Envio por transportadora: servico, prazo, cotacao e o destinatario em campos (para a etiqueta).
     if (c.entrega.servico) {
       const destino = {
@@ -564,6 +572,7 @@ router.post('/pedidos/:id/pagamento', comConta, limitar('lv-pagamento', 20, 10 *
   if (!atual.pode_pagar) throw new HttpError(409, atual.pagamento.situacao === 'aprovado' ? 'este pedido já está pago' : 'este pedido não aceita mais pagamento');
   const b = req.body || {};
   if (!['pix', 'cartao'].includes(b.metodo)) throw new HttpError(400, 'escolha Pix ou cartão');
+  if (b.metodo === 'cartao' && atual.desconto_pix > 0) throw new HttpError(409, 'este pedido tem o desconto do Pix: pague com Pix (ou faça um novo pedido para pagar no cartão)');
   await lv.cobrar(req.loja, { id: atual.id, numero: atual.numero, total: atual.total }, req.conta, b.metodo, b.cartao, urlAviso(req));
   res.json(await pedidoPublico(req.loja, atual.id, req.conta.id, baseUrl(req)));
 });

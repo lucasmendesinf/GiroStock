@@ -11,6 +11,8 @@ export default function Layout() {
   const navegar = useNavigate();
   const [busca, setBusca] = useState('');
   const [menu, setMenu] = useState(false);
+  const [idadeOk, setIdadeOk] = useState(() => { try { return !!(loja && localStorage.getItem(`lv_idade_${loja.id}`)); } catch { return false; } });
+  useEffect(() => { if (loja) { try { setIdadeOk(!!localStorage.getItem(`lv_idade_${loja.id}`)); } catch { /* */ } } }, [loja && loja.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [categorias, setCategorias] = useState([]);
   const fecharMenu = useCallback(() => setMenu(false), []);
   useEffect(() => { window.scrollTo(0, 0); }, [pathname]);
@@ -36,6 +38,7 @@ export default function Layout() {
       </div>
     );
   }
+  if (loja.maior_idade && !idadeOk) return <AvisoIdade loja={loja} confirmar={() => { try { localStorage.setItem(`lv_idade_${loja.id}`, '1'); } catch { /* */ } setIdadeOk(true); }} />;
   const noCarrinho = ['/carrinho', '/finalizar'].includes(pathname);
   const raizes = categorias.filter((c) => !c.pai_id || !categorias.some((x) => x.id === c.pai_id));
   const cardapio = loja.tipo === 'cardapio';
@@ -187,6 +190,28 @@ function Gaveta({ loja, conta, categorias, fechar, compartilhar: aoCompartilhar 
           <button type="button" onClick={aoCompartilhar}>Compartilhar a loja</button>
         </nav>
       </aside>
+    </div>
+  );
+}
+
+// Site para maiores de 18 (ex.: tabacaria): pergunta a idade na entrada (lembrada neste navegador).
+function AvisoIdade({ loja, confirmar }) {
+  const [negou, setNegou] = useState(false);
+  return (
+    <div className="tela-cheia aviso-idade">
+      {loja.logo ? <img className="logo-grande" src={loja.logo} alt={loja.nome} /> : <h1>{loja.nome}</h1>}
+      {negou ? (
+        <p>Este site é exclusivo para maiores de 18 anos.</p>
+      ) : (
+        <>
+          <h2>Você tem 18 anos ou mais?</h2>
+          <p>Este site vende produtos para maiores de 18 anos.</p>
+          <div className="botoes">
+            <button type="button" className="botao" onClick={confirmar}>Sim, tenho 18 anos ou mais</button>
+            <button type="button" className="botao botao-claro" onClick={() => setNegou(true)}>Não</button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

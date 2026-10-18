@@ -124,7 +124,8 @@ export default function Pedido() {
         <div className="resumo">
           <div><span>Produtos</span><span>{brl(p.subtotal)}</span></div>
           {p.tipo === 'entrega' && <div><span>Entrega</span><span>{p.taxa_entrega > 0 ? brl(p.taxa_entrega) : 'Grátis'}</span></div>}
-          {p.desconto > 0 && <div className="ok-texto"><span>Desconto{p.cupom ? ` (${p.cupom})` : ''}</span><span>− {brl(p.desconto)}</span></div>}
+          {p.desconto - p.desconto_pix > 0.004 && <div className="ok-texto"><span>Desconto{p.cupom ? ` (${p.cupom})` : ''}</span><span>− {brl(p.desconto - p.desconto_pix)}</span></div>}
+          {p.desconto_pix > 0 && <div className="ok-texto"><span>Desconto no Pix</span><span>− {brl(p.desconto_pix)}</span></div>}
           <div className="resumo-total"><span>Total</span><b>{brl(p.total)}</b></div>
           <div className="dica"><span>
             {p.pagamento.tipo === 'online'

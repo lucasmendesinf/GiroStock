@@ -63,6 +63,7 @@ const SELECT = `
   SELECT o.id, o.numero, o.status, o.tipo, o.endereco, o.taxa_entrega, o.desconto, o.observacao, o.cliente_nome, o.cliente_telefone,
          o.forma_pagamento_prevista, o.troco_para, o.pago, o.pagamento_online, o.pagamento_status, o.cupom_codigo, o.sale_id, o.location_id,
          o.transportadora, o.rastreio_codigo, o.rastreio_url, o.enviado_em, o.criado_em, o.finalizado_em, o.cancelado_em, o.motivo_cancelamento,
+         o.desconto_pix, o.maior_idade_declarada_em,
          o.frete_servico_id, o.frete_servico_nome, o.frete_prazo_dias, o.frete_custo, o.frete_destino, o.frete_volumes, o.me_envio_id, o.me_status, o.me_etiqueta_em,
          a.email AS cliente_email, s.numero AS venda_numero,
          COALESCE((SELECT SUM(oi.subtotal) FROM order_items oi WHERE oi.order_id = o.id), 0) AS subtotal,
@@ -87,6 +88,8 @@ function resumo(o) {
       servico_id: o.frete_servico_id, servico: o.frete_servico_nome, prazo_dias: o.frete_prazo_dias, custo: o.frete_custo === null ? null : n2(o.frete_custo),
       etiqueta: o.me_envio_id && o.me_status !== 'canceled' ? { id: o.me_envio_id, status: o.me_status, nome_status: ETIQUETA[o.me_status] || o.me_status, comprada_em: o.me_etiqueta_em } : null,
     } : null,
+    desconto_pix: n2(o.desconto_pix), // ja somado em desconto
+    maior_idade_declarada_em: o.maior_idade_declarada_em || null,
     venda_numero: o.venda_numero || null,
     criado_em: o.criado_em, enviado_em: o.enviado_em, finalizado_em: o.finalizado_em, cancelado_em: o.cancelado_em,
     proxima: ['aguardando_pagamento', 'cancelado'].includes(sit) ? null : proxima(o),

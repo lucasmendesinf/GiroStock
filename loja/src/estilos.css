@@ -382,3 +382,17 @@ body:not(.modelo-cardapio) .produto-info .preco .parcelas { font-size: .92rem; }
 .lista-frete { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 6px; font-size: .92rem; }
 .lista-frete li { display: flex; justify-content: space-between; gap: 10px; }
 .lista-frete small { color: var(--suave); display: block; }
+
+/* ---------- +18, so retirada, Pix ---------- */
+.selo-18 { background: #111; color: #fff; left: auto; right: 8px; top: 8px; }
+.cartao.esgotado .selo-18 { top: 36px; }
+.selos-produto { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+.selo-linha { display: inline-block; padding: 4px 10px; border-radius: 999px; background: var(--painel); font-size: .82rem; font-weight: 700; }
+.selo-linha.selo-18 { position: static; background: #111; color: #fff; }
+.preco-pix { flex-basis: 100%; color: var(--destaque); font-size: .82rem; }
+.preco-pix b { font-size: .95rem; color: var(--destaque) !important; }
+.preco-pix span { color: var(--suave); font-weight: 400; }
+body:not(.modelo-cardapio) .produto-info .preco .preco-pix b { font-size: 1.15rem; }
+.declaracao-idade { margin: 12px 0; padding: 12px; border: 1px solid var(--linha); border-radius: var(--raio); background: var(--fundo); }
+.aviso-retirada { background: var(--primaria-suave); }
+.aviso-idade h2 { margin: 8px 0 0; }

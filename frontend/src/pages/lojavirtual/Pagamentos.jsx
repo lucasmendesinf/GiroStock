@@ -12,7 +12,7 @@ export default function Pagamentos({ config, onMudou }) {
   const toast = useToast();
   const confirmar = useConfirm();
   const mp = config.mercadopago;
-  const [f, setF] = useState({ ...config.pagamentos, na_entrega: config.pagamentos.na_entrega || [], parcelas_max: String(config.parcelas_max), pix_expira_min: String(config.pix_expira_min) });
+  const [f, setF] = useState({ ...config.pagamentos, na_entrega: config.pagamentos.na_entrega || [], parcelas_max: String(config.parcelas_max), pix_expira_min: String(config.pix_expira_min), pix_desconto_pct: String(config.pix_desconto_pct || 0).replace('.', ',') });
   const [cred, setCred] = useState({ access_token: '', public_key: '', webhook_secret: '' });
   const [conectando, setConectando] = useState(false);
   const [lista, setLista] = useState(null);
@@ -22,7 +22,7 @@ export default function Pagamentos({ config, onMudou }) {
   async function salvarFormas(e) {
     e.preventDefault();
     try {
-      await api.put('/loja-virtual', { pagamentos: { pix_online: !!f.pix_online, cartao_online: !!f.cartao_online, na_entrega: f.na_entrega }, parcelas_max: Number(f.parcelas_max), pix_expira_min: Number(f.pix_expira_min) });
+      await api.put('/loja-virtual', { pagamentos: { pix_online: !!f.pix_online, cartao_online: !!f.cartao_online, na_entrega: f.na_entrega }, parcelas_max: Number(f.parcelas_max), pix_expira_min: Number(f.pix_expira_min), pix_desconto_pct: Number(String(f.pix_desconto_pct || '0').replace(',', '.')) || 0 });
       toast.sucesso('Formas de pagamento salvas');
       await onMudou();
     } catch (err) { toast.erro(err); }
@@ -67,6 +67,7 @@ export default function Pagamentos({ config, onMudou }) {
             <select value={f.parcelas_max} onChange={(e) => setF({ ...f, parcelas_max: e.target.value })}>{Array.from({ length: 12 }, (_, i) => <option key={i + 1} value={i + 1}>{i === 0 ? 'Só à vista' : `${i + 1}x`}</option>)}</select>
           </Field>
           <Field label="Prazo para pagar o Pix (min)" hint="Sem pagamento no prazo, o pedido é cancelado e o estoque liberado."><input inputMode="numeric" value={f.pix_expira_min} onChange={(e) => setF({ ...f, pix_expira_min: e.target.value })} /></Field>
+          <Field label="Desconto no Pix (%)" hint="Sobre os produtos (não o frete), no Pix pago pelo site. O site mostra o preço no Pix. 0 = sem desconto."><input inputMode="decimal" value={f.pix_desconto_pct} onChange={(e) => setF({ ...f, pix_desconto_pct: e.target.value })} placeholder="0" /></Field>
         </div>
         <div><button type="submit" className="btn-primario">Salvar formas</button></div>
       </form>

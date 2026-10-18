@@ -287,7 +287,7 @@ const urlImagem = (base, id) => `${base}/api/loja/v1/imagens/${id}`;
 const SELECT_PRODUTO = `
   SELECT p.id, p.nome AS nome_cadastro, p.unidade, p.preco_venda, p.categoria_id, c.nome AS categoria_nome, c.parent_id AS categoria_pai_id,
          cp.nome AS categoria_pai_nome, lp.nome_site, lp.descricao, lp.imagens, lp.preco_promocional, lp.promo_inicio::text, lp.promo_fim::text,
-         lp.destaque, lp.ordem,
+         lp.destaque, lp.ordem, lp.maior_idade, lp.so_retirada,
          COALESCE((SELECT json_agg(json_build_object('id', g.id, 'nome', g.nome, 'minimo', g.minimo, 'maximo', g.maximo,
                      'opcoes', (SELECT COALESCE(json_agg(json_build_object('id', o.id, 'nome', o.nome, 'preco', o.preco) ORDER BY o.ordem, o.nome), '[]')
                                 FROM complementos o WHERE o.grupo_id = g.id AND o.ativo)) ORDER BY pg.ordem, g.nome)
@@ -318,6 +318,8 @@ function produtoPublico(r, disp, base, hoje) {
     ...preco,
     imagens: (r.imagens || []).map((id) => urlImagem(base, id)),
     destaque: !!r.destaque,
+    maior_idade: !!r.maior_idade, // +18: o cliente declara a idade ao fechar o pedido
+    so_retirada: !!r.so_retirada, // nao pode ser entregue nem enviado
     disponivel: unidades === null || unidades > 0,
     quantidade_maxima: unidades === null ? 99 : Math.min(unidades, 99),
     complementos: (r.complementos || []).map((g) => ({ ...g, opcoes: g.opcoes.map((o) => ({ ...o, preco: n2(o.preco) })) })),
@@ -410,6 +412,7 @@ async function dadosPublicos(loja, base) {
     banners: (loja.banners || []).map((b) => ({ imagem: urlImagem(base, b.imagem_id), titulo: b.titulo || '', link: b.link || '' })),
     contato: { telefone: loja.telefone, whatsapp: loja.whatsapp, email: loja.email, endereco: loja.endereco, instagram: loja.instagram },
     aviso: loja.aviso,
+    maior_idade: !!loja.site_maior_idade, // pergunta a idade ao entrar no site
     no_ar: !!loja.publicada,
     recebendo_pedidos: situacao.ok,
     motivo_fechada: situacao.motivo,
@@ -434,6 +437,7 @@ async function dadosPublicos(loja, base) {
       cartao_online: !!pag.cartao_online && mpOk,
       na_entrega: Array.isArray(pag.na_entrega) ? pag.na_entrega : [],
       parcelas_max: loja.parcelas_max,
+      pix_desconto_pct: pag.pix_online && mpOk ? Number(loja.pix_desconto_pct || 0) : 0,
       mercadopago_public_key: mpOk ? loja.mp_public_key : null,
     },
   };
@@ -514,7 +518,7 @@ async function calcularCarrinho(dbc, loja, conta, b, modo = 'previa') {
   });
   const ids = [...new Set(linhas.map((l) => l.product_id))];
   const prods = new Map((await dbc.query(
-    `SELECT p.id, p.nome, p.unidade, p.preco_venda, lp.nome_site, lp.imagens, lp.preco_promocional, lp.promo_inicio::text, lp.promo_fim::text
+    `SELECT p.id, p.nome, p.unidade, p.preco_venda, lp.nome_site, lp.imagens, lp.preco_promocional, lp.promo_inicio::text, lp.promo_fim::text, lp.maior_idade, lp.so_retirada
      FROM products p JOIN lv_produtos lp ON lp.product_id = p.id WHERE p.tenant_id = $1 AND p.id = ANY($2::uuid[]) AND p.ativo AND lp.publicado`,
     [loja.tenant_id, ids]
   )).rows.map((p) => [p.id, p]));
@@ -537,10 +541,14 @@ async function calcularCarrinho(dbc, loja, conta, b, modo = 'previa') {
     itens.push({
       product_id: p.id, nome, quantidade: l.quantidade, preco_unitario: l.preco_unitario, preco_base: preco, preco_original: original,
       complementos: l.complementos.map((c) => ({ id: c.id, nome: c.nome, preco: n2(c.preco), quantidade: c.quantidade })),
-      observacao: l.observacao, subtotal: n2(l.preco_unitario * l.quantidade),
+      observacao: l.observacao, subtotal: n2(l.preco_unitario * l.quantidade), maior_idade: !!p.maior_idade, so_retirada: !!p.so_retirada,
     });
   }
   const subtotal = n2(itens.reduce((s, i) => s + i.subtotal, 0));
+  // So retirada (ex.: tabaco): com um destes no carrinho, nada de entrega/envio.
+  const soRetirada = itens.filter((i) => i.so_retirada).map((i) => i.nome);
+  if (tipo === 'entrega' && soRetirada.length) falha(422, `${[...new Set(soRetirada)].join(', ')}: só retirada na loja (não entregamos este produto)`);
+  const maiorIdade = itens.some((i) => i.maior_idade);
 
   // Estoque (previa sem travar; no pedido, criarPedido confere de novo travando os saldos).
   if (loja.location_id) {
@@ -616,13 +624,24 @@ async function calcularCarrinho(dbc, loja, conta, b, modo = 'previa') {
       cupom = { codigo: String(b.cupom).trim().toUpperCase(), valido: false, motivo: err.message };
     }
   }
-  const total = n2(subtotal + entrega.taxa - desconto);
+  // Desconto no Pix pago pelo site: % sobre os produtos (depois do cupom), nao sobre o frete.
+  const pctPix = Number(loja.pix_desconto_pct || 0);
+  const basePix = n2(subtotal - (cupom && cupom.valido && cupom.tipo !== 'frete_gratis' ? desconto : 0));
+  const descontoPix = pctPix > 0 && (loja.pagamentos || {}).pix_online && loja.mp_access_token_cript ? n2((basePix * pctPix) / 100) : 0;
+  const comPix = b.pagamento === 'pix' && descontoPix > 0;
+  const total = n2(subtotal + entrega.taxa - desconto - (comPix ? descontoPix : 0));
   const envioSite = tipo === 'entrega' && (envio || local) ? {
     transportadora: envio,
     opcoes: opcoesEnvio ? opcoesEnvio.map(({ id, nome, servico, transportadora, logo, preco, prazo_dias, gratis }) => ({ id, nome, servico, transportadora, logo, preco, prazo_dias, gratis })) : null,
     local: local ? { disponivel: local.disponivel, bairro: local.bairro || null, taxa: local.disponivel ? local.taxa : null, tempo_estimado_min: local.tempo_estimado_min || null, motivo: local.motivo || null } : null,
   } : null;
-  return { itens, linhas, frete_interno: freteInterno, subtotal, taxa_entrega: entrega.taxa, desconto, total, cupom, entrega, envio: envioSite, pedido_minimo: minimo, avisos: [...new Set(avisos)], pode_finalizar: avisos.length === 0 };
+  return {
+    itens, linhas, frete_interno: freteInterno, subtotal, taxa_entrega: entrega.taxa, desconto, total, cupom, entrega, envio: envioSite, pedido_minimo: minimo,
+    // pix: desconto se pagar com Pix pelo site (aplicado no total quando b.pagamento = 'pix'); total_pix: o total pagando com Pix
+    pix: descontoPix > 0 ? { percentual: pctPix, desconto: descontoPix, aplicado: comPix, total_pix: n2(subtotal + entrega.taxa - desconto - descontoPix) } : null,
+    so_retirada: soRetirada.length > 0, maior_idade: maiorIdade,
+    avisos: [...new Set(avisos)], pode_finalizar: avisos.length === 0,
+  };
 }
 
 // ---------- Mercado Pago ----------

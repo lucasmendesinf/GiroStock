@@ -103,11 +103,12 @@ export default function PDV() {
 
   // ---------- busca e carrinho ----------
   const [busca, setBusca] = useState('');
+  const [buscaFocada, setBuscaFocada] = useState(false);
   const [results, setResults] = useState([]);
   const [selecionado, setSelecionado] = useState(0);
   const itemSelecionadoRef = useRef(null);
   // Lista completa (busca iniciada por *): carrega em lotes conforme a rolagem.
-  const LOTE = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches ? 120 : 30;
+  const LOTE = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches ? 100 : 30; // 100 = maximo da API
   const [temMais, setTemMais] = useState(false);
   const [carregandoMais, setCarregandoMais] = useState(false);
   const listaAtual = useRef(null); // termo da lista completa em exibicao (null = busca normal)
@@ -127,6 +128,12 @@ export default function PDV() {
   useEffect(() => {
     if (toque && session && terminalId && busca === '' && results.length === 0) onBuscaChange('');
   }, [toque, session, terminalId, busca, results.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Enquanto se digita na busca (toque), os avisos ficam escondidos: no topo da tela eles cobririam o campo.
+  useEffect(() => {
+    document.body.classList.toggle('pdv-digitando', toque && buscaFocada);
+    return () => document.body.classList.remove('pdv-digitando');
+  }, [toque, buscaFocada]);
 
   // Barra fixa do celular (total + ir ao carrinho) some quando o botao de finalizar ja esta na tela.
   const finalizarRef = useRef(null);
@@ -511,7 +518,7 @@ export default function PDV() {
 
   function escolherForma(f) {
     setFormaPagamento(f);
-    if (f === 'dinheiro') setTimeout(() => recebidoRef.current?.focus(), 0);
+    if (f === 'dinheiro' && !toque) setTimeout(() => recebidoRef.current?.focus(), 0);
   }
 
   async function finalizarVenda() {
@@ -711,6 +718,7 @@ export default function PDV() {
 
       <div className="pdv-body">
         <div className="pdv-busca">
+          <div className="pdv-campo-wrap">
           <input
             ref={buscaRef}
             className="pdv-campo"
@@ -719,9 +727,26 @@ export default function PDV() {
             onChange={(e) => onBuscaChange(e.target.value)}
             onKeyDown={onBuscaKeyDown}
             enterKeyHint="search"
+            // Nao e formulario: sem sugestao de senha/cartao/endereco do navegador nem corretor por cima da lista
+            name="pdv-busca-produto"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            onFocus={() => {
+              setBuscaFocada(true);
+              // Toque: o teclado ocupa metade da tela; sobe a busca para o topo para a lista caber acima dele.
+              if (toque) setTimeout(() => { const el = buscaRef.current; if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 8 }); }, 300);
+            }}
+            onBlur={() => setBuscaFocada(false)}
             autoFocus={!toque}
             aria-label="Buscar produto"
           />
+          {toque && busca && (
+            <button type="button" className="pdv-limpar-busca" aria-label="Limpar a busca" onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { setCategoria(null); onBuscaChange(''); }}>×</button>
+          )}
+          </div>
           {toque && categorias.length > 1 && (
             <div className="pdv-categorias" role="tablist" aria-label="Categorias">
               <button type="button" role="tab" aria-selected={!categoriaAtiva} className={!categoriaAtiva ? 'on' : ''} onClick={() => setCategoria(null)}>Todos</button>
@@ -892,7 +917,7 @@ export default function PDV() {
         </div>
       </div>
 
-      {cart.length > 0 && !finalizarVisivel && (
+      {cart.length > 0 && !finalizarVisivel && !buscaFocada && (
         <div className="pdv-barra-movel">
           <div><span className="muted">{cart.reduce((t, i) => t + (UNIDADES_INTEIRAS.includes(i.unidade) ? i.quantidade : 1), 0)} item(ns)</span><strong>{brl(subtotal)}</strong></div>
           <button type="button" className="btn-primario" onClick={() => finalizarRef.current?.scrollIntoView({ block: 'center' })}>{modoPedido ? 'Ver pedido' : 'Ver carrinho'}</button>

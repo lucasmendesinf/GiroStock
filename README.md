@@ -63,7 +63,9 @@ Em aparelho de toque o PDV se adapta sozinho:
 - **Barra fixa embaixo** com a quantidade e o total; *Ver pedido* leva ao carrinho (destino **Mesa**, número da mesa, *Gerar pedido*).
 - A comanda mostra **MESA 5** em destaque e "A pagar na mesa".
 - Sem as dicas de teclas (F2, F4…), botões maiores para o dedo, campos com 16px (o iPhone não dá zoom ao tocar), avisos no topo da tela.
-- Testado de 320px (celular pequeno) a tablet, em pé e deitado.
+- **Busca no celular**: ao tocar na busca ela sobe para o topo (a lista cabe acima do teclado), fica presa no topo ao rolar a lista, tem um **×** para limpar e voltar à lista completa, e o navegador não mostra sugestões de senha/cartão/endereço por cima. A página não dá zoom sozinha.
+- **Pagamento**: botões grandes; Voltar/Confirmar sempre visíveis no rodapé da janela; escolher Dinheiro não abre o teclado sozinho (os valores rápidos de troco resolvem a maioria dos casos).
+- Testado de 320px (celular pequeno) a tablet, em pé e deitado, e no tamanho do iPhone SE (375×667) com o teclado aberto.
 
 ### Telas
 

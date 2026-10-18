@@ -1331,3 +1331,26 @@ body.suporte-leitura main .btn-primario, body.suporte-leitura main form button[t
 @media (max-height: 500px) {
   .toast-stack, .pdv-mode .toast-stack { top: 10px; bottom: auto; }
 }
+/* Toque: busca presa no topo enquanto se rola a lista; pagamento com botoes grandes para o dedo */
+@media (pointer: coarse) {
+  .pdv-campo-wrap { position: sticky; top: 0; z-index: 20; background: var(--bg); padding: 6px 0; margin: -6px 0; }
+  .pdv-busca .pdv-campo { padding: 12px 14px; background: var(--panel); }
+  .modal .formas-pagamento { gap: 12px; }
+  .modal .formas-pagamento button { min-height: 72px; font-size: 18px; border-radius: 14px; }
+  .modal .modal-actions button { min-height: 56px; font-size: 16px; padding: 14px 18px; border-radius: 12px; }
+  .modal .trocos-rapidos button { min-height: 48px; font-size: 16px; padding: 10px 16px; }
+  .pdv-carrinho .btn-finalizar { min-height: 60px; font-size: 17px; }
+  .pdv-barra-movel .btn-primario { min-height: 52px; font-size: 16px; }
+}
+.pdv-digitando .toast-stack { display: none; }
+.pdv-limpar-busca { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); z-index: 21; width: 44px; height: 44px; border-radius: 50%; border: none; background: var(--panel-alt);
+  color: var(--ivory); font-size: 24px; line-height: 1; }
+@media (pointer: coarse) { .pdv-busca .pdv-campo { padding-right: 58px; } }
+/* Toque: botoes da janela sempre visiveis no rodape (a janela rola por cima deles) */
+@media (pointer: coarse) {
+  .modal .modal-actions { position: sticky; bottom: -28px; z-index: 5; margin: 6px -28px -28px; padding: 12px 28px calc(12px + env(safe-area-inset-bottom)); background: var(--panel); border-top: 1px solid var(--line); }
+  .pdv-limpar-busca { width: 40px; height: 40px; right: 10px; }
+}
+@media (pointer: coarse) and (max-width: 640px) {
+  .modal .modal-actions { bottom: -18px; margin: 6px -18px -18px; padding: 12px 18px calc(12px + env(safe-area-inset-bottom)); }
+}

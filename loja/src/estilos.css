@@ -1,5 +1,5 @@
 /* Loja virtual: as cores, a fonte e os cantos vem do tema da loja (variaveis aplicadas em util.js/aplicarTema).
-   Modelos de layout: body.modelo-classico (grade), .modelo-vitrine (fotos grandes), .modelo-compacto (lista, cardapio). */
+   Modelos: varejo = body.modelo-grade | .modelo-vitrine (fotos grandes) | .modelo-lista; cardapio digital = .modelo-cardapio. */
 :root {
   --primaria: #b5121b; --sobre-primaria: #fff; --primaria-suave: #fbe9ea;
   --fundo: #fff; --texto: #1d1d1f; --destaque: #1f7a4d; --sobre-destaque: #fff;
@@ -86,13 +86,13 @@ input[type=radio], input[type=checkbox] { width: 20px; height: 20px; padding: 0;
 .modelo-vitrine .cartao-foto { aspect-ratio: 4 / 3; }
 .modelo-vitrine .cartao-desc { display: -webkit-box; }
 .modelo-vitrine .cartao-nome { font-size: 1.05rem; }
-/* modelo compacto: lista com foto pequena (cardapio) */
-.modelo-compacto .grade { grid-template-columns: 1fr; gap: 0; }
-.modelo-compacto .cartao { flex-direction: row-reverse; border: none; border-bottom: 1px solid var(--linha); border-radius: 0; padding: 12px 0; gap: 12px; }
-.modelo-compacto .cartao:hover { box-shadow: none; }
-.modelo-compacto .cartao-foto { width: 92px; height: 92px; aspect-ratio: auto; flex: 0 0 92px; border-radius: calc(var(--raio) * 0.7); overflow: hidden; }
-.modelo-compacto .cartao-info { padding: 0; }
-.modelo-compacto .cartao-desc { display: -webkit-box; }
+/* modelo lista (varejo) e cardapio digital: lista com foto pequena a direita */
+.modelo-lista .grade , .modelo-cardapio .grade { grid-template-columns: 1fr; gap: 0; }
+.modelo-lista .cartao , .modelo-cardapio .cartao { flex-direction: row-reverse; border: none; border-bottom: 1px solid var(--linha); border-radius: 0; padding: 12px 0; gap: 12px; }
+.modelo-lista .cartao:hover , .modelo-cardapio .cartao:hover { box-shadow: none; }
+.modelo-lista .cartao-foto , .modelo-cardapio .cartao-foto { width: 92px; height: 92px; aspect-ratio: auto; flex: 0 0 92px; border-radius: calc(var(--raio) * 0.7); overflow: hidden; }
+.modelo-lista .cartao-info , .modelo-cardapio .cartao-info { padding: 0; }
+.modelo-lista .cartao-desc , .modelo-cardapio .cartao-desc { display: -webkit-box; }
 
 /* ---------- pagina do produto ---------- */
 .produto { display: grid; gap: 18px; }
@@ -220,7 +220,7 @@ input[type=radio], input[type=checkbox] { width: 20px; height: 20px; padding: 0;
 @media (min-width: 720px) {
   .grade { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
   .modelo-vitrine .grade { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .modelo-compacto .grade { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 28px; }
+  .modelo-lista .grade, .modelo-cardapio .grade { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 28px; }
   .cartao-desc { display: -webkit-box; }
   .banner { flex-basis: 70%; aspect-ratio: 16 / 6; max-height: 360px; }
   .rodape-grade { grid-template-columns: repeat(3, 1fr); }
@@ -237,4 +237,44 @@ input[type=radio], input[type=checkbox] { width: 20px; height: 20px; padding: 0;
   .barra-carrinho { display: none; }
   .conteudo, .rodape { padding-bottom: 40px; }
   .checkout, .carrinho { max-width: 720px; margin-left: auto; margin-right: auto; }
+}
+
+/* ---------- cardapio digital (delivery) ---------- */
+.modelo-cardapio .cartao-foto { width: 104px; height: 104px; flex-basis: 104px; }
+.modelo-cardapio .cartao-nome { font-size: 1rem; }
+.modelo-cardapio .cartao .preco b { color: var(--texto); }
+.app-cardapio { padding-bottom: 72px; }
+.topo-cardapio { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: var(--primaria); color: var(--sobre-primaria); }
+.topo-cardapio .marca { color: var(--sobre-primaria); }
+.topo-cardapio .marca img, .topo-cardapio .marca-inicial { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; background: #fff; border: 2px solid rgba(255,255,255,.7); }
+.topo-cardapio .marca-inicial { color: var(--primaria); }
+.topo-cardapio .marca-nome { font-size: 1.12rem; white-space: normal; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.icone-redondo { flex: 0 0 auto; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,.22); border: none; color: inherit; text-decoration: none; font-size: 1.05rem; cursor: pointer; }
+.app-cardapio .faixa-fechada { background: #111; text-align: left; padding: 10px 16px; font-size: .92rem; }
+.info-cardapio { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--linha); font-size: .92rem; color: var(--suave); }
+.info-cardapio a { color: var(--primaria); font-weight: 700; text-decoration: none; white-space: nowrap; }
+.cartoes-categoria { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.cartao-categoria { position: relative; aspect-ratio: 1; border-radius: var(--raio); overflow: hidden; background: var(--painel); box-shadow: 0 2px 8px rgba(0,0,0,.12); text-decoration: none; display: block; }
+.cartao-categoria img { width: 100%; height: 100%; object-fit: cover; }
+.cartao-categoria-nome { position: absolute; left: 0; right: 0; bottom: 0; padding: 10px 14px; background: rgba(0,0,0,.55); color: #fff; font-weight: 750; text-transform: uppercase; letter-spacing: .02em; font-size: .95rem; }
+.fita { position: absolute; top: 14px; right: -34px; transform: rotate(45deg); background: var(--destaque); color: var(--sobre-destaque); padding: 4px 40px; font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; box-shadow: 0 2px 6px rgba(0,0,0,.2); }
+.topo-categoria { display: flex; align-items: center; gap: 10px; margin: -4px 0 12px; }
+.topo-categoria h1 { margin: 0; font-size: 1.25rem; }
+.voltar { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; text-decoration: none; font-size: 1.8rem; line-height: 1; }
+.app-cardapio .busca { margin-bottom: 12px; }
+.menu-inferior { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; display: flex; justify-content: space-around; background: var(--fundo); border-top: 1px solid var(--linha); padding: 6px 0 calc(6px + env(safe-area-inset-bottom)); }
+.menu-inferior a { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 18px; text-decoration: none; font-size: .78rem; color: var(--suave); font-weight: 600; border-top: 3px solid transparent; margin-top: -7px; padding-top: 8px; }
+.menu-inferior a span { font-size: 1.25rem; }
+.menu-inferior a.active { color: var(--primaria); border-top-color: var(--primaria); }
+.barra-carrinho.sobre-menu { bottom: calc(76px + env(safe-area-inset-bottom)); }
+.perfil-topo { display: flex; gap: 14px; align-items: center; margin-bottom: 8px; }
+.perfil-topo img { width: 72px; height: 72px; border-radius: 50%; object-fit: cover; flex: 0 0 auto; }
+.perfil-topo p { margin: 4px 0 0; color: var(--suave); }
+@media (min-width: 720px) {
+  .cartoes-categoria { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .app-cardapio .conteudo, .info-cardapio { max-width: 900px; margin-left: auto; margin-right: auto; }
+}
+@media (min-width: 960px) {
+  .barra-carrinho.sobre-menu { display: flex; }
+  .app-cardapio .conteudo { padding-bottom: 110px; }
 }

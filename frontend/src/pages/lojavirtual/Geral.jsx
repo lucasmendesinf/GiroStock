@@ -191,7 +191,11 @@ function Integracao({ c, onMudou }) {
   const toast = useToast();
   const confirmar = useConfirm();
   const [novaChave, setNovaChave] = useState(null);
-  const enderecos = [c.url_subdominio, ...(c.urls_dominios || [])].filter(Boolean);
+  const enderecos = [...(c.urls_dominios || []), c.url_subdominio, c.url_link].filter(Boolean);
+  const [qr, setQr] = useState(null);
+  async function verQr() {
+    try { setQr(await api.get(`/loja-virtual/qrcode?url=${encodeURIComponent(c.link_principal)}`)); } catch (err) { toast.erro(err); }
+  }
   async function gerar() {
     if (c.chave && !(await confirmar({ titulo: 'Gerar uma nova chave?', mensagem: 'A chave atual para de funcionar na hora: um site externo que use a chave fica fora até receber a nova.', confirmar: 'Gerar nova chave', perigo: true }))) return;
     try {
@@ -204,12 +208,33 @@ function Integracao({ c, onMudou }) {
   }
   return (
     <div className="card form-stack">
-      <h3 style={{ margin: 0 }}>Endereço da loja</h3>
-      {enderecos.length > 0 ? (
-        <div className="lv-campo-copiar">
-          {enderecos.map((u) => <div key={u}><a href={u} target="_blank" rel="noreferrer"><code>{u}</code></a> <button type="button" className="btn-link" onClick={() => copiar(u)}>Copiar</button></div>)}
-        </div>
-      ) : <p className="form-hint" style={{ margin: 0 }}>O endereço (subdomínio ou domínio próprio) é definido pelo suporte. Fale com a gente para colocar a loja no seu domínio.</p>}
+      <h3 style={{ margin: 0 }}>Link da loja</h3>
+      {c.link_principal ? (
+        <>
+          <p className="form-hint" style={{ margin: 0 }}>Mande para os clientes, coloque no status e na bio do WhatsApp/Instagram ou imprima o QR code no balcão.</p>
+          <div className="lv-link-principal">
+            <a href={c.link_principal} target="_blank" rel="noreferrer"><code>{c.link_principal}</code></a>
+            <div className="lv-acoes">
+              <button type="button" className="btn-primario" onClick={() => copiar(c.link_principal)}>Copiar link</button>
+              <a className="btn-link" href={`https://wa.me/?text=${encodeURIComponent(`Faça seu pedido pelo nosso site: ${c.link_principal}`)}`} target="_blank" rel="noreferrer">Enviar pelo WhatsApp</a>
+              <button type="button" className="btn-link" onClick={verQr}>QR code</button>
+            </div>
+          </div>
+          {enderecos.length > 1 && (
+            <div className="lv-campo-copiar">
+              <span className="ped-rotulo">Outros endereços que abrem a mesma loja</span>
+              {enderecos.filter((u) => u !== c.link_principal).map((u) => <div key={u}><a href={u} target="_blank" rel="noreferrer"><code>{u}</code></a> <button type="button" className="btn-link" onClick={() => copiar(u)}>Copiar</button></div>)}
+            </div>
+          )}
+          <p className="form-hint" style={{ margin: 0 }}>Para usar um domínio próprio (ex.: www.minhaloja.com.br), fale com o suporte.</p>
+        </>
+      ) : <p className="form-hint" style={{ margin: 0 }}>O endereço da loja ainda não foi definido: fale com o suporte.</p>}
+      {qr && (
+        <Modal titulo="QR code da loja" subtitulo={qr.url} onClose={() => setQr(null)}
+          acoes={<><a className="btn-link" href={qr.qr} download="qrcode-loja.png">Baixar imagem</a><button type="button" className="btn-primario" onClick={() => setQr(null)}>Fechar</button></>}>
+          <img src={qr.qr} alt={`QR code para ${qr.url}`} className="lv-qr" />
+        </Modal>
+      )}
       {c.url_previa && <div><a className="btn-link" href={c.url_previa} target="_blank" rel="noreferrer">Pré-visualizar a loja ↗</a> <span className="form-hint">funciona mesmo com a loja fora do ar</span></div>}
       <details className="lv-avancado">
         <summary>Site externo (avançado): chave da API</summary>

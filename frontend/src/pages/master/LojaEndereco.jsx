@@ -8,12 +8,12 @@ const SITUACAO_DNS = { ok: ['ok', 'apontando certo'], aponta_outro: ['err', 'apo
 export default function LojaEndereco({ empresaId }) {
   const toast = useToast();
   const [d, setD] = useState(null);
-  const [f, setF] = useState({ subdominio: '', dominios: '' });
+  const [f, setF] = useState({ tipo: 'varejo', subdominio: '', dominios: '' });
   const [dns, setDns] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const carregar = useCallback(() => api.get(`/master/empresas/${empresaId}/loja-virtual`).then((r) => {
     setD(r);
-    setF({ subdominio: r.subdominio || '', dominios: r.dominios.join('\n') });
+    setF({ tipo: r.tipo, subdominio: r.subdominio || '', dominios: r.dominios.join('\n') });
     setDns(null);
   }).catch((err) => toast.erro(err)), [empresaId, toast]);
   useEffect(() => { carregar(); }, [carregar]);
@@ -23,7 +23,7 @@ export default function LojaEndereco({ empresaId }) {
     e.preventDefault();
     setSalvando(true);
     try {
-      await api.put(`/master/empresas/${empresaId}/loja-virtual`, { subdominio: f.subdominio.trim() || null, dominios: f.dominios });
+      await api.put(`/master/empresas/${empresaId}/loja-virtual`, { tipo: f.tipo, subdominio: f.subdominio.trim() || null, dominios: f.dominios });
       toast.sucesso('Endereço da loja salvo');
       await carregar();
     } catch (err) { toast.erro(err); } finally { setSalvando(false); }
@@ -38,10 +38,17 @@ export default function LojaEndereco({ empresaId }) {
       {!d.modulo_ligado && <div className="cl-sub">O módulo Loja virtual está desligado para esta empresa: o endereço só passa a abrir a loja quando ele for liberado.</div>}
       <form onSubmit={salvar} className="form-stack" style={{ marginTop: 6 }}>
         <label className="field">
-          <span className="field-label">Subdomínio grátis</span>
+          <span className="field-label">Tipo de loja</span>
+          <select value={f.tipo} onChange={(e) => setF({ ...f, tipo: e.target.value })}>
+            <option value="varejo">Loja virtual (varejo: informática, roupas, tabacaria…)</option>
+            <option value="cardapio">Cardápio digital (delivery de comida e bebida)</option>
+          </select>
+        </label>
+        <label className="field">
+          <span className="field-label">Nome no link da loja</span>
           <div className="lv-sub">
             <input value={f.subdominio} onChange={(e) => setF({ ...f, subdominio: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') })} placeholder="nome-da-loja" maxLength={40} />
-            <span className="cl-sub">.{d.dominio_base || '(LOJA_DOMINIO_BASE não configurado)'}</span>
+            <span className="cl-sub">{d.dominio_base ? `.${d.dominio_base}` : ''}</span>
           </div>
         </label>
         <label className="field">
@@ -55,7 +62,7 @@ export default function LojaEndereco({ empresaId }) {
       </form>
       {(d.url_subdominio || d.urls_dominios.length > 0) && (
         <div style={{ marginTop: 8 }}>
-          {[d.url_subdominio, ...d.urls_dominios].filter(Boolean).map((u) => <div key={u} className="ped-linha"><a className="lv-link" href={u} target="_blank" rel="noreferrer">{u}</a></div>)}
+          {[d.url_link, d.url_subdominio, ...d.urls_dominios].filter(Boolean).map((u) => <div key={u} className="ped-linha"><a className="lv-link" href={u} target="_blank" rel="noreferrer">{u}</a></div>)}
         </div>
       )}
       {dns && dns.dominios.map((x) => {

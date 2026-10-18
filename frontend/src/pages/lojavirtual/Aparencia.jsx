@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../api/client';
 import { useToast } from '../../context/UiContext.jsx';
 import { Field } from '../../components/ui.jsx';
 import { enviarImagem } from '../../utils/imagem';
 
 const MODELOS = [
-  ['classico', 'Clássico', 'Grade de produtos com foto quadrada. Bom para quase tudo.'],
-  ['vitrine', 'Vitrine', 'Fotos grandes, com descrição. Bom para poucos produtos bonitos.'],
-  ['compacto', 'Cardápio', 'Lista com foto pequena. Ideal para lanchonete e delivery.'],
+  ['grade', 'Grade', 'Produtos em grade com foto quadrada. Bom para quase tudo.'],
+  ['vitrine', 'Vitrine', 'Fotos grandes, com descrição. Bom para produtos que vendem pela imagem.'],
+  ['lista', 'Lista', 'Lista com foto pequena e descrição. Bom para muitos produtos parecidos.'],
+  ['cardapio', 'Cardápio digital', 'Categorias em cartões com foto e itens em lista, como os apps de delivery.'],
 ];
 const FONTES = [['moderna', 'Moderna'], ['classica', 'Clássica (serifada)'], ['arredondada', 'Arredondada']];
 const NOME_BLOCO = { banners: 'Banners', categorias: 'Categorias', destaques: 'Destaques', promocoes: 'Promoções', produtos: 'Todos os produtos' };
@@ -53,13 +54,14 @@ export default function Aparencia({ config, onMudou }) {
           {config.url_previa && <a className="btn-link" href={config.url_previa} target="_blank" rel="noreferrer">Ver a loja ↗</a>}
         </div>
         <div className="lv-modelos" role="radiogroup" aria-label="Modelo de layout">
-          {MODELOS.map(([k, nome, desc]) => (
+          {MODELOS.filter(([k]) => (config.modelos || []).includes(k)).map(([k, nome, desc]) => (
             <button key={k} type="button" role="radio" aria-checked={t.modelo === k} className={`lv-modelo ${t.modelo === k ? 'on' : ''}`} onClick={() => setT({ ...t, modelo: k })}>
               <span className={`lv-modelo-desenho ${k}`} aria-hidden="true"><i /><i /><i /><i /></span>
               <b>{nome}</b><small>{desc}</small>
             </button>
           ))}
         </div>
+        {config.tipo === 'cardapio' && <p className="form-hint" style={{ margin: 0 }}>Loja do tipo <b>cardápio digital</b> (definido pelo suporte). Escolha as cores e as fotos das categorias abaixo.</p>}
         {t.exclusivo && <p className="form-hint" style={{ margin: 0 }}>Esta loja usa o tema exclusivo <b>{t.exclusivo}</b>.</p>}
       </div>
 
@@ -111,6 +113,8 @@ export default function Aparencia({ config, onMudou }) {
         {banners.length < 8 && <label className="btn-link lv-arquivo">{enviando ? 'Enviando…' : '+ Banner'}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={addBanner} disabled={enviando} /></label>}
       </div>
 
+      <CategoriasSite cardapio={config.tipo === 'cardapio'} />
+
       <div className="card form-stack">
         <h3 style={{ margin: 0 }}>Página inicial</h3>
         <p className="form-hint" style={{ margin: 0 }}>Escolha o que aparece e em que ordem. O título pode ser trocado (ex.: “Mais pedidos”).</p>
@@ -126,6 +130,57 @@ export default function Aparencia({ config, onMudou }) {
         ))}
       </div>
       <div className="lv-salvar-fixo"><button type="button" className="btn-primario" onClick={salvar} disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar aparência'}</button></div>
+    </div>
+  );
+}
+
+// Categorias no site: foto (cartoes da pagina inicial), ordem e ocultar. Sem foto, o site usa a de um produto dela.
+function CategoriasSite({ cardapio }) {
+  const toast = useToast();
+  const [lista, setLista] = useState(null);
+  const [enviando, setEnviando] = useState(null);
+  const carregar = useCallback(() => api.get('/loja-virtual/categorias').then(setLista).catch((err) => toast.erro(err)), [toast]);
+  useEffect(() => { carregar(); }, [carregar]);
+  async function salvar(c, dados) {
+    try { await api.put(`/loja-virtual/categorias/${c.id}`, dados); await carregar(); } catch (err) { toast.erro(err); }
+  }
+  async function foto(c, e) {
+    const arq = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!arq) return;
+    setEnviando(c.id);
+    try { const r = await enviarImagem(arq, 900); await salvar(c, { imagem_id: r.id }); } catch (err) { toast.erro(err); } finally { setEnviando(null); }
+  }
+  async function mover(i, d) {
+    const n = [...lista];
+    const [x] = n.splice(i, 1);
+    n.splice(i + d, 0, x);
+    setLista(n);
+    try { await api.put('/loja-virtual/categorias-ordem', { ids: n.map((c) => c.id) }); } catch (err) { toast.erro(err); carregar(); }
+  }
+  const visiveis = lista ? lista.filter((c) => c.produtos_no_site > 0) : [];
+  return (
+    <div className="card form-stack">
+      <h3 style={{ margin: 0 }}>Categorias no site</h3>
+      <p className="form-hint" style={{ margin: 0 }}>{cardapio ? 'No cardápio, a página inicial mostra as categorias em cartões com foto (ex.: Pizzas, Combos, Bebidas).' : 'Aparecem no topo da loja e na página inicial.'} Só aparecem categorias com produto no site.</p>
+      {!lista ? <p className="muted">Carregando…</p> : visiveis.length === 0 ? <p className="form-hint">Publique produtos em <b>Produtos no site</b> para as categorias aparecerem aqui.</p> : visiveis.map((c) => {
+        const i = lista.indexOf(c);
+        return (
+          <div key={c.id} className={`lv-cat ${c.oculta ? 'oculta' : ''}`}>
+            <label className="lv-cat-foto" title="Trocar foto">
+              {c.imagem_url ? <img src={c.imagem_url} alt="" /> : <span>{enviando === c.id ? '…' : '+ foto'}</span>}
+              <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => foto(c, e)} disabled={enviando === c.id} aria-label={`Foto de ${c.nome}`} />
+            </label>
+            <span className="lv-cat-nome"><b>{c.pai_nome ? `${c.pai_nome} › ` : ''}{c.nome}</b><small>{c.produtos_no_site} produto(s) no site{c.oculta ? ' · oculta' : ''}</small></span>
+            <div className="lv-ordem">
+              {c.imagem_url && <button type="button" onClick={() => salvar(c, { imagem_id: null })} aria-label={`Remover foto de ${c.nome}`}>×</button>}
+              <button type="button" onClick={() => salvar(c, { oculta: !c.oculta })} aria-label={c.oculta ? `Mostrar ${c.nome}` : `Ocultar ${c.nome}`}>{c.oculta ? 'Mostrar' : 'Ocultar'}</button>
+              <button type="button" disabled={i === 0} onClick={() => mover(i, -1)} aria-label={`Subir ${c.nome}`}>↑</button>
+              <button type="button" disabled={i === lista.length - 1} onClick={() => mover(i, 1)} aria-label={`Descer ${c.nome}`}>↓</button>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

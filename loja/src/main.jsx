@@ -13,6 +13,7 @@ import Finalizar from './paginas/Finalizar.jsx';
 import Pedido from './paginas/Pedido.jsx';
 import Pedidos from './paginas/Pedidos.jsx';
 import Conta from './paginas/Conta.jsx';
+import Perfil from './paginas/Perfil.jsx';
 import './estilos.css';
 
 createRoot(document.getElementById('raiz')).render(
@@ -32,6 +33,7 @@ createRoot(document.getElementById('raiz')).render(
             <Route path="pedidos" element={<Pedidos />} />
             <Route path="pedidos/:id" element={<Pedido />} />
             <Route path="conta" element={<Conta />} />
+            <Route path="perfil" element={<Perfil />} />
             <Route path="*" element={<Inicio />} />
           </Route>
         </Routes>

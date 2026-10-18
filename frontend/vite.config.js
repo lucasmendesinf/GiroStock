@@ -8,7 +8,7 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       // A loja virtual (pre-visualizacao e arquivos dela) nao e o sistema: o service worker nao responde por ela.
-      workbox: { navigateFallbackDenylist: [/^\/api\//, /^\/loja-previa\//, /^\/loja-assets\//] },
+      workbox: { navigateFallbackDenylist: [/^\/api\//, /^\/loja-previa\//, /^\/loja\//, /^\/loja-assets\//] },
       includeAssets: ['favicon.svg', 'favicon.ico', 'apple-touch-icon.png'],
       manifest: {
         name: 'GiroStock',

@@ -127,43 +127,61 @@ async function lojaDaEmpresa(dbc, tenantId) {
 const dominiosDaLoja = async (dbc, lojaId) => (await dbc.query(`SELECT dominio FROM lv_dominios WHERE loja_id = $1 ORDER BY criado_em, dominio`, [lojaId])).rows.map((r) => r.dominio);
 
 // Enderecos da loja (para o painel e para o Master).
-function enderecosDaLoja(loja, dominios = []) {
+// sistema: endereco publico do GiroStock (URL_PUBLICA ou o da requisicao), base do link /loja/<subdominio>.
+// link_principal (o que se compartilha): dominio proprio > subdominio da plataforma > link no endereco do sistema.
+function enderecosDaLoja(loja, dominios = [], sistema = '') {
   const base = dominioBase();
+  const urlSub = base && loja.subdominio ? `https://${loja.subdominio}.${base}` : null;
+  const urlLink = sistema && loja.subdominio ? `${String(process.env.URL_PUBLICA || sistema).replace(/\/+$/, '')}/loja/${loja.subdominio}` : null;
+  const urlsDominios = dominios.map((d) => `https://${d}`);
   return {
     subdominio: loja.subdominio || null,
-    url_subdominio: base && loja.subdominio ? `https://${loja.subdominio}.${base}` : null,
+    url_subdominio: urlSub,
+    url_link: urlLink,
     dominios,
-    urls_dominios: dominios.map((d) => `https://${d}`),
+    urls_dominios: urlsDominios,
     dominio_base: base || null,
+    link_principal: urlsDominios[0] || urlSub || urlLink,
   };
 }
 
 // ---------- tema (layout) ----------
+// O tipo da loja (Master) define os modelos: varejo = grade | vitrine | lista; cardapio = layout de cardapio digital
+// (categorias em cartoes com foto, itens em lista). Cores, fonte, cantos e blocos da pagina inicial valem para os dois.
 const COR_RE = /^#[0-9a-f]{6}$/i;
-const MODELOS = ['classico', 'vitrine', 'compacto'];
+const MODELOS = { varejo: ['grade', 'vitrine', 'lista'], cardapio: ['cardapio'] };
 const FONTES = ['moderna', 'classica', 'arredondada'];
 const BLOCOS = ['banners', 'categorias', 'destaques', 'promocoes', 'produtos'];
-const TEMA_PADRAO = {
-  modelo: 'classico', cor_primaria: '#b5121b', cor_fundo: '#ffffff', cor_texto: '#1d1d1f', cor_destaque: '#1f7a4d',
-  fonte: 'moderna', cantos: 'arredondados',
-  blocos: BLOCOS.map((tipo) => ({ tipo, ativo: true, titulo: '' })),
-  exclusivo: null,
+const BLOCOS_PADRAO = {
+  varejo: BLOCOS.map((tipo) => ({ tipo, ativo: true, titulo: '' })),
+  cardapio: ['banners', 'destaques', 'categorias', 'promocoes', 'produtos'].map((tipo) => ({ tipo, ativo: ['banners', 'destaques', 'categorias'].includes(tipo), titulo: tipo === 'destaques' ? 'Mais pedidos' : '' })),
 };
-// Mescla o tema guardado com o padrao (campos novos ganham o valor padrao sem migracao).
-function temaEfetivo(t) {
+const TEMA_PADRAO = {
+  modelo: 'grade', cor_primaria: '#b5121b', cor_fundo: '#ffffff', cor_texto: '#1d1d1f', cor_destaque: '#1f7a4d',
+  fonte: 'moderna', cantos: 'arredondados', blocos: BLOCOS_PADRAO.varejo, exclusivo: null,
+};
+const tipoValido = (tipo) => (tipo === 'cardapio' ? 'cardapio' : 'varejo');
+// Mescla o tema guardado com o padrao do tipo (campos novos ganham o valor padrao sem migracao).
+function temaEfetivo(t, tipo = 'varejo') {
+  const tp = tipoValido(tipo);
   const x = t && typeof t === 'object' ? t : {};
-  const blocos = Array.isArray(x.blocos) ? x.blocos.filter((b) => b && BLOCOS.includes(b.tipo)) : TEMA_PADRAO.blocos.map((b) => ({ ...b }));
-  for (const tipo of BLOCOS) if (!blocos.some((b) => b.tipo === tipo)) blocos.push({ tipo, ativo: false, titulo: '' });
-  return {
+  const blocos = Array.isArray(x.blocos) ? x.blocos.filter((b) => b && BLOCOS.includes(b.tipo)) : BLOCOS_PADRAO[tp].map((b) => ({ ...b }));
+  for (const b of BLOCOS) if (!blocos.some((y) => y.tipo === b)) blocos.push({ tipo: b, ativo: false, titulo: '' });
+  const r = {
     ...TEMA_PADRAO, ...Object.fromEntries(Object.entries(x).filter(([k]) => k in TEMA_PADRAO && k !== 'blocos')),
     blocos: blocos.map((b) => ({ tipo: b.tipo, ativo: b.ativo !== false, titulo: String(b.titulo || '').slice(0, 60) })),
   };
+  // modelo de outro tipo (ex.: a loja mudou de varejo para cardapio): volta ao padrao do tipo
+  if (!MODELOS[tp].includes(r.modelo)) r.modelo = MODELOS[tp][0];
+  return r;
 }
 // Valida o que o cliente envia (o tema exclusivo so o Master define).
-function normalizarTema(entrada, atual) {
+function normalizarTema(entrada, atual, tipo = 'varejo') {
   if (!entrada || typeof entrada !== 'object' || Array.isArray(entrada)) throw new HttpError(400, 'tema inválido');
-  const t = temaEfetivo({ ...temaEfetivo(atual), ...entrada, exclusivo: temaEfetivo(atual).exclusivo });
-  if (!MODELOS.includes(t.modelo)) throw new HttpError(400, 'modelo de layout inválido');
+  const tp = tipoValido(tipo);
+  if (entrada.modelo !== undefined && !MODELOS[tp].includes(entrada.modelo)) throw new HttpError(400, 'modelo de layout inválido para este tipo de loja');
+  const base = temaEfetivo(atual, tp);
+  const t = temaEfetivo({ ...base, ...entrada, exclusivo: base.exclusivo }, tp);
   if (!FONTES.includes(t.fonte)) throw new HttpError(400, 'fonte inválida');
   if (!['arredondados', 'retos'].includes(t.cantos)) throw new HttpError(400, 'cantos inválidos');
   for (const k of ['cor_primaria', 'cor_fundo', 'cor_texto', 'cor_destaque']) {
@@ -343,19 +361,32 @@ async function produto(loja, base, id) {
 }
 
 // Categorias com produto publicado (e as categorias pai delas), com a contagem.
-async function categorias(loja) {
+async function categorias(loja, base) {
+  const hoje = agoraSP().data;
   const { rows } = await db().query(
-    `WITH usadas AS (
-       SELECT p.categoria_id, COUNT(*)::int AS n FROM products p JOIN lv_produtos lp ON lp.product_id = p.id
-       WHERE p.tenant_id = $1 AND p.ativo AND lp.publicado AND p.categoria_id IS NOT NULL GROUP BY 1)
-     SELECT c.id, c.nome, c.parent_id,
-            COALESCE(u.n, 0) + COALESCE((SELECT SUM(u2.n) FROM usadas u2 JOIN categories f ON f.id = u2.categoria_id WHERE f.parent_id = c.id), 0)::int AS produtos
-     FROM categories c LEFT JOIN usadas u ON u.categoria_id = c.id
-     WHERE c.tenant_id = $1 AND (u.n IS NOT NULL OR EXISTS (SELECT 1 FROM usadas u3 JOIN categories f ON f.id = u3.categoria_id WHERE f.parent_id = c.id))
-     ORDER BY c.nome`,
-    [loja.tenant_id]
+    `WITH pub AS (
+       SELECT p.id, p.categoria_id, lp.imagens, lp.destaque,
+              (lp.preco_promocional IS NOT NULL AND lp.preco_promocional < p.preco_venda AND (lp.promo_inicio IS NULL OR lp.promo_inicio <= $2::date)
+               AND (lp.promo_fim IS NULL OR lp.promo_fim >= $2::date)) AS promo
+       FROM products p JOIN lv_produtos lp ON lp.product_id = p.id
+       WHERE p.tenant_id = $1 AND p.ativo AND lp.publicado AND p.categoria_id IS NOT NULL),
+     dela AS (  -- produtos da categoria e das filhas dela
+       SELECT c.id AS cat, pub.* FROM categories c JOIN categories f ON f.id = c.id OR f.parent_id = c.id JOIN pub ON pub.categoria_id = f.id
+       WHERE c.tenant_id = $1)
+     SELECT c.id, c.nome, c.parent_id, COALESCE(lc.ordem, 0) AS ordem, lc.imagem_id,
+            (SELECT COUNT(*)::int FROM dela WHERE dela.cat = c.id) AS produtos,
+            EXISTS (SELECT 1 FROM dela WHERE dela.cat = c.id AND dela.promo) AS tem_promocao,
+            (SELECT dela.imagens[1] FROM dela WHERE dela.cat = c.id AND cardinality(dela.imagens) > 0 ORDER BY dela.destaque DESC, dela.id LIMIT 1) AS foto_produto
+     FROM categories c LEFT JOIN lv_categorias lc ON lc.category_id = c.id
+     WHERE c.tenant_id = $1 AND NOT COALESCE(lc.oculta, false) AND EXISTS (SELECT 1 FROM dela WHERE dela.cat = c.id)
+     ORDER BY COALESCE(lc.ordem, 0), c.nome`,
+    [loja.tenant_id, hoje]
   );
-  return rows.map((r) => ({ id: r.id, nome: r.nome, pai_id: r.parent_id, produtos: Number(r.produtos) }));
+  return rows.map((r) => ({
+    id: r.id, nome: r.nome, pai_id: r.parent_id, produtos: Number(r.produtos), tem_promocao: r.tem_promocao,
+    // foto da categoria; sem ela, a foto de um produto dela
+    imagem: r.imagem_id ? urlImagem(base, r.imagem_id) : r.foto_produto ? urlImagem(base, r.foto_produto) : null,
+  }));
 }
 
 // Dados publicos da loja para o site.
@@ -368,7 +399,8 @@ async function dadosPublicos(loja, base) {
     id: loja.id,
     nome: loja.nome,
     descricao: loja.descricao,
-    tema: temaEfetivo(loja.tema),
+    tipo: tipoValido(loja.tipo),
+    tema: temaEfetivo(loja.tema, loja.tipo),
     logo: loja.logo_id ? urlImagem(base, loja.logo_id) : null,
     banners: (loja.banners || []).map((b) => ({ imagem: urlImagem(base, b.imagem_id), titulo: b.titulo || '', link: b.link || '' })),
     contato: { telefone: loja.telefone, whatsapp: loja.whatsapp, email: loja.email, endereco: loja.endereco, instagram: loja.instagram },
@@ -812,7 +844,7 @@ function iniciarVarredura() {
 
 module.exports = {
   db, gerarChave, hashChave, moduloLigado, lojaPorChave, lojaPorHost, lojaPorSubdominio, lojaIdDoHost, limparCacheHost, dominioBase,
-  lojaDaEmpresa, dominiosDaLoja, normalizarSubdominio, sugerirSubdominio, normalizarDominio, enderecosDaLoja, temaEfetivo, normalizarTema, TEMA_PADRAO, MODELOS, FONTES, BLOCOS, agoraSP, normalizarHorarios, situacaoHorario, recebendoPedidos, precoDoProduto,
+  lojaDaEmpresa, dominiosDaLoja, normalizarSubdominio, sugerirSubdominio, normalizarDominio, enderecosDaLoja, temaEfetivo, normalizarTema, TEMA_PADRAO, MODELOS, tipoValido, FONTES, BLOCOS, agoraSP, normalizarHorarios, situacaoHorario, recebendoPedidos, precoDoProduto,
   catalogo, produto, categorias, dadosPublicos, urlImagem, calcularCarrinho, entregaDoBairro, validarCupom, descontoDoCupom, semAcento,
   guardarCredenciaisMp, tokenMp, cobrar, pagamentoPublico, aplicarPagamentoMp, estornarPedido, receberAvisoMp, varrerPagamentos, cancelarPedido,
   iniciarVarredura, SITUACAO_MP, n2,

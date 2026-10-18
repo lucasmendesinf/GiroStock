@@ -8,6 +8,7 @@ const { getOwned, isUuid } = require('../utils/tenant');
 const { logAudit } = require('../utils/audit');
 const lv = require('../services/lojaVirtual');
 const mp = require('../integracoes/mercadopago');
+const QRCode = require('qrcode');
 
 const router = express.Router();
 router.use('/loja-virtual', requireModulo('loja_virtual'), requireArea('LojaVirtual'));
@@ -33,9 +34,11 @@ const lojaDaEmpresa = lv.lojaDaEmpresa;
 // Configuracao para a tela (sem segredos).
 async function configTela(l, base) {
   return {
-    ...lv.enderecosDaLoja(l, await lv.dominiosDaLoja(pool, l.id)),
+    ...lv.enderecosDaLoja(l, await lv.dominiosDaLoja(pool, l.id), base),
     url_previa: l.subdominio ? `${base}/loja-previa/${l.subdominio}/` : null,
-    tema: lv.temaEfetivo(l.tema),
+    tipo: lv.tipoValido(l.tipo),
+    modelos: lv.MODELOS[lv.tipoValido(l.tipo)],
+    tema: lv.temaEfetivo(l.tema, l.tipo),
     id: l.id, location_id: l.location_id, publicada: l.publicada, pausada: l.pausada, nome: l.nome, descricao: l.descricao,
     logo_id: l.logo_id, logo_url: l.logo_id ? lv.urlImagem(base, l.logo_id) : null,
     banners: (l.banners || []).map((b) => ({ ...b, url: lv.urlImagem(base, b.imagem_id) })),
@@ -143,7 +146,7 @@ router.put('/loja-virtual', async (req, res) => {
     parcelas_max: v('parcelas_max', inteiro('parcelas', 1, 12)),
     pix_expira_min: v('pix_expira_min', inteiro('prazo do Pix (minutos)', 5, 1440)),
     banners: JSON.stringify(banners), logo_id: logoId,
-    tema: JSON.stringify(b.tema === undefined ? lv.temaEfetivo(atual.tema) : lv.normalizarTema(b.tema, atual.tema)),
+    tema: JSON.stringify(b.tema === undefined ? lv.temaEfetivo(atual.tema, atual.tipo) : lv.normalizarTema(b.tema, atual.tema, atual.tipo)),
   };
   if (!dados.aceita_retirada && !dados.aceita_entrega) throw new HttpError(400, 'aceite ao menos retirada ou entrega');
   if (dados.publicada && !dados.location_id) throw new HttpError(400, 'para publicar, escolha o estabelecimento de onde sai o estoque');
@@ -157,6 +160,13 @@ router.put('/loja-virtual', async (req, res) => {
     detalhes: { publicada: dados.publicada, pausada: dados.pausada, location_id: dados.location_id },
   });
   res.json(await configTela(rows[0], baseUrl(req)));
+});
+
+// QR code de um link da loja (para imprimir no balcao, na embalagem, no cardapio de mesa).
+router.get('/loja-virtual/qrcode', async (req, res) => {
+  const url = String(req.query.url || '');
+  if (!/^https?:\/\/[^\s]{4,300}$/.test(url)) throw new HttpError(400, 'link inválido');
+  res.json({ url, qr: await QRCode.toDataURL(url, { margin: 1, width: 480 }) });
 });
 
 // Nova chave da API (mostrada uma unica vez). A anterior para de funcionar na hora.
@@ -344,6 +354,52 @@ router.post('/loja-virtual/produtos/publicar', async (req, res) => {
   }
   await logAudit(pool, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: b.publicado ? 'loja_virtual_publicar' : 'loja_virtual_despublicar', recurso: 'lv_produtos', detalhes: { produtos: b.ids.length } });
   res.json({ alterados: b.ids.length });
+});
+
+// ---------- categorias no site (foto, ordem, ocultar) ----------
+router.get('/loja-virtual/categorias', async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT c.id, c.nome, c.parent_id, p.nome AS pai_nome, lc.imagem_id, COALESCE(lc.ordem, 0) AS ordem, COALESCE(lc.oculta, false) AS oculta,
+            (SELECT COUNT(*)::int FROM products pr JOIN lv_produtos lp ON lp.product_id = pr.id
+             WHERE pr.ativo AND lp.publicado AND (pr.categoria_id = c.id OR pr.categoria_id IN (SELECT id FROM categories WHERE parent_id = c.id))) AS produtos_no_site
+     FROM categories c LEFT JOIN categories p ON p.id = c.parent_id LEFT JOIN lv_categorias lc ON lc.category_id = c.id
+     WHERE c.tenant_id = $1 ORDER BY COALESCE(lc.ordem, 0), COALESCE(p.nome, c.nome), c.parent_id NULLS FIRST, c.nome`,
+    [req.user.tenantId]
+  );
+  const b = baseUrl(req);
+  res.json(rows.map((r) => ({ ...r, imagem_url: r.imagem_id ? lv.urlImagem(b, r.imagem_id) : null })));
+});
+
+router.put('/loja-virtual/categorias/:id', async (req, res) => {
+  const t = req.user.tenantId;
+  const cat = await getOwned(pool, 'categories', req.params.id, t, { columns: 'id' });
+  const b = req.body || {};
+  const atual = (await pool.query(`SELECT * FROM lv_categorias WHERE category_id = $1`, [cat.id])).rows[0] || {};
+  const imagem = b.imagem_id === undefined ? atual.imagem_id || null : b.imagem_id ? await imagemDaEmpresa(pool, t, b.imagem_id) : null;
+  const ordem = b.ordem === undefined ? atual.ordem || 0 : Number(b.ordem);
+  if (!Number.isInteger(ordem)) throw new HttpError(400, 'ordem inválida');
+  const oculta = b.oculta === undefined ? !!atual.oculta : !!b.oculta;
+  await pool.query(
+    `INSERT INTO lv_categorias (category_id, tenant_id, imagem_id, ordem, oculta) VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (category_id) DO UPDATE SET imagem_id = $3, ordem = $4, oculta = $5, atualizado_em = now()`,
+    [cat.id, t, imagem, ordem, oculta]
+  );
+  res.json({ id: cat.id, imagem_id: imagem, ordem, oculta });
+});
+
+// Nova ordem das categorias (lista de ids na ordem desejada).
+router.put('/loja-virtual/categorias-ordem', async (req, res) => {
+  const ids = (req.body || {}).ids;
+  if (!Array.isArray(ids) || ids.length > 500 || ids.some((x) => !isUuid(x))) throw new HttpError(400, 'lista de categorias inválida');
+  const ok = (await pool.query(`SELECT id FROM categories WHERE tenant_id = $1 AND id = ANY($2::uuid[])`, [req.user.tenantId, ids])).rows.map((r) => r.id);
+  for (const [i, id] of ids.entries()) {
+    if (!ok.includes(id)) continue;
+    await pool.query(
+      `INSERT INTO lv_categorias (category_id, tenant_id, ordem) VALUES ($1, $2, $3) ON CONFLICT (category_id) DO UPDATE SET ordem = $3, atualizado_em = now()`,
+      [id, req.user.tenantId, i + 1]
+    );
+  }
+  res.json({ ordenadas: ok.length });
 });
 
 // ---------- bairros de entrega ----------

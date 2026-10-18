@@ -76,7 +76,8 @@ app.use('/api', authRequired, masterVisaoRoutes);
 app.use('/api', authRequired, masterConfigRoutes);
 
 // Loja virtual (loja/dist): o mesmo servidor atende todas as lojas. Endereco de uma loja (subdominio da plataforma
-// ou dominio proprio) -> o site da loja; /loja-previa/<subdominio>/ -> pre-visualizacao pelo endereco do sistema.
+// ou dominio proprio) -> o site da loja; /loja/<subdominio>/ -> link da loja no endereco do proprio sistema (sem
+// precisar de dominio nem de configuracao na hospedagem); /loja-previa/<subdominio>/ -> pre-visualizacao.
 // Os arquivos do site ficam em /loja-assets (nomes com hash: cache longo). O resto continua sendo o sistema.
 const lojaDist = path.join(__dirname, '..', '..', 'loja', 'dist');
 if (fs.existsSync(lojaDist)) {
@@ -85,7 +86,7 @@ if (fs.existsSync(lojaDist)) {
   app.use('/loja-assets', express.static(lojaDist, { index: false, maxAge: '365d', immutable: true }));
   app.use(async (req, res, next) => {
     if (req.method !== 'GET' || req.path.startsWith('/api/') || req.path.startsWith('/loja-assets/')) return next();
-    let ehLoja = /^\/loja-previa\/[a-z0-9-]+(\/|$)/.test(req.path);
+    let ehLoja = /^\/(loja|loja-previa)\/[a-z0-9-]+(\/|$)/.test(req.path);
     if (!ehLoja) {
       try { ehLoja = !!(await lojaVirtual.lojaIdDoHost(req.hostname)); } catch (err) { ehLoja = false; }
     }

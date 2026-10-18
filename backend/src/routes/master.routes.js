@@ -247,25 +247,27 @@ router.post('/master/empresas/:id/reativar', async (req, res) => {
 // ---------------------------------------------------------------- Loja virtual (endereco)
 // O Master define o subdominio gratis (joao.<LOJA_DOMINIO_BASE>) e os dominios proprios da loja da empresa.
 // O cliente so aponta o DNS; o resto (layout, produtos, pagamentos) ele configura no proprio painel.
-async function lojaDoMaster(emp) {
+async function lojaDoMaster(emp, req) {
   const loja = await lojaVirtual.lojaDaEmpresa(db, emp.id);
   const dominios = await lojaVirtual.dominiosDaLoja(db, loja.id);
   return {
     modulo_ligado: !!efetivos(await dadosDaEmpresa(db, emp.id)).recursos.loja_virtual,
-    publicada: loja.publicada, nome: loja.nome,
-    ...lojaVirtual.enderecosDaLoja(loja, dominios),
+    publicada: loja.publicada, nome: loja.nome, tipo: lojaVirtual.tipoValido(loja.tipo),
+    ...lojaVirtual.enderecosDaLoja(loja, dominios, `${req.get('x-forwarded-proto') || req.protocol}://${req.get('host')}`),
     dns_alvo: dnsLoja.alvo(),
   };
 }
 
 router.get('/master/empresas/:id/loja-virtual', async (req, res) => {
-  res.json(await lojaDoMaster(await empresaOuErro(req.params.id)));
+  res.json(await lojaDoMaster(await empresaOuErro(req.params.id), req));
 });
 
 router.put('/master/empresas/:id/loja-virtual', async (req, res) => {
   const emp = await empresaOuErro(req.params.id);
   const b = req.body || {};
   const loja = await lojaVirtual.lojaDaEmpresa(db, emp.id);
+  if (b.tipo !== undefined && !['varejo', 'cardapio'].includes(b.tipo)) throw new HttpError(400, 'tipo de loja inválido (varejo ou cardapio)');
+  const tipo = b.tipo === undefined ? lojaVirtual.tipoValido(loja.tipo) : b.tipo;
   const sub = b.subdominio === undefined ? loja.subdominio : b.subdominio === null || b.subdominio === '' ? null : lojaVirtual.normalizarSubdominio(b.subdominio);
   let dominios;
   if (b.dominios !== undefined) {
@@ -280,7 +282,7 @@ router.put('/master/empresas/:id/loja-virtual', async (req, res) => {
       const outra = await client.query(`SELECT 1 FROM lv_lojas WHERE lower(subdominio) = $1 AND id <> $2`, [sub, loja.id]);
       if (outra.rows.length) throw new HttpError(409, `o subdomínio "${sub}" já é de outra empresa`);
     }
-    await client.query(`UPDATE lv_lojas SET subdominio = $2, atualizado_em = now() WHERE id = $1`, [loja.id, sub]);
+    await client.query(`UPDATE lv_lojas SET subdominio = $2, tipo = $3, atualizado_em = now() WHERE id = $1`, [loja.id, sub, tipo]);
     if (dominios) {
       const outros = await client.query(`SELECT dominio FROM lv_dominios WHERE dominio = ANY($1::text[]) AND loja_id <> $2`, [dominios, loja.id]);
       if (outros.rows.length) throw new HttpError(409, `o domínio ${outros.rows[0].dominio} já está ligado à loja de outra empresa`);
@@ -297,8 +299,8 @@ router.put('/master/empresas/:id/loja-virtual', async (req, res) => {
     client.release();
   }
   lojaVirtual.limparCacheHost();
-  await logAudit(db, { tenantId: emp.id, usuarioId: req.user.id, acao: 'master_loja_endereco', recurso: 'lv_lojas', recursoId: loja.id, detalhes: { subdominio: sub, dominios } });
-  res.json(await lojaDoMaster(emp));
+  await logAudit(db, { tenantId: emp.id, usuarioId: req.user.id, acao: 'master_loja_endereco', recurso: 'lv_lojas', recursoId: loja.id, detalhes: { subdominio: sub, dominios, tipo } });
+  res.json(await lojaDoMaster(emp, req));
 });
 
 // Confere se os dominios proprios ja apontam para o servidor (consulta DNS publica).

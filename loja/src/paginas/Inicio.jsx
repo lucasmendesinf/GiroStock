@@ -28,6 +28,22 @@ export default function Inicio() {
         if (b.tipo === 'banners') return loja.banners.length > 0 ? <Banners key="banners" banners={loja.banners} /> : null;
         if (b.tipo === 'categorias') {
           const raiz = dados.categorias.filter((c) => !c.pai_id || !dados.categorias.some((x) => x.id === c.pai_id));
+          if (raiz.length > 0 && loja.tipo === 'cardapio') {
+            return (
+              <section key="categorias" className="bloco">
+                {b.titulo && <h2>{b.titulo}</h2>}
+                <div className="cartoes-categoria">
+                  {raiz.map((c) => (
+                    <Link key={c.id} to={`/produtos?categoria=${c.id}`} className="cartao-categoria">
+                      {c.imagem ? <img src={c.imagem} alt="" loading="lazy" /> : <span className="sem-foto" aria-hidden="true">🍽</span>}
+                      {c.tem_promocao && <span className="fita">Promoção</span>}
+                      <span className="cartao-categoria-nome">{c.nome}</span>
+                    </Link>
+                  ))}
+                </div>
+              </section>
+            );
+          }
           return raiz.length > 0 ? (
             <section key="categorias" className="bloco">
               <h2>{titulo}</h2>

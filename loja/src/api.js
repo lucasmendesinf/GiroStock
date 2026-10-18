@@ -1,8 +1,10 @@
-// Comunicacao com a API publica da loja (/api/loja/v1). A loja e reconhecida pelo endereco do site; na
-// pre-visualizacao (/loja-previa/<subdominio>/) o subdominio vai no cabecalho X-Loja-Subdominio.
-const previa = /^\/loja-previa\/([a-z0-9-]+)/.exec(window.location.pathname);
-export const SUBDOMINIO_PREVIA = previa ? previa[1] : null;
-export const BASE_ROTAS = previa ? `/loja-previa/${previa[1]}` : '';
+// Comunicacao com a API publica da loja (/api/loja/v1). A loja e reconhecida pelo endereco do site (subdominio ou
+// dominio proprio). Pelo link no endereco do sistema (/loja/<subdominio>/) ou na pre-visualizacao
+// (/loja-previa/<subdominio>/), o subdominio vai no cabecalho X-Loja-Subdominio.
+const caminho = /^\/(loja|loja-previa)\/([a-z0-9-]+)/.exec(window.location.pathname);
+export const SUBDOMINIO = caminho ? caminho[2] : null;
+export const EH_PREVIA = !!caminho && caminho[1] === 'loja-previa';
+export const BASE_ROTAS = caminho ? `/${caminho[1]}/${caminho[2]}` : '';
 
 let token = null;
 let aoExpirar = () => {};
@@ -20,7 +22,7 @@ export class ErroApi extends Error {
 
 async function chamar(metodo, caminho, corpo) {
   const headers = { 'Content-Type': 'application/json' };
-  if (SUBDOMINIO_PREVIA) headers['X-Loja-Subdominio'] = SUBDOMINIO_PREVIA;
+  if (SUBDOMINIO) headers['X-Loja-Subdominio'] = SUBDOMINIO;
   if (token) headers.Authorization = `Bearer ${token}`;
   let res;
   try {

@@ -114,7 +114,7 @@ router.get('/loja', async (req, res) => {
 });
 
 router.get('/categorias', async (req, res) => {
-  res.json(await lv.categorias(req.loja));
+  res.json(await lv.categorias(req.loja, baseUrl(req)));
 });
 
 router.get('/produtos', async (req, res) => {

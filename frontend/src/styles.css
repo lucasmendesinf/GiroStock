@@ -1354,3 +1354,50 @@ body.suporte-leitura main .btn-primario, body.suporte-leitura main form button[t
 @media (pointer: coarse) and (max-width: 640px) {
   .modal .modal-actions { bottom: -18px; margin: 6px -18px -18px; padding: 12px 18px calc(12px + env(safe-area-inset-bottom)); }
 }
+/* Painel Master no celular: abas numa faixa unica que rola para o lado, presa no topo */
+@media (max-width: 760px) {
+  .mt-abas { flex-wrap: nowrap; overflow-x: auto; gap: 8px; padding: 8px 2px; margin: 0 -12px 14px; padding-left: 12px; padding-right: 12px;
+    position: sticky; top: 0; z-index: 30; background: var(--bg); scrollbar-width: none; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
+  .mt-abas::-webkit-scrollbar { display: none; }
+  .mt-abas a, .mt-abas .mt-breve { flex: 0 0 auto; white-space: nowrap; border-radius: 999px; border: 1px solid var(--line); border-bottom: 1px solid var(--line);
+    padding: 10px 16px; font-size: 14px; background: var(--panel); scroll-snap-align: center; }
+  .mt-abas a.active { border-color: var(--gold-light); }
+}
+
+/* ===== Celular: tabelas viram cartoes, numeros em grade, filtros na largura ===== */
+@media (max-width: 640px) {
+  table.tabela-cartoes { min-width: 0 !important; }
+  table.tabela-cartoes thead { display: none; }
+  table.tabela-cartoes, table.tabela-cartoes tbody { display: block; width: 100%; }
+  table.tabela-cartoes tr { display: block; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  table.tabela-cartoes tr:last-child { border-bottom: none; }
+  table.tabela-cartoes td { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 5px 0 !important; border: none !important;
+    text-align: right; min-height: 0; }
+  table.tabela-cartoes td::before { content: attr(data-label); flex: 0 0 auto; max-width: 45%; text-align: left; font-size: 11px; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  table.tabela-cartoes td[data-label=""]::before { display: none; }
+  table.tabela-cartoes td[data-label=""] { justify-content: flex-end; }
+  /* primeira coluna = titulo do cartao */
+  table.tabela-cartoes td:first-child { display: block; text-align: left; font-size: 15px; }
+  table.tabela-cartoes td:first-child::before { display: none; }
+  table.tabela-cartoes td[colspan] { display: block; text-align: center; }
+  table.tabela-cartoes td > * { max-width: 100%; }
+
+  .ped-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .ped-kpi { min-width: 0; }
+  .ped-kpi small { overflow-wrap: anywhere; }
+
+  .ped-bar select, .ped-bar input[type="date"] { flex: 1 1 calc(50% - 6px); width: auto !important; min-width: 0; min-height: 44px; padding: 8px 10px;
+    border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ivory); font-size: 16px; }
+  .ped-bar .ped-busca { flex: 1 1 100%; max-width: none !important; }
+}
+@media (max-width: 640px) {
+  /* valor alinhado a direita em fluxo normal (varios elementos na mesma celula nao se espalham) */
+  table.tabela-cartoes td:not(:first-child):not([data-label=""]):not([colspan]) { display: block; text-align: right; overflow-wrap: anywhere; }
+  table.tabela-cartoes td:not(:first-child):not([data-label=""])::before { float: left; margin-right: 12px; line-height: 2; }
+  table.tabela-cartoes td:not(:first-child):not([data-label=""])::after { content: ''; display: block; clear: both; }
+  /* acoes: quebram linha e ocupam a largura */
+  table.tabela-cartoes td[data-label=""] { flex-wrap: wrap; justify-content: flex-start; gap: 8px; padding-top: 10px !important; }
+  table.tabela-cartoes td[data-label=""] > * { flex-wrap: wrap; gap: 8px; }
+  table.tabela-cartoes td[data-label=""] button { flex: 1 1 auto; min-height: 42px; }
+}

@@ -90,7 +90,7 @@ export default function Backups() {
 
       <div className="card">
         <div className="tabela-wrap">
-          <table>
+          <table className="tabela-cartoes">
             <thead><tr><th>Data</th><th>Tipo</th><th>Tamanho</th><th>Situação</th><th /></tr></thead>
             <tbody>
               {dados.backups.map((b) => {
@@ -151,7 +151,7 @@ export default function Backups() {
               <>
                 <p className="error">{saldos.total} divergência(s) encontrada(s){saldos.total >= 1000 ? ' (mostrando as primeiras 1000)' : ''}.</p>
                 <div className="tabela-wrap">
-                  <table>
+                  <table className="tabela-cartoes">
                     <thead><tr><th>Empresa</th><th>Produto</th><th>Loja</th><th>Saldo</th><th>Esperado</th><th>Diferença</th></tr></thead>
                     <tbody>{saldos.itens.slice(0, 50).map((i) => <tr key={`${i.product_id}-${i.location_id}`}><td>{i.empresa}</td><td>{i.produto}</td><td>{i.loja}</td><td>{i.saldo}</td><td>{i.esperado}</td><td>{i.diferenca > 0 ? '+' : ''}{i.diferenca}</td></tr>)}</tbody>
                   </table>

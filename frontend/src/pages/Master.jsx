@@ -1,4 +1,5 @@
-import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
+import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import Empresas from './master/Empresas.jsx';
 import Usuarios from './master/Usuarios.jsx';
 import ModoTeste from './master/ModoTeste.jsx';
@@ -19,10 +20,19 @@ const ABAS = [
 ];
 
 export default function Master() {
+  const { pathname } = useLocation();
+  const abasRef = useRef(null);
+  // Celular: as abas ficam numa faixa que rola para o lado; a aba aberta e trazida para a vista.
+  useEffect(() => {
+    const ativa = abasRef.current && abasRef.current.querySelector('a.active');
+    if (ativa && abasRef.current.scrollWidth > abasRef.current.clientWidth) {
+      abasRef.current.scrollTo({ left: ativa.offsetLeft - (abasRef.current.clientWidth - ativa.offsetWidth) / 2, behavior: 'smooth' });
+    }
+  }, [pathname]);
   return (
     <div className="page">
       <div className="ped-head"><h2>Painel Master</h2></div>
-      <nav className="mt-abas" aria-label="Seções do painel Master">
+      <nav className="mt-abas" ref={abasRef} aria-label="Seções do painel Master">
         {ABAS.map((a) => <NavLink key={a.to} to={a.to}>{a.label}</NavLink>)}
       </nav>
       <Routes>

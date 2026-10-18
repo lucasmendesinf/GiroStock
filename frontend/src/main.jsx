@@ -6,6 +6,9 @@ import { AuthProvider } from './context/AuthContext.jsx';
 import { ThemeProvider } from './context/ThemeContext.jsx';
 import { UiProvider } from './context/UiContext.jsx';
 import './styles.css';
+import { iniciarTabelasCartoes } from './utils/tabelaCartoes';
+
+iniciarTabelasCartoes();
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

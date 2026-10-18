@@ -103,7 +103,7 @@ export default function Empresas() {
 
       <div className="card">
         <div className="tabela-wrap">
-          <table>
+          <table className="tabela-cartoes">
             <thead><tr><th>Empresa</th><th>Lojas</th><th>Plano</th><th>Situação</th><th className="num">Usuários</th><th>Último acesso</th><th /></tr></thead>
             <tbody>
               {lista.map((e) => (

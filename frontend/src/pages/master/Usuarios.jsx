@@ -90,7 +90,7 @@ export default function Usuarios() {
 
       <div className="card">
         <div className="tabela-wrap">
-          <table>
+          <table className="tabela-cartoes">
             <thead><tr><th>Usuário</th><th>Empresa</th><th>Perfil</th><th>Último login</th><th>Falhas</th><th>Modo teste</th><th>2FA</th><th>Situação</th><th /></tr></thead>
             <tbody>
               {dados && dados.usuarios.map((u) => (

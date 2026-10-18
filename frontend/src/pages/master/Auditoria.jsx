@@ -88,7 +88,7 @@ export default function Auditoria() {
       {erro && <p className="error" role="alert">{erro}</p>}
       <div className="card">
         <div className="tabela-wrap">
-          <table>
+          <table className="tabela-cartoes">
             <thead><tr><th>Quando</th><th>Quem</th><th>Empresa</th><th>Tipo</th><th>Detalhe</th></tr></thead>
             <tbody>
               {dados && dados.itens.map((i) => (

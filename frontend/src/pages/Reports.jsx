@@ -6,6 +6,7 @@ import { Field, Modal, Paginacao, Vazio } from '../components/ui.jsx';
 import Cupom, { imprimirCupom, configDaVenda } from '../components/Cupom.jsx';
 import { brl, dataHora, isoLocal, pct, qtd, FORMA_PAGAMENTO } from '../utils/format';
 import { baixarCsv, numeroCsv } from '../utils/csv';
+import { AbaComparativos, AbaEstoque, AbaIndicadores } from './relatorios/Avancados.jsx';
 
 const LIMITE = 30;
 
@@ -23,6 +24,7 @@ function periodo(tipo) {
     default: return null;
   }
 }
+const ABAS = [['vendas', 'Vendas'], ['comparativos', 'Comparativos'], ['indicadores', 'Indicadores'], ['estoque', 'Estoque'], ['caixas', 'Fechamentos de caixa']];
 const PERIODOS = [['hoje', 'Hoje'], ['ontem', 'Ontem'], ['7dias', '7 dias'], ['mes', 'Este mês'], ['mes_passado', 'Mês passado'], ['personalizado', 'Período...']];
 
 // Nome do arquivo com o periodo filtrado, ex.: vendas_2026-10-01_a_2026-10-07.csv
@@ -58,14 +60,20 @@ export default function Reports() {
     for (const [k, v] of Object.entries({ ...filtros, ...datas })) if (v) params.set(k, v);
     return params;
   }, [filtros, datas]);
+  // Situacao (concluida/cancelada) so vale para a lista de vendas: os outros relatorios ja separam as canceladas.
+  const querySemSituacao = useMemo(() => {
+    const p = new URLSearchParams(query);
+    p.delete('status');
+    return p;
+  }, [query]);
+  const comVendedor = aba === 'vendas' || aba === 'comparativos' || aba === 'indicadores';
 
   return (
     <div className="page">
       <div className="page-header">
         <h2>Relatórios</h2>
-        <div className="segmentado">
-          <button type="button" className={aba === 'vendas' ? 'ativo' : ''} onClick={() => setAba('vendas')}>Vendas</button>
-          <button type="button" className={aba === 'caixas' ? 'ativo' : ''} onClick={() => setAba('caixas')}>Fechamentos de caixa</button>
+        <div className="segmentado rel-abas">
+          {ABAS.map(([id, nome]) => <button key={id} type="button" className={aba === id ? 'ativo' : ''} aria-pressed={aba === id} onClick={() => setAba(id)}>{nome}</button>)}
         </div>
       </div>
 
@@ -88,7 +96,7 @@ export default function Reports() {
               {locations.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
             </select>
           </Field>
-          {aba === 'vendas' && (
+          {comVendedor && (
             <>
               {users.length > 0 && (
                 <Field label="Operador" style={{ flex: '0 1 200px' }}>
@@ -104,19 +112,24 @@ export default function Reports() {
                   {Object.entries(FORMA_PAGAMENTO).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </select>
               </Field>
-              <Field label="Situação" style={{ flex: '0 1 180px' }}>
-                <select value={filtros.status} onChange={(e) => setFiltros({ ...filtros, status: e.target.value })}>
-                  <option value="">Todas</option>
-                  <option value="concluida">Concluídas</option>
-                  <option value="cancelada">Canceladas</option>
-                </select>
-              </Field>
             </>
+          )}
+          {aba === 'vendas' && (
+            <Field label="Situação" style={{ flex: '0 1 180px' }}>
+              <select value={filtros.status} onChange={(e) => setFiltros({ ...filtros, status: e.target.value })}>
+                <option value="">Todas</option>
+                <option value="concluida">Concluídas</option>
+                <option value="cancelada">Canceladas</option>
+              </select>
+            </Field>
           )}
         </div>
       </div>
 
       {aba === 'vendas' && <AbaVendas query={query} onAbrirVenda={setVendaId} />}
+      {aba === 'comparativos' && <AbaComparativos query={querySemSituacao} />}
+      {aba === 'indicadores' && <AbaIndicadores query={querySemSituacao} />}
+      {aba === 'estoque' && <AbaEstoque query={querySemSituacao} />}
       {aba === 'caixas' && <AbaCaixas query={query} />}
 
       {vendaId && (

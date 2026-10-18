@@ -194,6 +194,16 @@ curl -X POST localhost:4998/_sim/pedidos -H 'content-type: application/json' \
   -d '{"app_shop_id":"GS...","itens":[{"nome":"X-Burguer","codigo":"PRD-0002","quantidade":1,"preco":2500}]}'
 ```
 
+## Relatórios avançados (tela Relatórios)
+
+Além de **Vendas** e **Fechamentos de caixa**, a tela tem três abas novas (respeitam os filtros de período, loja, operador e pagamento; usuário restrito a lojas só vê as suas):
+
+- **Comparativos** — vendas agrupadas por loja, operador, canal (caixa/PDV, balcão, telefone, WhatsApp, iFood, 99Food), categoria, produto, forma de pagamento, dia da semana, horário ou dia: vendas, itens, total, participação, ticket médio, lucro bruto, margem e canceladas. Exporta CSV. API: `GET /api/reports/comparativo?por=...`.
+- **Indicadores** — faturamento, vendas, ticket médio, lucro e margem, itens por venda, média por dia, descontos e cancelamentos, comparados com o período anterior de mesmo tamanho (margem, descontos e cancelamentos em pontos percentuais), além de horário de pico e melhor dia da semana. API: `GET /api/reports/indicadores`.
+- **Estoque** — valor do estoque por loja (a custo e a preço de venda), produtos abaixo do mínimo, produtos com saldo e sem venda no período (valor parado) e **curva ABC** (A = 80% do faturamento, B = próximos 15%, C = o resto). Exporta CSV. API: `GET /api/reports/estoque`.
+
+Teste: `npm run test:e2e:relatorios`.
+
 ## Financeiro (módulo "Financeiro")
 
 Liberado pelo Master por plano ou por empresa; acesso pela permissão **Financeiro** (perfis Administrador e Financeiro; dá para liberar a outros usuários em Usuários). Menu **Financeiro**, com as abas:

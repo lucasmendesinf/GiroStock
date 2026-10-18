@@ -30,7 +30,8 @@
     "ifood:simulador": "node scripts/ifood-simulador.mjs",
     "test:e2e:99food": "node scripts/e2e-99food.mjs",
     "food99:simulador": "node scripts/food99-simulador.mjs",
-    "test:e2e:financeiro": "node scripts/e2e-financeiro.mjs"
+    "test:e2e:financeiro": "node scripts/e2e-financeiro.mjs",
+    "test:e2e:relatorios": "node scripts/e2e-relatorios.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

@@ -65,7 +65,7 @@ export default function Complementos({ products = [], ingredients = [], lanchone
           </div>
           {g.opcoes.length === 0 ? <p className="form-hint">Nenhuma opção. Clique em "+ Opção".</p> : (
             <div className="tabela-wrap">
-              <table className="compacta">
+              <table className="compacta tabela-cartoes">
                 <thead><tr><th>Opção</th><th className="num">Preço</th><th>Estoque</th>{usaIfood && <th>Código iFood</th>}<th /></tr></thead>
                 <tbody>
                   {g.opcoes.map((o) => (

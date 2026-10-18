@@ -132,7 +132,7 @@ export default function EntradaNota({ products, locations, suppliers, categories
         </div>
         {itens.length === 0 ? <Vazio>Nenhum item. Use o campo acima (aceita leitor de código de barras).</Vazio> : (
           <div className="tabela-wrap">
-            <table>
+            <table className="tabela-cartoes">
               <thead><tr><th>Produto</th><th>Qtd</th><th>Custo un. (R$) / total do insumo</th><th className="num col-opcional">Subtotal</th><th /></tr></thead>
               <tbody>
                 {itens.map((i) => {

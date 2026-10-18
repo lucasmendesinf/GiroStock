@@ -1401,3 +1401,45 @@ body.suporte-leitura main .btn-primario, body.suporte-leitura main form button[t
   table.tabela-cartoes td[data-label=""] > * { flex-wrap: wrap; gap: 8px; }
   table.tabela-cartoes td[data-label=""] button { flex: 1 1 auto; min-height: 42px; }
 }
+
+/* ===== Telas da empresa no celular ===== */
+.toolbar-filtros { display: contents; }
+.toolbar-filtros-btn { display: none; }
+@media (max-width: 640px) {
+  /* Produtos: filtros recolhidos atras do botao "Filtros" */
+  .toolbar-filtros-btn { display: block; flex: 1 1 100%; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel);
+    color: var(--ivory); font-weight: 700; font-size: 15px; text-align: left; }
+  .toolbar-filtros { display: none; }
+  .toolbar-filtros.aberto { display: flex; flex-direction: column; gap: 10px; flex: 1 1 100%; }
+  .es-legenda { font-size: 12px; gap: 4px 12px; flex-wrap: wrap; display: flex; }
+  /* Quadros de numeros mais baixos (a lista aparece mais cedo) */
+  .ped-kpi { padding: 10px 12px !important; }
+  .ped-kpi b { font-size: 22px !important; line-height: 1.2; }
+  .ped-kpi small { font-size: 10px; }
+  .ped-kpi .cl-sub { font-size: 12px; }
+  /* Pedidos: uma coluna do quadro por vez, deslizando para o lado */
+  .ped-board { grid-template-columns: repeat(5, 86%); scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; }
+  .ped-col { scroll-snap-align: start; min-height: 160px; }
+  /* Abas internas (Produtos, Relatorios): faixa unica que rola para o lado */
+  .pe-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 8px; }
+  .pe-tabs::-webkit-scrollbar { display: none; }
+  .pe-tab { flex: 0 0 auto; white-space: nowrap; }
+}
+/* Produtos no celular: cada produto vira um cartao (nome em cima; preco e estoque embaixo; botoes a direita) */
+@media (max-width: 640px) {
+  table.es-tabela, table.es-tabela tbody { display: block; width: 100%; min-width: 0 !important; }
+  table.es-tabela thead { display: none; }
+  table.es-tabela tbody tr { display: grid; grid-template-columns: auto 1fr auto; grid-template-areas: "nome nome acoes" "preco estq acoes";
+    align-items: center; gap: 4px 12px; padding: 10px 10px 10px 14px; border-bottom: 1px solid var(--line); }
+  table.es-tabela tbody td { display: block; padding: 0 !important; border: none !important; box-shadow: none !important; }
+  table.es-tabela tbody td:nth-child(1), table.es-tabela tbody td.col-opcional { display: none; }
+  table.es-tabela tbody td:nth-child(2) { grid-area: nome; }
+  table.es-tabela tbody td:nth-child(5) { grid-area: preco; text-align: left; }
+  table.es-tabela tbody td:nth-child(6) { grid-area: estq; text-align: left; }
+  table.es-tabela tbody td:nth-child(7) { grid-area: acoes; }
+  table.es-tabela tbody tr.es-row-ok { box-shadow: inset 4px 0 0 var(--ok); }
+  table.es-tabela tbody tr.es-row-warn { box-shadow: inset 4px 0 0 var(--warn); }
+  table.es-tabela tbody tr.es-row-err { box-shadow: inset 4px 0 0 var(--err); }
+  table.es-tabela .es-acoes { display: flex; gap: 6px; }
+  table.es-tabela .es-acoes .es-ico { width: 42px; height: 42px; }
+}

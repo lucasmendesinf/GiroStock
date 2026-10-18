@@ -228,7 +228,7 @@ function AbaVendas({ query, onAbrirVenda }) {
       <div className="card">
         <div className="card-titulo-acoes"><h3>Histórico de vendas</h3><button type="button" className="btn-link" disabled={exportando || hist.total === 0} onClick={exportarVendas}>{exportando ? 'Gerando...' : `Exportar CSV (${hist.total})`}</button></div>
         <div className="tabela-wrap">
-          <table>
+          <table className="tabela-cartoes">
             <thead><tr><th>Nº</th><th>Data/hora</th><th className="col-opcional">Operador</th><th className="col-opcional">Loja / PDV</th><th className="col-opcional">Pagamento</th><th className="num">Total</th><th>Situação</th></tr></thead>
             <tbody>
               {hist.itens.map((h) => (
@@ -275,7 +275,7 @@ function AbaCaixas({ query }) {
     <div className="card">
       <div className="card-titulo-acoes"><h3>Fechamentos de caixa</h3>{sessoes.length > 0 && <button type="button" className="btn-link" onClick={exportarCaixas}>Exportar CSV</button>}</div>
       <div className="tabela-wrap">
-        <table>
+        <table className="tabela-cartoes">
           <thead>
             <tr>
               <th>Caixa</th><th>Abertura → fechamento</th><th className="num">Vendas</th>
@@ -339,7 +339,7 @@ function DetalheVenda({ id, onClose, onImprimir, onCancelada }) {
   return (
     <Modal titulo={`Venda nº ${venda.numero}${venda.numero_pedido !== null && venda.numero_pedido !== undefined ? ` · pedido ${venda.numero_pedido}` : ''}`} subtitulo={`${dataHora(venda.criado_em)} · ${venda.location_nome} · ${venda.terminal_nome} · ${venda.operador_nome}`} onClose={onClose} largura="larga">
       <div className="tabela-wrap">
-        <table>
+        <table className="tabela-cartoes">
           <thead><tr><th>Produto</th><th className="num">Qtd</th><th className="num">Preço</th><th className="num">Subtotal</th></tr></thead>
           <tbody>
             {venda.itens.map((i) => (

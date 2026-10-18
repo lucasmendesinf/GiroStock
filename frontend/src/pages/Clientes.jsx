@@ -126,7 +126,7 @@ export default function Clientes() {
 
       <div className="card">
         <div className="tabela-wrap">
-          <table>
+          <table className="tabela-cartoes">
             <thead>
               <tr><th>Cliente</th><th>Bairro</th><th className="num">Pedidos</th><th className="num">Total gasto</th><th className="num">Ticket médio</th><th>Último pedido</th><th>Segmentos</th><th>Mensagens</th></tr>
             </thead>

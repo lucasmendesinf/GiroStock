@@ -259,7 +259,7 @@ export default function Pedidos() {
       ) : (
         <div className="card">
           <div className="tabela-wrap">
-            <table>
+            <table className="tabela-cartoes">
               <thead><tr><th>Nº</th><th>Origem</th><th>Cliente</th><th>Tipo</th><th>Status</th><th>Pagamento</th><th>Tempo</th><th className="num">Total</th></tr></thead>
               <tbody>
                 {filtrados.map((p) => (

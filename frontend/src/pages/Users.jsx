@@ -63,7 +63,7 @@ export default function Users() {
 
       <div className="card">
         <div className="tabela-wrap">
-          <table>
+          <table className="tabela-cartoes">
             <thead><tr><th>Usuário</th><th>Perfil</th><th className="col-opcional">Loja de atuação</th><th className="col-opcional">2FA</th><th className="col-opcional">Situação</th><th /></tr></thead>
             <tbody>
               {users.map((u) => (

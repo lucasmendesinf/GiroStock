@@ -85,7 +85,7 @@ export default function Suppliers() {
 
       <div className="card">
         <div className="tabela-wrap">
-          <table>
+          <table className="tabela-cartoes">
             <thead><tr><th>Fornecedor</th><th className="col-opcional">Contato</th><th className="col-opcional">Categoria</th><th className="num col-opcional">Produtos</th><th /></tr></thead>
             <tbody>
               {filtrados.map((s) => (

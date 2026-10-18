@@ -172,7 +172,7 @@ export default function Movimentacoes({ products, ingredients = [], locations, s
           <input type="date" value={filtros.data_fim} onChange={mudarFiltro('data_fim')} aria-label="Até" />
         </div>
         <div className="tabela-wrap">
-          <table>
+          <table className="tabela-cartoes">
             <thead><tr><th>Data</th><th>Tipo</th><th>Produto / insumo</th><th className="num">Qtd</th><th className="col-opcional">Local</th><th className="col-opcional">Detalhe</th><th className="col-opcional">Usuário</th></tr></thead>
             <tbody>
               {hist.itens.map((m) => (

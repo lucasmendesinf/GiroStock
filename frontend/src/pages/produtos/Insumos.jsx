@@ -60,7 +60,7 @@ export default function Insumos({ ingredients, locations, reload }) {
         </div>
         <div className="card">
           <div className="tabela-wrap">
-            <table>
+            <table className="tabela-cartoes">
               <thead><tr><th>Insumo</th><th className="num col-opcional">Custo atual/un</th><th className="num">Saldo total</th><th className="col-opcional">Por loja</th><th /></tr></thead>
               <tbody>
                 {visiveis.map((i) => (

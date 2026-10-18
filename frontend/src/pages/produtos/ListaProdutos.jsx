@@ -84,6 +84,9 @@ export default function ListaProdutos(props) {
   const mudarFiltro = (fn) => (e) => { fn(e.target.type === 'checkbox' ? e.target.checked : e.target.value); setVisiveis(POR_PAGINA); };
   const produtoEstoque = products.find((p) => p.id === estoqueId);
 
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
+  const filtrosAtivos = [lojaId, categoria, fornecedor, situacao !== 'ativos', soAlerta].filter(Boolean).length;
+
   function abrirEstoque(p) {
     // Produto composto nao tem estoque proprio: a caixa abre a edicao ja na receita.
     if (p.tem_ficha_tecnica || p.e_combo) setEditandoId(p.id); else setEstoqueId(p.id);
@@ -93,6 +96,11 @@ export default function ListaProdutos(props) {
     <>
       <div className="toolbar">
         <input className="toolbar-busca" placeholder="Pesquisar por código, descrição ou EAN" value={busca} onChange={mudarFiltro(setBusca)} aria-label="Buscar produto" />
+        {/* Celular: os filtros ficam recolhidos atras deste botao (a lista aparece logo) */}
+        <button type="button" className="toolbar-filtros-btn" aria-expanded={filtrosAbertos} onClick={() => setFiltrosAbertos(!filtrosAbertos)}>
+          Filtros{filtrosAtivos > 0 ? ` (${filtrosAtivos})` : ''} {filtrosAbertos ? '▴' : '▾'}
+        </button>
+        <div className={`toolbar-filtros ${filtrosAbertos ? 'aberto' : ''}`}>
         <select value={lojaId} onChange={mudarFiltro(setLojaId)} aria-label="Loja">
           <option value="">Todas as lojas</option>
           {locaisAtivos.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
@@ -111,6 +119,7 @@ export default function ListaProdutos(props) {
           <option value="todos">Todos</option>
         </select>
         <label className="check"><input type="checkbox" checked={soAlerta} onChange={mudarFiltro(setSoAlerta)} /> Só abaixo do mínimo</label>
+        </div>
         <span className="toolbar-espaco" />
         <button type="button" className="btn-link" onClick={() => setCategoriasAberto(true)}>Categorias</button>
         <button type="button" className="btn-primario" onClick={() => setNovo(true)}>+ Novo produto</button>

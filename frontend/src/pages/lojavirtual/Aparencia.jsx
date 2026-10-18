@@ -5,22 +5,22 @@ import { Field } from '../../components/ui.jsx';
 import { enviarImagem } from '../../utils/imagem';
 
 const MODELOS = [
-  ['grade', 'Grade', 'Produtos em grade com foto quadrada. Bom para quase tudo.'],
-  ['vitrine', 'Vitrine', 'Fotos grandes, com descrição. Bom para produtos que vendem pela imagem.'],
-  ['lista', 'Lista', 'Lista com foto pequena e descrição. Bom para muitos produtos parecidos.'],
+  ['grade', 'Grade', 'Cartões com foto, preço e botão Comprar, 2 por linha no celular. Bom para quase tudo.'],
+  ['vitrine', 'Vitrine', 'Cartões maiores, 1 por linha no celular. Bom para produtos que vendem pela imagem.'],
+  ['lista', 'Lista', 'Foto ao lado das informações. Bom para nomes longos (informática, eletrônicos).'],
   ['cardapio', 'Cardápio digital', 'Categorias em cartões com foto e itens em lista, como os apps de delivery.'],
 ];
 const FONTES = [['moderna', 'Moderna'], ['classica', 'Clássica (serifada)'], ['arredondada', 'Arredondada']];
 const NOME_BLOCO = { banners: 'Banners', categorias: 'Categorias', destaques: 'Destaques', promocoes: 'Promoções', produtos: 'Todos os produtos' };
 const PALETAS = [
-  ['Vermelho', { cor_primaria: '#b5121b', cor_destaque: '#1f7a4d', cor_fundo: '#ffffff', cor_texto: '#1d1d1f' }],
-  ['Laranja', { cor_primaria: '#e8590c', cor_destaque: '#2b8a3e', cor_fundo: '#fffaf5', cor_texto: '#2b2118' }],
-  ['Verde', { cor_primaria: '#2b8a3e', cor_destaque: '#e8590c', cor_fundo: '#ffffff', cor_texto: '#1b2a1f' }],
-  ['Azul', { cor_primaria: '#1c4ed8', cor_destaque: '#0f9d58', cor_fundo: '#ffffff', cor_texto: '#111827' }],
-  ['Roxo', { cor_primaria: '#6d28d9', cor_destaque: '#db2777', cor_fundo: '#ffffff', cor_texto: '#1f1a2e' }],
-  ['Escuro', { cor_primaria: '#f2b705', cor_destaque: '#22c55e', cor_fundo: '#141414', cor_texto: '#f4f4f5' }],
+  ['Vermelho', { cor_primaria: '#b5121b', cor_destaque: '#1f7a4d', cor_fundo: '#ffffff', cor_texto: '#1d1d1f', cor_topo: '#111111' }],
+  ['Laranja', { cor_primaria: '#e8590c', cor_destaque: '#2b8a3e', cor_fundo: '#fffaf5', cor_texto: '#2b2118', cor_topo: '#1f1a17' }],
+  ['Verde', { cor_primaria: '#2b8a3e', cor_destaque: '#e8590c', cor_fundo: '#ffffff', cor_texto: '#1b2a1f', cor_topo: '#12301c' }],
+  ['Azul', { cor_primaria: '#1c4ed8', cor_destaque: '#0f9d58', cor_fundo: '#ffffff', cor_texto: '#111827', cor_topo: '#0f172a' }],
+  ['Roxo', { cor_primaria: '#6d28d9', cor_destaque: '#db2777', cor_fundo: '#ffffff', cor_texto: '#1f1a2e', cor_topo: '#1e1033' }],
+  ['Escuro', { cor_primaria: '#f2b705', cor_destaque: '#22c55e', cor_fundo: '#141414', cor_texto: '#f4f4f5', cor_topo: '#000000' }],
 ];
-const CORES = [['cor_primaria', 'Cor principal (botões e destaques)'], ['cor_destaque', 'Cor de oferta (selo de desconto)'], ['cor_fundo', 'Fundo'], ['cor_texto', 'Texto']];
+const CORES = [['cor_primaria', 'Cor principal (botões e destaques)'], ['cor_destaque', 'Cor de oferta (selo de desconto)'], ['cor_topo', 'Cabeçalho e rodapé'], ['cor_fundo', 'Fundo'], ['cor_texto', 'Texto']];
 
 // Layout do site da loja. O site e o mesmo para todas as empresas; aqui a empresa escolhe o visual dela.
 export default function Aparencia({ config, onMudou }) {
@@ -70,12 +70,12 @@ export default function Aparencia({ config, onMudou }) {
         <div className="es-chips" role="group" aria-label="Paletas prontas">
           {PALETAS.map(([nome, cores]) => (
             <button key={nome} type="button" className="es-chip lv-paleta" onClick={() => setT({ ...t, ...cores })}>
-              <span style={{ background: cores.cor_primaria }} /><span style={{ background: cores.cor_fundo }} />{nome}
+              <span style={{ background: cores.cor_topo }} /><span style={{ background: cores.cor_primaria }} />{nome}
             </button>
           ))}
         </div>
         <div className="lv-cores">
-          {CORES.map(([k, nome]) => (
+          {CORES.filter(([k]) => k !== 'cor_topo' || config.tipo !== 'cardapio').map(([k, nome]) => (
             <label key={k} className="lv-cor">
               <input type="color" value={t[k]} onChange={(e) => setT({ ...t, [k]: e.target.value })} aria-label={nome} />
               <span>{nome}<small>{t[k]}</small></span>
@@ -89,7 +89,7 @@ export default function Aparencia({ config, onMudou }) {
         <div className="lv-amostra" style={{ background: t.cor_fundo, color: t.cor_texto, borderRadius: t.cantos === 'retos' ? 2 : 12 }}>
           <b>Amostra</b>
           <span className="lv-amostra-preco">De <s>R$ 12,00</s> por <b style={{ color: t.cor_primaria }}>R$ 9,90</b> <i style={{ background: t.cor_destaque }}>-18%</i></span>
-          <span className="lv-amostra-botao" style={{ background: t.cor_primaria, borderRadius: t.cantos === 'retos' ? 2 : 10 }}>Adicionar</span>
+          <span className="lv-amostra-botao" style={{ background: t.cor_primaria, borderRadius: t.cantos === 'retos' ? 2 : 10 }}>Comprar</span>
         </div>
       </div>
 

@@ -31,7 +31,7 @@ Dados para montar o site.
 ```json
 {
   "id": "...", "nome": "Lanchonete JA", "descricao": "...",
-  "tema": { "modelo": "classico", "cor_primaria": "#b5121b", "cor_fundo": "#ffffff", "cor_texto": "#1d1d1f", "cor_destaque": "#1f7a4d",
+  "tema": { "modelo": "grade", "cor_primaria": "#b5121b", "cor_fundo": "#ffffff", "cor_texto": "#1d1d1f", "cor_destaque": "#1f7a4d", "cor_topo": "#111111",
             "fonte": "moderna", "cantos": "arredondados", "blocos": [{ "tipo": "banners", "ativo": true, "titulo": "" }], "exclusivo": null }, "logo": "https://.../api/loja/v1/imagens/<id>",
   "banners": [{ "imagem": "https://...", "titulo": "", "link": "" }],
   "contato": { "telefone": "", "whatsapp": "11999990000", "email": "", "endereco": "", "instagram": "" },

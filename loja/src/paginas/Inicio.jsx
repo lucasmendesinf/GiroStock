@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { useLoja } from '../estado.jsx';
-import { Grade } from '../componentes/CartaoProduto.jsx';
+import { Grade, Prateleira } from '../componentes/CartaoProduto.jsx';
 
 const TITULOS = { categorias: 'Categorias', destaques: 'Destaques', promocoes: 'Promoções', produtos: 'Todos os produtos' };
 
@@ -44,11 +44,17 @@ export default function Inicio() {
               </section>
             );
           }
+          // Varejo: categorias em bolinhas com foto, lado a lado com rolagem.
           return raiz.length > 0 ? (
             <section key="categorias" className="bloco">
-              <h2>{titulo}</h2>
-              <div className="chips-rolagem">
-                {raiz.map((c) => <Link key={c.id} to={`/produtos?categoria=${c.id}`} className="chip">{c.nome}</Link>)}
+              <h2 className="titulo-secao">{titulo}</h2>
+              <div className="bolinhas">
+                {raiz.map((c) => (
+                  <Link key={c.id} to={`/produtos?categoria=${c.id}`} className="bolinha">
+                    <span className="bolinha-foto">{c.imagem ? <img src={c.imagem} alt="" loading="lazy" /> : <b aria-hidden="true">{c.nome.slice(0, 1)}</b>}</span>
+                    <span>{c.nome}</span>
+                  </Link>
+                ))}
               </div>
             </section>
           ) : null;
@@ -59,10 +65,10 @@ export default function Inicio() {
         return (
           <section key={b.tipo} className="bloco">
             <div className="bloco-topo">
-              <h2>{titulo}</h2>
-              {(b.tipo !== 'produtos' || lista.total > lista.produtos.length) && <Link to={`/produtos${filtro ? `?${filtro}` : ''}`} className="ver-todos">Ver todos</Link>}
+              <h2 className="titulo-secao">{titulo}</h2>
+              {(b.tipo !== 'produtos' || lista.total > lista.produtos.length) && <Link to={`/produtos${filtro ? `?${filtro}` : ''}`} className="ver-todos">Ver {loja.tipo === 'cardapio' ? 'todos' : 'mais'}</Link>}
             </div>
-            <Grade produtos={lista.produtos} />
+            {loja.tipo !== 'cardapio' && b.tipo !== 'produtos' ? <Prateleira produtos={lista.produtos} /> : <Grade produtos={lista.produtos} />}
           </section>
         );
       })}
@@ -71,13 +77,32 @@ export default function Inicio() {
   );
 }
 
+// Banners em carrossel: passa sozinho a cada 5 s, com bolinhas para escolher.
 function Banners({ banners }) {
+  const trilho = useRef(null);
+  const [atual, setAtual] = useState(0);
+  useEffect(() => {
+    if (banners.length < 2) return undefined;
+    const t = setInterval(() => {
+      const el = trilho.current;
+      if (!el || document.hidden) return;
+      const prox = (Math.round(el.scrollLeft / el.clientWidth) + 1) % banners.length;
+      el.scrollTo({ left: prox * el.clientWidth, behavior: 'smooth' });
+    }, 5000);
+    return () => clearInterval(t);
+  }, [banners.length]);
+  const ir = (i) => trilho.current.scrollTo({ left: i * trilho.current.clientWidth, behavior: 'smooth' });
   return (
-    <div className="banners" aria-label="Destaques da loja">
-      {banners.map((b, i) => {
-        const img = <img src={b.imagem} alt={b.titulo || `Banner ${i + 1}`} loading={i === 0 ? 'eager' : 'lazy'} />;
-        return <div key={b.imagem} className="banner">{b.link ? <a href={b.link}>{img}</a> : img}{b.titulo && <span className="banner-titulo">{b.titulo}</span>}</div>;
-      })}
+    <div className="carrossel">
+      <div className="banners" ref={trilho} aria-label="Destaques da loja" onScroll={(e) => setAtual(Math.round(e.currentTarget.scrollLeft / e.currentTarget.clientWidth))}>
+        {banners.map((b, i) => {
+          const img = <img src={b.imagem} alt={b.titulo || `Banner ${i + 1}`} loading={i === 0 ? 'eager' : 'lazy'} />;
+          return <div key={b.imagem} className="banner">{b.link ? <a href={b.link}>{img}</a> : img}{b.titulo && <span className="banner-titulo">{b.titulo}</span>}</div>;
+        })}
+      </div>
+      {banners.length > 1 && (
+        <div className="pontos">{banners.map((b, i) => <button key={b.imagem} type="button" className={i === atual ? 'on' : ''} onClick={() => ir(i)} aria-label={`Banner ${i + 1}`} />)}</div>
+      )}
     </div>
   );
 }

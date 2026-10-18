@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useLoja } from '../estado.jsx';
-import { EH_PREVIA } from '../api';
+import { api, EH_PREVIA } from '../api';
 import { brl, DIAS, fmtTel, soDigitos } from '../util';
 
 // Cabecalho (logo, busca, conta, carrinho), faixas de aviso/fechada, conteudo e rodape com contato e horarios.
@@ -10,7 +10,12 @@ export default function Layout() {
   const { pathname } = useLocation();
   const navegar = useNavigate();
   const [busca, setBusca] = useState('');
+  const [menu, setMenu] = useState(false);
+  const [categorias, setCategorias] = useState([]);
+  const fecharMenu = useCallback(() => setMenu(false), []);
   useEffect(() => { window.scrollTo(0, 0); }, [pathname]);
+  const varejo = !!loja && loja.tipo !== 'cardapio';
+  useEffect(() => { if (varejo) api.get('/categorias').then(setCategorias).catch(() => {}); }, [varejo]);
 
   if (erroLoja) {
     return (
@@ -32,6 +37,7 @@ export default function Layout() {
     );
   }
   const noCarrinho = ['/carrinho', '/finalizar'].includes(pathname);
+  const raizes = categorias.filter((c) => !c.pai_id || !categorias.some((x) => x.id === c.pai_id));
   const cardapio = loja.tipo === 'cardapio';
   function buscar(e) {
     e.preventDefault();
@@ -94,32 +100,94 @@ export default function Layout() {
       {fechada}
       <header className="topo">
         <div className="topo-linha">
+          <button type="button" className="topo-icone menu-botao" onClick={() => setMenu(true)} aria-label="Abrir menu" aria-expanded={menu}><span aria-hidden="true">☰</span></button>
           <Link to="/" className="marca" aria-label={`${loja.nome} – início`}>
             {loja.logo ? <img src={loja.logo} alt="" /> : <span className="marca-inicial">{loja.nome.slice(0, 1)}</span>}
             <span className="marca-nome">{loja.nome}</span>
           </Link>
           <form className="busca busca-topo" onSubmit={buscar} role="search">
-            <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar produtos" aria-label="Buscar produtos" />
+            <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="O que você está buscando?" aria-label="Buscar produtos" />
+            <button type="submit" aria-label="Buscar">⌕</button>
           </form>
           <nav className="topo-acoes">
-            <button type="button" className="topo-icone" onClick={() => compartilhar(loja, avisar)} aria-label="Compartilhar a loja"><span aria-hidden="true">⤴</span></button>
             <NavLink to={conta ? '/conta' : '/entrar'} className="topo-icone" aria-label={conta ? 'Minha conta' : 'Entrar'}>
-              <span aria-hidden="true">👤</span><span className="topo-rotulo">{conta ? conta.nome.split(' ')[0] : 'Entrar'}</span>
+              <span aria-hidden="true">👤</span><span className="topo-rotulo">{conta ? `Olá, ${conta.nome.split(' ')[0]}` : 'Entrar'}</span>
             </NavLink>
             <NavLink to="/carrinho" className="topo-icone" aria-label={`Carrinho, ${quantidadeCarrinho} item(ns)`}>
-              <span aria-hidden="true">🛒</span>{quantidadeCarrinho > 0 && <span className="contador">{quantidadeCarrinho}</span>}<span className="topo-rotulo">Carrinho</span>
+              <span aria-hidden="true">🛒</span><span className="contador">{quantidadeCarrinho}</span><span className="topo-rotulo">Carrinho</span>
             </NavLink>
           </nav>
         </div>
         <form className="busca busca-celular" onSubmit={buscar} role="search">
-          <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar produtos" aria-label="Buscar produtos" />
+          <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="O que você está buscando?" aria-label="Buscar produtos" />
+          <button type="submit" aria-label="Buscar">⌕</button>
         </form>
+        {categorias.length > 0 && (
+          <nav className="topo-categorias" aria-label="Categorias">
+            <div>
+              {raizes.slice(0, 8).map((c) => <Link key={c.id} to={`/produtos?categoria=${c.id}`}>{c.nome}</Link>)}
+              {categorias.some((c) => c.tem_promocao) && <Link to="/produtos?promocao=1" className="oferta">Ofertas</Link>}
+            </div>
+          </nav>
+        )}
       </header>
+      {menu && <Gaveta loja={loja} conta={conta} categorias={categorias} fechar={fecharMenu} compartilhar={() => compartilhar(loja, avisar)} />}
       <main className="conteudo"><Outlet /></main>
       <Rodape loja={loja} />
       {barra}
+      {loja.contato.whatsapp && !noCarrinho && !pathname.startsWith('/produto/') && (
+        <a className={`whatsapp-flutuante ${barra ? 'com-barra' : ''}`} href={`https://wa.me/55${soDigitos(loja.contato.whatsapp)}`} target="_blank" rel="noreferrer" aria-label="Falar no WhatsApp">
+          <svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true"><path fill="currentColor" d="M16 3a13 13 0 0 0-11.2 19.6L3 29l6.6-1.7A13 13 0 1 0 16 3zm0 23.7c-2 0-4-.5-5.7-1.6l-.4-.2-3.9 1 1-3.8-.3-.4A10.7 10.7 0 1 1 16 26.7zm5.9-8c-.3-.2-1.9-1-2.2-1-.3-.2-.5-.2-.7.1l-1 1.2c-.2.2-.4.3-.7.1a8.8 8.8 0 0 1-4.4-3.8c-.3-.6.3-.5 1-1.7.1-.2 0-.4 0-.6l-1-2.4c-.3-.6-.5-.5-.7-.5h-.6a1.2 1.2 0 0 0-.9.4 3.7 3.7 0 0 0-1.1 2.7 6.5 6.5 0 0 0 1.4 3.4 14.7 14.7 0 0 0 5.6 5c2.1.9 2.9 1 4 .8.6-.1 1.9-.8 2.2-1.5.3-.7.3-1.4.2-1.5l-.6-.3z" /></svg>
+        </a>
+      )}
       {avisosTela}
     </>
+  );
+}
+
+// Menu lateral (celular): categorias e atalhos da conta.
+function Gaveta({ loja, conta, categorias, fechar, compartilhar: aoCompartilhar }) {
+  const { pathname, search } = useLocation();
+  const inicio = useRef(pathname + search);
+  useEffect(() => { if (pathname + search !== inicio.current) fechar(); }, [pathname, search, fechar]);
+  useEffect(() => {
+    const esc = (e) => { if (e.key === 'Escape') fechar(); };
+    document.addEventListener('keydown', esc);
+    document.body.style.overflow = 'hidden';
+    return () => { document.removeEventListener('keydown', esc); document.body.style.overflow = ''; };
+  }, [fechar]);
+  const raiz = categorias.filter((c) => !c.pai_id || !categorias.some((x) => x.id === c.pai_id));
+  return (
+    <div className="gaveta-fundo" onClick={fechar} role="presentation">
+      <aside className="gaveta" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Menu">
+        <div className="gaveta-topo">
+          <b>{conta ? `Olá, ${conta.nome.split(' ')[0]}` : 'Bem-vindo(a)!'}</b>
+          <button type="button" onClick={fechar} aria-label="Fechar menu">×</button>
+        </div>
+        {!conta && <Link to="/entrar" className="botao largo">Entrar ou cadastrar</Link>}
+        <nav className="gaveta-lista">
+          <Link to="/">Início</Link>
+          <Link to="/produtos">Todos os produtos</Link>
+          <Link to="/produtos?promocao=1">Ofertas</Link>
+        </nav>
+        {raiz.length > 0 && (
+          <>
+            <p className="gaveta-titulo">Categorias</p>
+            <nav className="gaveta-lista">
+              {raiz.map((c) => <Link key={c.id} to={`/produtos?categoria=${c.id}`}>{c.nome}</Link>)}
+            </nav>
+          </>
+        )}
+        <p className="gaveta-titulo">Minha conta</p>
+        <nav className="gaveta-lista">
+          <Link to="/pedidos">Meus pedidos</Link>
+          {conta && <Link to="/conta">Meus dados e endereços</Link>}
+          <Link to="/perfil">Sobre a loja</Link>
+          {loja.contato.whatsapp && <a href={`https://wa.me/55${soDigitos(loja.contato.whatsapp)}`} target="_blank" rel="noreferrer">Atendimento pelo WhatsApp</a>}
+          <button type="button" onClick={aoCompartilhar}>Compartilhar a loja</button>
+        </nav>
+      </aside>
+    </div>
   );
 }
 

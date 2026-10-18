@@ -157,7 +157,7 @@ const BLOCOS_PADRAO = {
   cardapio: ['banners', 'destaques', 'categorias', 'promocoes', 'produtos'].map((tipo) => ({ tipo, ativo: ['banners', 'destaques', 'categorias'].includes(tipo), titulo: tipo === 'destaques' ? 'Mais pedidos' : '' })),
 };
 const TEMA_PADRAO = {
-  modelo: 'grade', cor_primaria: '#b5121b', cor_fundo: '#ffffff', cor_texto: '#1d1d1f', cor_destaque: '#1f7a4d',
+  modelo: 'grade', cor_primaria: '#b5121b', cor_fundo: '#ffffff', cor_texto: '#1d1d1f', cor_destaque: '#1f7a4d', cor_topo: '#111111',
   fonte: 'moderna', cantos: 'arredondados', blocos: BLOCOS_PADRAO.varejo, exclusivo: null,
 };
 const tipoValido = (tipo) => (tipo === 'cardapio' ? 'cardapio' : 'varejo');
@@ -184,7 +184,7 @@ function normalizarTema(entrada, atual, tipo = 'varejo') {
   const t = temaEfetivo({ ...base, ...entrada, exclusivo: base.exclusivo }, tp);
   if (!FONTES.includes(t.fonte)) throw new HttpError(400, 'fonte inválida');
   if (!['arredondados', 'retos'].includes(t.cantos)) throw new HttpError(400, 'cantos inválidos');
-  for (const k of ['cor_primaria', 'cor_fundo', 'cor_texto', 'cor_destaque']) {
+  for (const k of ['cor_primaria', 'cor_fundo', 'cor_texto', 'cor_destaque', 'cor_topo']) {
     if (!COR_RE.test(t[k])) throw new HttpError(400, `cor inválida em ${k.replace('cor_', '')}: use #RRGGBB`);
     t[k] = t[k].toLowerCase();
   }

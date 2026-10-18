@@ -8,7 +8,7 @@ import { brl } from '../util';
 // Pagina do produto: fotos, descricao, complementos (respeitando minimo/maximo de cada grupo), quantidade.
 export default function Produto() {
   const { id } = useParams();
-  const { adicionar, avisar } = useLoja();
+  const { loja, adicionar, avisar } = useLoja();
   const navegar = useNavigate();
   const [p, setP] = useState(null);
   const [erro, setErro] = useState(null);
@@ -95,7 +95,7 @@ export default function Produto() {
               <b>{qtd.toLocaleString('pt-BR')}{inteiro ? '' : ` ${p.unidade.toLowerCase()}`}</b>
               <button type="button" onClick={() => setQtd(Math.min(p.quantidade_maxima, +(qtd + (inteiro ? 1 : 0.5)).toFixed(3)))} disabled={qtd >= p.quantidade_maxima} aria-label="Aumentar quantidade">+</button>
             </span>
-            <button type="button" className="botao largo" onClick={colocar}>Adicionar · {brl(unitario * qtd)}</button>
+            <button type="button" className="botao largo" onClick={colocar}>{loja.tipo === 'cardapio' ? `Adicionar · ${brl(unitario * qtd)}` : 'Comprar'}</button>
           </div>
         ) : <p className="esgotado-aviso">Produto esgotado no momento.</p>}
       </div>

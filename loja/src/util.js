@@ -57,8 +57,12 @@ export function aplicarTema(tema, nome) {
   r.setProperty('--suave', misturar(tema.cor_texto, tema.cor_fundo, 0.4));
   r.setProperty('--fonte', FONTES[tema.fonte] || FONTES.moderna);
   r.setProperty('--raio', tema.cantos === 'retos' ? '2px' : '14px');
+  const topo = tema.cor_topo || '#111111';
+  r.setProperty('--topo', topo);
+  r.setProperty('--sobre-topo', corSobre(topo));
+  r.setProperty('--topo-suave', misturar(topo, corSobre(topo), 0.14));
   document.body.className = `modelo-${tema.modelo}`;
   const meta = document.querySelector('meta[name=theme-color]');
-  if (meta) meta.setAttribute('content', tema.cor_primaria);
+  if (meta) meta.setAttribute('content', tema.modelo === 'cardapio' ? tema.cor_primaria : topo);
   if (nome) document.title = nome;
 }

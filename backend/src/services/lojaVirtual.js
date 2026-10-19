@@ -285,7 +285,7 @@ function precoDoProduto(p, hoje = agoraSP().data) {
 const urlImagem = (base, id) => `${base}/api/loja/v1/imagens/${id}`;
 
 const SELECT_PRODUTO = `
-  SELECT p.id, p.nome AS nome_cadastro, p.unidade, p.preco_venda, p.categoria_id, c.nome AS categoria_nome, c.parent_id AS categoria_pai_id,
+  SELECT p.id, p.nome AS nome_cadastro, p.unidade, p.preco_venda, p.categoria_id, p.grade_id, p.variacao, c.nome AS categoria_nome, c.parent_id AS categoria_pai_id,
          cp.nome AS categoria_pai_nome, lp.nome_site, lp.descricao, lp.imagens, lp.preco_promocional, lp.promo_inicio::text, lp.promo_fim::text,
          lp.destaque, lp.ordem, lp.maior_idade, lp.so_retirada,
          COALESCE((SELECT json_agg(json_build_object('id', g.id, 'nome', g.nome, 'minimo', g.minimo, 'maximo', g.maximo,
@@ -322,6 +322,7 @@ function produtoPublico(r, disp, base, hoje) {
     so_retirada: !!r.so_retirada, // nao pode ser entregue nem enviado
     disponivel: unidades === null || unidades > 0,
     quantidade_maxima: unidades === null ? 99 : Math.min(unidades, 99),
+    variacao: r.variacao || null,
     complementos: (r.complementos || []).map((g) => ({ ...g, opcoes: g.opcoes.map((o) => ({ ...o, preco: n2(o.preco) })) })),
   };
 }
@@ -336,7 +337,8 @@ async function catalogo(loja, base, filtros = {}) {
   }
   if (filtros.busca) {
     params.push(`%${String(filtros.busca).trim().slice(0, 60)}%`);
-    where += ` AND (p.nome ILIKE $${params.length} OR lp.nome_site ILIKE $${params.length} OR lp.descricao ILIKE $${params.length})`;
+    where += ` AND (p.nome ILIKE $${params.length} OR lp.nome_site ILIKE $${params.length} OR lp.descricao ILIKE $${params.length}
+               OR (p.grade_id IS NOT NULL AND EXISTS (SELECT 1 FROM products p3 WHERE p3.grade_id = p.grade_id AND p3.ativo AND p3.nome ILIKE $${params.length})))`;
   }
   if (filtros.destaque) where += ' AND lp.destaque';
   if (filtros.promocao) {
@@ -347,6 +349,12 @@ async function catalogo(loja, base, filtros = {}) {
     params.push(filtros.ids);
     where += ` AND p.id = ANY($${params.length}::uuid[])`;
   }
+  if (filtros.grade) {
+    params.push(filtros.grade);
+    where += ` AND p.grade_id = $${params.length}::uuid`;
+  }
+  // Grade de variacoes: um produto so no site (a primeira variacao publicada representa a grade; as outras vem em "grade").
+  if (!filtros.ids) where += SQL_REPRESENTANTE;
   const porPagina = Math.min(Math.max(Number(filtros.por_pagina) || 24, 1), 100);
   const pagina = Math.max(Number(filtros.pagina) || 1, 1);
   const hoje = agoraSP().data;
@@ -358,13 +366,57 @@ async function catalogo(loja, base, filtros = {}) {
   const total = Number((await db().query(`SELECT COUNT(*) AS n FROM (${SELECT_PRODUTO}${where}) x`, params)).rows[0].n);
   const { rows } = await db().query(`${SELECT_PRODUTO}${where} ORDER BY ${ordem}, p.id LIMIT ${porPagina} OFFSET ${(pagina - 1) * porPagina}`, params);
   const disp = await disponibilidade(loja, rows.map((r) => r.id));
-  return { pagina, por_pagina: porPagina, total, paginas: Math.ceil(total / porPagina), produtos: rows.map((r) => produtoPublico(r, disp, base, hoje)) };
+  const produtos = rows.map((r) => produtoPublico(r, disp, base, hoje));
+  await juntarGrades(loja, base, hoje, rows, produtos);
+  return { pagina, por_pagina: porPagina, total, paginas: Math.ceil(total / porPagina), produtos };
 }
 
+const SQL_REPRESENTANTE = ` AND (p.grade_id IS NULL OR p.id = (SELECT p2.id FROM products p2 JOIN lv_produtos lp2 ON lp2.product_id = p2.id
+                              WHERE p2.grade_id = p.grade_id AND p2.ativo AND lp2.publicado ORDER BY p2.criado_em, p2.id LIMIT 1))`;
+
+// Produto de grade no site: nome e fotos da grade, preco "a partir de" (o menor), disponivel se alguma variacao tiver
+// estoque, e a lista de variacoes (atributos, preco, estoque e fotos de cada uma) para os seletores da pagina.
+async function juntarGrades(loja, base, hoje, rows, produtos) {
+  const gradeIds = [...new Set(rows.filter((r) => r.grade_id).map((r) => r.grade_id))];
+  if (gradeIds.length === 0) return;
+  const vrows = (await db().query(`${SELECT_PRODUTO} AND p.grade_id = ANY($2::uuid[]) ORDER BY p.criado_em, p.id`, [loja.tenant_id, gradeIds])).rows;
+  const disp = await disponibilidade(loja, vrows.map((v) => v.id));
+  const info = new Map((await db().query(
+    `SELECT g.id, g.nome, g.atributos, lg.nome_site, lg.atributo_foto, COALESCE(lg.imagens, '{}') AS imagens FROM produto_grades g LEFT JOIN lv_grades lg ON lg.grade_id = g.id WHERE g.id = ANY($1::uuid[])`,
+    [gradeIds]
+  )).rows.map((g) => [g.id, g]));
+  for (let i = 0; i < rows.length; i++) {
+    const gid = rows[i].grade_id;
+    if (!gid) continue;
+    const g = info.get(gid);
+    const vars = vrows.filter((v) => v.grade_id === gid).map((v) => produtoPublico(v, disp, base, hoje));
+    if (!g || vars.length === 0) continue;
+    const precos = vars.map((v) => v.preco);
+    const menor = vars.reduce((a, b) => (b.preco < a.preco ? b : a));
+    // so os valores que tem variacao no site, na ordem do cadastro
+    const atributos = g.atributos.map((a) => ({ nome: a.nome, valores: a.valores.filter((x) => vars.some((v) => v.variacao && v.variacao[a.nome] === x)) })).filter((a) => a.valores.length);
+    produtos[i] = {
+      ...produtos[i],
+      nome: g.nome_site || g.nome,
+      imagens: g.imagens.length ? g.imagens.map((id) => urlImagem(base, id)) : produtos[i].imagens,
+      preco: menor.preco, preco_original: menor.preco_original, preco_varia: Math.min(...precos) !== Math.max(...precos),
+      disponivel: vars.some((v) => v.disponivel),
+      grade: {
+        id: gid, atributos, atributo_foto: g.atributo_foto || null,
+        variacoes: vars.map((v) => ({ id: v.id, variacao: v.variacao, preco: v.preco, preco_original: v.preco_original, disponivel: v.disponivel, quantidade_maxima: v.quantidade_maxima, imagens: v.imagens })),
+      },
+    };
+  }
+}
+
+// Produto pela id. Variacao de grade: devolve a grade inteira com a variacao pedida em "selecionada".
 async function produto(loja, base, id) {
-  const r = await catalogo(loja, base, { ids: [id], por_pagina: 1 });
+  const gradeId = ((await db().query(`SELECT grade_id FROM products WHERE id = $1 AND tenant_id = $2`, [id, loja.tenant_id])).rows[0] || {}).grade_id;
+  const r = gradeId ? await catalogo(loja, base, { grade: gradeId, por_pagina: 1 }) : await catalogo(loja, base, { ids: [id], por_pagina: 1 });
   if (r.produtos.length === 0) throw new HttpError(404, 'produto não encontrado');
-  return r.produtos[0];
+  const p = r.produtos[0];
+  if (p.grade) p.grade.selecionada = p.grade.variacoes.some((v) => v.id === id) ? id : null;
+  return p;
 }
 
 // Categorias com produto publicado (e as categorias pai delas), com a contagem.
@@ -372,7 +424,7 @@ async function categorias(loja, base) {
   const hoje = agoraSP().data;
   const { rows } = await db().query(
     `WITH pub AS (
-       SELECT p.id, p.categoria_id, lp.imagens, lp.destaque,
+       SELECT p.id, COALESCE(p.grade_id, p.id) AS item, p.categoria_id, lp.imagens, lp.destaque,
               (lp.preco_promocional IS NOT NULL AND lp.preco_promocional < p.preco_venda AND (lp.promo_inicio IS NULL OR lp.promo_inicio <= $2::date)
                AND (lp.promo_fim IS NULL OR lp.promo_fim >= $2::date)) AS promo
        FROM products p JOIN lv_produtos lp ON lp.product_id = p.id
@@ -381,7 +433,7 @@ async function categorias(loja, base) {
        SELECT c.id AS cat, pub.* FROM categories c JOIN categories f ON f.id = c.id OR f.parent_id = c.id JOIN pub ON pub.categoria_id = f.id
        WHERE c.tenant_id = $1)
      SELECT c.id, c.nome, c.parent_id, COALESCE(lc.ordem, 0) AS ordem, lc.imagem_id,
-            (SELECT COUNT(*)::int FROM dela WHERE dela.cat = c.id) AS produtos,
+            (SELECT COUNT(DISTINCT dela.item)::int FROM dela WHERE dela.cat = c.id) AS produtos, -- grade conta uma vez
             EXISTS (SELECT 1 FROM dela WHERE dela.cat = c.id AND dela.promo) AS tem_promocao,
             (SELECT dela.imagens[1] FROM dela WHERE dela.cat = c.id AND cardinality(dela.imagens) > 0 ORDER BY dela.destaque DESC, dela.id LIMIT 1) AS foto_produto
      FROM categories c LEFT JOIN lv_categorias lc ON lc.category_id = c.id

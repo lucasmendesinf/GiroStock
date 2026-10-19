@@ -171,6 +171,7 @@ router.get('/products', async (req, res) => {
     `SELECT p.id, p.codigo_interno, p.nome, p.categoria_id, c.nome AS categoria_nome,
             p.supplier_id, s.nome AS supplier_nome, p.barcode,
             p.unidade, p.preco_custo, p.preco_venda, p.ativo, p.vende_ifood, p.codigo_ifood,
+            p.grade_id, p.variacao, (SELECT g.nome FROM produto_grades g WHERE g.id = p.grade_id) AS grade_nome,
             ${SQL_FORNECEDORES},
             COALESCE((SELECT json_agg(json_build_object('product_id', ci.product_id, 'quantidade', ci.quantidade))
                       FROM combo_itens ci WHERE ci.combo_id = p.id), '[]') AS combo,
@@ -543,6 +544,9 @@ router.put('/products/:id', requireArea('Estoque'), async (req, res) => {
     if (body.combo !== undefined) await salvarCombo(client, req.user, req.params.id, body.combo);
     if (Array.isArray(body.grupos)) await salvarGruposDoProduto(client, req.user.tenantId, req.params.id, body.grupos);
     if (fornecedores) await sincronizarFornecedores(client, req.user.tenantId, req.params.id, fornecedores.ids);
+    // variacao de grade: o preco promocional do site (% da grade) acompanha o novo preco
+    const gradeId = (await client.query(`SELECT grade_id FROM products WHERE id = $1`, [req.params.id])).rows[0].grade_id;
+    if (gradeId) await require('../services/grades').sincronizarSite(client, req.user.tenantId, gradeId);
 
     await logAudit(client, {
       tenantId: req.user.tenantId,
@@ -575,9 +579,11 @@ router.patch('/products/:id/status', requireArea('Estoque'), async (req, res) =>
   try {
     await client.query('BEGIN');
     const { rows } = await client.query(
-      `UPDATE products SET ativo = $1 WHERE id = $2 AND tenant_id = $3 RETURNING id, nome, ativo`,
+      `UPDATE products SET ativo = $1 WHERE id = $2 AND tenant_id = $3 RETURNING id, nome, ativo, grade_id`,
       [ativo, req.params.id, req.user.tenantId]
     );
+    // variacao desligada sai do site junto
+    if (rows[0].grade_id) await require('../services/grades').sincronizarSite(client, req.user.tenantId, rows[0].grade_id);
     await logAudit(client, {
       tenantId: req.user.tenantId,
       usuarioId: req.user.id,

@@ -5,6 +5,7 @@ import FormProduto from './FormProduto.jsx';
 import EditarProduto from './EditarProduto.jsx';
 import EstoqueProduto from './EstoqueProduto.jsx';
 import Categorias from './Categorias.jsx';
+import { FormGrade, EditarGrade } from './Grades.jsx';
 import { situacaoProduto, saldoNaLoja, totalDoProduto } from './estoque.js';
 
 const POR_PAGINA = 10;
@@ -43,6 +44,8 @@ export default function ListaProdutos(props) {
   const [editandoId, setEditandoId] = useState(null);
   const [estoqueId, setEstoqueId] = useState(null);
   const [categoriasAberto, setCategoriasAberto] = useState(false);
+  const [novaGrade, setNovaGrade] = useState(false);
+  const [gradeId, setGradeId] = useState(null);
 
   const locaisAtivos = locations.filter((l) => l.ativo);
   const lojaFiltrada = locaisAtivos.find((l) => l.id === lojaId);
@@ -122,6 +125,7 @@ export default function ListaProdutos(props) {
         </div>
         <span className="toolbar-espaco" />
         <button type="button" className="btn-link" onClick={() => setCategoriasAberto(true)}>Categorias</button>
+        <button type="button" className="btn-link" onClick={() => setNovaGrade(true)} title="Cor, tamanho, voltagem: cada variação com estoque e código de barras próprios">+ Grade (variações)</button>
         <button type="button" className="btn-primario" onClick={() => setNovo(true)}>+ Novo produto</button>
       </div>
 
@@ -162,7 +166,7 @@ export default function ListaProdutos(props) {
                     <td>
                       <button type="button" className="es-nome" title="Editar produto" onClick={() => setEditandoId(p.id)}>{p.nome}</button>
                       {!p.ativo && <> <span className="badge-inativo">inativo</span></>}
-                      <div className="celula-sub">{p.categoria_nome || 'Sem categoria'} · EAN {p.barcode}</div>
+                      <div className="celula-sub">{p.categoria_nome || 'Sem categoria'} · EAN {p.barcode}{p.grade_id && <> · <button type="button" className="link-grade" onClick={() => setGradeId(p.grade_id)} title="Abrir a grade de variações">grade {p.grade_nome}</button></>}</div>
                     </td>
                     <td className="col-opcional">{p.codigo_interno}</td>
                     <td className="col-opcional">{p.unidade}</td>
@@ -205,6 +209,8 @@ export default function ListaProdutos(props) {
       )}
       {produtoEstoque && <EstoqueProduto {...props} produto={produtoEstoque} onClose={() => setEstoqueId(null)} />}
       {categoriasAberto && <Categorias {...props} onClose={() => setCategoriasAberto(false)} />}
+      {novaGrade && <FormGrade {...props} onClose={() => setNovaGrade(false)} onSalvo={(g) => { setNovaGrade(false); setGradeId(g.id); }} />}
+      {gradeId && <EditarGrade {...props} gradeId={gradeId} onClose={() => setGradeId(null)} onEditarVariacao={(id) => setEditandoId(id)} />}
     </>
   );
 }

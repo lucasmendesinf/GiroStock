@@ -128,7 +128,7 @@ const hAgora = agoraSP.getUTCHours();
 await api('PUT', '/loja-virtual', { horarios: { [diaSemana]: [{ de: hh(hAgora + 2), ate: hh(hAgora + 3) }] } }, A);
 pub = await loja('GET', '/loja');
 check('fora do horario: fechada, com a proxima abertura', pub.j.recebendo_pedidos === false && pub.j.horario.aberta === false && pub.j.horario.proxima_abertura && /fechada/.test(pub.j.motivo_fechada), pub.j.horario);
-await api('PUT', '/loja-virtual', { horarios: { [diaSemana]: [{ de: hh(hAgora - 1), ate: hh(hAgora + 1) }] } }, A);
+await api('PUT', '/loja-virtual', { horarios: { [diaSemana]: [{ de: hh(hAgora), ate: hh(hAgora + 1) }] } }, A);
 pub = await loja('GET', '/loja');
 check('dentro do horario: aberta e recebendo pedidos', pub.j.recebendo_pedidos === true && pub.j.horario.aberta === true, pub.j.horario);
 await api('PUT', '/loja-virtual', { horarios: {} }, A);
@@ -678,6 +678,67 @@ await api('POST', `/loja-virtual/pedidos/${pRet.j.id}/cancelar`, { motivo: 'test
 await api('PUT', `/loja-virtual/produtos/${REFRI.id}`, { so_retirada: false }, A);
 check('site para maiores de 18: aviso de idade na entrada', (await api('PUT', '/loja-virtual', { site_maior_idade: true }, A)).j.site_maior_idade === true && (await loja('GET', '/loja')).j.maior_idade === true);
 await api('PUT', '/loja-virtual', { site_maior_idade: false }, A);
+
+
+console.log('\n# 22. Grades de variacoes (cor, tamanho): sistema e site');
+const catRoupas = (await api('POST', '/categories', { nome: 'Roupas' }, A)).j;
+check('mais de 3 atributos -> 400', (await api('POST', '/grades', { nome: 'Teste', categoria_id: catRoupas.id, preco_custo: 10, preco_venda: 20, atributos: [{ nome: 'A', valores: ['1'] }, { nome: 'B', valores: ['1'] }, { nome: 'C', valores: ['1'] }, { nome: 'D', valores: ['1'] }] }, A)).s === 400);
+check('atributo repetido -> 400', (await api('POST', '/grades', { nome: 'Teste', categoria_id: catRoupas.id, preco_custo: 10, preco_venda: 20, atributos: [{ nome: 'Cor', valores: ['Azul'] }, { nome: 'cor', valores: ['Verde'] }] }, A)).s === 400);
+check('codigo de barras ja usado -> 409', (await api('POST', '/grades', { nome: 'Teste', categoria_id: catRoupas.id, preco_custo: 10, preco_venda: 20, atributos: [{ nome: 'Cor', valores: ['Azul'] }], variacoes: [{ variacao: { Cor: 'Azul' }, barcode: REFRI.barcode }] }, A)).s === 409);
+const gr = await api('POST', '/grades', {
+  nome: 'Camiseta Básica', categoria_id: catRoupas.id, unidade: 'UN', preco_custo: 20, preco_venda: 49.9, location_id: L.Lanchonete,
+  atributos: [{ nome: 'Cor', valores: ['Preta', 'Branca'] }, { nome: 'Tamanho', valores: ['P', 'M'] }],
+  variacoes: [
+    { variacao: { Cor: 'Preta', Tamanho: 'P' }, estoque_inicial: 2 }, { variacao: { Cor: 'Preta', Tamanho: 'M' }, estoque_inicial: 0, barcode: '7890000000017' },
+    { variacao: { Cor: 'Branca', Tamanho: 'P' }, estoque_inicial: 5 }, { variacao: { Cor: 'Branca', Tamanho: 'M' }, estoque_inicial: 1, preco_venda: 59.9 },
+  ],
+}, A);
+const VAR = (cor, tam) => gr.j.variacoes.find((v) => v.variacao.Cor === cor && v.variacao.Tamanho === tam);
+const eanOk = (e) => { const d = e.split('').map(Number); const s = d.slice(0, 12).reduce((t, x, i) => t + x * (i % 2 ? 3 : 1), 0); return (10 - (s % 10)) % 10 === d[12]; };
+check('cria a grade: 4 variacoes como produtos, com estoque, preco e nome proprios', gr.s === 201 && gr.j.variacoes.length === 4 && VAR('Preta', 'P').nome === 'Camiseta Básica - Preta - P' && VAR('Preta', 'P').saldo_total === 2 && VAR('Branca', 'M').preco_venda === 59.9 && VAR('Preta', 'M').barcode === '7890000000017', gr.j);
+check('codigo de barras interno gerado (EAN-13 com prefixo 2, digito valido)', /^2\d{12}$/.test(VAR('Preta', 'P').barcode) && eanOk(VAR('Preta', 'P').barcode), VAR('Preta', 'P').barcode);
+const listaProd = (await api('GET', '/products', null, A)).j.filter((p) => p.grade_id === gr.j.id);
+check('variacoes na lista de produtos com a grade', listaProd.length === 4 && listaProd.every((p) => p.grade_nome === 'Camiseta Básica' && p.variacao.Cor), listaProd.length);
+const pdv = (await api('GET', `/products/search?barcode=${VAR('Branca', 'P').barcode}&location_id=${L.Lanchonete}`, null, A)).j;
+check('PDV acha a variacao pelo codigo de barras, com o saldo dela', JSON.stringify(pdv).includes(VAR('Branca', 'P').id) && JSON.stringify(pdv).includes('Branca - P'), pdv);
+check('grade fora do site ainda', (await loja('GET', '/produtos?busca=camiseta')).j.total === 0);
+const imgG = (await api('POST', '/loja-virtual/imagens', png, A, { 'content-type': 'image/png' })).j;
+const imgPreta = (await api('POST', '/loja-virtual/imagens', png, A, { 'content-type': 'image/png' })).j;
+check('foto de valor que nao existe -> 400', (await api('PUT', `/loja-virtual/grades/${gr.j.id}`, { atributo_foto: 'Cor', fotos_por_valor: { Roxa: [imgG.id] } }, A)).s === 400);
+const pubG = await api('PUT', `/loja-virtual/grades/${gr.j.id}`, { publicado: true, descricao: '100% algodão', imagens: [imgG.id], atributo_foto: 'Cor', fotos_por_valor: { Preta: [imgPreta.id] }, promo_pct: 10 }, A);
+check('publica a grade no site (fotos gerais, por cor e promocao em %)', pubG.s === 200, pubG.j);
+const admG = (await api('GET', '/loja-virtual/grades', null, A)).j.find((x) => x.id === gr.j.id);
+check('painel lista a grade (no site, faixa de preco)', admG && admG.publicado && admG.preco_min === 49.9 && admG.preco_max === 59.9 && admG.fotos_por_valor.Preta.length === 1, admG);
+check('variacoes nao aparecem soltas em Produtos no site', !(await api('GET', '/loja-virtual/produtos?busca=Camiseta', null, A)).j.itens.length);
+const siteG = (await loja('GET', '/produtos?busca=camiseta')).j;
+const cam = siteG.produtos[0];
+check('site: um produto so para a grade, "a partir de" com a promocao', siteG.total === 1 && cam.grade && cam.grade.variacoes.length === 4 && cam.preco_varia === true && igual(cam.preco, 44.91) && cam.disponivel === true && cam.nome === 'Camiseta Básica', siteG);
+const vPretaM = cam.grade.variacoes.find((v) => v.variacao.Cor === 'Preta' && v.variacao.Tamanho === 'M');
+const vPretaP = cam.grade.variacoes.find((v) => v.variacao.Cor === 'Preta' && v.variacao.Tamanho === 'P');
+const vBrancaP = cam.grade.variacoes.find((v) => v.variacao.Cor === 'Branca' && v.variacao.Tamanho === 'P');
+check('variacao sem estoque aparece indisponivel; atributos e foto por cor', vPretaM.disponivel === false && vPretaP.disponivel === true && vPretaP.quantidade_maxima === 2 && cam.grade.atributo_foto === 'Cor' && vPretaP.imagens[0].includes(imgPreta.id) && vBrancaP.imagens[0].includes(imgG.id) && cam.grade.atributos.map((a) => a.nome).join() === 'Cor,Tamanho', cam.grade);
+check('busca por um valor da variacao acha a grade', (await loja('GET', '/produtos?busca=branca')).j.produtos.some((p) => p.grade && p.grade.id === gr.j.id));
+check('categoria conta a grade uma vez', (await loja('GET', '/categorias')).j.find((c) => c.id === catRoupas.id).produtos === 1);
+const pBM = (await loja('GET', `/produtos/${VAR('Branca', 'M').id}`)).j;
+check('abrir uma variacao traz a grade com ela selecionada', pBM.grade && pBM.grade.selecionada === VAR('Branca', 'M').id, pBM.grade && pBM.grade.selecionada);
+const carG = (await loja('POST', '/carrinho', { itens: [{ product_id: VAR('Branca', 'M').id, quantidade: 1 }], tipo: 'retirada' }, TJ)).j;
+check('carrinho com a variacao: preco dela com a promocao e o nome completo', igual(carG.itens[0].preco_unitario, 53.91) && /Branca - M/.test(carG.itens[0].nome), carG.itens[0]);
+const pedG = await loja('POST', '/pedidos', { itens: [{ product_id: VAR('Branca', 'M').id, quantidade: 1 }], tipo: 'retirada', pagamento: { metodo: 'na_entrega', forma: 'dinheiro' } }, TJ, IP());
+const depois = (await loja('GET', `/produtos/${cam.id}`)).j.grade.variacoes.find((v) => v.id === VAR('Branca', 'M').id);
+check('pedido reserva o estoque da variacao (Branca M esgota)', pedG.s === 201 && depois.disponivel === false, { s: pedG.s, depois });
+await api('POST', `/loja-virtual/pedidos/${pedG.j.id}/cancelar`, { motivo: 'teste' }, A);
+const lote = await api('PUT', `/grades/${gr.j.id}`, { preco_venda: 55 }, A);
+check('preco em lote nas variacoes; promocao do site acompanha', lote.j.variacoes.every((v) => v.preco_venda === 55) && igual((await loja('GET', `/produtos/${cam.id}`)).j.preco, 49.5), lote.j.variacoes.map((v) => v.preco_venda));
+const ren = await api('PUT', `/grades/${gr.j.id}`, { nome: 'Camiseta Algodão' }, A);
+check('renomear a grade renomeia as variacoes', ren.j.variacoes.every((v) => v.nome.startsWith('Camiseta Algodão - ')));
+const novosV = await api('POST', `/grades/${gr.j.id}/valores`, { valores: { Cor: ['Azul'] } }, A);
+check('novo valor (Azul): cria so as combinacoes com Azul', novosV.s === 200 && novosV.j.variacoes.length === 6 && novosV.j.variacoes.filter((v) => v.variacao.Cor === 'Azul').length === 2, novosV.j.variacoes && novosV.j.variacoes.length);
+const azulP = novosV.j.variacoes.find((v) => v.variacao.Cor === 'Azul' && v.variacao.Tamanho === 'P');
+check('variacao nova ja vai para o site (sem estoque)', (await loja('GET', `/produtos/${cam.id}`)).j.grade.variacoes.some((v) => v.id === azulP.id && v.disponivel === false));
+await api('PATCH', `/products/${azulP.id}/status`, { ativo: false }, A);
+check('variacao desativada sai do site', !(await loja('GET', `/produtos/${cam.id}`)).j.grade.variacoes.some((v) => v.id === azulP.id));
+await api('PUT', `/loja-virtual/grades/${gr.j.id}`, { publicado: false }, A);
+check('tirar a grade do site', (await loja('GET', '/produtos?busca=camiseta')).j.total === 0);
 
 await prod.query(`DELETE FROM lv_lojas WHERE tenant_id = $1`, [outra]).catch(() => {});
 await prod.query(`DELETE FROM tenants WHERE id = $1`, [outra]).catch(() => {}); // pode ficar se houver auditoria

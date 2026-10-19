@@ -108,6 +108,14 @@ Cada cliente usa só os módulos (segmentos) que contratou. O Master define isso
 - Módulos "em breve" já podem ser liberados: passam a valer quando ficarem prontos.
 - Catálogo em `backend/src/config/modulos.js`. A migração `024_modulos_por_plano.sql` não muda nada para quem já usa: os planos existentes mantêm PDV e Lanchonete, Pedidos/Clientes seguem como estavam.
 
+## Grades de variações (cor, tamanho, voltagem)
+
+Produtos & Estoque → **+ Grade (variações)**: nome base, categoria, preço e até **3 atributos** com os valores (ex.: Cor: Preta, Branca · Tamanho: P, M, G). O sistema gera as combinações; dá para desmarcar as que não existem, informar o código de barras (sem ele, gera um **EAN-13 interno** com prefixo 2), o preço de uma variação diferente e o estoque inicial numa loja.
+
+Cada variação é um **produto comum** ("Camiseta Básica - Preta - M"), com código, código de barras, preço e **estoque próprios**: aparece no PDV (leitor de código de barras), no estoque, na entrada por nota, nas vendas e nos relatórios como qualquer produto. Na lista de produtos, o link **grade** abre a grade: renomear (renomeia as variações), mudar a categoria, **preço em todas as variações**, criar **novos valores** (ex.: cor Azul — cria só as combinações com o valor novo), ativar/desativar e editar cada variação.
+
+Na loja virtual, a grade aparece como **um produto só** (Produtos no site → *Grades de variações*): fotos gerais e **fotos por valor** (ex.: ao escolher a cor, a foto troca), descrição, promoção em %, destaque, +18, só retirada, peso/medidas — copiados para cada variação. No site: card com "a partir de", página com os **seletores** (opção sem estoque riscada) e o carrinho/pedido/frete com a variação escolhida.
+
 ## Combos e complementos (adicionais)
 
 - **Complementos** (Produtos & Estoque → aba *Complementos*): grupos com mínimo e máximo — ex.: *Adicionais* (0 a 3: Bacon extra +R$ 3, Cheddar +R$ 2) e *Escolha a bebida* (obrigatório 1). Cada opção tem preço e pode **baixar um insumo** (Bacon extra = 30 g de bacon, exige o módulo Lanchonete), **baixar um produto** (Refri lata) ou não baixar nada (ex.: "ao ponto").

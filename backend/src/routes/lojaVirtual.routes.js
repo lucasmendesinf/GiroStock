@@ -11,6 +11,7 @@ const mp = require('../integracoes/mercadopago');
 const QRCode = require('qrcode');
 const pedidosSite = require('../services/pedidosSite');
 const frete = require('../services/frete');
+const grades = require('../services/grades');
 
 const router = express.Router();
 router.use('/loja-virtual', requireModulo('loja_virtual'), requireArea('LojaVirtual'));
@@ -265,7 +266,7 @@ router.get('/loja-virtual/produtos', async (req, res) => {
   const l = await lojaDaEmpresa(pool, t);
   const q = req.query;
   const params = [t];
-  let where = 'p.tenant_id = $1 AND p.ativo';
+  let where = 'p.tenant_id = $1 AND p.ativo AND p.grade_id IS NULL'; // variacoes de grade: em /loja-virtual/grades
   if (q.busca) {
     params.push(`%${texto(q.busca, 60)}%`);
     where += ` AND (p.nome ILIKE $${params.length} OR p.codigo_interno ILIKE $${params.length} OR p.barcode ILIKE $${params.length} OR lp.nome_site ILIKE $${params.length})`;
@@ -630,6 +631,97 @@ router.get('/loja-virtual/pagamentos', async (req, res) => {
     [req.user.tenantId]
   );
   res.json(rows.map((r) => ({ ...r, valor: n2(r.valor), situacao: lv.SITUACAO_MP[r.status] || r.status })));
+});
+
+// ---------- grades de variacoes no site ----------
+// A grade e publicada inteira: fotos (gerais e por valor de um atributo, ex.: por cor), descricao, promocao em %, destaque,
+// +18, so retirada, peso/medidas. Tudo e copiado para o produto de cada variacao (services/grades.js sincronizarSite).
+router.get('/loja-virtual/grades', async (req, res) => {
+  const params = [req.user.tenantId];
+  let where = '';
+  if (req.query.busca) { params.push(`%${texto(req.query.busca, 60)}%`); where = ` AND (g.nome ILIKE $2 OR lg.nome_site ILIKE $2)`; }
+  const { rows } = await pool.query(
+    `SELECT g.id, g.nome, g.atributos, c.nome AS categoria_nome, lg.*, g.id AS id,
+            (SELECT COUNT(*)::int FROM products p WHERE p.grade_id = g.id AND p.ativo) AS variacoes,
+            (SELECT MIN(preco_venda) FROM products p WHERE p.grade_id = g.id AND p.ativo) AS preco_min,
+            (SELECT MAX(preco_venda) FROM products p WHERE p.grade_id = g.id AND p.ativo) AS preco_max
+     FROM produto_grades g LEFT JOIN lv_grades lg ON lg.grade_id = g.id LEFT JOIN categories c ON c.id = g.categoria_id
+     WHERE g.tenant_id = $1${where} ORDER BY g.nome`,
+    params
+  );
+  const base = baseUrl(req);
+  const foto = (id) => ({ id, url: lv.urlImagem(base, id) });
+  res.json(rows.map((r) => ({
+    id: r.id, nome: r.nome, categoria_nome: r.categoria_nome, atributos: r.atributos, variacoes: r.variacoes, preco_min: n2(r.preco_min), preco_max: n2(r.preco_max),
+    publicado: !!r.publicado, configurado: !!r.grade_id, nome_site: r.nome_site, descricao: r.descricao || '', imagens: (r.imagens || []).map(foto),
+    atributo_foto: r.atributo_foto, fotos_por_valor: Object.fromEntries(Object.entries(r.fotos_por_valor || {}).map(([k, ids]) => [k, ids.map(foto)])),
+    promo_pct: r.promo_pct === null || r.promo_pct === undefined ? null : Number(r.promo_pct), promo_inicio: r.promo_inicio, promo_fim: r.promo_fim,
+    destaque: !!r.destaque, maior_idade: !!r.maior_idade, so_retirada: !!r.so_retirada,
+    peso_kg: r.peso_kg, altura_cm: r.altura_cm, largura_cm: r.largura_cm, comprimento_cm: r.comprimento_cm,
+  })));
+});
+
+router.put('/loja-virtual/grades/:id', async (req, res) => {
+  if (!isUuid(req.params.id)) throw new HttpError(404, 'grade não encontrada');
+  const t = req.user.tenantId;
+  const g = await grades.gradeDaEmpresa(pool, t, req.params.id);
+  const b = req.body || {};
+  const atual = (await pool.query(`SELECT * FROM lv_grades WHERE grade_id = $1`, [g.id])).rows[0] || {};
+  const v = (k, f, padrao) => (b[k] === undefined ? (atual[k] === undefined || atual[k] === null ? padrao : atual[k]) : f(b[k]));
+  const fotos = async (lista) => {
+    if (!Array.isArray(lista) || lista.length > 8) throw new HttpError(400, 'fotos inválidas (até 8)');
+    const r = [];
+    for (const id of lista) r.push(await imagemDaEmpresa(pool, t, id));
+    return r;
+  };
+  const imagens = b.imagens === undefined ? atual.imagens || [] : await fotos(b.imagens);
+  const atributoFoto = b.atributo_foto === undefined ? atual.atributo_foto || null : (b.atributo_foto || null);
+  if (atributoFoto && !g.atributos.some((a) => a.nome === atributoFoto)) throw new HttpError(400, 'atributo da foto não existe nesta grade');
+  let porValor = atual.fotos_por_valor || {};
+  if (b.fotos_por_valor !== undefined) {
+    porValor = {};
+    const valores = atributoFoto ? g.atributos.find((a) => a.nome === atributoFoto).valores : [];
+    for (const [valor, lista] of Object.entries(b.fotos_por_valor || {})) {
+      if (!valores.includes(valor)) throw new HttpError(400, `valor "${valor}" não existe em ${atributoFoto || 'nenhum atributo'}`);
+      porValor[valor] = await fotos(lista);
+    }
+  }
+  const promo = b.promo_pct === undefined ? atual.promo_pct ?? null : (b.promo_pct === null || b.promo_pct === '' ? null : Number(b.promo_pct));
+  if (promo !== null && !(promo > 0 && promo < 100)) throw new HttpError(400, 'promoção: de 1 a 99%');
+  const ini = b.promo_inicio === undefined ? atual.promo_inicio || null : dataOuNula(b.promo_inicio, 'início da promoção');
+  const fim = b.promo_fim === undefined ? atual.promo_fim || null : dataOuNula(b.promo_fim, 'fim da promoção');
+  const medida = (k, nome, max) => {
+    if (b[k] === undefined) return atual[k] ?? null;
+    const x = valorOuNulo(b[k], nome, { min: 0.001 });
+    if (x !== null && x > max) throw new HttpError(400, `${nome}: no máximo ${max}`);
+    return k === 'peso_kg' && x !== null ? Number(Number(b[k]).toFixed(3)) : x;
+  };
+  const nomeSite = b.nome_site === undefined ? atual.nome_site ?? null : texto(b.nome_site, 120) || null;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `INSERT INTO lv_grades (grade_id, tenant_id, publicado, nome_site, descricao, imagens, atributo_foto, fotos_por_valor, promo_pct, promo_inicio, promo_fim,
+                              destaque, ordem, maior_idade, so_retirada, peso_kg, altura_cm, largura_cm, comprimento_cm, atualizado_em)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, now())
+       ON CONFLICT (grade_id) DO UPDATE SET publicado = $3, nome_site = $4, descricao = $5, imagens = $6, atributo_foto = $7, fotos_por_valor = $8, promo_pct = $9,
+         promo_inicio = $10, promo_fim = $11, destaque = $12, ordem = $13, maior_idade = $14, so_retirada = $15, peso_kg = $16, altura_cm = $17, largura_cm = $18,
+         comprimento_cm = $19, atualizado_em = now()`,
+      [g.id, t, v('publicado', (x) => !!x, true), nomeSite, v('descricao', (x) => texto(x, 2000), ''), imagens, atributoFoto, JSON.stringify(porValor), promo,
+        promo === null ? null : ini, promo === null ? null : fim, v('destaque', (x) => !!x, false), v('ordem', (x) => Number(x) || 0, 0),
+        v('maior_idade', (x) => !!x, false), v('so_retirada', (x) => !!x, false),
+        medida('peso_kg', 'peso (kg)', 30), medida('altura_cm', 'altura (cm)', 100), medida('largura_cm', 'largura (cm)', 100), medida('comprimento_cm', 'comprimento (cm)', 100)]
+    );
+    await grades.sincronizarSite(client, t, g.id);
+    await logAudit(client, { tenantId: t, usuarioId: req.user.id, acao: 'loja_grade_site', recurso: 'produto_grades', recursoId: g.id, detalhes: { publicado: b.publicado } });
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+  res.json({ ok: true });
 });
 
 // ---------- envio por transportadora (Melhor Envio) ----------

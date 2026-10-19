@@ -99,6 +99,7 @@ export default function Produtos({ config }) {
           </>
         )}
       </div>
+      <GradesSite busca={busca} frete={config.tipo !== 'cardapio'} />
       {editando && <EditarProduto p={editando} frete={config.tipo !== 'cardapio'} onClose={() => setEditando(null)} onSalvo={async () => { setEditando(null); await carregar(offset); }} />}
     </div>
   );
@@ -189,6 +190,138 @@ function EditarProduto({ p, frete, onClose, onSalvo }) {
               <Field label="Comprimento (cm)"><input inputMode="decimal" value={f.comprimento_cm} onChange={mudar('comprimento_cm')} placeholder="padrão" /></Field>
             </div>
             <p className="form-hint" style={{ margin: 0 }}>Vazio = a embalagem padrão da loja (Entrega). Medidas do produto já embalado.</p>
+          </div>
+        )}
+        <div className="modal-actions">
+          <button type="button" onClick={onClose}>Cancelar</button>
+          <button type="submit" className="btn-primario" disabled={enviando > 0}>Salvar</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+// Grades de variacoes (cor, tamanho...): publicadas inteiras no site, com seletores. Fotos gerais e por valor (ex.: por cor).
+function GradesSite({ busca, frete }) {
+  const toast = useToast();
+  const [lista, setLista] = useState(null);
+  const [editando, setEditando] = useState(null);
+  const carregar = useCallback(() => api.get(`/loja-virtual/grades${busca.trim() ? `?busca=${encodeURIComponent(busca.trim())}` : ''}`).then(setLista).catch((err) => toast.erro(err)), [busca, toast]);
+  useEffect(() => { const t = setTimeout(carregar, 250); return () => clearTimeout(t); }, [carregar]);
+  if (!lista || lista.length === 0) return null;
+  return (
+    <div className="card">
+      <div className="ped-head" style={{ marginBottom: 6 }}><h3 style={{ margin: 0 }}>Grades de variações</h3></div>
+      <p className="form-hint" style={{ marginTop: 0 }}>Cada grade aparece no site como um produto só, com a escolha de {[...new Set(lista.flatMap((g) => g.atributos.map((a) => a.nome.toLowerCase())))].slice(0, 3).join(', ')}. Preço e estoque vêm de cada variação.</p>
+      <div className="tabela-wrap">
+        <table className="tabela-cartoes">
+          <thead><tr><th>Grade</th><th>Opções</th><th className="num">Preço</th><th>No site</th><th /></tr></thead>
+          <tbody>
+            {lista.map((g) => (
+              <tr key={g.id}>
+                <td>
+                  <div className="lv-prod">
+                    <span className="lv-thumb">{g.imagens[0] ? <img src={g.imagens[0].url} alt="" loading="lazy" /> : <span aria-hidden="true">📷</span>}</span>
+                    <span><b>{g.nome_site || g.nome}</b>{g.maior_idade && <span className="ped-pill err lv-mini">+18</span>}{g.so_retirada && <span className="ped-pill warn lv-mini">só retirada</span>}<div className="celula-sub">{g.variacoes} variação(ões){g.categoria_nome ? ` · ${g.categoria_nome}` : ''}</div></span>
+                  </div>
+                </td>
+                <td>{g.atributos.map((a) => <div key={a.nome} className="celula-sub">{a.nome}: {a.valores.join(', ')}</div>)}</td>
+                <td className="num">{g.preco_min === g.preco_max ? brl(g.preco_min) : `${brl(g.preco_min)} a ${brl(g.preco_max)}`}{g.promo_pct ? <div className="celula-sub">-{g.promo_pct}% promoção</div> : null}</td>
+                <td>{g.configurado && g.publicado ? <span className="ped-pill ok">no site</span> : <span className="ped-pill">fora do site</span>}</td>
+                <td className="num"><button type="button" className="btn-link" onClick={() => setEditando(g)}>{g.configurado ? 'Editar' : 'Colocar no site'}</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {editando && <EditarGradeSite g={editando} frete={frete} onClose={() => setEditando(null)} onSalvo={async () => { setEditando(null); await carregar(); }} />}
+    </div>
+  );
+}
+
+function EditarGradeSite({ g, frete, onClose, onSalvo }) {
+  const toast = useToast();
+  const [f, setF] = useState({
+    publicado: g.configurado ? g.publicado : true, nome_site: g.nome_site || '', descricao: g.descricao, destaque: g.destaque,
+    promo_pct: g.promo_pct ? String(g.promo_pct).replace('.', ',') : '', promo_inicio: g.promo_inicio || '', promo_fim: g.promo_fim || '',
+    maior_idade: g.maior_idade, so_retirada: g.so_retirada,
+    peso_kg: medida(g.peso_kg), altura_cm: medida(g.altura_cm), largura_cm: medida(g.largura_cm), comprimento_cm: medida(g.comprimento_cm),
+    atributo_foto: g.atributo_foto || (g.atributos.find((a) => /cor/i.test(a.nome)) || {}).nome || '',
+  });
+  const [fotos, setFotos] = useState(g.imagens);
+  const [porValor, setPorValor] = useState(g.fotos_por_valor || {});
+  const [enviando, setEnviando] = useState(0);
+  const mudar = (k) => (e) => setF({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value });
+  async function enviar(e, aoEnviar) {
+    const arqs = [...(e.target.files || [])].slice(0, 8);
+    e.target.value = '';
+    for (const a of arqs) {
+      setEnviando((n) => n + 1);
+      try { aoEnviar(await enviarImagem(a)); } catch (err) { toast.erro(err); } finally { setEnviando((n) => n - 1); }
+    }
+  }
+  const atributoFoto = g.atributos.find((a) => a.nome === f.atributo_foto);
+  async function salvar(e) {
+    e.preventDefault();
+    try {
+      await api.put(`/loja-virtual/grades/${g.id}`, {
+        publicado: f.publicado, nome_site: f.nome_site, descricao: f.descricao, destaque: f.destaque, imagens: fotos.map((x) => x.id),
+        atributo_foto: f.atributo_foto || null,
+        fotos_por_valor: f.atributo_foto ? Object.fromEntries(Object.entries(porValor).filter(([k]) => atributoFoto && atributoFoto.valores.includes(k)).map(([k, l]) => [k, l.map((x) => x.id)])) : {},
+        promo_pct: f.promo_pct.trim() ? parseNumero(f.promo_pct) : null, promo_inicio: f.promo_inicio || null, promo_fim: f.promo_fim || null,
+        maior_idade: f.maior_idade, so_retirada: f.so_retirada,
+        ...(frete ? Object.fromEntries(['peso_kg', 'altura_cm', 'largura_cm', 'comprimento_cm'].map((k) => [k, f[k].trim() ? parseNumero(f[k]) : null])) : {}),
+      });
+      toast.sucesso(f.publicado ? 'Grade no site' : 'Grade salva (fora do site)');
+      await onSalvo();
+    } catch (err) { toast.erro(err); }
+  }
+  const Fotos = ({ lista, setLista, rotulo }) => (
+    <div>
+      <span className="ped-rotulo">{rotulo} ({lista.length}/8)</span>
+      <div className="lv-fotos">
+        {lista.map((x, i) => (
+          <div key={x.id} className="lv-foto">
+            <img src={x.url} alt={`Foto ${i + 1}`} />
+            <div className="lv-foto-acoes"><button type="button" className="perigo" onClick={() => setLista(lista.filter((_, j) => j !== i))} aria-label="Remover foto">×</button></div>
+          </div>
+        ))}
+        {lista.length < 8 && (
+          <label className="lv-foto lv-foto-nova">
+            <span>{enviando ? 'Enviando…' : '+ Foto'}</span>
+            <input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(e) => enviar(e, (r) => setLista((atual) => [...atual, r]))} />
+          </label>
+        )}
+      </div>
+    </div>
+  );
+  return (
+    <Modal titulo={g.nome} subtitulo={`Grade com ${g.variacoes} variação(ões) · preço e estoque de cada variação vêm do cadastro`} onClose={onClose} largura="larga">
+      <form className="form-stack" onSubmit={salvar}>
+        <label className="check"><input type="checkbox" checked={f.publicado} onChange={mudar('publicado')} /> Mostrar esta grade no site</label>
+        <Fotos lista={fotos} setLista={setFotos} rotulo="Fotos gerais (a primeira aparece no card)" />
+        <Field label="Trocar a foto conforme">
+          <select value={f.atributo_foto} onChange={mudar('atributo_foto')}><option value="">Não trocar</option>{g.atributos.map((a) => <option key={a.nome} value={a.nome}>{a.nome}</option>)}</select>
+        </Field>
+        {atributoFoto && atributoFoto.valores.map((valor) => (
+          <Fotos key={valor} lista={porValor[valor] || []} setLista={(fn) => setPorValor((pv) => ({ ...pv, [valor]: typeof fn === 'function' ? fn(pv[valor] || []) : fn }))} rotulo={`Fotos: ${valor}`} />
+        ))}
+        <Field label="Nome no site" hint="Vazio = o nome da grade"><input value={f.nome_site} onChange={mudar('nome_site')} placeholder={g.nome} maxLength={120} /></Field>
+        <Field label="Descrição"><textarea rows={3} value={f.descricao} onChange={mudar('descricao')} maxLength={2000} /></Field>
+        <div className="form-grid lv-grid-3">
+          <Field label="Promoção (% em todas)"><input inputMode="decimal" value={f.promo_pct} onChange={mudar('promo_pct')} placeholder="sem promoção" /></Field>
+          <Field label="de"><input type="date" value={f.promo_inicio} onChange={mudar('promo_inicio')} disabled={!f.promo_pct.trim()} /></Field>
+          <Field label="até"><input type="date" value={f.promo_fim} onChange={mudar('promo_fim')} disabled={!f.promo_pct.trim()} /></Field>
+        </div>
+        <label className="check"><input type="checkbox" checked={f.destaque} onChange={mudar('destaque')} /> Destaque</label>
+        <label className="check"><input type="checkbox" checked={f.maior_idade} onChange={mudar('maior_idade')} /> Venda para maiores de 18 anos</label>
+        <label className="check"><input type="checkbox" checked={f.so_retirada} onChange={mudar('so_retirada')} /> Somente retirada na loja</label>
+        {frete && (
+          <div className="form-grid lv-grid-4">
+            <Field label="Peso (kg)"><input inputMode="decimal" value={f.peso_kg} onChange={mudar('peso_kg')} placeholder="padrão" /></Field>
+            <Field label="Altura (cm)"><input inputMode="decimal" value={f.altura_cm} onChange={mudar('altura_cm')} placeholder="padrão" /></Field>
+            <Field label="Largura (cm)"><input inputMode="decimal" value={f.largura_cm} onChange={mudar('largura_cm')} placeholder="padrão" /></Field>
+            <Field label="Comprimento (cm)"><input inputMode="decimal" value={f.comprimento_cm} onChange={mudar('comprimento_cm')} placeholder="padrão" /></Field>
           </div>
         )}
         <div className="modal-actions">

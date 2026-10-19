@@ -396,3 +396,15 @@ body:not(.modelo-cardapio) .produto-info .preco .preco-pix b { font-size: 1.15re
 .declaracao-idade { margin: 12px 0; padding: 12px; border: 1px solid var(--linha); border-radius: var(--raio); background: var(--fundo); }
 .aviso-retirada { background: var(--primaria-suave); }
 .aviso-idade h2 { margin: 8px 0 0; }
+
+/* ---------- variacoes (grade) ---------- */
+.seletores { display: grid; gap: 14px; margin: 14px 0; }
+.seletor-nome { display: block; font-size: .92rem; margin-bottom: 6px; color: var(--suave); }
+.seletor-nome b { color: var(--texto); }
+.seletor-valores { display: flex; flex-wrap: wrap; gap: 8px; }
+.valor { min-width: 48px; min-height: 44px; padding: 8px 14px; border: 2px solid var(--linha); border-radius: calc(var(--raio) * .6); background: var(--fundo); font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
+.valor.on { border-color: var(--primaria); box-shadow: 0 0 0 1px var(--primaria) inset; }
+.valor.sem-estoque { color: var(--suave); text-decoration: line-through; border-style: dashed; }
+.valor.com-foto { padding: 4px 10px 4px 4px; }
+.valor img { width: 36px; height: 36px; object-fit: cover; border-radius: calc(var(--raio) * .4); }
+.a-partir { font-size: .7em; font-weight: 500; color: var(--suave); }

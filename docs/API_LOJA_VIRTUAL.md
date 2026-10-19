@@ -74,6 +74,14 @@ Parâmetros: `categoria` (id; inclui as subcategorias), `busca`, `destaque=1`, `
 
 ### `GET /produtos/:id` — o mesmo objeto de produto.
 
+**Grade de variações** (cor, tamanho...): vem como um produto só, com `preco` = o menor, `preco_varia: true` quando os preços variam, `disponivel` se alguma variação tiver estoque e:
+```json
+"grade": { "id": "...", "atributo_foto": "Cor", "selecionada": "<id da variacao pedida em /produtos/:id>",
+           "atributos": [{ "nome": "Cor", "valores": ["Preta", "Branca"] }, { "nome": "Tamanho", "valores": ["P", "M"] }],
+           "variacoes": [{ "id": "...", "variacao": { "Cor": "Preta", "Tamanho": "M" }, "preco": 49.9, "preco_original": null, "disponivel": true, "quantidade_maxima": 5, "imagens": ["..."] }] }
+```
+No carrinho e no pedido, use o `id` da **variação** escolhida como `product_id`.
+
 ### `GET /imagens/:id` — a foto (sem chave; cache longo, pode ser usada direto em `<img>`).
 
 ## Carrinho

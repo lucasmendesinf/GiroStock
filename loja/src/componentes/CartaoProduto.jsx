@@ -11,7 +11,7 @@ export function Preco({ p, completo }) {
   return (
     <span className="preco">
       {p.preco_original && <s>De {brl(p.preco_original)}{completo ? '' : ' por'}</s>}
-      <b>{brl(p.preco)}</b>
+      <b>{p.preco_varia && !completo ? <small className="a-partir">a partir de </small> : null}{brl(p.preco)}</b>
       {pix !== null && <small className="preco-pix"><b>{brl(pix)}</b> no Pix <span>({String(pg.pix_desconto_pct).replace('.', ',')}% off)</span></small>}
       {parcelas > 0 && <small className="parcelas">ou em até {parcelas}x no cartão</small>}
     </span>
@@ -47,7 +47,7 @@ export default function CartaoProduto({ p }) {
   }
   // Varejo: botao Comprar direto no cartao; produto com opcoes abre a pagina para escolher.
   function comprar() {
-    if (p.complementos.length > 0) return navegar(`/produto/${p.id}`);
+    if (p.complementos.length > 0 || p.grade) return navegar(`/produto/${p.id}`);
     adicionar({ product_id: p.id, nome: p.nome, imagem: p.imagens[0] || null, preco_unitario: p.preco, quantidade: 1, unidade: p.unidade, complementos: [], observacao: '', maximo: p.quantidade_maxima });
     avisar(`${p.nome} no carrinho`);
   }
@@ -59,7 +59,7 @@ export default function CartaoProduto({ p }) {
         {p.descricao && <span className="cartao-desc">{p.descricao}</span>}
         <Preco p={p} />
         <button type="button" className="botao cartao-comprar" onClick={comprar} disabled={!p.disponivel}>
-          {!p.disponivel ? 'Esgotado' : p.complementos.length > 0 ? 'Escolher' : 'Comprar'}
+          {!p.disponivel ? 'Esgotado' : p.complementos.length > 0 || p.grade ? 'Escolher' : 'Comprar'}
         </button>
       </div>
     </div>

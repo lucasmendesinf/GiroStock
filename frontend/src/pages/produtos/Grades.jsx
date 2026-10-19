@@ -90,7 +90,7 @@ export function FormGrade({ categories, suppliers, locations, reload, onClose, o
             <div key={i} className="grade-atributo">
               <input list="grade-sugestoes" value={a.nome} onChange={(e) => setAtributos(atributos.map((x, j) => (j === i ? { ...x, nome: e.target.value } : x)))} placeholder="Atributo (ex.: Cor)" aria-label={`Atributo ${i + 1}`} maxLength={30} />
               <input value={a.texto} onChange={(e) => setAtributos(atributos.map((x, j) => (j === i ? { ...x, texto: e.target.value } : x)))} placeholder="Valores separados por vírgula (ex.: Preta, Branca, Azul)" aria-label={`Valores de ${a.nome || `atributo ${i + 1}`}`} />
-              <button type="button" className="btn-link perigo" onClick={() => setAtributos(atributos.filter((_, j) => j !== i))} aria-label="Remover atributo">×</button>
+              <button type="button" className="grade-remover" onClick={() => setAtributos(atributos.filter((_, j) => j !== i))} aria-label="Remover atributo" title="Remover atributo">×</button>
             </div>
           ))}
           <datalist id="grade-sugestoes">{SUGESTOES.map((s) => <option key={s} value={s} />)}</datalist>
@@ -182,7 +182,7 @@ export function EditarGrade({ gradeId, categories, locations, reload, onClose, o
           <Field label="Categoria">
             <select value={f.categoria_id || ''} onChange={(e) => setF({ ...f, categoria_id: e.target.value })}>{arvore.map((c) => <option key={c.id} value={c.id}>{'— '.repeat(c.nivel)}{c.nome}</option>)}</select>
           </Field>
-          <div style={{ alignSelf: 'end' }}><button type="submit" disabled={salvando}>Salvar</button></div>
+          <div style={{ alignSelf: 'end' }}><button type="submit" className="btn-primario" disabled={salvando}>Salvar</button></div>
         </form>
 
         <div className="tabela-wrap">

@@ -31,11 +31,13 @@ export default function Produto() {
   // Grade: o produto efetivo e a variacao escolhida (preco, estoque e fotos dela).
   const g = p.grade;
   const v = g ? g.variacoes.find((x) => x.id === selId) || g.variacoes[0] : null;
-  const prod = v ? { ...p, id: v.id, preco: v.preco, preco_original: v.preco_original, disponivel: v.disponivel, quantidade_maxima: v.quantidade_maxima, imagens: v.imagens.length ? v.imagens : p.imagens } : p;
+  const prod = v ? { ...p, id: v.id, preco_varia: false, preco: v.preco, preco_original: v.preco_original, disponivel: v.disponivel, quantidade_maxima: v.quantidade_maxima, imagens: v.imagens.length ? v.imagens : p.imagens } : p;
   const rotulo = v ? g.atributos.map((a) => v.variacao[a.nome]).join(' / ') : '';
   function escolher(atributo, valor) {
     const igual = (x) => g.atributos.every((a) => (a.nome === atributo ? x.variacao[a.nome] === valor : x.variacao[a.nome] === v.variacao[a.nome]));
-    const alvo = g.variacoes.find(igual) || g.variacoes.find((x) => x.variacao[atributo] === valor && x.disponivel) || g.variacoes.find((x) => x.variacao[atributo] === valor);
+    // a combinacao exata se tiver estoque; senao, a primeira com esse valor que tenha (ex.: Azul P esgotada -> Azul M)
+    const exata = g.variacoes.find(igual);
+    const alvo = (exata && exata.disponivel ? exata : null) || g.variacoes.find((x) => x.variacao[atributo] === valor && x.disponivel) || exata || g.variacoes.find((x) => x.variacao[atributo] === valor);
     if (alvo) { setSelId(alvo.id); setFoto(0); setQtd(1); }
   }
   // valor esgotado (ou inexistente) com as outras escolhas atuais: aparece riscado

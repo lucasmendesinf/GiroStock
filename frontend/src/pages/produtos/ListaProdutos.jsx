@@ -5,7 +5,7 @@ import FormProduto from './FormProduto.jsx';
 import EditarProduto from './EditarProduto.jsx';
 import EstoqueProduto from './EstoqueProduto.jsx';
 import Categorias from './Categorias.jsx';
-import { FormGrade, EditarGrade } from './Grades.jsx';
+import { FormGrade, EditarGrade, ConverterGrade } from './Grades.jsx';
 import { situacaoProduto, saldoNaLoja, totalDoProduto } from './estoque.js';
 
 const POR_PAGINA = 10;
@@ -46,6 +46,7 @@ export default function ListaProdutos(props) {
   const [categoriasAberto, setCategoriasAberto] = useState(false);
   const [novaGrade, setNovaGrade] = useState(false);
   const [gradeId, setGradeId] = useState(null);
+  const [converter, setConverter] = useState(false);
 
   const locaisAtivos = locations.filter((l) => l.ativo);
   const lojaFiltrada = locaisAtivos.find((l) => l.id === lojaId);
@@ -126,6 +127,7 @@ export default function ListaProdutos(props) {
         <span className="toolbar-espaco" />
         <button type="button" className="btn-link" onClick={() => setCategoriasAberto(true)}>Categorias</button>
         <button type="button" className="btn-link" onClick={() => setNovaGrade(true)} title="Cor, tamanho, voltagem: cada variação com estoque e código de barras próprios">+ Grade (variações)</button>
+        <button type="button" className="btn-link" onClick={() => setConverter(true)} title="Produtos já cadastrados (ex.: Camiseta Preta M, Camiseta Branca G) viram as variações de uma grade">Agrupar em grade</button>
         <button type="button" className="btn-primario" onClick={() => setNovo(true)}>+ Novo produto</button>
       </div>
 
@@ -210,6 +212,7 @@ export default function ListaProdutos(props) {
       {produtoEstoque && <EstoqueProduto {...props} produto={produtoEstoque} onClose={() => setEstoqueId(null)} />}
       {categoriasAberto && <Categorias {...props} onClose={() => setCategoriasAberto(false)} />}
       {novaGrade && <FormGrade {...props} onClose={() => setNovaGrade(false)} onSalvo={(g) => { setNovaGrade(false); setGradeId(g.id); }} />}
+      {converter && <ConverterGrade {...props} onClose={() => setConverter(false)} onSalvo={(g) => { setConverter(false); setGradeId(g.id); }} />}
       {gradeId && <EditarGrade {...props} gradeId={gradeId} onClose={() => setGradeId(null)} onEditarVariacao={(id) => setEditandoId(id)} />}
     </>
   );

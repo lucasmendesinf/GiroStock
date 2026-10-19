@@ -740,6 +740,49 @@ check('variacao desativada sai do site', !(await loja('GET', `/produtos/${cam.id
 await api('PUT', `/loja-virtual/grades/${gr.j.id}`, { publicado: false }, A);
 check('tirar a grade do site', (await loja('GET', '/produtos?busca=camiseta')).j.total === 0);
 
+console.log('\n# 23. Produtos ja cadastrados viram uma grade');
+const ean = () => `78${String(Math.floor(Math.random() * 1e11)).padStart(11, '0')}`;
+const novoProd = async (nome, qtd, extra = {}) => (await api('POST', '/products', { nome, categoria_id: catRoupas.id, barcode: ean(), unidade: 'UN', preco_custo: 15, preco_venda: 39.9, location_id: L.Lanchonete, estoque_inicial: qtd, ...extra }, A)).j;
+const bPreto = await novoProd('Boné Aba Curva Preto', 3);
+const bVerm = await novoProd('Boné Aba Curva Vermelho', 0);
+const bAzul = await novoProd('Boné Aba Curva Azul', 4);
+const bKg = await novoProd('Boné Aba Curva Granel', 1, { unidade: 'KG' });
+const fotoPreto = (await api('POST', '/loja-virtual/imagens', png, A, { 'content-type': 'image/png' })).j;
+await api('PUT', `/loja-virtual/produtos/${bPreto.id}`, { publicado: true, descricao: 'Aba curva, regulagem atrás', imagens: [fotoPreto.id], destaque: true }, A);
+await api('PUT', `/loja-virtual/produtos/${bAzul.id}`, { publicado: true }, A);
+const conv = (produtos, extra = {}) => api('POST', '/grades/converter', { nome: 'Boné Aba Curva', atributos: [{ nome: 'Cor' }], produtos, ...extra }, A);
+const P = (p, Cor) => ({ product_id: p.id, variacao: { Cor } });
+check('converter: menos de 2 produtos -> 400', (await conv([P(bPreto, 'Preto')])).s === 400);
+check('converter: combo/ficha tecnica -> 400', (await conv([P(bPreto, 'Preto'), P(XB, 'X')])).s === 400);
+check('converter: produto que ja esta em grade -> 409', (await conv([P(bPreto, 'Preto'), P(VAR('Preta', 'P'), 'Y')])).s === 409);
+check('converter: unidades diferentes -> 400', (await conv([P(bPreto, 'Preto'), P(bKg, 'Granel')])).s === 400);
+check('converter: dois produtos com a mesma variacao -> 400', (await conv([P(bPreto, 'Preto'), P(bVerm, 'preto')])).s === 400);
+check('converter: valor em branco -> 400', (await conv([P(bPreto, 'Preto'), P(bVerm, ' ')])).s === 400);
+check('converter: produto de outra empresa/inexistente -> 404', (await conv([P(bPreto, 'Preto'), { product_id: '00000000-0000-0000-0000-000000000000', variacao: { Cor: 'Z' } }])).s === 404);
+const cv = await conv([P(bPreto, 'Preto'), P(bVerm, 'Vermelho'), P(bAzul, 'Azul')]);
+const cvV = (cor) => cv.j.variacoes.find((v) => v.variacao.Cor === cor);
+check('converte: os mesmos produtos (id, codigo, codigo de barras, estoque) viram as variacoes',
+  cv.s === 201 && cv.j.variacoes.length === 3 && cvV('Preto').id === bPreto.id && cvV('Preto').barcode === bPreto.barcode && cvV('Preto').codigo_interno === bPreto.codigo_interno
+  && cvV('Preto').saldo_total === 3 && cvV('Azul').saldo_total === 4 && cvV('Preto').nome === 'Boné Aba Curva - Preto' && cv.j.atributos[0].valores.join() === 'Preto,Vermelho,Azul', cv.j);
+check('converte: produtos que estavam no site deixam a grade publicada', cv.j.site_publicado === true);
+const admB = (await api('GET', '/loja-virtual/grades', null, A)).j.find((x) => x.id === cv.j.id);
+check('site: foto do produto vira a foto do valor (Preto) e a descricao passa para a grade', admB.publicado && admB.atributo_foto === 'Cor' && admB.fotos_por_valor.Preto[0].id === fotoPreto.id && admB.descricao === 'Aba curva, regulagem atrás' && admB.destaque, admB);
+const siteB = (await loja('GET', '/produtos?busca=aba curva')).j;
+check('site: os 3 bonés viram um produto so com seletor de cor', siteB.total === 1 && siteB.produtos[0].grade.variacoes.length === 3 && siteB.produtos[0].grade.variacoes.find((v) => v.id === bPreto.id).imagens[0].includes(fotoPreto.id), siteB);
+check('incluir: unidade diferente -> 400; valor que ja existe -> 409', (await api('POST', `/grades/${cv.j.id}/produtos`, { product_id: bKg.id, variacao: { Cor: 'Verde' } }, A)).s === 400
+  && (await api('POST', `/grades/${cv.j.id}/produtos`, { product_id: (await novoProd('Boné Aba Curva Preto 2', 0)).id, variacao: { Cor: 'preto' } }, A)).s === 409);
+const bVerde = await novoProd('Boné Aba Curva Verde', 2);
+const inc = await api('POST', `/grades/${cv.j.id}/produtos`, { product_id: bVerde.id, variacao: { Cor: 'Verde' } }, A);
+check('incluir produto ja cadastrado numa grade existente (valor novo entra na grade)', inc.s === 200 && inc.j.variacoes.length === 4 && inc.j.atributos[0].valores.includes('Verde') && inc.j.variacoes.find((v) => v.id === bVerde.id).nome === 'Boné Aba Curva - Verde', inc.j);
+check('incluido ja aparece no site', (await loja('GET', `/produtos/${bPreto.id}`)).j.grade.variacoes.some((v) => v.id === bVerde.id && v.disponivel));
+const ret = await api('DELETE', `/grades/${cv.j.id}/produtos/${bVerde.id}`, null, A);
+const verdeDepois = (await api('GET', '/products', null, A)).j.find((p) => p.id === bVerde.id);
+check('tirar da grade: volta a ser avulso com o mesmo estoque', ret.s === 200 && ret.j.variacoes.length === 3 && verdeDepois.grade_id === null && verdeDepois.variacao === null && verdeDepois.saldos_por_local.some((s) => Number(s.saldo) === 2), verdeDepois);
+const desf = await api('DELETE', `/grades/${cv.j.id}`, null, A);
+const avulsosB = (await api('GET', '/products', null, A)).j.filter((p) => [bPreto.id, bVerm.id, bAzul.id].includes(p.id));
+check('desfazer a grade: os produtos voltam a ser avulsos', desf.s === 200 && desf.j.produtos === 3 && avulsosB.every((p) => !p.grade_id) && (await api('GET', `/grades/${cv.j.id}`, null, A)).s === 404, desf.j);
+check('desfeita: no site cada um aparece separado, com a propria foto', (await loja('GET', `/produtos/${bPreto.id}`)).j.imagens[0].includes(fotoPreto.id) && !(await loja('GET', `/produtos/${bPreto.id}`)).j.grade);
+
 await prod.query(`DELETE FROM lv_lojas WHERE tenant_id = $1`, [outra]).catch(() => {});
 await prod.query(`DELETE FROM tenants WHERE id = $1`, [outra]).catch(() => {}); // pode ficar se houver auditoria
 

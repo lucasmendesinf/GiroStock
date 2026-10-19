@@ -230,6 +230,172 @@ async function editar(client, user, id, b) {
   return { antes: { nome: g.nome }, depois: { nome, preco_em_lote: emLote ? { custo: b.preco_custo, venda: b.preco_venda } : null } };
 }
 
+// ---------- conversao de produtos ja cadastrados ----------
+// Os produtos continuam os mesmos (codigo, codigo de barras, preco, estoque, vendas e historico): so ganham a grade e a variacao.
+
+// Produtos avulsos da empresa, prontos para entrar numa grade (travados ate o fim da transacao).
+async function produtosAvulsos(client, tenantId, ids) {
+  const { rows } = await client.query(
+    `SELECT p.id, p.nome, p.unidade, p.categoria_id, p.grade_id,
+            EXISTS(SELECT 1 FROM combo_itens ci WHERE ci.combo_id = p.id) AS e_combo,
+            EXISTS(SELECT 1 FROM product_ingredients pi WHERE pi.product_id = p.id) AS tem_ficha
+     FROM products p WHERE p.tenant_id = $1 AND p.id = ANY($2::uuid[]) FOR UPDATE OF p`,
+    [tenantId, ids]
+  );
+  const porId = new Map(rows.map((r) => [r.id, r]));
+  return ids.map((id) => {
+    const p = porId.get(id);
+    if (!p) throw new HttpError(404, 'produto não encontrado');
+    if (p.grade_id) throw new HttpError(409, `"${p.nome}" já está em uma grade`);
+    if (p.e_combo) throw new HttpError(400, `"${p.nome}" é um combo: combo não entra em grade`);
+    if (p.tem_ficha) throw new HttpError(400, `"${p.nome}" tem ficha técnica (insumos): não entra em grade`);
+    return p;
+  });
+}
+
+// Variacao informada para um produto -> { Atributo: valor } com todos os atributos da grade.
+function variacaoDoProduto(atributos, v, nomeProduto) {
+  const r = {};
+  for (const a of atributos) {
+    const k = Object.keys(v || {}).find((x) => semAcento(x) === semAcento(a.nome));
+    const valor = texto(k === undefined ? '' : v[k], 30);
+    if (!valor) throw new HttpError(400, `informe ${a.nome} de "${nomeProduto}"`);
+    // mesmo valor escrito de outro jeito (preta/Preta) vira o ja usado na grade
+    r[a.nome] = a.valores.find((x) => semAcento(x) === semAcento(valor)) || valor;
+  }
+  return r;
+}
+
+// Fotos dos produtos no site viram as fotos de cada valor (ex.: a foto da camiseta preta vira a foto da cor Preta).
+function fotosPorValor(atributoFoto, itens, site) {
+  const r = {};
+  if (!atributoFoto) return r;
+  for (const it of itens) {
+    const lp = site.get(it.id);
+    const valor = it.variacao[atributoFoto];
+    if (lp && lp.imagens && lp.imagens.length && !r[valor]) r[valor] = lp.imagens.slice(0, 8);
+  }
+  return r;
+}
+const atributoDeFoto = (atributos) => (atributos.find((a) => /^(cor|cores|estampa)$/.test(semAcento(a.nome))) || atributos[0]).nome;
+
+// Agrupa produtos avulsos numa grade nova.
+// b: { nome, categoria_id, atributos: [{ nome }], produtos: [{ product_id, variacao: { Cor: 'Preta', ... } }], renomear }
+async function converterEmGrade(client, user, b) {
+  const nome = texto(b.nome, 120);
+  if (nome.length < 3) throw new HttpError(400, 'nome da grade deve ter no mínimo 3 caracteres');
+  const lista = Array.isArray(b.produtos) ? b.produtos : [];
+  if (lista.length < 2) throw new HttpError(400, 'escolha ao menos 2 produtos para agrupar');
+  if (lista.length > MAX_VARIACOES) throw new HttpError(400, `no máximo ${MAX_VARIACOES} variações por grade`);
+  const ids = lista.map((x) => x && x.product_id);
+  if (ids.some((id) => typeof id !== 'string' || !/^[0-9a-f-]{36}$/i.test(id))) throw new HttpError(404, 'produto não encontrado');
+  if (new Set(ids).size !== ids.length) throw new HttpError(400, 'produto repetido na lista');
+  const produtos = await produtosAvulsos(client, user.tenantId, ids);
+  if (new Set(produtos.map((p) => p.unidade)).size > 1) throw new HttpError(400, 'os produtos de uma grade precisam ter a mesma unidade (UN, KG...)');
+  // atributos: os nomes informados; os valores saem dos produtos, na ordem em que aparecem
+  const nomes = normalizarAtributos((Array.isArray(b.atributos) ? b.atributos : []).map((a) => ({ nome: a && a.nome, valores: ['-'] }))).map((a) => ({ nome: a.nome, valores: [] }));
+  const itens = produtos.map((p, i) => {
+    const variacao = variacaoDoProduto(nomes, lista[i].variacao, p.nome);
+    for (const a of nomes) if (!a.valores.includes(variacao[a.nome])) a.valores.push(variacao[a.nome]);
+    return { ...p, variacao };
+  });
+  const atributos = normalizarAtributos(nomes);
+  const vistas = new Map();
+  for (const it of itens) {
+    const k = chave(it.variacao);
+    if (vistas.has(k)) throw new HttpError(400, `"${vistas.get(k)}" e "${it.nome}" ficaram com a mesma variação (${atributos.map((a) => it.variacao[a.nome]).join(' / ')})`);
+    vistas.set(k, it.nome);
+  }
+  const categoria = b.categoria_id || itens[0].categoria_id;
+  if (!categoria) throw new HttpError(400, 'categoria é obrigatória');
+  await getOwned(client, 'categories', categoria, user.tenantId);
+  const { rows } = await client.query(
+    `INSERT INTO produto_grades (tenant_id, nome, categoria_id, atributos) VALUES ($1, $2, $3, $4) RETURNING *`,
+    [user.tenantId, nome, categoria, JSON.stringify(atributos)]
+  );
+  const grade = rows[0];
+  const renomear = b.renomear !== false;
+  for (const it of itens) {
+    await client.query(
+      `UPDATE products SET grade_id = $2, variacao = $3, categoria_id = $4, nome = COALESCE($5, nome) WHERE id = $1`,
+      [it.id, grade.id, JSON.stringify(it.variacao), categoria, renomear ? nomeVariacao(nome, atributos, it.variacao) : null]
+    );
+  }
+  // Site: se algum produto ja estava na loja virtual, a grade entra configurada com os dados deles.
+  const site = new Map((await client.query(`SELECT * FROM lv_produtos WHERE product_id = ANY($1::uuid[])`, [ids])).rows.map((r) => [r.product_id, r]));
+  let publicada = false;
+  if (site.size) {
+    const lps = itens.map((it) => site.get(it.id)).filter(Boolean);
+    const atributoFoto = atributoDeFoto(atributos);
+    const porValor = fotosPorValor(atributoFoto, itens, site);
+    const comMedida = lps.find((x) => x.peso_kg) || {};
+    publicada = lps.some((x) => x.publicado);
+    await client.query(
+      `INSERT INTO lv_grades (grade_id, tenant_id, publicado, descricao, imagens, atributo_foto, fotos_por_valor, destaque, ordem, maior_idade, so_retirada,
+                              peso_kg, altura_cm, largura_cm, comprimento_cm)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+      [grade.id, user.tenantId, publicada, (lps.find((x) => x.descricao) || {}).descricao || '',
+        // sem foto por valor, as fotos do primeiro produto com foto valem para a grade toda
+        Object.keys(porValor).length ? [] : ((lps.find((x) => x.imagens && x.imagens.length) || {}).imagens || []),
+        Object.keys(porValor).length ? atributoFoto : null, JSON.stringify(porValor), lps.some((x) => x.destaque), Math.min(...lps.map((x) => x.ordem || 0)),
+        lps.some((x) => x.maior_idade), lps.some((x) => x.so_retirada), comMedida.peso_kg || null, comMedida.altura_cm || null, comMedida.largura_cm || null,
+        comMedida.comprimento_cm || null]
+    );
+    await sincronizarSite(client, user.tenantId, grade.id);
+  }
+  return { grade, produtos: itens.map((it) => ({ id: it.id, antes: it.nome, variacao: it.variacao })), publicada };
+}
+
+// Inclui um produto avulso numa grade que ja existe (valor novo entra nos atributos). b: { product_id, variacao }
+async function incluirProduto(client, user, id, b) {
+  const g = await gradeDaEmpresa(client, user.tenantId, id, true);
+  if (typeof b.product_id !== 'string' || !/^[0-9a-f-]{36}$/i.test(b.product_id)) throw new HttpError(404, 'produto não encontrado');
+  const [p] = await produtosAvulsos(client, user.tenantId, [b.product_id]);
+  const ref = (await client.query(`SELECT unidade FROM products WHERE grade_id = $1 LIMIT 1`, [g.id])).rows[0];
+  if (ref && ref.unidade !== p.unidade) throw new HttpError(400, `a grade é em ${ref.unidade} e o produto em ${p.unidade}`);
+  const atributos = g.atributos.map((a) => ({ ...a, valores: [...a.valores] }));
+  const variacao = variacaoDoProduto(atributos, b.variacao, p.nome);
+  for (const a of atributos) if (!a.valores.includes(variacao[a.nome])) a.valores.push(variacao[a.nome]);
+  normalizarAtributos(atributos);
+  const existentes = (await client.query(`SELECT nome, variacao FROM products WHERE grade_id = $1`, [g.id])).rows;
+  if (existentes.length >= MAX_VARIACOES) throw new HttpError(400, `a grade já tem ${MAX_VARIACOES} variações`);
+  const igual = existentes.find((x) => chave(x.variacao) === chave(variacao));
+  if (igual) throw new HttpError(409, `a variação ${atributos.map((a) => variacao[a.nome]).join(' / ')} já existe nesta grade ("${igual.nome}")`);
+  await client.query(`UPDATE produto_grades SET atributos = $2, atualizado_em = now() WHERE id = $1`, [g.id, JSON.stringify(atributos)]);
+  await client.query(
+    `UPDATE products SET grade_id = $2, variacao = $3, categoria_id = $4, nome = COALESCE($5, nome) WHERE id = $1`,
+    [p.id, g.id, JSON.stringify(variacao), g.categoria_id, b.renomear === false ? null : nomeVariacao(g.nome, atributos, variacao)]
+  );
+  // foto do produto no site vira a foto do valor, se o valor ainda nao tiver
+  const lg = (await client.query(`SELECT atributo_foto, fotos_por_valor FROM lv_grades WHERE grade_id = $1`, [g.id])).rows[0];
+  const lp = (await client.query(`SELECT imagens FROM lv_produtos WHERE product_id = $1`, [p.id])).rows[0];
+  if (lg && lg.atributo_foto && lp && lp.imagens.length && !(lg.fotos_por_valor || {})[variacao[lg.atributo_foto]]) {
+    await client.query(`UPDATE lv_grades SET fotos_por_valor = fotos_por_valor || $2::jsonb, atualizado_em = now() WHERE grade_id = $1`,
+      [g.id, JSON.stringify({ [variacao[lg.atributo_foto]]: lp.imagens.slice(0, 8) })]);
+  }
+  await sincronizarSite(client, user.tenantId, g.id);
+  return { produto: p.nome, variacao };
+}
+
+// Tira um produto da grade: volta a ser avulso (nome, estoque e historico ficam). Grade vazia e apagada.
+async function retirarProduto(client, user, id, productId) {
+  const g = await gradeDaEmpresa(client, user.tenantId, id, true);
+  const { rows } = await client.query(`UPDATE products SET grade_id = NULL, variacao = NULL WHERE id = $1 AND grade_id = $2 AND tenant_id = $3 RETURNING nome`,
+    [productId, g.id, user.tenantId]);
+  if (!rows.length) throw new HttpError(404, 'produto não está nesta grade');
+  const resto = (await client.query(`SELECT COUNT(*)::int AS n FROM products WHERE grade_id = $1`, [g.id])).rows[0].n;
+  if (resto === 0) await client.query(`DELETE FROM produto_grades WHERE id = $1`, [g.id]);
+  return { produto: rows[0].nome, grade_apagada: resto === 0 };
+}
+
+// Desfaz a grade: todas as variacoes voltam a ser produtos avulsos (no site, cada uma fica com as fotos que ja tinha).
+async function desfazerGrade(client, user, id) {
+  const g = await gradeDaEmpresa(client, user.tenantId, id, true);
+  const { rows } = await client.query(`UPDATE products SET grade_id = NULL, variacao = NULL WHERE grade_id = $1 RETURNING id`, [g.id]);
+  await client.query(`DELETE FROM produto_grades WHERE id = $1`, [g.id]);
+  return { nome: g.nome, produtos: rows.length };
+}
+
 // Copia os dados da grade no site (lv_grades) para o produto de cada variacao (lv_produtos).
 async function sincronizarSite(client, tenantId, gradeId) {
   const lg = (await client.query(`SELECT * FROM lv_grades WHERE grade_id = $1 AND tenant_id = $2`, [gradeId, tenantId])).rows[0];
@@ -254,4 +420,5 @@ async function sincronizarSite(client, tenantId, gradeId) {
 
 module.exports = {
   normalizarAtributos, combinacoes, criarGrade, detalhe, adicionarValores, editar, sincronizarSite, gradeDaEmpresa, gerarEan, digitoEan, nomeVariacao, MAX_ATRIBUTOS,
+  converterEmGrade, incluirProduto, retirarProduto, desfazerGrade,
 };

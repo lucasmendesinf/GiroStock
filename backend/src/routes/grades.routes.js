@@ -70,4 +70,45 @@ router.post('/grades/:id/valores', async (req, res) => {
   res.json(await grades.detalhe(pool, req.user.tenantId, id));
 });
 
+// Produtos ja cadastrados (ex.: "Camiseta Preta M", "Camiseta Branca G") viram as variacoes de uma grade nova.
+router.post('/grades/converter', async (req, res) => {
+  const r = await emTransacao(async (client) => {
+    const c = await grades.converterEmGrade(client, req.user, req.body || {});
+    await logAudit(client, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'converter_em_grade', recurso: 'produto_grades', recursoId: c.grade.id, detalhes: { nome: c.grade.nome, produtos: c.produtos } });
+    return c;
+  });
+  res.status(201).json({ ...(await grades.detalhe(pool, req.user.tenantId, r.grade.id)), site_publicado: r.publicada });
+});
+
+router.post('/grades/:id/produtos', async (req, res) => {
+  const id = idValido(req.params.id);
+  await emTransacao(async (client) => {
+    const d = await grades.incluirProduto(client, req.user, id, req.body || {});
+    await logAudit(client, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'grade_incluir_produto', recurso: 'produto_grades', recursoId: id, detalhes: d });
+  });
+  res.json(await grades.detalhe(pool, req.user.tenantId, id));
+});
+
+router.delete('/grades/:id/produtos/:productId', async (req, res) => {
+  const id = idValido(req.params.id);
+  if (!isUuid(req.params.productId)) throw new HttpError(404, 'produto não está nesta grade');
+  const d = await emTransacao(async (client) => {
+    const x = await grades.retirarProduto(client, req.user, id, req.params.productId);
+    await logAudit(client, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'grade_retirar_produto', recurso: 'produto_grades', recursoId: id, detalhes: x });
+    return x;
+  });
+  res.json(d.grade_apagada ? { grade_apagada: true } : await grades.detalhe(pool, req.user.tenantId, id));
+});
+
+// Desfaz a grade: as variacoes continuam como produtos avulsos.
+router.delete('/grades/:id', async (req, res) => {
+  const id = idValido(req.params.id);
+  const d = await emTransacao(async (client) => {
+    const x = await grades.desfazerGrade(client, req.user, id);
+    await logAudit(client, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'desfazer_grade', recurso: 'produto_grades', recursoId: id, detalhes: x });
+    return x;
+  });
+  res.json(d);
+});
+
 module.exports = router;

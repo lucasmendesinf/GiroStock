@@ -327,6 +327,13 @@ function produtoPublico(r, disp, base, hoje) {
   };
 }
 
+// Busca sem acento (sem depender da extensao unaccent do Postgres).
+// (maiusculas acentuadas tambem: com collation C, lower() so mexe no ASCII)
+const ACENTOS = 'áàâãäéèêëíìîïóòôõöúùûüçñÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇÑ';
+const SEM_ACENTOS = 'aaaaaeeeeiiiiooooouuuucnaaaaaeeeeiiiiooooouuuucn';
+const sqlSemAcento = (col) => `translate(lower(${col}), '${ACENTOS}', '${SEM_ACENTOS}')`;
+const semAcentoBusca = (t) => String(t || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
 // Lista do site. filtros: { categoria, busca, destaque, ids, pagina, por_pagina, ordem }
 async function catalogo(loja, base, filtros = {}) {
   const params = [loja.tenant_id];
@@ -336,9 +343,11 @@ async function catalogo(loja, base, filtros = {}) {
     where += ` AND (p.categoria_id = $${params.length}::uuid OR c.parent_id = $${params.length}::uuid)`;
   }
   if (filtros.busca) {
-    params.push(`%${String(filtros.busca).trim().slice(0, 60)}%`);
-    where += ` AND (p.nome ILIKE $${params.length} OR lp.nome_site ILIKE $${params.length} OR lp.descricao ILIKE $${params.length}
-               OR (p.grade_id IS NOT NULL AND EXISTS (SELECT 1 FROM products p3 WHERE p3.grade_id = p.grade_id AND p3.ativo AND p3.nome ILIKE $${params.length})))`;
+    // sem acento e sem diferenca de maiuscula: "bone" acha "Boné"
+    params.push(`%${semAcentoBusca(filtros.busca).slice(0, 60).replace(/[\\%_]/g, '\\$&')}%`);
+    const t = `$${params.length}`;
+    where += ` AND (${sqlSemAcento('p.nome')} LIKE ${t} OR ${sqlSemAcento('lp.nome_site')} LIKE ${t} OR ${sqlSemAcento('lp.descricao')} LIKE ${t}
+               OR (p.grade_id IS NOT NULL AND EXISTS (SELECT 1 FROM products p3 WHERE p3.grade_id = p.grade_id AND p3.ativo AND ${sqlSemAcento('p3.nome')} LIKE ${t})))`;
   }
   if (filtros.destaque) where += ' AND lp.destaque';
   if (filtros.promocao) {

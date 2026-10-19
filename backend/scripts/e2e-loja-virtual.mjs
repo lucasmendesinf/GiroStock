@@ -769,6 +769,7 @@ const admB = (await api('GET', '/loja-virtual/grades', null, A)).j.find((x) => x
 check('site: foto do produto vira a foto do valor (Preto) e a descricao passa para a grade', admB.publicado && admB.atributo_foto === 'Cor' && admB.fotos_por_valor.Preto[0].id === fotoPreto.id && admB.descricao === 'Aba curva, regulagem atrás' && admB.destaque, admB);
 const siteB = (await loja('GET', '/produtos?busca=aba curva')).j;
 check('site: os 3 bonés viram um produto so com seletor de cor', siteB.total === 1 && siteB.produtos[0].grade.variacoes.length === 3 && siteB.produtos[0].grade.variacoes.find((v) => v.id === bPreto.id).imagens[0].includes(fotoPreto.id), siteB);
+check('busca do site sem acento e sem maiuscula (bone acha Boné; BONÉ também)', (await loja('GET', '/produtos?busca=bone aba')).j.total === 1 && (await loja('GET', '/produtos?busca=BONÉ ABA')).j.total === 1 && (await loja('GET', '/produtos?busca=50%25')).j.total === 0);
 check('incluir: unidade diferente -> 400; valor que ja existe -> 409', (await api('POST', `/grades/${cv.j.id}/produtos`, { product_id: bKg.id, variacao: { Cor: 'Verde' } }, A)).s === 400
   && (await api('POST', `/grades/${cv.j.id}/produtos`, { product_id: (await novoProd('Boné Aba Curva Preto 2', 0)).id, variacao: { Cor: 'preto' } }, A)).s === 409);
 const bVerde = await novoProd('Boné Aba Curva Verde', 2);

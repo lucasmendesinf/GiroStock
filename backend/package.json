@@ -38,7 +38,8 @@
     "test:e2e:relatorios": "node scripts/e2e-relatorios.mjs",
     "mp:simulador": "node scripts/mercadopago-simulador.mjs",
     "me:simulador": "node scripts/melhorenvio-simulador.mjs",
-    "test:e2e:loja-virtual": "node scripts/e2e-loja-virtual.mjs"
+    "test:e2e:loja-virtual": "node scripts/e2e-loja-virtual.mjs",
+    "test:e2e:cardapio": "node scripts/e2e-cardapio.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

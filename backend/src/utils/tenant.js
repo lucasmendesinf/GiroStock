@@ -17,6 +17,7 @@ const LABELS = {
   customers: 'cliente',
   fin_categorias: 'categoria financeira',
   fin_contas: 'conta financeira',
+  comissao_acertos: 'acerto de comissões',
 };
 
 function isUuid(id) {

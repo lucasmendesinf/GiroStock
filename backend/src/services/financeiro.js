@@ -24,6 +24,7 @@ const CATEGORIAS_PADRAO = [
   ['despesa', 'Energia, água e gás', true],
   ['despesa', 'Internet e telefone', true],
   ['despesa', 'Salários e encargos', true],
+  ['despesa', 'Comissões', true],
   ['despesa', 'Impostos', true],
   ['despesa', 'Taxas e tarifas', true],
   ['despesa', 'Manutenção', true],

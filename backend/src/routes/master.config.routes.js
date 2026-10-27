@@ -14,6 +14,7 @@ const { verificarMigracoes } = require('../services/saude');
 const { modulosDoPlano } = require('../utils/limites');
 const { CHAVES, conflitoDeDependencia } = require('../config/modulos');
 const ifoodApi = require('../integracoes/ifood/api');
+const codigoLogin = require('../services/codigoLogin');
 const food99Api = require('../integracoes/food99/api');
 
 // Painel Master, fase 3: backups e dados, manutencao segura, configuracoes globais (aviso, manutencao, parametros, planos).
@@ -120,6 +121,7 @@ async function statusIntegracoes() {
     { id: 'pg_dump', nome: 'pg_dump no servidor', status: backup.temPgDump() ? 'ok' : 'indisponivel', detalhe: backup.temPgDump() ? 'disponível (backups em formato pg_dump)' : 'não encontrado: os backups usam o formato próprio (JavaScript)', testavel: false },
     { id: 'totp', nome: 'Chave do 2FA (TOTP_ENC_KEY)', status: totp.disponivel() ? 'ok' : 'nao_configurado', detalhe: totp.disponivel() ? 'configurada' : 'ausente: o 2FA fica indisponível', testavel: false },
     { id: 'smtp', nome: 'E-mail (SMTP)', status: process.env.SMTP_HOST ? 'ok' : 'nao_configurado', detalhe: process.env.SMTP_HOST ? 'configurado' : 'não configurado (o sistema ainda não envia e-mails)', testavel: false },
+    { id: 'codigo_login', nome: 'Código de login da loja (WhatsApp/SMS)', status: codigoLogin.status().configurado ? 'ok' : 'nao_configurado', detalhe: `${codigoLogin.status().provedor}: ${codigoLogin.status().detalhe}`, testavel: false },
     { id: 'whatsapp', nome: 'WhatsApp (API)', status: 'nao_contratado', detalhe: 'não contratado: as mensagens usam o link wa.me', testavel: false },
     { id: 'ifood', nome: 'iFood', status: ifoodApi.configurado() ? 'ok' : 'nao_configurado', detalhe: ifoodApi.configurado() ? `app configurado${process.env.IFOOD_API_URL ? ` (endereço: ${process.env.IFOOD_API_URL})` : ''}: cada loja conecta a sua conta em Lojas & PDVs` : 'IFOOD_CLIENT_ID/IFOOD_CLIENT_SECRET ausentes: cadastre o app no Portal do Desenvolvedor iFood', testavel: false },
     { id: '99food', nome: '99Food', status: food99Api.configurado() ? 'ok' : 'nao_configurado', detalhe: food99Api.configurado() ? `app configurado${process.env.FOOD99_API_URL ? ` (endereço: ${process.env.FOOD99_API_URL})` : ''}: webhook em /api/webhooks/99food; cada loja conecta em Lojas & PDVs` : 'FOOD99_APP_ID/FOOD99_APP_SECRET ausentes: cadastre o app no portal de desenvolvedores da 99Food', testavel: false },

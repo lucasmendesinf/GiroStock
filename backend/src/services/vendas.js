@@ -45,7 +45,8 @@ async function assertReceitasPermitidas(db, user, productIds) {
 // baixa o estoque / consome os insumos (ficha tecnica, combos e complementos: services/consumo.js), numera a comanda e audita.
 // dados: { terminal_id, itens: [{ product_id, quantidade, observacao, complementos: [{ id, quantidade }] }], forma_pagamento,
 //          valor_recebido, desconto, taxa_entrega, numero_pedido (fixo, vindo de um pedido), ignorar_pedido_id (pedido cuja
-//          reserva vira baixa), precos_informados (pedido de plataforma: cada item traz preco_unitario, o preco cobrado pela
+//          reserva vira baixa), ignorar_pedidos_ids (varios pedidos: as rodadas de uma comanda), comanda_id (comanda de origem;
+//          cada item pode trazer garcom_id), precos_informados (pedido de plataforma: cada item traz preco_unitario, o preco cobrado pela
 //          plataforma, e os complementos ja vem com o preco dela; a regra de minimo/maximo dos grupos nao se aplica) }
 async function registrarVenda(client, user, dados) {
   const { terminal_id, itens, forma_pagamento, valor_recebido } = dados;
@@ -58,9 +59,12 @@ async function registrarVenda(client, user, dados) {
   if (!FORMAS_PAGAMENTO.includes(forma_pagamento)) throw new HttpError(400, 'forma_pagamento inválida');
   if (forma_pagamento === 'online' && !dados.precos_informados) throw new HttpError(400, 'forma_pagamento inválida');
   const itensAgrupados = agruparItens(itens);
+  const ignorarIds = dados.ignorar_pedidos_ids && dados.ignorar_pedidos_ids.length ? dados.ignorar_pedidos_ids : (dados.ignorar_pedido_id ? [dados.ignorar_pedido_id] : []);
+  const deReserva = ignorarIds.length > 0; // a reserva dos pedidos ignorados vira baixa: a venda vem de pedido(s) ja aceito(s)
   // Linhas como vieram do PDV (mesmo produto com observacoes ou complementos diferentes vira linhas separadas).
   const linhas = itens.map((i) => ({
     product_id: i.product_id, quantidade: Number(i.quantidade), observacao: String(i.observacao || '').trim().slice(0, 200),
+    garcom_id: isUuid(i.garcom_id) ? i.garcom_id : null,
     preco_informado: dados.precos_informados && Number.isFinite(Number(i.preco_unitario)) ? Number(i.preco_unitario) : null,
     complementos_pedidos: Array.isArray(i.complementos) ? i.complementos : [],
   }));
@@ -98,7 +102,7 @@ async function registrarVenda(client, user, dados) {
   );
   const productMap = new Map(products.rows.map((p) => [p.id, p]));
   // Pedido ja aceito antes de o modulo ser desligado ainda pode ser finalizado (a reserva ja existe).
-  if (!dados.ignorar_pedido_id) await assertReceitasPermitidas(client, user, productIds);
+  if (!deReserva) await assertReceitasPermitidas(client, user, productIds);
   for (const item of itensAgrupados) {
     const produto = productMap.get(item.product_id);
     if (!produto || !produto.ativo) {
@@ -112,7 +116,7 @@ async function registrarVenda(client, user, dados) {
   // Composicao (fichas, combos, complementos) e complementos validados de cada linha.
   const comp = await carregarComposicao(client, user.tenantId, productIds, idsDeComplementos(linhas.map((l) => ({ complementos: l.complementos_pedidos }))));
   for (const l of linhas) {
-    l.complementos = validarComplementos(comp, l.product_id, l.complementos_pedidos, { validarGrupos: !dados.precos_informados && !dados.ignorar_pedido_id });
+    l.complementos = validarComplementos(comp, l.product_id, l.complementos_pedidos, { validarGrupos: !dados.precos_informados && !deReserva });
     // Preco do complemento que veio da plataforma (o do iFood pode ser diferente do cadastro).
     if (dados.precos_informados) {
       for (const c of l.complementos) {
@@ -152,10 +156,10 @@ async function registrarVenda(client, user, dados) {
   // saldo menos o reservado por pedidos em aberto (a reserva do pedido que esta sendo finalizado vira baixa).
   const consumoPorLinha = linhasComPreco.map((l) => consumoDaLinha(comp, l));
   const consumoTotal = consumoDasLinhas(comp, linhasComPreco);
-  if (!dados.ignorar_pedido_id && user.modulos && user.modulos.lanchonete === false && consumoTotal.insumos.size > 0) {
+  if (!deReserva && user.modulos && user.modulos.lanchonete === false && consumoTotal.insumos.size > 0) {
     throw new HttpError(403, 'há item que consome insumos (lanche, combo ou adicional) e o módulo Lanchonete e cozinha não faz parte do plano da sua empresa');
   }
-  const reservados = await reservadosDaLoja(client, user.tenantId, locationId, dados.ignorar_pedido_id || null);
+  const reservados = await reservadosDaLoja(client, user.tenantId, locationId, ignorarIds);
   const disponivel = await saldosDaLoja(client, user.tenantId, locationId, consumoTotal, reservados, true);
   const faltas = await faltasDoConsumo(client, user.tenantId, consumoTotal, disponivel, comp);
   if (faltas.length > 0) {
@@ -190,11 +194,11 @@ async function registrarVenda(client, user, dados) {
   }
   const sale = await client.query(
     `INSERT INTO sales (tenant_id, numero, location_id, terminal_id, cash_session_id, operador_id, forma_pagamento,
-                        valor_recebido, troco, subtotal, desconto, total, status, numero_pedido, taxa_entrega)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'concluida', $13, $14)
+                        valor_recebido, troco, subtotal, desconto, total, status, numero_pedido, taxa_entrega, comanda_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'concluida', $13, $14, $15)
      RETURNING id, numero, subtotal, desconto, total, troco, forma_pagamento, criado_em`,
     [user.tenantId, numero, locationId, terminal_id, cashSessionId, user.id, forma_pagamento,
-      valorRecebidoFinal, troco, subtotalVenda, desconto, total, numeroPedido, taxaEntrega]
+      valorRecebidoFinal, troco, subtotalVenda, desconto, total, numeroPedido, taxaEntrega, dados.comanda_id || null]
   );
   const saleId = sale.rows[0].id;
 
@@ -204,10 +208,10 @@ async function registrarVenda(client, user, dados) {
     // Observacao: itens com preparo (consomem insumos) ou com complementos; e os de plataforma.
     const guardaObs = consumo.insumos.size > 0 || item.complementos.length > 0 || comp.combos.has(item.product_id) || dados.precos_informados;
     const saleItem = await client.query(
-      `INSERT INTO sale_items (tenant_id, sale_id, product_id, quantidade, preco_unitario, custo_unitario, subtotal, observacao, complementos)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+      `INSERT INTO sale_items (tenant_id, sale_id, product_id, quantidade, preco_unitario, custo_unitario, subtotal, observacao, complementos, garcom_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
       [user.tenantId, saleId, item.product_id, item.quantidade, item.preco_unitario, item.custo_unitario, item.subtotal,
-        guardaObs && item.observacao ? item.observacao : null, item.complementos.length ? JSON.stringify(item.complementos) : null]
+        guardaObs && item.observacao ? item.observacao : null, item.complementos.length ? JSON.stringify(item.complementos) : null, item.garcom_id]
     );
     // Produtos com estoque proprio (o vendido, os componentes do combo, os complementos que sao produto).
     for (const [productId, q] of consumo.produtos) {

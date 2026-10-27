@@ -30,6 +30,7 @@ async function proximoNumero(client, tenantId, locationId) {
 // opcoes.externo: pedido de plataforma ({ externo_id, codigo_externo }): usa os precos e o desconto da plataforma,
 //   aceita a forma 'online', nao cadastra cliente (o telefone e um 0800 da plataforma) e, se faltar estoque,
 //   NAO recusa (o pedido ja existe na plataforma): devolve as faltas para a equipe resolver.
+// opcoes.comanda: rodada de uma comanda ({ id, rodada, clientId, garcomId }): tipo mesa/pista, item com o garcom que lancou.
 // opcoes.inserirCliente: funcao de cadastro de cliente (vinda das rotas de clientes).
 async function criarPedido(client, user, b, opcoes = {}) {
   const externo = opcoes.externo || null;
@@ -37,11 +38,11 @@ async function criarPedido(client, user, b, opcoes = {}) {
   if (!isUuid(locationId)) throw new HttpError(400, 'location_id (loja) é obrigatório');
   const origem = b.origem || 'balcao';
   if (!ORIGENS.includes(origem)) throw new HttpError(400, 'origem inválida');
-  const tipo = ['entrega', 'mesa'].includes(b.tipo) ? b.tipo : 'retirada';
+  const tipo = ['entrega', 'mesa', 'pista'].includes(b.tipo) ? b.tipo : 'retirada';
   if (!Array.isArray(b.itens) || b.itens.length === 0) throw new HttpError(400, 'adicione ao menos um item ao pedido');
   const endereco = String(b.endereco || '').trim().slice(0, 300);
   if (tipo === 'entrega' && endereco.length < 3) throw new HttpError(400, 'informe o endereço da entrega');
-  if (tipo === 'mesa' && endereco.length < 1) throw new HttpError(400, 'informe a mesa');
+  if ((tipo === 'mesa' || tipo === 'pista') && endereco.length < 1) throw new HttpError(400, tipo === 'mesa' ? 'informe a mesa' : 'informe a pulseira ou o cartão');
   const taxa = tipo === 'entrega' ? Number(b.taxa_entrega || 0) : 0;
   if (!(taxa >= 0)) throw new HttpError(400, 'taxa de entrega inválida');
   const forma = b.forma_pagamento_prevista === undefined || b.forma_pagamento_prevista === null ? null : String(b.forma_pagamento_prevista);
@@ -126,21 +127,22 @@ async function criarPedido(client, user, b, opcoes = {}) {
   const pedido = await client.query(
     `INSERT INTO orders (tenant_id, location_id, numero, origem, cliente_nome, cliente_telefone, tipo, endereco, taxa_entrega,
                          observacao, forma_pagamento_prevista, pago, status, criado_por, customer_id, valor_recebido,
-                         origem_externa_id, codigo_externo, desconto)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'novo', $13, $14, $15, $16, $17, $18) RETURNING id`,
+                         origem_externa_id, codigo_externo, desconto, comanda_id, rodada, client_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'novo', $13, $14, $15, $16, $17, $18, $19, $20, $21) RETURNING id`,
     [user.tenantId, locationId, numero, origem, String(b.cliente_nome || '').trim().slice(0, 120), String(b.cliente_telefone || '').trim().slice(0, 40),
       tipo, tipo === 'retirada' ? '' : endereco, taxa, String(b.observacao || '').trim().slice(0, 300), forma, pago, user.id || null, customerId, valorRecebido,
-      externo ? externo.externo_id : null, externo ? externo.codigo_externo || null : null, desconto]
+      externo ? externo.externo_id : null, externo ? externo.codigo_externo || null : null, desconto,
+      opcoes.comanda ? opcoes.comanda.id : null, opcoes.comanda ? opcoes.comanda.rodada : null, opcoes.comanda ? opcoes.comanda.clientId || null : null]
   );
   const orderId = pedido.rows[0].id;
   for (const l of linhas) {
     const preco = l.preco_unitario !== undefined ? l.preco_unitario : Number((Number(mapa.get(l.product_id).preco_venda) + precoDosComplementos(l.complementos)).toFixed(2));
     // Observacao: itens com preparo (consomem insumos), com complementos ou combo; de plataforma, em qualquer item.
     const preparo = consumoDaLinha(comp, l).insumos.size > 0 || l.complementos.length > 0 || comp.combos.has(l.product_id);
-    const obs = (preparo || externo) && l.observacao ? l.observacao : null;
+    const obs = (preparo || externo || opcoes.comanda) && l.observacao ? l.observacao : null;
     await client.query(
-      `INSERT INTO order_items (order_id, product_id, quantidade, preco_unitario, subtotal, observacao, complementos) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [orderId, l.product_id, l.quantidade, preco, Number((preco * l.quantidade).toFixed(2)), obs, l.complementos.length ? JSON.stringify(l.complementos) : null]
+      `INSERT INTO order_items (order_id, product_id, quantidade, preco_unitario, subtotal, observacao, complementos, garcom_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [orderId, l.product_id, l.quantidade, preco, Number((preco * l.quantidade).toFixed(2)), obs, l.complementos.length ? JSON.stringify(l.complementos) : null, opcoes.comanda ? opcoes.comanda.garcomId || null : null]
     );
   }
   await client.query(`INSERT INTO order_status_log (order_id, de, para, usuario_id) VALUES ($1, NULL, 'novo', $2)`, [orderId, user.id || null]);

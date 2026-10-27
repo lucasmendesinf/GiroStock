@@ -24,6 +24,8 @@ const FLUXO = {
 
 const SELECT_PEDIDO = `
   SELECT o.id, o.numero, o.location_id, l.nome AS location_nome, o.origem, o.origem_externa_id, o.codigo_externo, o.desconto, o.cliente_nome, o.cliente_telefone,
+         o.comanda_id, o.rodada, cm.numero AS comanda_numero, cm.tipo AS comanda_tipo,
+         (SELECT gu.nome FROM order_items oi2 JOIN users gu ON gu.id = oi2.garcom_id WHERE oi2.order_id = o.id LIMIT 1) AS garcom_nome,
          o.tipo, o.endereco, o.taxa_entrega, o.observacao, o.forma_pagamento_prevista, o.pago, o.status,
          o.entregador_id, c.nome AS entregador_nome, o.sale_id, o.criado_por, u.nome AS criado_por_nome, o.customer_id, o.valor_recebido,
          o.criado_em, o.atualizado_em, o.finalizado_em, o.cancelado_em, o.motivo_cancelamento,
@@ -36,6 +38,7 @@ const SELECT_PEDIDO = `
   FROM orders o
   JOIN locations l ON l.id = o.location_id
   LEFT JOIN couriers c ON c.id = o.entregador_id
+  LEFT JOIN comandas cm ON cm.id = o.comanda_id
   LEFT JOIN users u ON u.id = o.criado_por`;
 
 async function itensDoPedido(db, orderId) {
@@ -164,8 +167,9 @@ router.put('/orders/:id/entregador', async (req, res) => {
 // ---------- destino (retirada / entrega / mesa) ----------
 // O cliente pode mudar de ideia enquanto o pedido esta aberto. Entrega exige endereco; mesa exige a mesa.
 router.put('/orders/:id/destino', async (req, res) => {
-  const pedido = await getOwned(pool, 'orders', req.params.id, req.user.tenantId, { columns: 'id, numero, location_id, status, tipo' });
+  const pedido = await getOwned(pool, 'orders', req.params.id, req.user.tenantId, { columns: 'id, numero, location_id, status, tipo, comanda_id' });
   assertLocationAccess(req.user, pedido.location_id, 'alterar pedidos desta loja');
+  if (pedido.comanda_id) throw new HttpError(409, 'rodada de comanda: o destino é a mesa/pista da comanda e não muda por aqui');
   if (['finalizado', 'cancelado'].includes(pedido.status)) throw new HttpError(400, 'pedido encerrado: não dá mais para mudar o destino');
   if (pedido.status === 'saiu_entrega') throw new HttpError(400, 'o pedido já saiu para entrega');
   const b = req.body || {};
@@ -206,7 +210,10 @@ router.post('/orders/:id/status', async (req, res) => {
     const entregaPlataforma = o.origem_externa_id
       ? !!(await client.query(`SELECT entrega_pela_plataforma FROM pedidos_externos WHERE order_id = $1`, [o.id])).rows.some((r) => r.entrega_pela_plataforma)
       : false;
-    const permitidos = (FLUXO[o.status] || []).filter((s) => {
+    // Rodada de comanda: novo -> em_preparo -> pronto -> entregue. NUNCA gera venda (a venda unica nasce no fechamento da comanda).
+    if (o.comanda_id && para === 'finalizado') throw new HttpError(409, 'rodada de comanda não é finalizada aqui: a comanda é fechada no caixa (Comandas)');
+    const permitidos = (o.comanda_id ? ({ novo: ['em_preparo'], em_preparo: ['pronto'], pronto: ['entregue'] })[o.status] || [] : FLUXO[o.status] || []).filter((s) => {
+      if (o.comanda_id) return true;
       if (o.status === 'pronto') return o.tipo === 'entrega' && !entregaPlataforma ? s === 'saiu_entrega' : s === 'finalizado';
       return true;
     });

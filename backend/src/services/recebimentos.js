@@ -12,6 +12,7 @@ const { HttpError } = require('../utils/http');
 const { isUuid } = require('../utils/tenant');
 const { logAudit } = require('../utils/audit');
 const { registrarVenda } = require('./vendas');
+const comissoes = require('./comissoes');
 
 const FORMAS_APP = ['pix', 'cartao_credito', 'cartao_debito', 'dinheiro'];
 const chaveDaForma = (forma) => (String(forma).startsWith('cartao') ? 'cartao' : forma);
@@ -83,6 +84,8 @@ async function confirmarRecebimento(client, user, comanda, opcoes) {
     // UNIQUE(order_id): se outra requisicao quitou a mesma rodada ao mesmo tempo, esta falha (23505 -> 409 no chamador).
     await client.query(`INSERT INTO comanda_pagamento_rodadas (pagamento_id, order_id) VALUES ($1, $2)`, [pag.id, r.id]);
   }
+  // A comissao nasce quando o dinheiro entra: aqui, das rodadas que este recebimento quitou.
+  await comissoes.gerarLancamentos(client, user, comanda, { origem: 'recebimento', orderIds: escolhidas.map((r) => r.id), taxaCents: centavos(taxa), comandaPagamentoId: pag.id });
   await logAudit(client, {
     tenantId: user.tenantId, usuarioId: user.id, acao: 'receber_comanda', recurso: 'comandas', recursoId: comanda.id,
     detalhes: { pagamento_id: pag.id, forma, valor_produtos: valorProdutos, taxa_servico: taxa, total, rodadas: escolhidas.map((r) => r.rodada), provider },
@@ -102,6 +105,7 @@ async function estornarRecebimento(client, user, comanda, pagamentoId, motivo) {
   if (p.forma === 'dinheiro' && p.prestado_em) throw new HttpError(409, 'o dinheiro deste recebimento já foi entregue ao caixa (prestação de contas): não dá para estornar por aqui');
   await client.query(`UPDATE comanda_pagamentos SET status = 'estornado', estornado_por = $1, estornado_em = now(), motivo_estorno = $2 WHERE id = $3`, [user.id, texto, p.id]);
   await client.query(`DELETE FROM comanda_pagamento_rodadas WHERE pagamento_id = $1`, [p.id]); // libera as rodadas
+  await comissoes.estornarPorPagamento(client, user, user.tenantId, p.id, `recebimento estornado: ${texto}`);
   await logAudit(client, {
     tenantId: user.tenantId, usuarioId: user.id, acao: 'estornar_recebimento_comanda', recurso: 'comandas', recursoId: comanda.id,
     detalhes: { pagamento_id: p.id, forma: p.forma, valor: dinheiro(Number(p.valor_produtos) + Number(p.taxa_servico)), motivo: texto },
@@ -178,6 +182,9 @@ async function fecharComanda(client, user, comanda, opcoes) {
   }
   await client.query(`UPDATE orders SET status = 'finalizado', sale_id = $1, pago = true, finalizado_em = now(), atualizado_em = now() WHERE id = ANY($2::uuid[])`, [venda.id, rodadas.map((r) => r.id)]);
   await client.query(`UPDATE comandas SET status = 'paga', sale_id = $1, fechada_em = now(), fechada_por = $2 WHERE id = $3`, [venda.id, user.id, comanda.id]);
+  // Comissao: so das rodadas que o app ainda nao tinha cobrado (desconto e taxa do fechamento rateados nos itens delas); as do app ja foram lancadas.
+  await comissoes.gerarLancamentos(client, user, comanda, { origem: 'fechamento', orderIds: rodadas.filter((r) => !r.pagamento_id).map((r) => r.id), descontoCents: centavos(desconto), taxaCents: centavos(taxaRestante), saleId: venda.id });
+  await client.query(`UPDATE comissoes SET sale_id = $1 WHERE comanda_id = $2 AND sale_id IS NULL AND estornado_em IS NULL AND origem IN ('recebimento', 'fechamento')`, [venda.id, comanda.id]);
   await logAudit(client, {
     tenantId: user.tenantId, usuarioId: user.id, acao: 'fechar_comanda', recurso: 'comandas', recursoId: comanda.id,
     detalhes: { identificador: comanda.identificador, sale_id: venda.id, total: venda.total, rodadas: rodadas.length, pago_no_app: app.length, restante: aCobrar, desconto, taxa_servico: dinheiro(taxaApp + taxaRestante), por: opcoes.origem || 'caixa', formas: pagamentos.map((p) => `${p.forma}:${p.valor}`) },
@@ -271,6 +278,7 @@ async function receberPrestacao(client, user, { garcomId, valorConferido, termin
 // Quando uma venda de comanda e cancelada: os recebimentos do garcom nela viram "estornado" (saem da prestacao); se o dinheiro ja
 // tinha sido entregue ao caixa, o valor volta ao cliente pelo caixa: sangria na sessao aberta da venda.
 async function estornarRecebimentosDaVenda(client, user, sale) {
+  await comissoes.estornarPorVenda(client, user, user.tenantId, sale.id, `venda nº ${sale.numero} cancelada`);
   const { rows } = await client.query(
     `SELECT cp.id, cp.forma, cp.prestado_em, cp.valor_produtos, cp.taxa_servico
      FROM sale_payments sp JOIN comanda_pagamentos cp ON cp.id = sp.comanda_pagamento_id

@@ -58,11 +58,11 @@ async function hoje(db) {
 async function vendasRecebiveis(db, tenantId, { de, ate, locationId = null }) {
   const { rows } = await db.query(
     `WITH v AS (
-       SELECT s.total, (s.criado_em AT TIME ZONE '${FUSO}')::date AS dia,
-              CASE WHEN s.forma_pagamento = 'online'
+       SELECT vp.valor AS total, s.id AS venda_id, (s.criado_em AT TIME ZONE '${FUSO}')::date AS dia,
+              CASE WHEN vp.forma = 'online'
                    THEN COALESCE((SELECT CASE WHEN o.origem = '99food' THEN '99food' ELSE 'ifood' END FROM orders o WHERE o.sale_id = s.id LIMIT 1), 'ifood')
-                   ELSE s.forma_pagamento::text END AS forma
-       FROM sales s
+                   ELSE vp.forma::text END AS forma
+       FROM sales s JOIN v_sale_pagamentos vp ON vp.sale_id = s.id
        WHERE s.tenant_id = $1 AND s.status = 'concluida' AND ($4::uuid IS NULL OR s.location_id = $4)
          AND s.criado_em >= (($2::date - 366)::timestamp AT TIME ZONE '${FUSO}')
          AND s.criado_em < (($3::date + 1)::timestamp AT TIME ZONE '${FUSO}')
@@ -70,7 +70,7 @@ async function vendasRecebiveis(db, tenantId, { de, ate, locationId = null }) {
      SELECT (v.dia + COALESCE(f.prazo_dias, 0))::text AS data, v.forma, f.conta_id,
             SUM(v.total)::numeric(14,2) AS bruto,
             SUM(round(v.total * COALESCE(f.taxa_pct, 0) / 100, 2))::numeric(14,2) AS taxa,
-            COUNT(*)::int AS vendas
+            COUNT(DISTINCT v.venda_id)::int AS vendas
      FROM v LEFT JOIN fin_formas_recebimento f ON f.tenant_id = $1 AND f.forma = v.forma
      WHERE v.dia + COALESCE(f.prazo_dias, 0) BETWEEN $2::date AND $3::date
      GROUP BY 1, 2, 3 ORDER BY 1, 2`,
@@ -158,7 +158,7 @@ async function resultado(db, tenantId, mes, { locationId = null } = {}) {
   const ini = `${mes}-01`;
   const p = [tenantId, ini, locationId];
   const v = (await db.query(
-    `SELECT COALESCE(SUM(s.subtotal + COALESCE(s.taxa_entrega, 0)), 0) AS bruto, COALESCE(SUM(s.desconto), 0) AS descontos, COALESCE(SUM(s.total), 0) AS receita, COUNT(*)::int AS vendas
+    `SELECT COALESCE(SUM(s.subtotal + COALESCE(s.taxa_entrega, 0) + COALESCE(s.taxa_servico, 0)), 0) AS bruto, COALESCE(SUM(s.desconto), 0) AS descontos, COALESCE(SUM(s.total), 0) AS receita, COUNT(*)::int AS vendas
      FROM sales s WHERE s.tenant_id = $1 AND s.status = 'concluida' AND ($3::uuid IS NULL OR s.location_id = $3)
        AND s.criado_em >= ($2::date::timestamp AT TIME ZONE '${FUSO}') AND s.criado_em < (($2::date + interval '1 month')::timestamp AT TIME ZONE '${FUSO}')`, p
   )).rows[0];
@@ -169,9 +169,9 @@ async function resultado(db, tenantId, mes, { locationId = null } = {}) {
   )).rows[0];
   // taxas das vendas do mes (pela data da venda)
   const taxas = (await db.query(
-    `SELECT COALESCE(SUM(round(s.total * COALESCE(f.taxa_pct, 0) / 100, 2)), 0) AS v
-     FROM sales s LEFT JOIN fin_formas_recebimento f ON f.tenant_id = s.tenant_id AND f.forma =
-       CASE WHEN s.forma_pagamento = 'online' THEN COALESCE((SELECT CASE WHEN o.origem = '99food' THEN '99food' ELSE 'ifood' END FROM orders o WHERE o.sale_id = s.id LIMIT 1), 'ifood') ELSE s.forma_pagamento::text END
+    `SELECT COALESCE(SUM(round(vp.valor * COALESCE(f.taxa_pct, 0) / 100, 2)), 0) AS v
+     FROM sales s JOIN v_sale_pagamentos vp ON vp.sale_id = s.id LEFT JOIN fin_formas_recebimento f ON f.tenant_id = s.tenant_id AND f.forma =
+       CASE WHEN vp.forma = 'online' THEN COALESCE((SELECT CASE WHEN o.origem = '99food' THEN '99food' ELSE 'ifood' END FROM orders o WHERE o.sale_id = s.id LIMIT 1), 'ifood') ELSE vp.forma::text END
      WHERE s.tenant_id = $1 AND s.status = 'concluida' AND ($3::uuid IS NULL OR s.location_id = $3)
        AND s.criado_em >= ($2::date::timestamp AT TIME ZONE '${FUSO}') AND s.criado_em < (($2::date + interval '1 month')::timestamp AT TIME ZONE '${FUSO}')`, p
   )).rows[0];

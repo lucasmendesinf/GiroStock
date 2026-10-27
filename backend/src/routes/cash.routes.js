@@ -38,8 +38,8 @@ async function computeSaldoDisponivel(client, tenantId, sessionId) {
   if (session.rows.length === 0) return null;
 
   const vendasDinheiro = await client.query(
-    `SELECT COALESCE(SUM(total), 0) AS total FROM sales
-     WHERE cash_session_id = $1 AND tenant_id = $2 AND forma_pagamento = 'dinheiro' AND status = 'concluida'`,
+    `SELECT COALESCE(SUM(vp.valor), 0) AS total FROM sales s JOIN v_sale_pagamentos vp ON vp.sale_id = s.id
+     WHERE s.cash_session_id = $1 AND s.tenant_id = $2 AND vp.forma = 'dinheiro' AND vp.entra_no_caixa AND s.status = 'concluida'`,
     [sessionId, tenantId]
   );
   const movimentos = await client.query(

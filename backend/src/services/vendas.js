@@ -46,18 +46,25 @@ async function assertReceitasPermitidas(db, user, productIds) {
 // dados: { terminal_id, itens: [{ product_id, quantidade, observacao, complementos: [{ id, quantidade }] }], forma_pagamento,
 //          valor_recebido, desconto, taxa_entrega, numero_pedido (fixo, vindo de um pedido), ignorar_pedido_id (pedido cuja
 //          reserva vira baixa), ignorar_pedidos_ids (varios pedidos: as rodadas de uma comanda), comanda_id (comanda de origem;
-//          cada item pode trazer garcom_id), precos_informados (pedido de plataforma: cada item traz preco_unitario, o preco cobrado pela
+//          cada item pode trazer garcom_id), taxa_servico (compoe o total), pagamentos ([{ forma, valor, valor_recebido?, entra_no_caixa?,
+//          comanda_pagamento_id?, recebido_por? }]: varias formas na mesma venda; a soma TEM de fechar com o total; no lugar de
+//          forma_pagamento/valor_recebido), precos_informados (pedido de plataforma: cada item traz preco_unitario, o preco cobrado pela
 //          plataforma, e os complementos ja vem com o preco dela; a regra de minimo/maximo dos grupos nao se aplica) }
 async function registrarVenda(client, user, dados) {
   const { terminal_id, itens, forma_pagamento, valor_recebido } = dados;
   const descontoInformado = Number(dados.desconto || 0);
   const taxaEntrega = Number(dados.taxa_entrega || 0);
+  const taxaServico = Number(Number(dados.taxa_servico || 0).toFixed(2));
+  const usaPagamentos = Array.isArray(dados.pagamentos) && dados.pagamentos.length > 0;
   if (!(descontoInformado >= 0)) throw new HttpError(400, 'desconto deve ser um valor em reais (0 ou mais)');
-  if (!terminal_id || !Array.isArray(itens) || itens.length === 0 || !forma_pagamento) {
+  if (!(taxaServico >= 0)) throw new HttpError(400, 'taxa de serviço inválida');
+  if (!terminal_id || !Array.isArray(itens) || itens.length === 0 || (!forma_pagamento && !usaPagamentos)) {
     throw new HttpError(400, 'terminal_id, itens (não vazio) e forma_pagamento são obrigatórios');
   }
-  if (!FORMAS_PAGAMENTO.includes(forma_pagamento)) throw new HttpError(400, 'forma_pagamento inválida');
-  if (forma_pagamento === 'online' && !dados.precos_informados) throw new HttpError(400, 'forma_pagamento inválida');
+  if (!usaPagamentos) {
+    if (!FORMAS_PAGAMENTO.includes(forma_pagamento)) throw new HttpError(400, 'forma_pagamento inválida');
+    if (forma_pagamento === 'online' && !dados.precos_informados) throw new HttpError(400, 'forma_pagamento inválida');
+  }
   const itensAgrupados = agruparItens(itens);
   const ignorarIds = dados.ignorar_pedidos_ids && dados.ignorar_pedidos_ids.length ? dados.ignorar_pedidos_ids : (dados.ignorar_pedido_id ? [dados.ignorar_pedido_id] : []);
   const deReserva = ignorarIds.length > 0; // a reserva dos pedidos ignorados vira baixa: a venda vem de pedido(s) ja aceito(s)
@@ -137,11 +144,35 @@ async function registrarVenda(client, user, dados) {
   if (desconto >= subtotalVenda) {
     throw new HttpError(400, `desconto (${desconto}) deve ser menor que o subtotal da venda (${subtotalVenda})`);
   }
-  const total = Number((subtotalVenda - desconto + taxaEntrega).toFixed(2));
+  const total = Number((subtotalVenda - desconto + taxaEntrega + taxaServico).toFixed(2));
 
   let troco = null;
   let valorRecebidoFinal = null;
-  if (forma_pagamento === 'dinheiro') {
+  // Formas de pagamento da venda (sale_payments): as informadas (varias) ou a unica de sempre.
+  let pagamentosFinal = null;
+  let formaPredominante = forma_pagamento;
+  if (usaPagamentos) {
+    pagamentosFinal = dados.pagamentos.map((p) => {
+      const valor = Number(Number(p && p.valor).toFixed(2));
+      if (!p || !FORMAS_PAGAMENTO.includes(p.forma) || (p.forma === 'online' && !dados.precos_informados) || !(valor > 0)) throw new HttpError(400, 'pagamento inválido: informe forma e valor (> 0) de cada parte');
+      let recebido = null; let trocoP = null;
+      if (p.forma === 'dinheiro' && p.valor_recebido !== undefined && p.valor_recebido !== null && p.valor_recebido !== '') {
+        recebido = Number(Number(p.valor_recebido).toFixed(2));
+        if (!(recebido >= valor)) throw new HttpError(400, `valor recebido em dinheiro (${recebido}) deve ser maior ou igual à parte paga em dinheiro (${valor})`);
+        trocoP = Number((recebido - valor).toFixed(2));
+      }
+      return { forma: p.forma, valor, valor_recebido: recebido, troco: trocoP, comanda_pagamento_id: p.comanda_pagamento_id || null, recebido_por: p.recebido_por || null, entra_no_caixa: p.entra_no_caixa !== false };
+    });
+    const somaCent = pagamentosFinal.reduce((x, p) => x + Math.round(p.valor * 100), 0);
+    if (somaCent !== Math.round(total * 100)) throw new HttpError(400, `a soma dos pagamentos (${(somaCent / 100).toFixed(2)}) deve ser igual ao total da venda (${total.toFixed(2)})`);
+    // forma predominante (maior valor; empate = a ultima): continua em sales.forma_pagamento por compatibilidade.
+    formaPredominante = pagamentosFinal.reduce((m, p) => (p.valor >= m.valor ? p : m), pagamentosFinal[0]).forma;
+    const dinheiroCaixa = pagamentosFinal.filter((p) => p.forma === 'dinheiro' && p.entra_no_caixa && p.valor_recebido !== null);
+    if (dinheiroCaixa.length > 0) {
+      valorRecebidoFinal = Number(dinheiroCaixa.reduce((x, p) => x + p.valor_recebido, 0).toFixed(2));
+      troco = Number(dinheiroCaixa.reduce((x, p) => x + p.troco, 0).toFixed(2));
+    }
+  } else if (forma_pagamento === 'dinheiro') {
     // Pedido de plataforma cobrado em dinheiro sem "troco para": o cliente paga o valor exato.
     const semValor = valor_recebido === undefined || valor_recebido === null || valor_recebido === '';
     const recebido = dados.precos_informados && semValor ? total : Number(valor_recebido);
@@ -151,6 +182,7 @@ async function registrarVenda(client, user, dados) {
     valorRecebidoFinal = recebido;
     troco = Number((recebido - total).toFixed(2));
   }
+  if (!usaPagamentos) pagamentosFinal = [{ forma: forma_pagamento, valor: total, valor_recebido: valorRecebidoFinal, troco, comanda_pagamento_id: null, recebido_por: null, entra_no_caixa: true }];
 
   // Consumo total da venda (produtos com estoque proprio e insumos), validado contra o disponivel DA LOJA do terminal:
   // saldo menos o reservado por pedidos em aberto (a reserva do pedido que esta sendo finalizado vira baixa).
@@ -194,13 +226,20 @@ async function registrarVenda(client, user, dados) {
   }
   const sale = await client.query(
     `INSERT INTO sales (tenant_id, numero, location_id, terminal_id, cash_session_id, operador_id, forma_pagamento,
-                        valor_recebido, troco, subtotal, desconto, total, status, numero_pedido, taxa_entrega, comanda_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'concluida', $13, $14, $15)
+                        valor_recebido, troco, subtotal, desconto, total, status, numero_pedido, taxa_entrega, comanda_id, taxa_servico)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'concluida', $13, $14, $15, $16)
      RETURNING id, numero, subtotal, desconto, total, troco, forma_pagamento, criado_em`,
-    [user.tenantId, numero, locationId, terminal_id, cashSessionId, user.id, forma_pagamento,
-      valorRecebidoFinal, troco, subtotalVenda, desconto, total, numeroPedido, taxaEntrega, dados.comanda_id || null]
+    [user.tenantId, numero, locationId, terminal_id, cashSessionId, user.id, formaPredominante,
+      valorRecebidoFinal, troco, subtotalVenda, desconto, total, numeroPedido, taxaEntrega, dados.comanda_id || null, taxaServico]
   );
   const saleId = sale.rows[0].id;
+  for (const p of pagamentosFinal) {
+    await client.query(
+      `INSERT INTO sale_payments (tenant_id, sale_id, forma, valor, valor_recebido, troco, comanda_pagamento_id, recebido_por, entra_no_caixa)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [user.tenantId, saleId, p.forma, p.valor, p.valor_recebido, p.troco, p.comanda_pagamento_id, p.recebido_por, p.entra_no_caixa]
+    );
+  }
 
   for (let k = 0; k < linhasComPreco.length; k++) {
     const item = linhasComPreco[k];
@@ -245,7 +284,7 @@ async function registrarVenda(client, user, dados) {
     acao: 'venda',
     recurso: 'sales',
     recursoId: saleId,
-    detalhes: { numero, numero_pedido: numeroPedido, subtotal: subtotalVenda, desconto, total, forma_pagamento },
+    detalhes: { numero, numero_pedido: numeroPedido, subtotal: subtotalVenda, desconto, total, forma_pagamento: formaPredominante, ...(usaPagamentos ? { pagamentos: pagamentosFinal.map((p) => ({ forma: p.forma, valor: p.valor })) } : {}), ...(taxaServico > 0 ? { taxa_servico: taxaServico } : {}) },
   });
 
   return {
@@ -255,9 +294,11 @@ async function registrarVenda(client, user, dados) {
     subtotal: subtotalVenda,
     desconto,
     taxa_entrega: taxaEntrega,
+    taxa_servico: taxaServico,
     total,
     troco,
-    forma_pagamento,
+    forma_pagamento: formaPredominante,
+    pagamentos: pagamentosFinal.map((p) => ({ forma: p.forma, valor: p.valor, entra_no_caixa: p.entra_no_caixa })),
     criado_em: sale.rows[0].criado_em,
   };
 }

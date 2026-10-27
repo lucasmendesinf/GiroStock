@@ -32,7 +32,7 @@ function filtros(req, { incluirStatus }) {
   }
   if (forma_pagamento) {
     params.push(forma_pagamento);
-    where += ` AND s.forma_pagamento = $${params.length}`;
+    where += ` AND EXISTS (SELECT 1 FROM v_sale_pagamentos vp WHERE vp.sale_id = s.id AND vp.forma::text = $${params.length})`;
   }
   where += filtroPeriodo('s.criado_em', req.query, params);
   return { params, where };
@@ -59,9 +59,9 @@ router.get('/reports/sales-summary', requireArea('Relatorios'), async (req, res)
   );
 
   const porForma = await pool.query(
-    `SELECT s.forma_pagamento, COALESCE(SUM(s.total), 0) AS total, COUNT(*)::int AS quantidade
-     FROM sales s WHERE ${where}
-     GROUP BY s.forma_pagamento`,
+    `SELECT vp.forma AS forma_pagamento, COALESCE(SUM(vp.valor), 0) AS total, COUNT(*)::int AS quantidade
+     FROM sales s JOIN v_sale_pagamentos vp ON vp.sale_id = s.id WHERE ${where}
+     GROUP BY vp.forma`,
     params
   );
 
@@ -165,7 +165,7 @@ router.get('/reports/cash-sessions', requireArea('Relatorios'), async (req, res)
             t.nome AS terminal_nome, l.nome AS location_nome, u.nome AS aberto_por,
             COALESCE(v.vendas, 0)::int AS vendas,
             COALESCE(v.total, 0) AS total_vendido,
-            COALESCE(v.dinheiro, 0) AS dinheiro, COALESCE(v.pix, 0) AS pix,
+            COALESCE(v.dinheiro, 0) AS dinheiro, COALESCE(v.dinheiro_garcom, 0) AS dinheiro_garcom, COALESCE(v.pix, 0) AS pix,
             COALESCE(v.credito, 0) AS cartao_credito, COALESCE(v.debito, 0) AS cartao_debito,
             COALESCE(m.sangrias, 0) AS sangrias, COALESCE(m.suprimentos, 0) AS suprimentos
      FROM cash_sessions cs
@@ -174,12 +174,14 @@ router.get('/reports/cash-sessions', requireArea('Relatorios'), async (req, res)
      JOIN locations l ON l.id = t.location_id
      JOIN users u ON u.id = cs.usuario_abertura_id
      LEFT JOIN LATERAL (
-       SELECT COUNT(*) AS vendas, SUM(total) AS total,
-              SUM(total) FILTER (WHERE forma_pagamento = 'dinheiro') AS dinheiro,
-              SUM(total) FILTER (WHERE forma_pagamento = 'pix') AS pix,
-              SUM(total) FILTER (WHERE forma_pagamento = 'cartao_credito') AS credito,
-              SUM(total) FILTER (WHERE forma_pagamento = 'cartao_debito') AS debito
-       FROM sales WHERE cash_session_id = cs.id AND status = 'concluida'
+       SELECT COUNT(DISTINCT s.id) AS vendas,
+              (SELECT COALESCE(SUM(s2.total), 0) FROM sales s2 WHERE s2.cash_session_id = cs.id AND s2.status = 'concluida') AS total,
+              SUM(vp.valor) FILTER (WHERE vp.forma = 'dinheiro') AS dinheiro,
+              SUM(vp.valor) FILTER (WHERE vp.forma = 'dinheiro' AND NOT vp.entra_no_caixa) AS dinheiro_garcom,
+              SUM(vp.valor) FILTER (WHERE vp.forma = 'pix') AS pix,
+              SUM(vp.valor) FILTER (WHERE vp.forma = 'cartao_credito') AS credito,
+              SUM(vp.valor) FILTER (WHERE vp.forma = 'cartao_debito') AS debito
+       FROM sales s JOIN v_sale_pagamentos vp ON vp.sale_id = s.id WHERE s.cash_session_id = cs.id AND s.status = 'concluida'
      ) v ON true
      LEFT JOIN LATERAL (
        SELECT SUM(valor) FILTER (WHERE tipo = 'sangria') AS sangrias,
@@ -208,7 +210,8 @@ const AGRUPAR = {
   loja: { chave: 's.location_id::text', nome: '(SELECT nome FROM locations WHERE id = s.location_id)' },
   operador: { chave: 's.operador_id::text', nome: '(SELECT nome FROM users WHERE id = s.operador_id)' },
   canal: { chave: CANAL, nome: CANAL },
-  pagamento: { chave: 's.forma_pagamento::text', nome: 's.forma_pagamento::text' },
+  // venda dividida em varias formas: cada forma recebe a parte proporcional (peso = valor pago / total da venda); a soma bate com o total
+  pagamento: { chave: 'vp.forma::text', nome: 'vp.forma::text', pagamentos: true },
   dia: { chave: `((s.criado_em AT TIME ZONE '${FUSO}')::date)::text`, nome: `((s.criado_em AT TIME ZONE '${FUSO}')::date)::text`, ordem: 'chave' },
   dia_semana: { chave: `EXTRACT(ISODOW FROM s.criado_em AT TIME ZONE '${FUSO}')::int::text`, nome: `EXTRACT(ISODOW FROM s.criado_em AT TIME ZONE '${FUSO}')::int::text`, ordem: 'chave' },
   hora: { chave: `lpad(EXTRACT(HOUR FROM s.criado_em AT TIME ZONE '${FUSO}')::int::text, 2, '0')`, nome: `lpad(EXTRACT(HOUR FROM s.criado_em AT TIME ZONE '${FUSO}')::int::text, 2, '0')`, ordem: 'chave' },
@@ -232,15 +235,17 @@ router.get('/reports/comparativo', requireArea('Relatorios'), async (req, res) =
   } else {
     const g = AGRUPAR[por];
     if (!g) throw new HttpError(400, 'agrupamento inválido');
+    const peso = g.pagamentos ? '(vp.valor / NULLIF(s.total, 0))' : '1';
+    const de = g.pagamentos ? 'sales s JOIN v_sale_pagamentos vp ON vp.sale_id = s.id' : 'sales s';
     linhas = (await pool.query(
-      `SELECT ${g.chave} AS chave, ${g.nome} AS nome, COUNT(*)::int AS vendas, SUM(${ITENS_DA_VENDA}) AS itens,
-              SUM(s.total) AS total, SUM(s.desconto) AS descontos, SUM(${CUSTO_DA_VENDA}) AS custo
-       FROM sales s WHERE ${where} GROUP BY 1, 2 ORDER BY ${g.ordem === 'chave' ? '1' : 'SUM(s.total) DESC'}`, params
+      `SELECT ${g.chave} AS chave, ${g.nome} AS nome, COUNT(DISTINCT s.id)::int AS vendas, SUM(${ITENS_DA_VENDA} * ${peso}) AS itens,
+              SUM(s.total * ${peso}) AS total, SUM(s.desconto * ${peso}) AS descontos, SUM(${CUSTO_DA_VENDA} * ${peso}) AS custo
+       FROM ${de} WHERE ${where} GROUP BY 1, 2 ORDER BY ${g.ordem === 'chave' ? '1' : `SUM(s.total * ${peso}) DESC`}`, params
     )).rows;
     // cancelamentos no mesmo agrupamento
     const c = filtros(req, { incluirStatus: true });
     const canc = (await pool.query(
-      `SELECT ${g.chave} AS chave, COUNT(*)::int AS n, SUM(s.total) AS total FROM sales s WHERE ${c.where} AND s.status = 'cancelada' GROUP BY 1`, c.params
+      `SELECT ${g.chave} AS chave, COUNT(DISTINCT s.id)::int AS n, SUM(s.total * ${peso}) AS total FROM ${de} WHERE ${c.where} AND s.status = 'cancelada' GROUP BY 1`, c.params
     )).rows;
     const porChave = Object.fromEntries(canc.map((r) => [r.chave, r]));
     linhas = linhas.map((l) => ({ ...l, canceladas: porChave[l.chave] ? porChave[l.chave].n : 0, total_cancelado: porChave[l.chave] ? n2(porChave[l.chave].total) : 0 }));

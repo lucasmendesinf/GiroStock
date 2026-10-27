@@ -7,6 +7,7 @@ export const TELAS = [
   { path: '/pedidos', label: 'Pedidos', area: 'Pedidos', requer: 'usaPedidos' },
   { path: '/comandas', label: 'Comandas', area: 'Vendas', modulo: 'garcom' },
   { path: '/garcom', label: 'Garçom', area: 'Garcom', modulo: 'garcom' },
+  { path: '/comissoes', label: 'Comissões', area: 'Comissoes', modulo: 'garcom' },
   { path: '/clientes', label: 'Clientes', area: 'Clientes' },
   { path: '/produtos', label: 'Produtos & Estoque', area: 'Estoque' },
   { path: '/fornecedores', label: 'Fornecedores', area: 'Estoque' },

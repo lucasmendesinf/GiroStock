@@ -107,6 +107,8 @@ function Inicio() {
   useEffect(() => { carregar(); }, [carregar]);
   useAtualizar(carregar);
 
+  const [comissao, setComissao] = useState(null);
+  useEffect(() => { api.get('/garcom/extrato').then((e) => setComissao(e.comissao || null)).catch(() => {}); }, []);
   const totalAberto = (lista || []).reduce((s, c) => s + Number(c.total), 0);
   return (
     <>
@@ -120,6 +122,13 @@ function Inicio() {
           <div className="gc-valor">{brl(totalAberto)}</div>
           <div className="gc-sub">{lista ? `${lista.length} comanda(s) aberta(s)` : 'carregando…'}</div>
         </div>
+        {comissao && (
+          <Link to="/garcom/extrato" className="gc-destaque" style={{ display: 'block', textDecoration: 'none', color: 'inherit' }}>
+            <div className="gc-sub">Comissão estimada da noite</div>
+            <div className="gc-valor">{brl(comissao.noite.total)}</div>
+            <div className="gc-sub">{comissao.por_comanda.length} comanda(s) com dinheiro recebido · toque para ver o extrato</div>
+          </Link>
+        )}
         <div className="gc-rod">Minhas comandas</div>
         {lista && lista.length === 0 && <div className="gc-vazio">Nenhuma comanda aberta. Toque em “Nova comanda”.</div>}
         {(lista || []).map((c) => {
@@ -634,6 +643,26 @@ function Extrato() {
             <div className="gc-sub">{new Date(p.recebido_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}{p.forma === 'dinheiro' ? (p.prestado_em ? ' · entregue ao caixa' : ' · com você') : ''}{p.diferenca_prestacao && Number(p.diferenca_prestacao) !== 0 ? ` · diferença ${brl(p.diferenca_prestacao)}` : ''}</div>
           </div>
         ))}
+        {d && d.comissao && (
+          <>
+            <div className="gc-destaque">
+              <div className="gc-sub">Comissão da noite</div>
+              <div className="gc-valor">{brl(d.comissao.noite.total)}</div>
+              <div className="gc-sub">A pagar {brl(d.comissao.noite.a_pagar)} · paga {brl(d.comissao.noite.pago)}{d.comissao.noite.taxa_servico > 0 ? ` · inclui taxa de serviço ${brl(d.comissao.noite.taxa_servico)}` : ''}{d.comissao.noite.bonus > 0 ? ` · bônus ${brl(d.comissao.noite.bonus)}` : ''}</div>
+              <div className="gc-sub">No mês: {brl(d.comissao.mes.total)}</div>
+            </div>
+            <div className="gc-rod">Comissão por comanda</div>
+            {d.comissao.por_comanda.length === 0 && <div className="gc-vazio">Nenhuma comissão ainda hoje. Ela conta quando o dinheiro entra.</div>}
+            {d.comissao.por_comanda.map((c) => (
+              <div key={c.comanda_id} className="gc-card">
+                <div className="gc-linha"><span className="gc-nome">{c.tipo === 'pista' ? '🎫' : '🍽'} {c.identificador}</span><span className="gc-tag">#{c.numero}</span><span className="gc-total">{brl(c.comissao)}</span></div>
+                <div className="gc-sub">vendido {brl(c.vendido)} · <span className={`gc-pill ${c.situacao === 'paga' ? 'ok' : c.situacao === 'estornada' ? 'err' : 'warn'}`}>{c.situacao === 'paga' ? 'paga' : c.situacao === 'estornada' ? 'estornada' : 'a pagar'}</span>{c.estornadas > 0 && c.situacao !== 'estornada' ? ' · com estorno' : ''}</div>
+              </div>
+            ))}
+            {d.comissao.ajustes_e_bonus.length > 0 && <div className="gc-sub">Ajustes e bônus: {d.comissao.ajustes_e_bonus.map((a) => `${a.origem === 'bonus' ? 'bônus' : 'ajuste'} ${brl(a.valor)}`).join(' · ')}</div>}
+            <div className="gc-sub">A comissão conta quando o dinheiro entra. Cancelamentos e estornos não contam.</div>
+          </>
+        )}
         <div className="gc-rod">Comandas fechadas no caixa</div>
         {d && d.pagas.length === 0 && <div className="gc-vazio">Nenhuma comanda paga hoje.</div>}
         {(d ? d.pagas : []).map((p) => (

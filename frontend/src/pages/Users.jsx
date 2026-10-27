@@ -15,7 +15,7 @@ const DESCRICAO_PERFIL = {
   'Lanchonete/Cozinha': 'PDV e estoque/insumos da lanchonete (ajuste abaixo se precisar).',
   'Garçom': 'Só o app de comandas no celular (mesas e pista). Precisa de uma loja.',
 };
-const FORM_VAZIO = { nome: '', email: '', senha: '', confirmarSenha: '', perfil: 'Caixa/Operador', location_id: '', location_ids: [] };
+const FORM_VAZIO = { nome: '', email: '', senha: '', confirmarSenha: '', perfil: 'Caixa/Operador', location_id: '', location_ids: [], comissao_pct: '' };
 
 export default function Users() {
   const toast = useToast();
@@ -200,7 +200,7 @@ function EditarUsuario({ usuario, matriz, locations, souEu, onClose, onSalvo }) 
   const toast = useToast();
   const confirmar = useConfirm();
   const inicial = efetivas(matriz, usuario.perfil, usuario.permissoes);
-  const [form, setForm] = useState({ nome: usuario.nome, perfil: usuario.perfil, location_id: usuario.location_id || '', location_ids: usuario.location_ids || [], totp_exigido: !!usuario.totp_exigido, permissoes: inicial });
+  const [form, setForm] = useState({ comissao_pct: usuario.comissao_pct === null || usuario.comissao_pct === undefined ? '' : String(Number(usuario.comissao_pct)).replace('.', ','), nome: usuario.nome, perfil: usuario.perfil, location_id: usuario.location_id || '', location_ids: usuario.location_ids || [], totp_exigido: !!usuario.totp_exigido, permissoes: inicial });
   async function salvar(e) {
     e.preventDefault();
     const mudouPerfil = form.perfil !== usuario.perfil;
@@ -213,7 +213,7 @@ function EditarUsuario({ usuario, matriz, locations, souEu, onClose, onSalvo }) 
       confirmar: 'Confirmar',
     }))) return;
     try {
-      await api.patch(`/users/${usuario.id}`, { nome: form.nome, perfil: form.perfil, location_id: form.location_id || null, location_ids: form.location_id ? form.location_ids : [], permissoes: soListadas(matriz, form.permissoes), totp_exigido: !!form.totp_exigido });
+      await api.patch(`/users/${usuario.id}`, { ...(form.perfil === 'Garçom' ? { comissao_pct: String(form.comissao_pct).trim() === '' ? null : Number(String(form.comissao_pct).replace(',', '.')) } : {}), nome: form.nome, perfil: form.perfil, location_id: form.location_id || null, location_ids: form.location_id ? form.location_ids : [], permissoes: soListadas(matriz, form.permissoes), totp_exigido: !!form.totp_exigido });
       toast.sucesso('Usuário atualizado.');
       onSalvo();
     } catch (err) { toast.erro(err); }
@@ -223,6 +223,7 @@ function EditarUsuario({ usuario, matriz, locations, souEu, onClose, onSalvo }) 
       <form onSubmit={salvar} className="form-stack">
         <Field label="Nome *"><input autoFocus value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required minLength={2} /></Field>
         <CamposPerfilLoja form={form} setForm={setForm} locations={locations} matriz={matriz} />
+        {form.perfil === 'Garçom' && <Field label="Comissão deste garçom (%)" hint="Vazio = vale a regra da empresa (Comissões > Regras). Preenchido = vale para todos os itens dele."><input inputMode="decimal" value={form.comissao_pct} onChange={(e) => setForm({ ...form, comissao_pct: e.target.value })} placeholder="Regra da empresa" /></Field>}
         <label className="check-linha"><input type="checkbox" checked={!!form.totp_exigido} onChange={(e) => setForm({ ...form, totp_exigido: e.target.checked })} /> Exigir verificação em duas etapas (2FA)</label>
         {souEu && <p className="form-hint">Você não pode remover o seu próprio perfil de Administrador.</p>}
         <div className="modal-actions">

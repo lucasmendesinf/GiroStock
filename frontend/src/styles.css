@@ -1588,3 +1588,11 @@ tr.cmd-fechando td { background: var(--warn-soft); }
 .gc-head-v { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.2; }
 .modal-content .gc-sub { margin: 4px 0; }
 .modal-content input[inputmode] { width: 100%; font-size: 16px; }
+
+/* Comissoes: o recibo do acerto imprime sozinho (um bloco por garcom) */
+@media print {
+  .recibo-impressao, .recibo-impressao * { visibility: visible !important; }
+  .recibo-impressao { position: absolute; left: 0; top: 0; width: 100%; color: #000; background: #fff; }
+  .recibo-impressao .recibo-bloco { page-break-after: always; border: 0; color: #000; }
+  .recibo-impressao .cl-sub { color: #000; }
+}

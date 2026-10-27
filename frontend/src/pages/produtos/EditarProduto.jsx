@@ -17,6 +17,8 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
   const toast = useToast();
   const { user } = useAuth();
   const usaIfood = temModulo(user, 'delivery_apps');
+  const usaGarcom = temModulo(user, 'garcom');
+  const [foraComissao, setForaComissao] = useState(false);
   const [comboItens, setComboItens] = useState([]);
   const [viraCombo, setViraCombo] = useState(false);
   const [grupos, setGrupos] = useState([]);
@@ -44,6 +46,7 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
       setComboItens(d.combo.map((c) => ({ product_id: c.product_id, quantidade: Number(c.quantidade) })));
       setGrupos(d.grupos.map((g) => g.id));
       setIfood({ vende_ifood: !!d.vende_ifood, codigo_ifood: d.codigo_ifood || '' });
+      setForaComissao(!!d.fora_da_comissao);
     } catch (err) { toast.erro(err); }
   }, [productId, toast]);
 
@@ -110,6 +113,7 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
         }
         for (const o of removidos) await api.del(`/products/${p.id}/ingredients/${o.ingredient_id}`);
       }
+      if (usaGarcom && foraComissao !== !!p.fora_da_comissao) await api.patch(`/products/${p.id}`, { fora_da_comissao: foraComissao });
       toast.sucesso('Produto atualizado.');
       await reload();
       onClose();
@@ -195,6 +199,11 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
         {usaCombo && <ComboEditor itens={comboItens} setItens={setComboItens} produtos={products} proprioId={p.id} />}
         <GruposDoProduto selecionados={grupos} setSelecionados={setGrupos} />
         {usaIfood && <CamposIfood valor={ifood} setValor={setIfood} codigoInterno={p.codigo_interno} />}
+        {usaGarcom && (
+          <label className="check" title="Ex.: ingresso, couvert">
+            <input type="checkbox" checked={foraComissao} onChange={(e) => setForaComissao(e.target.checked)} /> Fora da comissão (este produto não gera comissão para o garçom)
+          </label>
+        )}
 
         {erro && <div className="es-erro">{erro}</div>}
         <div className="modal-actions" style={{ flexWrap: 'wrap' }}>

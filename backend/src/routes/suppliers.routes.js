@@ -90,7 +90,7 @@ router.post('/suppliers', requireArea('Estoque'), async (req, res) => {
   res.status(201).json(rows[0]);
 });
 
-router.put('/suppliers/:id', requireArea('Estoque'), async (req, res) => {
+router.put('/suppliers/:id', requireArea('Estoque'), requireArea('EditarFornecedores'), async (req, res) => {
   const anterior = await getOwned(pool, 'suppliers', req.params.id, req.user.tenantId, { columns: COLUNAS });
   const dados = validarFornecedor(req.body);
   await assertDocumentoLivre(req.user.tenantId, dados.documento, req.params.id);
@@ -124,7 +124,7 @@ router.put('/suppliers/:id', requireArea('Estoque'), async (req, res) => {
 
 // Desativar mantem o historico (produtos e entradas continuam apontando para ele),
 // mas o fornecedor deixa de aparecer para novos vinculos e novas entradas.
-router.patch('/suppliers/:id/status', requireArea('Estoque'), async (req, res) => {
+router.patch('/suppliers/:id/status', requireArea('Estoque'), requireArea('EditarFornecedores'), async (req, res) => {
   const ativo = !!(req.body && req.body.ativo);
   await getOwned(pool, 'suppliers', req.params.id, req.user.tenantId);
 

@@ -12,6 +12,8 @@ const { logAudit } = require('../utils/audit');
 
 const router = express.Router();
 const estoque = requireArea('Estoque');
+// Editar/excluir grupos, complementos, combos e os grupos de um produto = editar o produto (EditarProdutos); criar continua em Estoque.
+const edita = [requireArea('Estoque'), requireArea('EditarProdutos')];
 const texto = (v, max = 80) => String(v === undefined || v === null ? '' : v).trim().slice(0, max);
 
 // ---------- grupos ----------
@@ -60,7 +62,7 @@ router.post('/complement-groups', estoque, async (req, res) => {
   res.status(201).json((await listarGrupos(req.user.tenantId, rows[0].id))[0]);
 });
 
-router.patch('/complement-groups/:id', estoque, async (req, res) => {
+router.patch('/complement-groups/:id', edita, async (req, res) => {
   if (!isUuid(req.params.id)) throw new HttpError(400, 'grupo inválido');
   const atual = (await pool.query(`SELECT * FROM grupos_complementos WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.user.tenantId])).rows[0];
   if (!atual) throw new HttpError(404, 'grupo não encontrado');
@@ -90,7 +92,7 @@ async function complementoUsado(ids) {
   return rows[0].usado;
 }
 
-router.delete('/complement-groups/:id', estoque, async (req, res) => {
+router.delete('/complement-groups/:id', edita, async (req, res) => {
   if (!isUuid(req.params.id)) throw new HttpError(400, 'grupo inválido');
   const g = (await pool.query(`SELECT id, nome FROM grupos_complementos WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.user.tenantId])).rows[0];
   if (!g) throw new HttpError(404, 'grupo não encontrado');
@@ -150,7 +152,7 @@ router.post('/complement-groups/:id/options', estoque, async (req, res) => {
   res.status(201).json((await listarGrupos(req.user.tenantId, g.id))[0]);
 });
 
-router.patch('/complements/:id', estoque, async (req, res) => {
+router.patch('/complements/:id', edita, async (req, res) => {
   if (!isUuid(req.params.id)) throw new HttpError(400, 'complemento inválido');
   const atual = (await pool.query(`SELECT * FROM complementos WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.user.tenantId])).rows[0];
   if (!atual) throw new HttpError(404, 'complemento não encontrado');
@@ -165,7 +167,7 @@ router.patch('/complements/:id', estoque, async (req, res) => {
   res.json((await listarGrupos(req.user.tenantId, atual.grupo_id))[0]);
 });
 
-router.delete('/complements/:id', estoque, async (req, res) => {
+router.delete('/complements/:id', edita, async (req, res) => {
   if (!isUuid(req.params.id)) throw new HttpError(400, 'complemento inválido');
   const c = (await pool.query(`SELECT id, nome, grupo_id FROM complementos WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.user.tenantId])).rows[0];
   if (!c) throw new HttpError(404, 'complemento não encontrado');
@@ -176,7 +178,7 @@ router.delete('/complements/:id', estoque, async (req, res) => {
 });
 
 // ---------- grupos de um produto ----------
-router.put('/products/:id/complement-groups', estoque, async (req, res) => {
+router.put('/products/:id/complement-groups', edita, async (req, res) => {
   const p = await getOwned(pool, 'products', req.params.id, req.user.tenantId, { columns: 'id, nome' });
   const ids = Array.isArray((req.body || {}).grupos) ? [...new Set(req.body.grupos)] : null;
   if (!ids || ids.some((id) => !isUuid(id))) throw new HttpError(400, 'informe a lista de grupos');
@@ -247,7 +249,7 @@ async function salvarCombo(client, user, productId, itens) {
   return lista;
 }
 
-router.put('/products/:id/combo', estoque, async (req, res) => {
+router.put('/products/:id/combo', edita, async (req, res) => {
   await getOwned(pool, 'products', req.params.id, req.user.tenantId);
   const client = await pool.connect();
   try {

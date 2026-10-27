@@ -136,7 +136,7 @@ async function recalcularCustoProdutos(client, tenantId, ingredientId) {
 }
 
 // Edita o cadastro do insumo: nome, custo por unidade, ativo e (so com saldo zerado) a unidade.
-router.put('/ingredients/:id', requireArea('Estoque'), async (req, res) => {
+router.put('/ingredients/:id', requireArea('Estoque'), requireArea('EditarInsumos'), async (req, res) => {
   const atual = await getOwned(pool, 'ingredients', req.params.id, req.user.tenantId, { columns: 'id, nome, unidade, custo_unitario, ativo' });
   const body = req.body || {};
   const nome = body.nome === undefined ? atual.nome : String(body.nome).trim();
@@ -184,7 +184,7 @@ router.put('/ingredients/:id', requireArea('Estoque'), async (req, res) => {
 });
 
 // Exclui o insumo so se nunca teve movimentacao e nao esta em nenhuma receita; senao, so desativar.
-router.delete('/ingredients/:id', requireArea('Estoque'), async (req, res) => {
+router.delete('/ingredients/:id', requireArea('Estoque'), requireArea('EditarInsumos'), async (req, res) => {
   const atual = await getOwned(pool, 'ingredients', req.params.id, req.user.tenantId, { columns: 'id, nome' });
   const { rows } = await pool.query(
     `SELECT
@@ -371,6 +371,11 @@ router.post('/ingredients/:id/stock-adjustment', requireArea('Estoque'), async (
   const novoCustoUnitario = sobrescreverCusto ? Number(novo_custo_unitario) : null;
   if (sobrescreverCusto && (isNaN(novoCustoUnitario) || novoCustoUnitario < 0)) {
     return res.status(400).json({ erro: 'novo_custo_unitario deve ser um número válido (0 ou mais)' });
+  }
+  // Balanço que ALTERA o custo do insumo e edição de cadastro: exige a permissão de editar insumos (só o saldo continua em Estoque).
+  if (sobrescreverCusto && !(req.user.areas && req.user.areas.EditarInsumos)) {
+    const atualCusto = await pool.query(`SELECT custo_unitario FROM ingredients WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.user.tenantId]);
+    if (atualCusto.rows[0] && Number(atualCusto.rows[0].custo_unitario) !== novoCustoUnitario) return res.status(403).json({ erro: 'Seu usuário não tem acesso à área EditarInsumos: o balanço que altera o custo exige essa permissão' });
   }
   const motivo = exigirMotivo(req.body && req.body.motivo);
   await getOwned(pool, 'ingredients', req.params.id, req.user.tenantId);

@@ -34,6 +34,8 @@ router.post('/categories', requireArea('Estoque'), async (req, res) => {
     );
     if (parent.rows.length === 0) return res.status(400).json({ erro: 'categoria pai não encontrada' });
   }
+  const dupCat = await pool.query(`SELECT 1 FROM categories WHERE tenant_id = $1 AND lower(nome) = lower($2) AND parent_id IS NOT DISTINCT FROM $3::uuid`, [req.user.tenantId, String(nome).trim(), parent_id || null]);
+  if (dupCat.rows.length > 0) return res.status(409).json({ erro: 'já existe uma categoria com este nome' });
   const { rows } = await pool.query(
     `INSERT INTO categories (tenant_id, nome, parent_id) VALUES ($1, $2, $3) RETURNING id, nome, parent_id`,
     [req.user.tenantId, nome, parent_id || null]
@@ -41,7 +43,24 @@ router.post('/categories', requireArea('Estoque'), async (req, res) => {
   res.status(201).json(rows[0]);
 });
 
-router.delete('/categories/:id', requireArea('Estoque'), async (req, res) => {
+// Renomear categoria (nome unico por empresa, sem diferenciar maiusculas, entre as irmas: mesma categoria-mae).
+router.patch('/categories/:id', requireArea('Estoque'), requireArea('EditarProdutos'), async (req, res) => {
+  const nome = String((req.body || {}).nome || '').trim();
+  if (nome.length < 2) throw new HttpError(400, 'nome da categoria deve ter ao menos 2 caracteres');
+  if (nome.length > 80) throw new HttpError(400, 'nome da categoria deve ter no máximo 80 caracteres');
+  const atual = (await pool.query(`SELECT id, nome, parent_id FROM categories WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.user.tenantId])).rows[0];
+  if (!atual) throw new HttpError(404, 'categoria não encontrada');
+  const dup = await pool.query(
+    `SELECT 1 FROM categories WHERE tenant_id = $1 AND id <> $2 AND lower(nome) = lower($3) AND parent_id IS NOT DISTINCT FROM $4::uuid`,
+    [req.user.tenantId, atual.id, nome, atual.parent_id]
+  );
+  if (dup.rows.length > 0) throw new HttpError(409, 'já existe uma categoria com este nome');
+  await pool.query(`UPDATE categories SET nome = $1 WHERE id = $2 AND tenant_id = $3`, [nome, atual.id, req.user.tenantId]);
+  await logAudit(pool, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'renomear_categoria', recurso: 'categories', recursoId: atual.id, detalhes: { de: atual.nome, para: nome } });
+  res.json({ id: atual.id, nome, parent_id: atual.parent_id });
+});
+
+router.delete('/categories/:id', requireArea('Estoque'), requireArea('EditarProdutos'), async (req, res) => {
   const categoria = await pool.query(
     `SELECT 1 FROM categories WHERE id = $1 AND tenant_id = $2`,
     [req.params.id, req.user.tenantId]
@@ -95,6 +114,14 @@ async function sincronizarFornecedores(client, tenantId, productId, ids) {
       [tenantId, productId, supplierId]
     );
   }
+}
+
+// Descricao do produto (opcional, ate 1000 caracteres). Sem o campo no corpo, mantem a atual.
+function descricaoDe(body, atual) {
+  if (body.descricao === undefined) return atual === undefined ? null : atual;
+  const t = String(body.descricao === null ? '' : body.descricao).trim();
+  if (t.length > 1000) throw new HttpError(400, 'a descrição deve ter no máximo 1000 caracteres');
+  return t || null;
 }
 
 function validarPrecos(precoCusto, precoVenda) {
@@ -315,7 +342,7 @@ router.get('/products/search', async (req, res) => {
 
 router.get('/products/:id', async (req, res) => {
   const product = await getOwned(pool, 'products', req.params.id, req.user.tenantId, {
-    columns: 'id, codigo_interno, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, ativo, vende_ifood, codigo_ifood, fora_da_comissao',
+    columns: 'id, codigo_interno, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, ativo, vende_ifood, codigo_ifood, fora_da_comissao, descricao',
   });
 
   const fornecedores = await pool.query(
@@ -419,10 +446,10 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
     const codigoInterno = await proximoCodigoInterno(client, req.user.tenantId);
 
     const { rows } = await client.query(
-      `INSERT INTO products (tenant_id, codigo_interno, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, vende_ifood, codigo_ifood)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-       RETURNING id, codigo_interno, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, ativo, vende_ifood, codigo_ifood`,
-      [req.user.tenantId, codigoInterno, nome.trim(), categoria_id, fornecedores.principal, barcode, unidade, custo, venda, ifood.vende_ifood, ifood.codigo_ifood]
+      `INSERT INTO products (tenant_id, codigo_interno, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, vende_ifood, codigo_ifood, descricao)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       RETURNING id, codigo_interno, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, ativo, vende_ifood, codigo_ifood, descricao`,
+      [req.user.tenantId, codigoInterno, nome.trim(), categoria_id, fornecedores.principal, barcode, unidade, custo, venda, ifood.vende_ifood, ifood.codigo_ifood, descricaoDe(body, null)]
     );
     const product = rows[0];
     await sincronizarFornecedores(client, req.user.tenantId, product.id, fornecedores.ids);
@@ -487,7 +514,7 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
 
 // Edicao do produto. Campos omitidos mantem o valor atual.
 // Produto "fora da comissao" (ingresso, couvert...): nao gera comissao para o garcom.
-router.patch('/products/:id', requireArea('Estoque'), async (req, res) => {
+router.patch('/products/:id', requireArea('Estoque'), requireArea('EditarProdutos'), async (req, res) => {
   const body = req.body || {};
   if (typeof body.fora_da_comissao !== 'boolean') throw new HttpError(400, 'informe fora_da_comissao: true ou false');
   const atual = await getOwned(pool, 'products', req.params.id, req.user.tenantId, { columns: 'id, nome, fora_da_comissao' });
@@ -496,10 +523,10 @@ router.patch('/products/:id', requireArea('Estoque'), async (req, res) => {
   res.json({ id: atual.id, fora_da_comissao: body.fora_da_comissao });
 });
 
-router.put('/products/:id', requireArea('Estoque'), async (req, res) => {
+router.put('/products/:id', requireArea('Estoque'), requireArea('EditarProdutos'), async (req, res) => {
   const body = req.body || {};
   const atual = await getOwned(pool, 'products', req.params.id, req.user.tenantId, {
-    columns: 'id, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, vende_ifood, codigo_ifood',
+    columns: 'id, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, vende_ifood, codigo_ifood, descricao',
   });
   const ifood = await camposIfood(pool, req.user.tenantId, body, atual, req.params.id);
 
@@ -545,11 +572,11 @@ router.put('/products/:id', requireArea('Estoque'), async (req, res) => {
     await client.query('BEGIN');
     const { rows } = await client.query(
       `UPDATE products SET nome = $1, categoria_id = $2, barcode = $3, unidade = $4, preco_custo = $5, preco_venda = $6,
-              supplier_id = $7, vende_ifood = $10, codigo_ifood = $11
+              supplier_id = $7, vende_ifood = $10, codigo_ifood = $11, descricao = $12
        WHERE id = $8 AND tenant_id = $9
-       RETURNING id, codigo_interno, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, ativo, vende_ifood, codigo_ifood`,
+       RETURNING id, codigo_interno, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, ativo, vende_ifood, codigo_ifood, descricao`,
       [nome, categoriaId, barcode, unidade, custo, venda,
-        fornecedores ? fornecedores.principal : atual.supplier_id, req.params.id, req.user.tenantId, ifood.vende_ifood, ifood.codigo_ifood]
+        fornecedores ? fornecedores.principal : atual.supplier_id, req.params.id, req.user.tenantId, ifood.vende_ifood, ifood.codigo_ifood, descricaoDe(body, atual.descricao)]
     );
     if (body.combo !== undefined) await salvarCombo(client, req.user, req.params.id, body.combo);
     if (Array.isArray(body.grupos)) await salvarGruposDoProduto(client, req.user.tenantId, req.params.id, body.grupos);
@@ -582,7 +609,7 @@ router.put('/products/:id', requireArea('Estoque'), async (req, res) => {
 
 // Produto inativo some do PDV e nao recebe novas entradas, mas o historico e o saldo
 // continuam (ainda e possivel transferir ou dar saida do que sobrou).
-router.patch('/products/:id/status', requireArea('Estoque'), async (req, res) => {
+router.patch('/products/:id/status', requireArea('Estoque'), requireArea('EditarProdutos'), async (req, res) => {
   const ativo = !!(req.body && req.body.ativo);
   await getOwned(pool, 'products', req.params.id, req.user.tenantId);
   const client = await pool.connect();
@@ -636,7 +663,7 @@ router.put('/products/:id/minimum', requireArea('Estoque'), async (req, res) => 
 });
 
 // Ficha tecnica
-router.post('/products/:id/ingredients', requireArea('Estoque'), requireModulo('lanchonete'), async (req, res) => {
+router.post('/products/:id/ingredients', requireArea('Estoque'), requireArea('EditarProdutos'), requireModulo('lanchonete'), async (req, res) => {
   const { ingredient_id, quantidade_por_unidade } = req.body || {};
   const qtd = Number(quantidade_por_unidade);
   if (!ingredient_id || !(qtd > 0)) {
@@ -669,7 +696,7 @@ router.post('/products/:id/ingredients', requireArea('Estoque'), requireModulo('
   res.status(201).json(rows[0]);
 });
 
-router.delete('/products/:id/ingredients/:ingredientId', requireArea('Estoque'), requireModulo('lanchonete'), async (req, res) => {
+router.delete('/products/:id/ingredients/:ingredientId', requireArea('Estoque'), requireArea('EditarProdutos'), requireModulo('lanchonete'), async (req, res) => {
   await pool.query(
     `DELETE FROM product_ingredients WHERE product_id = $1 AND ingredient_id = $2 AND tenant_id = $3`,
     [req.params.id, req.params.ingredientId, req.user.tenantId]

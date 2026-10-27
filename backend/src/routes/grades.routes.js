@@ -9,6 +9,8 @@ const grades = require('../services/grades');
 
 const router = express.Router();
 router.use('/grades', requireArea('Estoque'));
+// Criar grade e acrescentar valores continua em Estoque; alterar, converter, mexer nos produtos da grade e excluir = EditarProdutos.
+const edita = requireArea('EditarProdutos');
 
 async function emTransacao(fn) {
   const client = await pool.connect();
@@ -51,7 +53,7 @@ router.post('/grades', async (req, res) => {
   res.status(201).json(await grades.detalhe(pool, req.user.tenantId, r.grade.id));
 });
 
-router.put('/grades/:id', async (req, res) => {
+router.put('/grades/:id', edita, async (req, res) => {
   const id = idValido(req.params.id);
   await emTransacao(async (client) => {
     const d = await grades.editar(client, req.user, id, req.body || {});
@@ -71,7 +73,7 @@ router.post('/grades/:id/valores', async (req, res) => {
 });
 
 // Produtos ja cadastrados (ex.: "Camiseta Preta M", "Camiseta Branca G") viram as variacoes de uma grade nova.
-router.post('/grades/converter', async (req, res) => {
+router.post('/grades/converter', edita, async (req, res) => {
   const r = await emTransacao(async (client) => {
     const c = await grades.converterEmGrade(client, req.user, req.body || {});
     await logAudit(client, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'converter_em_grade', recurso: 'produto_grades', recursoId: c.grade.id, detalhes: { nome: c.grade.nome, produtos: c.produtos } });
@@ -80,7 +82,7 @@ router.post('/grades/converter', async (req, res) => {
   res.status(201).json({ ...(await grades.detalhe(pool, req.user.tenantId, r.grade.id)), site_publicado: r.publicada });
 });
 
-router.post('/grades/:id/produtos', async (req, res) => {
+router.post('/grades/:id/produtos', edita, async (req, res) => {
   const id = idValido(req.params.id);
   await emTransacao(async (client) => {
     const d = await grades.incluirProduto(client, req.user, id, req.body || {});
@@ -89,7 +91,7 @@ router.post('/grades/:id/produtos', async (req, res) => {
   res.json(await grades.detalhe(pool, req.user.tenantId, id));
 });
 
-router.delete('/grades/:id/produtos/:productId', async (req, res) => {
+router.delete('/grades/:id/produtos/:productId', edita, async (req, res) => {
   const id = idValido(req.params.id);
   if (!isUuid(req.params.productId)) throw new HttpError(404, 'produto não está nesta grade');
   const d = await emTransacao(async (client) => {
@@ -101,7 +103,7 @@ router.delete('/grades/:id/produtos/:productId', async (req, res) => {
 });
 
 // Desfaz a grade: as variacoes continuam como produtos avulsos.
-router.delete('/grades/:id', async (req, res) => {
+router.delete('/grades/:id', edita, async (req, res) => {
   const id = idValido(req.params.id);
   const d = await emTransacao(async (client) => {
     const x = await grades.desfazerGrade(client, req.user, id);

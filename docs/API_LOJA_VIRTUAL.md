@@ -84,6 +84,9 @@ No carrinho e no pedido, use o `id` da **variação** escolhida como `product_id
 
 ### `GET /imagens/:id` — a foto (sem chave; cache longo, pode ser usada direto em `<img>`).
 
+### `GET /cardapio` — cardápio em página única (lojas do tipo cardápio)
+`{ loja: <GET /loja>, secoes: [{ id, nome, promocoes?, produtos: [...] }], total_produtos }`. A seção `promocoes` (automática, se ligada no tema) vem primeiro; depois as categorias na ordem do cadastro (subcategorias ficam na categoria-pai; sem categoria = "Outros"). Cada produto: `id, nome, descricao, imagem, preco, preco_original, off (% arredondado), preco_varia, disponivel, quantidade_maxima, unidade, adicionais, adicionais_obrigatorios, grade, destaque, maior_idade, so_retirada`. Os grupos de adicionais completos vêm em `GET /produtos/:id` (`complementos`: nome, mínimo, máximo, opções com preço). Resposta com `ETag` e `Cache-Control: public, max-age=10`.
+
 ## Carrinho
 
 ### `POST /carrinho` (token opcional)
@@ -127,6 +130,14 @@ Em vez de `endereco_id` (cliente logado) dá para mandar `"bairro": "Centro"`, `
 | `PUT /conta/senha` | `senha_atual, nova_senha` | `{ token }` (novo; os outros param de valer) |
 | `DELETE /conta` | `senha` | `204` — apaga os dados pessoais (LGPD); os pedidos ficam no histórico da loja |
 
+### Login por telefone e código (cardápio digital)
+| Método e rota | Corpo | Resposta |
+|---|---|---|
+| `POST /conta/codigo` | `telefone` | `202 { mensagem, validade_min: 10, reenviar_em_s: 30 }` — sempre igual, exista ou não a conta. Limites: 3 códigos por telefone/15 min e 10 por IP/hora (429). Fora da produção, com o provedor `simulado`, a resposta traz `codigo_teste`. |
+| `POST /conta/entrar` | `telefone, codigo, nome?, aceita_mensagens?` | Conta existente: `200 { token, conta, nova: false }`. Cliente novo sem `nome`: `200 { precisa_nome: true }` (o código continua valendo); com `nome`: `201 { token, conta, nova: true }` (cria a conta e o cliente em Clientes). Código errado: 400 com as tentativas restantes (3 e o código é invalidado); expirado/usado: 400. |
+
+A conta por telefone não tem e-mail nem senha (`conta.email` é `null`, `conta.tem_senha` é `false`). As contas antigas (e-mail e senha) também entram por código. Um telefone = uma conta por empresa. O envio do código usa `CODIGO_LOGIN_PROVEDOR` (`simulado` ou `http`); veja `docs/CARDAPIO_DIGITAL.md`.
+
 - Senha: mínimo 8 caracteres, com letras e números. Telefone com DDD (10 ou 11 dígitos). CPF validado (opcional; ajuda no pagamento).
 - `conta = { id, nome, email, telefone, cpf, aceita_mensagens, criado_em }`.
 - A conta é ligada ao cadastro de **Clientes** do sistema pelo telefone.
@@ -146,6 +157,8 @@ Obrigatórios: `logradouro`, `numero` (ou "s/n"), `bairro`. O primeiro endereço
 { "itens": [ ...como no carrinho... ], "tipo": "entrega", "endereco_id": "...", "cupom": "PROMO10", "observacao": "tocar o interfone",
   "pagamento": { "metodo": "na_entrega", "forma": "dinheiro", "troco_para": 50 } }
 ```
+Formato do cardápio: `"pagamento": { "quando": "online" | "entrega", "forma": "pix" | "cartao_credito" | "cartao_debito" | "dinheiro", "troco_para"?, "cartao"? }` — `online` = Pix ou cartão de crédito pelo site (débito online devolve 422); `entrega` = paga ao receber/retirar com qualquer forma de `GET /loja → pagamentos.na_entrega` (`dinheiro`, `pix`, `cartao_credito`, `cartao_debito`). O formato abaixo continua valendo (`"cartao"` na entrega = crédito).
+
 `pagamento.metodo`:
 - `"na_entrega"` + `forma`: `"dinheiro"` (com `troco_para` opcional, ≥ total), `"pix"` ou `"cartao"` — conforme `GET /loja → pagamentos.na_entrega`.
 - `"pix"` — gera o Pix no Mercado Pago. A resposta traz `pagamento.detalhe.pix` com `copia_e_cola`, `qr_code_base64` (PNG) e `expira_em`.

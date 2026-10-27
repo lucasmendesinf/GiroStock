@@ -106,8 +106,9 @@ export default function Cardapio() {
     const lista = ids ? ids.split('|') : [];
     if (lista.length === 0) { setAtiva(null); return undefined; }
     let raf = 0;
+    let tm = 0;
+    let agendado = false;
     const calc = () => {
-      raf = 0;
       if (performance.now() < travado.current) return;
       const h = barraRef.current ? barraRef.current.getBoundingClientRect().bottom : 0;
       let atual = lista[0];
@@ -118,12 +119,25 @@ export default function Cardapio() {
       if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) atual = lista[lista.length - 1];
       setAtiva((a) => (a === atual ? a : atual));
     };
-    const aoRolar = () => { if (!raf) raf = requestAnimationFrame(calc); };
+    // um calculo por quadro; o timer cobre abas/paineis em segundo plano, onde o requestAnimationFrame nao dispara
+    const rodar = () => {
+      if (!agendado) return;
+      agendado = false;
+      cancelAnimationFrame(raf);
+      clearTimeout(tm);
+      calc();
+    };
+    const aoRolar = () => {
+      if (agendado) return;
+      agendado = true;
+      raf = requestAnimationFrame(rodar);
+      tm = setTimeout(rodar, 80);
+    };
     calcular.current = calc;
     window.addEventListener('scroll', aoRolar, { passive: true });
     window.addEventListener('resize', aoRolar);
     calc();
-    return () => { window.removeEventListener('scroll', aoRolar); window.removeEventListener('resize', aoRolar); if (raf) cancelAnimationFrame(raf); };
+    return () => { window.removeEventListener('scroll', aoRolar); window.removeEventListener('resize', aoRolar); cancelAnimationFrame(raf); clearTimeout(tm); };
   }, [ids]);
 
   // o chip ativo fica no centro da barra

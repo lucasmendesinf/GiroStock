@@ -36,9 +36,12 @@ export default function Conta() {
     try { await api.put(`/conta/enderecos/${e.id}`, { padrao: true }); setEnderecos(await api.get('/conta/enderecos')); } catch (err) { avisar(err.message, 'erro'); }
   }
   async function excluir() {
-    const s = window.prompt('Para excluir sua conta, digite sua senha. Seus dados pessoais e endereços serão apagados.');
+    // conta por telefone nao tem senha: basta confirmar
+    const s = conta.tem_senha === false
+      ? (window.confirm('Excluir sua conta? Seus dados pessoais e endereços serão apagados.') ? true : null)
+      : window.prompt('Para excluir sua conta, digite sua senha. Seus dados pessoais e endereços serão apagados.');
     if (!s) return;
-    try { await api.del('/conta', { senha: s }); sair(); avisar('Conta excluída'); navegar('/'); } catch (err) { avisar(err.message, 'erro'); }
+    try { await api.del('/conta', s === true ? { confirmar: true } : { senha: s }); sair(); avisar('Conta excluída'); navegar('/'); } catch (err) { avisar(err.message, 'erro'); }
   }
   const mudar = (k) => (e) => setF({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value });
   return (
@@ -48,7 +51,7 @@ export default function Conta() {
 
       <form className="painel formulario" onSubmit={salvarDados}>
         <h2>Meus dados</h2>
-        <p className="dica">{conta.email}</p>
+        {conta.email && <p className="dica">{conta.email}</p>}
         <label className="campo"><span>Nome</span><input value={f.nome} onChange={mudar('nome')} required minLength={3} /></label>
         <div className="linha-2">
           <label className="campo"><span>Celular</span><input value={f.telefone} onChange={mudar('telefone')} inputMode="tel" required /></label>
@@ -75,12 +78,12 @@ export default function Conta() {
         ) : <button type="button" className="link" onClick={() => setEditando({})}>+ Novo endereço</button>}
       </div>
 
-      <form className="painel formulario" onSubmit={trocarSenha}>
+      {conta.tem_senha !== false && <form className="painel formulario" onSubmit={trocarSenha}>
         <h2>Trocar senha</h2>
         <label className="campo"><span>Senha atual</span><input type="password" value={senha.atual} onChange={(e) => setSenha({ ...senha, atual: e.target.value })} autoComplete="current-password" required /></label>
         <label className="campo"><span>Nova senha</span><input type="password" value={senha.nova} onChange={(e) => setSenha({ ...senha, nova: e.target.value })} autoComplete="new-password" required minLength={8} /><small>Pelo menos 8 caracteres, com letras e números.</small></label>
         <button type="submit" className="botao botao-claro">Trocar senha</button>
-      </form>
+      </form>}
       <button type="button" className="link perigo centro" onClick={excluir}>Excluir minha conta</button>
     </section>
   );

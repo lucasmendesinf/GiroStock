@@ -10,7 +10,7 @@ const PASSOS_RETIRADA = [['recebido', 'Recebido'], ['em_preparo', 'Em preparo'],
 // Loja online (varejo): separacao, envio com rastreio e entrega.
 const ONLINE_ENTREGA = [['recebido', 'Pedido confirmado'], ['em_separacao', 'Em separação'], ['aguardando_envio', 'Embalado'], ['enviado', 'Enviado'], ['entregue', 'Entregue']];
 const ONLINE_RETIRADA = [['recebido', 'Pedido confirmado'], ['em_separacao', 'Em separação'], ['pronto_retirada', 'Pronto para retirar'], ['retirado', 'Retirado']];
-const NA_ENTREGA = { dinheiro: 'Dinheiro', pix: 'Pix', cartao: 'Cartão' };
+const NA_ENTREGA = { dinheiro: 'Dinheiro', pix: 'Pix', cartao: 'Cartão', cartao_credito: 'Cartão de crédito', cartao_debito: 'Cartão de débito' };
 
 // Acompanhamento do pedido: atualiza sozinho; Pix com QR code e copia e cola; nova tentativa de pagamento; cancelar.
 export default function Pedido() {
@@ -82,7 +82,7 @@ export default function Pedido() {
               {pg.cartao_online && <button type="button" className="botao botao-claro" onClick={() => setPagarCom('cartao')}>Pagar com cartão</button>}
             </div>
           )}
-          {pagarCom === 'cartao' && <CartaoMercadoPago publicKey={pg.mercadopago_public_key} valor={p.total} email={conta.email} parcelasMax={pg.parcelas_max} onPagar={(c) => novoPagamento('cartao', c)} />}
+          {pagarCom === 'cartao' && <CartaoMercadoPago publicKey={pg.mercadopago_public_key} valor={p.total} email={conta.email || `cliente.${conta.telefone}@girostock.calutec.com.br`} parcelasMax={pg.parcelas_max} onPagar={(c) => novoPagamento('cartao', c)} />}
         </div>
       )}
 

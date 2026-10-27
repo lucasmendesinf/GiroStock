@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { useLoja } from '../estado.jsx';
 import { brl, DIAS, fmtTel, soDigitos } from '../util';
 
-const NA_ENTREGA = { dinheiro: 'Dinheiro', pix: 'Pix na entrega', cartao: 'Cartão na maquininha' };
+const NA_ENTREGA = { dinheiro: 'Dinheiro', pix: 'Pix na entrega', cartao: 'Cartão na maquininha', cartao_credito: 'Cartão de crédito na maquininha', cartao_debito: 'Cartão de débito na maquininha' };
 
 // Perfil da loja: sobre, horarios, entrega (bairros e taxas), pagamentos e contato.
 export default function Perfil() {

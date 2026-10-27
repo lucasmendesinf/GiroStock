@@ -76,7 +76,7 @@ async function contaDoToken(req, obrigatorio = true) {
 const comConta = async (req, res, next) => { req.conta = await contaDoToken(req); next(); };
 
 function contaPublica(c) {
-  return { id: c.id, nome: c.nome, email: c.email, telefone: c.telefone, cpf: c.cpf, aceita_mensagens: c.aceita_mensagens, criado_em: c.criado_em };
+  return { id: c.id, nome: c.nome, email: c.email, telefone: c.telefone, cpf: c.cpf, aceita_mensagens: c.aceita_mensagens, tem_senha: !!c.senha_hash, criado_em: c.criado_em };
 }
 
 function validarEmail(v) {

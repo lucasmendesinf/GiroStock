@@ -98,7 +98,7 @@ Cada cliente usa só os módulos (segmentos) que contratou. O Master define isso
 | Clientes | base de clientes, segmentos e mensagens | — |
 | iFood e 99Food | pedidos das plataformas na tela de Pedidos | Pedidos |
 | Casa de shows e eventos *(em breve)* | eventos, PDVs e estoque do evento | PDV |
-| Loja virtual *(em breve)* | catálogo online e delivery | — |
+| Loja virtual | site da loja ligado por API, produtos com fotos, cupons, entrega por bairro, Pix/cartão (Mercado Pago), pedidos com separação, envio e rastreio | — (cardápio digital usa a tela de Pedidos) |
 | Financeiro | contas a pagar/receber, fluxo de caixa, resultado do mês | Financeiro |
 
 - Sempre incluído em qualquer plano: Início, Produtos & Estoque, Fornecedores, Lojas & PDVs, Usuários e Relatórios.
@@ -107,6 +107,16 @@ Cada cliente usa só os módulos (segmentos) que contratou. O Master define isso
 - Módulo desligado vale **na hora** para todos os usuários da empresa, inclusive o Administrador: some do menu e das telas, e a API responde 403 ("não faz parte do plano"). As permissões desses módulos também somem da tela de usuários.
 - Módulos "em breve" já podem ser liberados: passam a valer quando ficarem prontos.
 - Catálogo em `backend/src/config/modulos.js`. A migração `024_modulos_por_plano.sql` não muda nada para quem já usa: os planos existentes mantêm PDV e Lanchonete, Pedidos/Clientes seguem como estavam.
+
+## Grades de variações (cor, tamanho, voltagem)
+
+Produtos & Estoque → **+ Grade (variações)**: nome base, categoria, preço e até **3 atributos** com os valores (ex.: Cor: Preta, Branca · Tamanho: P, M, G). O sistema gera as combinações; dá para desmarcar as que não existem, informar o código de barras (sem ele, gera um **EAN-13 interno** com prefixo 2), o preço de uma variação diferente e o estoque inicial numa loja.
+
+Cada variação é um **produto comum** ("Camiseta Básica - Preta - M"), com código, código de barras, preço e **estoque próprios**: aparece no PDV (leitor de código de barras), no estoque, na entrada por nota, nas vendas e nos relatórios como qualquer produto. Na lista de produtos, o link **grade** abre a grade: renomear (renomeia as variações), mudar a categoria, **preço em todas as variações**, criar **novos valores** (ex.: cor Azul — cria só as combinações com o valor novo), ativar/desativar e editar cada variação.
+
+**Produtos já cadastrados** (ex.: "Camiseta Preta M", "Camiseta Branca G") viram uma grade em Produtos & Estoque → **Agrupar em grade**: escolha os produtos, confira o nome da grade e o valor de cada um (sugeridos pela parte comum e pelo resto dos nomes) e confirme. São os **mesmos produtos**: código, código de barras, preço, estoque e histórico de vendas continuam; opcionalmente são renomeados no padrão da grade. Se algum já estava na loja virtual, a grade entra publicada e a foto de cada produto vira a foto do valor (descrição, destaque, +18, só retirada e medidas também passam). Na grade: **Incluir produto já cadastrado** (valor novo entra sozinho), **Tirar** uma variação (volta a ser avulsa) e **Desfazer grade**. Combos, lanches com ficha técnica e produtos de unidades diferentes não entram. API: `POST /api/grades/converter`, `POST /api/grades/:id/produtos`, `DELETE /api/grades/:id/produtos/:productId`, `DELETE /api/grades/:id`.
+
+Na loja virtual, a grade aparece como **um produto só** (Produtos no site → *Grades de variações*): fotos gerais e **fotos por valor** (ex.: ao escolher a cor, a foto troca), descrição, promoção em %, destaque, +18, só retirada, peso/medidas — copiados para cada variação. No site: card com "a partir de", página com os **seletores** (opção sem estoque riscada) e o carrinho/pedido/frete com a variação escolhida.
 
 ## Combos e complementos (adicionais)
 
@@ -203,6 +213,33 @@ Além de **Vendas** e **Fechamentos de caixa**, a tela tem três abas novas (res
 - **Estoque** — valor do estoque por loja (a custo e a preço de venda), produtos abaixo do mínimo, produtos com saldo e sem venda no período (valor parado) e **curva ABC** (A = 80% do faturamento, B = próximos 15%, C = o resto). Exporta CSV. API: `GET /api/reports/estoque`.
 
 Teste: `npm run test:e2e:relatorios`.
+
+## Loja virtual (módulo "Loja virtual")
+
+O site da loja fica **neste mesmo repositório** (`loja/`) e é **um só para todas as empresas**: o mesmo servidor atende o sistema e todas as lojas, e escolhe a loja pelo endereço acessado. Uma atualização (deploy) vale para o sistema e para todas as lojas. Os dados ficam no mesmo banco, separados por empresa. Uma loja por empresa. Permissão: **Loja virtual** (padrão só Administrador).
+
+- **Endereço** (definido pelo Master, na ficha da empresa): subdomínio grátis `nome.<LOJA_DOMINIO_BASE>` e domínios próprios (`www.lojadocliente.com.br`). Um domínio só pode pertencer a uma empresa. O cliente aponta o DNS (CNAME do www para `LOJA_DNS_ALVO`); o Master confere o DNS pela tela. No cPanel, cada domínio próprio é adicionado como "domínio adicional/alias" do mesmo app para o AutoSSL gerar o certificado.
+- **Pré-visualização:** `https://<sistema>/loja-previa/<subdominio>/` (abre mesmo com a loja fora do ar; não aceita pedido).
+- **Aparência** (painel do cliente): modelo de layout (varejo: Grade, Vitrine ou Lista; cardápio digital: Cardápio), cores (com paletas prontas, incluindo a do cabeçalho), fonte, cantos, banners e blocos da página inicial (ordem, títulos). Tema exclusivo de um cliente: pasta própria em `loja/`, definida pelo Master.
+- **Site da loja (`loja/`)**: vitrine com banners, categorias, destaques e promoções; busca; produto com fotos e adicionais; carrinho com cupom; conta (cadastro, login, recuperação de senha, endereços); checkout com entrega/retirada, Pix (QR code), cartão (formulário seguro do Mercado Pago) ou pagamento na entrega; acompanhamento do pedido. Pensado primeiro para celular.
+- **Site externo (opcional):** a API pública `/api/loja/v1` também aceita a chave da loja (`X-Loja-Chave`), para quem quiser montar um site à parte.
+
+Tela **Loja virtual** (gerenciamento):
+- **Visão geral** — situação (publicar, pausar, tirar do ar), o que falta configurar, dados que aparecem no site (logo, contato, aviso), estabelecimento de onde sai o estoque, retirada/entrega, tempos, pedido mínimo, horários (inclusive passando da meia-noite), endereço da API e **chave da API** (mostrada uma vez; gerar outra desativa a anterior).
+- **Produtos no site** — escolhe o que vai para o site (um a um ou em lote), com até 8 fotos (reduzidas no navegador), nome e descrição para o site, preço promocional com período e destaque. Preço de venda e estoque continuam os do cadastro; a disponibilidade desconta os pedidos em aberto (ficha técnica, combo e complementos pela mesma regra do PDV).
+- **Cupons** — porcentagem (com teto), valor ou frete grátis; pedido mínimo, período, limite total e por cliente, só primeira compra; usos e desconto dado.
+- **Pagamentos** — Pix e cartão pelo site (Mercado Pago, com as credenciais **da própria empresa**: o dinheiro cai direto na conta dela; token guardado cifrado), pagamento na entrega (dinheiro com troco, Pix, cartão), parcelas e prazo do Pix; últimos pagamentos.
+- **Clientes do site** — contas (login por e-mail e senha), pedidos e total gasto; bloquear/desbloquear. Cada conta fica ligada ao cadastro de Clientes pelo telefone.
+- **Entrega** — entrega da própria loja pelos bairros (taxa, tempo, pedido mínimo) e, na loja online, **envio por transportadora com o Melhor Envio**: a empresa conecta a **própria conta** (token pessoal, guardado cifrado; sandbox para testes), informa o remetente (vai na etiqueta), escolhe os serviços (Correios PAC/SEDEX, Jadlog...) e as regras (dias para separar somados ao prazo, acréscimo no frete, frete grátis no mais barato a partir de um valor, declaração de conteúdo ou NF-e) e a embalagem padrão; dá para simular a cotação. Peso e medidas de cada produto em **Produtos no site**. No site, o cliente calcula o frete pelo CEP no produto e no carrinho e escolhe o serviço no checkout (a entrega da loja só vale na cidade dela).
+- **+18 e só retirada** (por produto, em Produtos no site): produto **+18** ganha selo e o cliente declara ter 18 anos ou mais ao fechar o pedido (fica registrado; o painel lembra de conferir o documento); produto **só retirada** não é entregue nem enviado (ex.: produtos de tabaco, cuja venda por via postal a lei proíbe). Em Visão geral, "site para maiores de 18" pergunta a idade na entrada do site.
+- **Desconto no Pix** (Pagamentos): % sobre os produtos (não o frete) no Pix pago pelo site; o site mostra o preço no Pix nos cards e no produto, e o desconto vai para o pedido e para a venda.
+- **Pedidos do site** (lojas de varejo / loja online) — sem a tela de Pedidos e sem o módulo Pedidos: a preparar → em separação → embalado / pronto para retirada → enviado (transportadora, código e link de rastreio) → entregue / retirado. Lista com filtros e contadores, busca (nº, cliente, telefone, rastreio), detalhe com itens e cliente, impressão da lista de separação, correção do rastreio e cancelamento (estorna o que foi pago no site). Pedido com transportadora: **Comprar etiqueta** (paga com o saldo do Melhor Envio da empresa) e **Imprimir etiqueta**; ao enviar, a transportadora e o código vêm da etiqueta; a varredura (a cada 15 min, `LOJA_VARREDURA_ENVIOS_SEGUNDOS`) traz o código quando a transportadora só o gera na postagem e marca o pedido como **entregue** quando o Melhor Envio informa a entrega. Cancelar o pedido cancela a etiqueta ainda não postada (o valor volta para o saldo). O cliente acompanha no site e recebe e-mail quando o pedido fica pronto para retirada ou é enviado. Pago no site: vira venda quando sai (enviado ou retirado), **sem passar pelo caixa** (aparece em Vendas como "Loja virtual (site)"); a pagar na retirada/entrega: vira venda ao finalizar, no caixa aberto da loja.
+
+**Tipo da loja** (definido pelo Master): **varejo** (loja online, aba Pedidos do site) ou **cardápio digital** (lanchonete/delivery: os pedidos caem na tela **Pedidos**, que precisa do módulo Pedidos e de "usa pedidos" no estabelecimento).
+
+Pedidos do cardápio digital entram na tela **Pedidos** como canal "Loja virtual" (com aviso sonoro), reservam o estoque e viram venda ao finalizar, com o preço promocional e o desconto do cupom. Pago pelo site: o preparo só começa com o pagamento aprovado; Pix não pago no prazo cancela o pedido sozinho; cancelar pedido pago estorna no Mercado Pago. Os avisos de pagamento chegam em `/api/webhooks/mercadopago/<loja>` (conferidos na API do Mercado Pago e, com o segredo cadastrado, pela assinatura).
+
+Documentação da API: [docs/API_LOJA_VIRTUAL.md](docs/API_LOJA_VIRTUAL.md). Variáveis novas no `.env`: `URL_PUBLICA`, `SMTP_*`, `LOJA_DOMINIO_BASE`, `LOJA_DNS_ALVO`, `LOJA_DNS_IP` (veja `.env.example`). Desenvolvimento do site: `cd loja && npm install && npm run build` (o backend serve `loja/dist`). Teste: `npm run mp:simulador` + `npm run me:simulador` (Melhor Envio, porta 4996; no `.env`: `ME_API_URL=http://localhost:4996`) + `npm run test:e2e:loja-virtual`. Antes de usar o Melhor Envio em produção, confira a integração com uma conta **sandbox** do Melhor Envio (a integração foi feita sobre a API v2 e testada com o simulador). Variável `ME_CONTATO`: e-mail de contato técnico enviado ao Melhor Envio.
 
 ## Financeiro (módulo "Financeiro")
 

@@ -112,11 +112,11 @@ router.get('/reports/sales-history', requireArea('Relatorios'), async (req, res)
 
   const total = await pool.query(`SELECT COUNT(*)::int AS total FROM sales s WHERE ${where}`, params);
   const { rows } = await pool.query(
-    `SELECT s.id, s.numero, s.numero_pedido, s.criado_em, u.nome AS operador_nome, t.nome AS terminal_nome, l.nome AS location_nome,
+    `SELECT s.id, s.numero, s.numero_pedido, s.criado_em, u.nome AS operador_nome, COALESCE(t.nome, 'Loja virtual (site)') AS terminal_nome, l.nome AS location_nome,
             s.forma_pagamento, s.desconto, s.total, s.status, s.motivo_cancelamento
      FROM sales s
      JOIN users u ON u.id = s.operador_id
-     JOIN terminals t ON t.id = s.terminal_id
+     LEFT JOIN terminals t ON t.id = s.terminal_id
      JOIN locations l ON l.id = s.location_id
      WHERE ${where}
      ORDER BY s.criado_em DESC, s.numero DESC

@@ -57,7 +57,7 @@ check('categorias padrao criadas (despesas e receitas)', cats.length >= 13 && ca
 const CAT = Object.fromEntries(cats.map((c) => [c.nome, c]));
 check('"Compra de mercadorias" fica fora do resultado (o custo entra pelo CMV)', CAT['Compra de mercadorias'].entra_no_resultado === false);
 const formas = (await api('GET', '/financeiro/formas', null, A)).j;
-check('formas de recebimento padrao (credito 30 dias, iFood e 99Food)', formas.length === 6 && formas.find((f) => f.forma === 'cartao_credito').prazo_dias === 30, formas);
+check('formas de recebimento padrao (credito 30 dias, iFood, 99Food e loja virtual)', formas.length === 7 && formas.find((f) => f.forma === 'cartao_credito').prazo_dias === 30, formas);
 
 console.log('\n# 2. Contas financeiras');
 const banco = await api('POST', '/financeiro/contas', { nome: 'Banco do Brasil', tipo: 'banco', saldo_inicial: '1.000,00', saldo_inicial_em: hoje }, A);

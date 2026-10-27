@@ -43,9 +43,9 @@ const MODULOS = [
     areas: [],
   },
   {
-    chave: 'loja_virtual', nome: 'Loja virtual', padrao: false, disponivel: false, requer: [],
-    descricao: 'Catálogo online, carrinho, retirada e delivery com taxas por região.',
-    areas: [],
+    chave: 'loja_virtual', nome: 'Loja virtual', padrao: false, disponivel: true, requer: [],
+    descricao: 'Site de vendas da empresa ligado ao sistema por API: produtos com fotos e promoções, conta do cliente, carrinho, retirada e entrega por bairro, cupons e pagamento online (Mercado Pago). Loja online: pedidos com separação, envio e rastreio na própria loja virtual; cardápio digital: os pedidos caem na tela de Pedidos (precisa do módulo Pedidos).',
+    areas: ['LojaVirtual'],
   },
   {
     chave: 'financeiro', nome: 'Financeiro', padrao: false, disponivel: true, requer: [],

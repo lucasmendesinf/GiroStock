@@ -15,6 +15,7 @@ const authRoutes = require('./routes/auth.routes');
 const usersRoutes = require('./routes/users.routes');
 const suppliersRoutes = require('./routes/suppliers.routes');
 const productsRoutes = require('./routes/products.routes');
+const gradesRoutes = require('./routes/grades.routes');
 const stockRoutes = require('./routes/stock.routes');
 const ingredientsRoutes = require('./routes/ingredients.routes');
 const locationsRoutes = require('./routes/locations.routes');
@@ -34,6 +35,8 @@ const masterConfigRoutes = require('./routes/master.config.routes');
 const integracoesRoutes = require('./routes/integracoes.routes');
 const financeiroRoutes = require('./routes/financeiro.routes');
 const webhooksRoutes = require('./routes/webhooks.routes');
+const lojaPublicaRoutes = require('./routes/loja.publica.routes');
+const lojaVirtualRoutes = require('./routes/lojaVirtual.routes');
 const { router: complementosRoutes } = require('./routes/complementos.routes');
 
 const app = express();
@@ -44,24 +47,30 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
 // Webhooks antes do express.json: a assinatura e conferida sobre o corpo bruto.
 app.use('/api/webhooks', webhooksRoutes);
+// Fotos da loja virtual: corpo binario (a tela ja reduz a imagem); o limite real (2 MB) e conferido na rota.
+app.use('/api/loja-virtual/imagens', express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: '3mb' }));
 app.use(express.json());
 app.use('/api', monitoramento.contarRequisicao);
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 app.use('/api/auth', authRoutes);
+// API publica do site da loja virtual (chave da loja; sem login do sistema).
+app.use('/api/loja/v1', lojaPublicaRoutes);
 
 app.use('/api', authRequired, soGarcom, empresaRoutes);
 app.use('/api', authRequired, usersRoutes);
 app.use('/api', authRequired, suppliersRoutes);
 app.use('/api', authRequired, complementosRoutes);
 app.use('/api', authRequired, productsRoutes);
+app.use('/api', authRequired, gradesRoutes);
 app.use('/api', authRequired, stockRoutes);
 app.use('/api', authRequired, ingredientsRoutes);
 app.use('/api', authRequired, locationsRoutes);
 app.use('/api', authRequired, cashRoutes);
 app.use('/api', authRequired, integracoesRoutes);
 app.use('/api', authRequired, financeiroRoutes);
+app.use('/api', authRequired, lojaVirtualRoutes);
 app.use('/api', authRequired, salesRoutes);
 app.use('/api', authRequired, reportsRoutes);
 app.use('/api', authRequired, ordersRoutes);
@@ -72,6 +81,27 @@ app.use('/api', authRequired, masterSuporteRoutes); // antes do masterRoutes: "e
 app.use('/api', authRequired, masterRoutes);
 app.use('/api', authRequired, masterVisaoRoutes);
 app.use('/api', authRequired, masterConfigRoutes);
+
+// Loja virtual (loja/dist): o mesmo servidor atende todas as lojas. Endereco de uma loja (subdominio da plataforma
+// ou dominio proprio) -> o site da loja; /loja/<subdominio>/ -> link da loja no endereco do proprio sistema (sem
+// precisar de dominio nem de configuracao na hospedagem); /loja-previa/<subdominio>/ -> pre-visualizacao.
+// Os arquivos do site ficam em /loja-assets (nomes com hash: cache longo). O resto continua sendo o sistema.
+const lojaDist = path.join(__dirname, '..', '..', 'loja', 'dist');
+if (fs.existsSync(lojaDist)) {
+  const lojaVirtual = require('./services/lojaVirtual');
+  const indexLoja = () => path.join(lojaDist, 'index.html');
+  app.use('/loja-assets', express.static(lojaDist, { index: false, maxAge: '365d', immutable: true }));
+  app.use(async (req, res, next) => {
+    if (req.method !== 'GET' || req.path.startsWith('/api/') || req.path.startsWith('/loja-assets/')) return next();
+    let ehLoja = /^\/(loja|loja-previa)\/[a-z0-9-]+(\/|$)/.test(req.path);
+    if (!ehLoja) {
+      try { ehLoja = !!(await lojaVirtual.lojaIdDoHost(req.hostname)); } catch (err) { ehLoja = false; }
+    }
+    if (!ehLoja) return next();
+    res.set('Cache-Control', 'no-cache');
+    return res.sendFile(indexLoja());
+  });
+}
 
 // Serve o build do frontend (frontend/dist) quando presente, permitindo rodar
 // backend + frontend como um unico processo Node (ex: cPanel Node.js Selector,

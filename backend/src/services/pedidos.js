@@ -11,7 +11,7 @@ const {
   carregarComposicao, consumoDaLinha, consumoDasLinhas, validarComplementos, precoDosComplementos, idsDeComplementos, saldosDaLoja, faltasDoConsumo,
 } = require('./consumo');
 
-const ORIGENS = ['balcao', 'telefone', 'whatsapp', 'ifood', '99food'];
+const ORIGENS = ['balcao', 'telefone', 'whatsapp', 'ifood', '99food', 'loja_virtual'];
 const FORMAS_PREVISTAS = ['dinheiro', 'cartao', 'cartao_debito', 'cartao_credito', 'pix'];
 const FORMAS_EXTERNAS = [...FORMAS_PREVISTAS, 'online']; // 'online' = pago na plataforma
 
@@ -32,12 +32,19 @@ async function proximoNumero(client, tenantId, locationId) {
 //   NAO recusa (o pedido ja existe na plataforma): devolve as faltas para a equipe resolver.
 // opcoes.comanda: rodada de uma comanda ({ id, rodada, clientId, garcomId }): tipo mesa/pista, item com o garcom que lancou.
 // opcoes.inserirCliente: funcao de cadastro de cliente (vinda das rotas de clientes).
+// opcoes.loja: pedido do site (loja virtual): precos ja calculados pela loja (promocao + complementos), desconto do cupom,
+//   forma 'online' (pago no site), cliente ja identificado (customerId) e colunas extras do pedido (conta, cupom, pagamento).
+//   Falta de estoque recusa, como num pedido do balcao. loja.fluxo 'ecommerce' (loja online): o pedido e gerenciado na
+//   Loja virtual (Pedidos do site), sem a tela de Pedidos, entao o local nao precisa usar pedidos.
 async function criarPedido(client, user, b, opcoes = {}) {
   const externo = opcoes.externo || null;
+  const loja = opcoes.loja || null;
+  const precosInformados = !!(externo || loja);
   const locationId = b.location_id;
   if (!isUuid(locationId)) throw new HttpError(400, 'location_id (loja) é obrigatório');
   const origem = b.origem || 'balcao';
   if (!ORIGENS.includes(origem)) throw new HttpError(400, 'origem inválida');
+  if ((origem === 'loja_virtual') !== !!loja) throw new HttpError(400, 'origem inválida');
   const tipo = ['entrega', 'mesa', 'pista'].includes(b.tipo) ? b.tipo : 'retirada';
   if (!Array.isArray(b.itens) || b.itens.length === 0) throw new HttpError(400, 'adicione ao menos um item ao pedido');
   const endereco = String(b.endereco || '').trim().slice(0, 300);
@@ -46,11 +53,11 @@ async function criarPedido(client, user, b, opcoes = {}) {
   const taxa = tipo === 'entrega' ? Number(b.taxa_entrega || 0) : 0;
   if (!(taxa >= 0)) throw new HttpError(400, 'taxa de entrega inválida');
   const forma = b.forma_pagamento_prevista === undefined || b.forma_pagamento_prevista === null ? null : String(b.forma_pagamento_prevista);
-  if (forma !== null && !(externo ? FORMAS_EXTERNAS : FORMAS_PREVISTAS).includes(forma)) throw new HttpError(400, 'forma de pagamento prevista inválida');
+  if (forma !== null && !(externo || loja ? FORMAS_EXTERNAS : FORMAS_PREVISTAS).includes(forma)) throw new HttpError(400, 'forma de pagamento prevista inválida');
   const pago = !!b.pago;
   const valorRecebido = (externo || pago) && forma === 'dinheiro' && b.valor_recebido !== undefined && b.valor_recebido !== null && b.valor_recebido !== '' ? Number(b.valor_recebido) : null;
   if (valorRecebido !== null && !(valorRecebido >= 0)) throw new HttpError(400, 'valor recebido inválido');
-  const desconto = externo ? Number(Number(b.desconto || 0).toFixed(2)) : 0;
+  const desconto = externo || loja ? Number(Number(b.desconto || 0).toFixed(2)) : 0;
   if (!(desconto >= 0)) throw new HttpError(400, 'desconto inválido');
 
   const linhas = b.itens.map((i) => {
@@ -59,16 +66,16 @@ async function criarPedido(client, user, b, opcoes = {}) {
       product_id: i.product_id, quantidade: Number(i.quantidade), observacao: String(i.observacao || '').trim().slice(0, 200),
       complementos_pedidos: Array.isArray(i.complementos) ? i.complementos : [],
     };
-    if (externo && i.preco_unitario !== undefined) {
+    if (precosInformados && i.preco_unitario !== undefined) {
       linha.preco_unitario = Number(i.preco_unitario);
       if (!(linha.preco_unitario >= 0)) throw new HttpError(400, 'preço do item inválido');
     }
     return linha;
   });
 
-  const loja = await getOwned(client, 'locations', locationId, user.tenantId, { columns: 'id, nome, ativo, usa_pedidos' });
-  if (!loja.ativo) throw new HttpError(400, 'esta loja está inativa');
-  if (!loja.usa_pedidos) throw new HttpError(400, 'esta loja não usa pedidos (ative em Lojas & PDVs)');
+  const local = await getOwned(client, 'locations', locationId, user.tenantId, { columns: 'id, nome, ativo, usa_pedidos' });
+  if (!local.ativo) throw new HttpError(400, 'esta loja está inativa');
+  if (!local.usa_pedidos && !(loja && loja.fluxo === 'ecommerce')) throw new HttpError(400, 'esta loja não usa pedidos (ative em Lojas & PDVs)');
   assertLocationAccess(user, locationId, 'criar pedidos nesta loja');
 
   const ids = [...new Set(linhas.map((l) => l.product_id))];
@@ -108,10 +115,10 @@ async function criarPedido(client, user, b, opcoes = {}) {
 
   // Cliente: o telefone (so digitos) e a chave. Cadastrado -> vincula; novo -> cria quando "cadastrar_cliente" (padrao: sim).
   // Pedido de plataforma nao cadastra cliente: o telefone e um numero da plataforma, nao o do cliente.
-  let customerId = null;
+  let customerId = loja ? loja.customerId || null : null;
   let clienteNovo = false;
   const tel = String(b.cliente_telefone || '').replace(/\D/g, '');
-  if (!externo && tel.length >= 10) {
+  if (!externo && !loja && tel.length >= 10) {
     const ex = await client.query(`SELECT id FROM customers WHERE tenant_id = $1 AND telefone = $2 AND ativo`, [user.tenantId, tel]);
     if (ex.rows.length > 0) {
       customerId = ex.rows[0].id;
@@ -135,11 +142,18 @@ async function criarPedido(client, user, b, opcoes = {}) {
       opcoes.comanda ? opcoes.comanda.id : null, opcoes.comanda ? opcoes.comanda.rodada : null, opcoes.comanda ? opcoes.comanda.clientId || null : null]
   );
   const orderId = pedido.rows[0].id;
+  if (loja) {
+    await client.query(
+      `UPDATE orders SET lv_conta_id = $2, cupom_id = $3, cupom_codigo = $4, troco_para = $5, pagamento_online = $6, pagamento_status = $7, lv_fluxo = $8 WHERE id = $1`,
+      [orderId, loja.contaId || null, loja.cupomId || null, loja.cupomCodigo || null, loja.trocoPara || null, loja.pagamentoOnline || null, loja.pagamentoOnline ? 'pendente' : null,
+        loja.fluxo === 'ecommerce' ? 'ecommerce' : 'cardapio']
+    );
+  }
   for (const l of linhas) {
     const preco = l.preco_unitario !== undefined ? l.preco_unitario : Number((Number(mapa.get(l.product_id).preco_venda) + precoDosComplementos(l.complementos)).toFixed(2));
     // Observacao: itens com preparo (consomem insumos), com complementos ou combo; de plataforma, em qualquer item.
     const preparo = consumoDaLinha(comp, l).insumos.size > 0 || l.complementos.length > 0 || comp.combos.has(l.product_id);
-    const obs = (preparo || externo || opcoes.comanda) && l.observacao ? l.observacao : null;
+    const obs = (preparo || externo || opcoes.comanda || loja) && l.observacao ? l.observacao : null;
     await client.query(
       `INSERT INTO order_items (order_id, product_id, quantidade, preco_unitario, subtotal, observacao, complementos, garcom_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [orderId, l.product_id, l.quantidade, preco, Number((preco * l.quantidade).toFixed(2)), obs, l.complementos.length ? JSON.stringify(l.complementos) : null, opcoes.comanda ? opcoes.comanda.garcomId || null : null]
@@ -148,7 +162,7 @@ async function criarPedido(client, user, b, opcoes = {}) {
   await client.query(`INSERT INTO order_status_log (order_id, de, para, usuario_id) VALUES ($1, NULL, 'novo', $2)`, [orderId, user.id || null]);
   await logAudit(client, {
     tenantId: user.tenantId, usuarioId: user.id || null, acao: 'criar_pedido', recurso: 'orders', recursoId: orderId,
-    detalhes: { numero, origem, tipo, itens: linhas.length, customer_id: customerId, cliente_novo: clienteNovo, ...(externo ? { externo_id: externo.externo_id, faltas } : {}) },
+    detalhes: { numero, origem, tipo, itens: linhas.length, customer_id: customerId, cliente_novo: clienteNovo, ...(externo ? { externo_id: externo.externo_id, faltas } : {}), ...(loja ? { cupom: loja.cupomCodigo || null, pagamento_online: loja.pagamentoOnline || null } : {}) },
   });
   return { orderId, numero, clienteNovo, faltas };
 }

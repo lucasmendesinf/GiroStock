@@ -1,4 +1,5 @@
-// Reserva de estoque por pedidos em aberto (status diferente de finalizado/cancelado), por loja.
+// Reserva de estoque por pedidos em aberto (status diferente de finalizado/cancelado e ainda sem venda: o pedido do
+// site pago online vira venda ao ser enviado, antes de entregue), por loja.
 // O consumo de cada item segue a mesma regra da venda (services/consumo.js): produto simples, ficha tecnica,
 // combo e complementos escolhidos. disponivel = saldo - reservado. Nada e gravado nos saldos: a reserva e sempre
 // calculada, entao cancelar libera sozinho.
@@ -10,7 +11,7 @@ async function reservadosDaLoja(db, tenantId, locationId, ignorarPedidos = null)
   const { rows } = await db.query(
     `SELECT oi.product_id, oi.quantidade, oi.complementos
      FROM order_items oi JOIN orders o ON o.id = oi.order_id
-     WHERE o.tenant_id = $1 AND o.location_id = $2 AND o.status NOT IN ('finalizado', 'cancelado')
+     WHERE o.tenant_id = $1 AND o.location_id = $2 AND o.status NOT IN ('finalizado', 'cancelado') AND o.sale_id IS NULL
        AND o.id <> ALL($3::uuid[])`,
     [tenantId, locationId, ignorar]
   );

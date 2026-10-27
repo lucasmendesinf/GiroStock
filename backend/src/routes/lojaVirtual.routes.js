@@ -44,12 +44,13 @@ async function configTela(l, base) {
     tema: lv.temaEfetivo(l.tema, l.tipo),
     id: l.id, location_id: l.location_id, publicada: l.publicada, pausada: l.pausada, nome: l.nome, descricao: l.descricao,
     logo_id: l.logo_id, logo_url: l.logo_id ? lv.urlImagem(base, l.logo_id) : null,
+    capa_id: l.capa_id, capa_url: l.capa_id ? lv.urlImagem(base, l.capa_id) : null,
     banners: (l.banners || []).map((b) => ({ ...b, url: lv.urlImagem(base, b.imagem_id) })),
     telefone: l.telefone, whatsapp: l.whatsapp, email: l.email, endereco: l.endereco, instagram: l.instagram, aviso: l.aviso,
     horarios: l.horarios || {}, aceita_retirada: l.aceita_retirada, aceita_entrega: l.aceita_entrega,
     pedido_minimo: n2(l.pedido_minimo), tempo_preparo_min: l.tempo_preparo_min, tempo_entrega_min: l.tempo_entrega_min,
     taxa_outros_bairros: l.taxa_outros_bairros === null ? null : n2(l.taxa_outros_bairros),
-    pagamentos: l.pagamentos || {}, parcelas_max: l.parcelas_max, pix_expira_min: l.pix_expira_min,
+    pagamentos: { ...(l.pagamentos || {}), na_entrega: lv.formasNaEntrega(l.pagamentos) }, parcelas_max: l.parcelas_max, pix_expira_min: l.pix_expira_min,
     pix_desconto_pct: Number(l.pix_desconto_pct || 0), site_maior_idade: !!l.site_maior_idade,
     chave: l.api_chave_prefixo ? { prefixo: l.api_chave_prefixo, criada_em: l.api_chave_criada_em } : null,
     mercadopago: l.mp_access_token_cript ? { conectado: true, conta: l.mp_conta, public_key: l.mp_public_key, webhook_secret: !!l.mp_webhook_secret_cript, conectado_em: l.mp_conectado_em } : { conectado: false },
@@ -101,7 +102,7 @@ router.get('/loja-virtual', async (req, res) => {
   if (l.aceita_entrega && Number(resumo.bairros) === 0 && l.taxa_outros_bairros === null) pendencias.push('cadastre os bairros de entrega (ou uma taxa para qualquer bairro)');
   const pag = l.pagamentos || {};
   if ((pag.pix_online || pag.cartao_online) && !l.mp_access_token_cript) pendencias.push('conecte a conta do Mercado Pago para receber Pix/cartão pelo site');
-  if (!pag.pix_online && !pag.cartao_online && !(pag.na_entrega || []).length) pendencias.push('escolha ao menos uma forma de pagamento');
+  if (!pag.pix_online && !pag.cartao_online && !lv.formasNaEntrega(pag).length) pendencias.push('escolha ao menos uma forma de pagamento');
   if (!cardapio) pendencias.push(...frete.pendenciasEnvio(l));
   res.json({ config: await configTela(l, baseUrl(req)), resumo: { ...resumo, vendido_mes: n2(resumo.vendido_mes) }, situacao, pendencias, locais });
 });
@@ -123,9 +124,11 @@ router.put('/loja-virtual', async (req, res) => {
   }
   const pagamentos = b.pagamentos === undefined ? atual.pagamentos : (() => {
     const p = b.pagamentos || {};
-    const na = Array.isArray(p.na_entrega) ? [...new Set(p.na_entrega)] : [];
-    if (na.some((f) => !['dinheiro', 'pix', 'cartao'].includes(f))) throw new HttpError(400, 'forma de pagamento na entrega inválida');
-    return { pix_online: !!p.pix_online, cartao_online: !!p.cartao_online, na_entrega: na };
+    const na = Array.isArray(p.na_entrega) ? p.na_entrega : [];
+    if (na.some((f) => ![...lv.FORMAS_ENTREGA, 'cartao'].includes(f))) throw new HttpError(400, 'forma de pagamento na entrega inválida');
+    // "cartao" (formato antigo) vale credito e debito; guardamos sempre no formato novo
+    if (p.debito_online) throw new HttpError(400, 'cartão de débito online ainda não está disponível: use débito na entrega ou na retirada');
+    return { pix_online: !!p.pix_online, cartao_online: !!p.cartao_online, debito_online: false, na_entrega: lv.formasNaEntrega({ na_entrega: na }) };
   })();
   const inteiro = (nome, min, max) => (x) => {
     const n = Number(x);
@@ -138,6 +141,7 @@ router.put('/loja-virtual', async (req, res) => {
     banners = [];
     for (const x of b.banners) banners.push({ imagem_id: await imagemDaEmpresa(pool, t, x && x.imagem_id), titulo: texto(x.titulo, 80), link: texto(x.link, 300) });
   }
+  const capaId = b.capa_id === undefined ? atual.capa_id : b.capa_id ? await imagemDaEmpresa(pool, t, b.capa_id) : null;
   const logoId = b.logo_id === undefined ? atual.logo_id : b.logo_id ? await imagemDaEmpresa(pool, t, b.logo_id) : null;
   const dados = {
     location_id: locationId,
@@ -167,7 +171,7 @@ router.put('/loja-virtual', async (req, res) => {
       return Number(n.toFixed(2));
     }),
     site_maior_idade: v('site_maior_idade', (x) => !!x),
-    banners: JSON.stringify(banners), logo_id: logoId,
+    banners: JSON.stringify(banners), logo_id: logoId, capa_id: capaId,
     tema: JSON.stringify(b.tema === undefined ? lv.temaEfetivo(atual.tema, atual.tipo) : lv.normalizarTema(b.tema, atual.tema, atual.tipo)),
   };
   if (!dados.aceita_retirada && !dados.aceita_entrega) throw new HttpError(400, 'aceite ao menos retirada ou entrega');

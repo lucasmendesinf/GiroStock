@@ -162,7 +162,10 @@ const BLOCOS_PADRAO = {
 const TEMA_PADRAO = {
   modelo: 'grade', cor_primaria: '#b5121b', cor_fundo: '#ffffff', cor_texto: '#1d1d1f', cor_destaque: '#1f7a4d', cor_topo: '#111111',
   fonte: 'moderna', cantos: 'arredondados', blocos: BLOCOS_PADRAO.varejo, exclusivo: null,
+  // cardapio digital: foto a esquerda/direita ou grade de 2 colunas; selo "% OFF"; categoria automatica "Promocoes"
+  cartao_estilo: 'esquerda', selo_off: true, categoria_promocoes: true,
 };
+const ESTILOS_CARTAO = ['esquerda', 'direita', 'grade'];
 const tipoValido = (tipo) => (tipo === 'cardapio' ? 'cardapio' : 'varejo');
 // Fluxo dos pedidos do site: cardapio vai para a tela de Pedidos (cozinha); varejo e loja online (Pedidos do site).
 const fluxoDaLoja = (loja) => (tipoValido(loja.tipo) === 'cardapio' ? 'cardapio' : 'ecommerce');
@@ -189,6 +192,9 @@ function normalizarTema(entrada, atual, tipo = 'varejo') {
   const t = temaEfetivo({ ...base, ...entrada, exclusivo: base.exclusivo }, tp);
   if (!FONTES.includes(t.fonte)) throw new HttpError(400, 'fonte inválida');
   if (!['arredondados', 'retos'].includes(t.cantos)) throw new HttpError(400, 'cantos inválidos');
+  if (!ESTILOS_CARTAO.includes(t.cartao_estilo)) throw new HttpError(400, 'estilo do cartão inválido');
+  t.selo_off = t.selo_off !== false;
+  t.categoria_promocoes = t.categoria_promocoes !== false;
   for (const k of ['cor_primaria', 'cor_fundo', 'cor_texto', 'cor_destaque', 'cor_topo']) {
     if (!COR_RE.test(t[k])) throw new HttpError(400, `cor inválida em ${k.replace('cor_', '')}: use #RRGGBB`);
     t[k] = t[k].toLowerCase();
@@ -198,6 +204,15 @@ function normalizarTema(entrada, atual, tipo = 'varejo') {
     t.blocos.sort((a, b) => (ordem.indexOf(a.tipo) + 99 * (ordem.indexOf(a.tipo) < 0)) - (ordem.indexOf(b.tipo) + 99 * (ordem.indexOf(b.tipo) < 0)));
   }
   return t;
+}
+
+// ---------- formas de pagamento ----------
+const FORMAS_ENTREGA = ['dinheiro', 'pix', 'cartao_credito', 'cartao_debito'];
+// Lista da loja no formato novo ("cartao" antigo vale credito e debito), sem repetir e na ordem de FORMAS_ENTREGA.
+function formasNaEntrega(pag) {
+  const l = Array.isArray(pag && pag.na_entrega) ? pag.na_entrega : [];
+  const todas = l.flatMap((f) => (f === 'cartao' ? ['cartao_credito', 'cartao_debito'] : [f]));
+  return FORMAS_ENTREGA.filter((f) => todas.includes(f));
 }
 
 // ---------- horario ----------
@@ -470,6 +485,7 @@ async function dadosPublicos(loja, base) {
     tipo: tipoValido(loja.tipo),
     tema: temaEfetivo(loja.tema, loja.tipo),
     logo: loja.logo_id ? urlImagem(base, loja.logo_id) : null,
+    capa: loja.capa_id ? urlImagem(base, loja.capa_id) : null,
     banners: (loja.banners || []).map((b) => ({ imagem: urlImagem(base, b.imagem_id), titulo: b.titulo || '', link: b.link || '' })),
     contato: { telefone: loja.telefone, whatsapp: loja.whatsapp, email: loja.email, endereco: loja.endereco, instagram: loja.instagram },
     aviso: loja.aviso,
@@ -496,12 +512,59 @@ async function dadosPublicos(loja, base) {
     pagamentos: {
       pix_online: !!pag.pix_online && mpOk,
       cartao_online: !!pag.cartao_online && mpOk,
-      na_entrega: Array.isArray(pag.na_entrega) ? pag.na_entrega : [],
+      // Debito online depende do provedor: o Mercado Pago so e usado aqui com Pix e cartao de credito (ver docs/CARDAPIO_DIGITAL.md)
+      debito_online: false,
+      na_entrega: formasNaEntrega(pag),
       parcelas_max: loja.parcelas_max,
       pix_desconto_pct: pag.pix_online && mpOk ? Number(loja.pix_desconto_pct || 0) : 0,
       mercadopago_public_key: mpOk ? loja.mp_public_key : null,
     },
   };
+}
+
+// ---------- cardapio digital (pagina unica) ----------
+const pctOff = (p) => (p.preco_original ? Math.max(1, Math.round((1 - p.preco / p.preco_original) * 100)) : 0);
+
+// Tudo o que a pagina unica do cardapio precisa numa resposta so: dados da loja e as secoes (categorias na ordem do cadastro,
+// com a categoria automatica "Promocoes" no topo). Subcategorias ficam na secao da categoria-pai. Os adicionais completos
+// de cada item vem em GET /produtos/:id (aqui so a indicacao de que existem).
+async function cardapio(loja, base) {
+  const hoje = agoraSP().data;
+  const [dados, cats, rows] = await Promise.all([
+    dadosPublicos(loja, base),
+    db().query(
+      `SELECT c.id, c.nome, c.parent_id, COALESCE(lc.ordem, 0) AS ordem, COALESCE(lc.oculta, false) AS oculta
+       FROM categories c LEFT JOIN lv_categorias lc ON lc.category_id = c.id WHERE c.tenant_id = $1`, [loja.tenant_id]
+    ),
+    db().query(`${SELECT_PRODUTO}${SQL_REPRESENTANTE} ORDER BY lp.destaque DESC, lp.ordem, COALESCE(lp.nome_site, p.nome), p.id`, [loja.tenant_id]),
+  ]);
+  const disp = await disponibilidade(loja, rows.rows.map((r) => r.id));
+  const produtos = rows.rows.map((r) => produtoPublico(r, disp, base, hoje));
+  await juntarGrades(loja, base, hoje, rows.rows, produtos);
+  const porId = new Map(cats.rows.map((c) => [c.id, c]));
+  const raizDe = (id) => { const c = porId.get(id); return c && c.parent_id && porId.get(c.parent_id) ? porId.get(c.parent_id) : c; };
+  const resumo = (p, r) => ({
+    id: p.id, nome: p.nome, descricao: String(p.descricao || '').slice(0, 220), imagem: p.imagens[0] || null,
+    preco: p.preco, preco_original: p.preco_original, off: pctOff(p), preco_varia: !!p.preco_varia,
+    disponivel: p.disponivel, quantidade_maxima: p.quantidade_maxima, unidade: p.unidade,
+    adicionais: p.complementos.length > 0, adicionais_obrigatorios: p.complementos.some((g) => g.minimo > 0), grade: !!p.grade,
+    destaque: !!r.destaque, maior_idade: p.maior_idade, so_retirada: p.so_retirada,
+  });
+  const secoes = new Map();
+  const outros = [];
+  const itens = produtos.map((p, i) => resumo(p, rows.rows[i]));
+  itens.forEach((it, i) => {
+    const r = raizDe(rows.rows[i].categoria_id);
+    if (!r || r.oculta) { outros.push(it); return; }
+    if (!secoes.has(r.id)) secoes.set(r.id, { id: r.id, nome: r.nome, ordem: r.ordem, produtos: [] });
+    secoes.get(r.id).produtos.push(it);
+  });
+  const lista = [...secoes.values()].sort((a, b) => a.ordem - b.ordem || a.nome.localeCompare(b.nome, 'pt-BR')).map(({ id, nome, produtos: ps }) => ({ id, nome, produtos: ps }));
+  if (outros.length) lista.push({ id: 'outros', nome: 'Outros', produtos: outros });
+  const promo = itens.filter((i) => i.preco_original);
+  const tema = dados.tema;
+  if (tema.categoria_promocoes && promo.length) lista.unshift({ id: 'promocoes', nome: 'Promoções', promocoes: true, produtos: promo });
+  return { loja: dados, secoes: lista, total_produtos: itens.length };
 }
 
 // ---------- carrinho ----------
@@ -806,7 +869,7 @@ async function cobrar(loja, pedido, conta, metodo, cartao, urlNotificacao) {
   const dados = {
     valor,
     descricao: `Pedido ${pedido.numero} - ${loja.nome || 'Loja virtual'}`.slice(0, 120),
-    pagador: { email: conta.email, nome: conta.nome, cpf: conta.cpf },
+    pagador: { email: conta.email || `cliente.${conta.telefone}@girostock.calutec.com.br`, nome: conta.nome, cpf: conta.cpf },
     referencia: pedido.id,
     notificacao: urlNotificacao,
     idempotencia: pagamentoId,
@@ -1036,6 +1099,7 @@ function iniciarVarredura() {
 }
 
 module.exports = {
+  cardapio, FORMAS_ENTREGA, formasNaEntrega,
   db, gerarChave, hashChave, moduloLigado, lojaPorChave, lojaPorHost, lojaPorSubdominio, lojaIdDoHost, limparCacheHost, dominioBase,
   lojaDaEmpresa, dominiosDaLoja, normalizarSubdominio, sugerirSubdominio, normalizarDominio, enderecosDaLoja, temaEfetivo, normalizarTema, TEMA_PADRAO, MODELOS, tipoValido, fluxoDaLoja, FONTES, BLOCOS, agoraSP, normalizarHorarios, situacaoHorario, recebendoPedidos, precoDoProduto,
   catalogo, produto, categorias, dadosPublicos, urlImagem, calcularCarrinho, entregaDoBairro, validarCupom, descontoDoCupom, semAcento,

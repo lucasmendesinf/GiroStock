@@ -17,6 +17,7 @@ const { inserirCliente } = require('./customers.routes');
 const { HttpError } = require('../utils/http');
 const { isUuid } = require('../utils/tenant');
 const { limitar } = require('../utils/limitador');
+const codigoLogin = require('../services/codigoLogin');
 
 const router = express.Router();
 const db = lv.db;
@@ -94,6 +95,12 @@ function validarTelefone(v) {
   if (t.length < 10 || t.length > 11) throw new HttpError(400, 'telefone inválido: informe o DDD e o número');
   return t;
 }
+// Celular/telefone brasileiro: DDD (11 a 99) + 8 digitos, ou 9 digitos comecando em 9.
+function validarTelefoneBr(v) {
+  const t = validarTelefone(v);
+  if (Number(t.slice(0, 2)) < 11 || (t.length === 11 && t[2] !== '9')) throw new HttpError(400, 'telefone inválido: informe o DDD e o número');
+  return t;
+}
 function validarCpf(v) {
   const c = digitos(v);
   if (!c) return null;
@@ -113,6 +120,13 @@ async function clienteDoSistema(client, tenantId, nome, telefone, aceita) {
 // ---------- loja ----------
 router.get('/loja', async (req, res) => {
   res.json(await lv.dadosPublicos(req.loja, baseUrl(req)));
+});
+
+// Pagina unica do cardapio digital: loja + todas as secoes de uma vez (cache curto; o ETag evita reenviar o que nao mudou).
+router.get('/cardapio', async (req, res) => {
+  res.vary('X-Loja-Subdominio');
+  res.set('Cache-Control', 'public, max-age=10');
+  res.json(await lv.cardapio(req.loja, baseUrl(req)));
 });
 
 router.get('/categorias', async (req, res) => {
@@ -187,7 +201,10 @@ router.post('/conta/cadastro', limitar('lv-cadastro', 10, 3600 * 1000), async (r
     res.status(201).json({ token: emitirToken(rows[0]), conta: contaPublica(rows[0]) });
   } catch (err) {
     await client.query('ROLLBACK');
-    if (err.code === '23505') throw new HttpError(409, 'já existe uma conta com este e-mail: entre ou recupere a senha');
+    if (err.code === '23505') {
+      if (/telefone/.test(String(err.constraint))) throw new HttpError(409, 'já existe uma conta com este telefone: entre com o código enviado ao celular');
+      throw new HttpError(409, 'já existe uma conta com este e-mail: entre ou recupere a senha');
+    }
     throw err;
   } finally {
     client.release();
@@ -199,10 +216,95 @@ router.post('/conta/login', limitar('lv-login', 20, 10 * 60 * 1000), async (req,
   const mail = texto(b.email, 160).toLowerCase();
   const { rows } = await db().query(`SELECT * FROM lv_contas WHERE tenant_id = $1 AND lower(email) = $2`, [req.loja.tenant_id, mail]);
   const c = rows[0];
-  const ok = c && c.ativo && (await bcrypt.compare(String(b.senha || ''), c.senha_hash));
+  const ok = c && c.ativo && c.senha_hash && (await bcrypt.compare(String(b.senha || ''), c.senha_hash));
   if (!ok) throw new HttpError(401, 'e-mail ou senha incorretos');
   await db().query(`UPDATE lv_contas SET ultimo_login_em = now() WHERE id = $1`, [c.id]);
   res.json({ token: emitirToken(c), conta: contaPublica(c) });
+});
+
+// ---------- login por telefone e codigo (cardapio digital) ----------
+const VALIDADE_CODIGO_MIN = 10;
+const TENTATIVAS_CODIGO = 3;
+const hashCodigo = (id, telefone, codigo) => crypto.createHmac('sha256', segredo()).update(`${id}:${telefone}:${codigo}`).digest('hex');
+
+// Pede o codigo (6 digitos, 10 min). A resposta e sempre a mesma exista ou nao a conta.
+router.post('/conta/codigo', limitar('lv-codigo-ip', 10, 3600 * 1000), async (req, res) => {
+  const telefone = validarTelefoneBr((req.body || {}).telefone);
+  const tenantId = req.loja.tenant_id;
+  await db().query(`DELETE FROM lv_login_codigos WHERE expira_em < now() - interval '1 day'`);
+  const recentes = Number((await db().query(
+    `SELECT COUNT(*) AS n FROM lv_login_codigos WHERE tenant_id = $1 AND telefone = $2 AND criado_em > now() - interval '15 minutes'`, [tenantId, telefone]
+  )).rows[0].n);
+  if (recentes >= 3) throw new HttpError(429, 'muitos códigos pedidos para este telefone: aguarde alguns minutos');
+  const codigo = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+  const id = crypto.randomUUID();
+  // so o ultimo codigo vale
+  await db().query(`UPDATE lv_login_codigos SET usado_em = now() WHERE tenant_id = $1 AND telefone = $2 AND usado_em IS NULL`, [tenantId, telefone]);
+  await db().query(
+    `INSERT INTO lv_login_codigos (id, tenant_id, telefone, codigo_hash, expira_em, ip, enviado_via) VALUES ($1, $2, $3, $4, now() + interval '${VALIDADE_CODIGO_MIN} minutes', $5, $6)`,
+    [id, tenantId, telefone, hashCodigo(id, telefone, codigo), req.ip, codigoLogin.provedor()]
+  );
+  let enviado;
+  try {
+    enviado = await codigoLogin.enviar({ telefone, codigo, loja: req.loja.nome });
+  } catch (err) {
+    // sem envio, o pedido nao conta no limite do telefone
+    await db().query(`DELETE FROM lv_login_codigos WHERE id = $1`, [id]);
+    throw err;
+  }
+  const r = { mensagem: 'enviamos um código de 6 números para o seu celular', validade_min: VALIDADE_CODIGO_MIN, reenviar_em_s: 30 };
+  if (enviado.codigo_teste && process.env.NODE_ENV !== 'production') r.codigo_teste = enviado.codigo_teste;
+  res.status(202).json(r);
+});
+
+// Entra com telefone + codigo. Cliente novo: informe o nome (sem ele, responde precisa_nome e o codigo continua valendo).
+router.post('/conta/entrar', limitar('lv-codigo-entrar', 30, 15 * 60 * 1000), async (req, res) => {
+  const b = req.body || {};
+  const telefone = validarTelefoneBr(b.telefone);
+  const tenantId = req.loja.tenant_id;
+  const invalido = new HttpError(400, 'código inválido ou expirado: peça um novo');
+  const cod = (await db().query(
+    `SELECT * FROM lv_login_codigos WHERE tenant_id = $1 AND telefone = $2 AND usado_em IS NULL AND expira_em > now() ORDER BY criado_em DESC LIMIT 1`, [tenantId, telefone]
+  )).rows[0];
+  if (!cod || cod.tentativas >= TENTATIVAS_CODIGO) throw invalido;
+  const informado = Buffer.from(hashCodigo(cod.id, telefone, digitos(b.codigo).slice(0, 6)));
+  const certo = Buffer.from(cod.codigo_hash);
+  if (informado.length !== certo.length || !crypto.timingSafeEqual(informado, certo)) {
+    const t = (await db().query(
+      `UPDATE lv_login_codigos SET tentativas = tentativas + 1, usado_em = CASE WHEN tentativas + 1 >= $2 THEN now() ELSE usado_em END WHERE id = $1 RETURNING tentativas`, [cod.id, TENTATIVAS_CODIGO]
+    )).rows[0].tentativas;
+    const restantes = Math.max(0, TENTATIVAS_CODIGO - t);
+    throw new HttpError(400, restantes > 0 ? `código incorreto: ${restantes} tentativa(s) restante(s)` : 'código incorreto: peça um novo código');
+  }
+  let conta = (await db().query(
+    `SELECT * FROM lv_contas WHERE tenant_id = $1 AND telefone = $2 AND ativo ORDER BY ultimo_login_em DESC NULLS LAST, criado_em DESC LIMIT 1`, [tenantId, telefone]
+  )).rows[0];
+  const nome = texto(b.nome, 120);
+  if (!conta && nome.length < 3) return res.json({ precisa_nome: true });
+  // consome o codigo (uso unico, mesmo com duas requisicoes ao mesmo tempo)
+  const uso = await db().query(`UPDATE lv_login_codigos SET usado_em = now() WHERE id = $1 AND usado_em IS NULL RETURNING id`, [cod.id]);
+  if (uso.rows.length === 0) throw invalido;
+  if (conta) {
+    await db().query(`UPDATE lv_contas SET ultimo_login_em = now() WHERE id = $1`, [conta.id]);
+    return res.json({ token: emitirToken(conta), conta: contaPublica(conta), nova: false });
+  }
+  const aceita = !!b.aceita_mensagens;
+  const client = await db().connect();
+  try {
+    await client.query('BEGIN');
+    const customerId = await clienteDoSistema(client, tenantId, nome, telefone, aceita);
+    conta = (await client.query(
+      `INSERT INTO lv_contas (tenant_id, customer_id, nome, telefone, aceita_mensagens, ultimo_login_em) VALUES ($1, $2, $3, $4, $5, now()) RETURNING *`,
+      [tenantId, customerId, nome, telefone, aceita]
+    )).rows[0];
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+  res.status(201).json({ token: emitirToken(conta), conta: contaPublica(conta), nova: true });
 });
 
 // Recuperacao: codigo de 6 digitos por e-mail (vale 15 minutos, 5 tentativas). Resposta igual exista ou nao a conta.
@@ -275,6 +377,7 @@ router.put('/conta', comConta, async (req, res) => {
     res.json(contaPublica(rows[0]));
   } catch (err) {
     await client.query('ROLLBACK');
+    if (err.code === '23505') throw new HttpError(409, 'já existe uma conta com este telefone');
     throw err;
   } finally {
     client.release();
@@ -283,6 +386,7 @@ router.put('/conta', comConta, async (req, res) => {
 
 router.put('/conta/senha', comConta, limitar('lv-senha', 10, 15 * 60 * 1000), async (req, res) => {
   const b = req.body || {};
+  if (!req.conta.senha_hash) throw new HttpError(409, 'esta conta entra pelo código enviado ao celular e não tem senha');
   if (!(await bcrypt.compare(String(b.senha_atual || ''), req.conta.senha_hash))) throw new HttpError(400, 'senha atual incorreta');
   const nova = validarSenha(b.nova_senha);
   // Troca de senha encerra as outras sessoes; esta recebe um token novo.
@@ -296,11 +400,11 @@ router.put('/conta/senha', comConta, limitar('lv-senha', 10, 15 * 60 * 1000), as
 // Excluir a conta (LGPD): apaga os dados pessoais da conta e os enderecos; os pedidos continuam no historico da loja.
 router.delete('/conta', comConta, async (req, res) => {
   const b = req.body || {};
-  if (!(await bcrypt.compare(String(b.senha || ''), req.conta.senha_hash))) throw new HttpError(400, 'senha incorreta');
+  if (req.conta.senha_hash ? !(await bcrypt.compare(String(b.senha || ''), req.conta.senha_hash)) : b.confirmar !== true) throw new HttpError(400, req.conta.senha_hash ? 'senha incorreta' : 'confirme a exclusão da conta');
   await db().query(`DELETE FROM lv_enderecos WHERE conta_id = $1`, [req.conta.id]);
   await db().query(
     `UPDATE lv_contas SET ativo = false, nome = 'Conta excluída', email = 'excluida-' || id || '@excluida.local', telefone = '', cpf = NULL,
-            senha_hash = '-', aceita_mensagens = false, sessoes_validas_desde = now() WHERE id = $1`,
+            senha_hash = NULL, aceita_mensagens = false, sessoes_validas_desde = now() WHERE id = $1`,
     [req.conta.id]
   );
   res.status(204).end();
@@ -457,8 +561,16 @@ router.post('/pedidos', comConta, limitar('lv-pedido', 30, 10 * 60 * 1000), asyn
   const b = req.body || {};
   const situacao = lv.recebendoPedidos(loja);
   if (!situacao.ok) throw new HttpError(409, situacao.motivo);
-  const pag = b.pagamento || {};
+  const pag = { ...(b.pagamento || {}) };
+  // Formato do cardapio: { quando: 'online'|'entrega', forma: 'pix'|'cartao_credito'|'cartao_debito'|'dinheiro', troco_para }.
+  // O formato antigo ({ metodo: 'pix'|'cartao'|'na_entrega', forma }) continua valendo para a loja de varejo.
+  if (pag.quando !== undefined) {
+    if (pag.quando === 'online') pag.metodo = { pix: 'pix', cartao_credito: 'cartao', cartao_debito: 'debito' }[pag.forma];
+    else if (pag.quando === 'entrega') pag.metodo = 'na_entrega';
+    else pag.metodo = undefined;
+  }
   const metodo = pag.metodo;
+  if (metodo === 'debito') throw new HttpError(422, 'esta loja não aceita cartão de débito pelo site: escolha pagar na entrega ou na retirada');
   if (!['pix', 'cartao', 'na_entrega'].includes(metodo)) throw new HttpError(400, 'escolha a forma de pagamento');
   const cfgPag = loja.pagamentos || {};
   const mpOk = !!(loja.mp_access_token_cript && loja.mp_public_key);
@@ -466,8 +578,9 @@ router.post('/pedidos', comConta, limitar('lv-pedido', 30, 10 * 60 * 1000), asyn
   if (metodo === 'cartao' && !(cfgPag.cartao_online && mpOk)) throw new HttpError(422, 'esta loja não aceita cartão pelo site');
   let formaEntrega = null;
   if (metodo === 'na_entrega') {
-    formaEntrega = pag.forma;
-    if (!['dinheiro', 'pix', 'cartao'].includes(formaEntrega) || !(cfgPag.na_entrega || []).includes(formaEntrega)) throw new HttpError(422, 'forma de pagamento na entrega não aceita por esta loja');
+    const aceitas = lv.formasNaEntrega(cfgPag);
+    formaEntrega = pag.forma === 'cartao' ? ['cartao_credito', 'cartao_debito'].find((f) => aceitas.includes(f)) : pag.forma;
+    if (!lv.FORMAS_ENTREGA.includes(formaEntrega) || !aceitas.includes(formaEntrega)) throw new HttpError(422, 'forma de pagamento na entrega não aceita por esta loja');
   }
   const tipo = b.tipo === 'entrega' ? 'entrega' : 'retirada';
   let endereco = null;

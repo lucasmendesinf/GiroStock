@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../../api/client';
 import { useToast, useConfirm } from '../../context/UiContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
+import { podeAcessar } from '../../utils/permissions.js';
 import { Field, Modal, Vazio } from '../../components/ui.jsx';
 import { brl, brlFino, dataHora, parseNumero, qtd } from '../../utils/format';
 import { UNIDADES_INSUMO, avisarCustoAcimaVenda } from './comum.jsx';
@@ -17,6 +18,7 @@ const ACOES = [
 export default function Insumos({ ingredients, locations, reload }) {
   const toast = useToast();
   const { user } = useAuth();
+  const podeEditar = podeAcessar(user, 'EditarInsumos'); // editar, ativar/desativar e excluir; movimentar continua em Estoque
   const locaisAtivos = locations.filter((l) => l.ativo);
   const [novo, setNovo] = useState(false);
   const [movimentando, setMovimentando] = useState(null);
@@ -78,7 +80,7 @@ export default function Insumos({ ingredients, locations, reload }) {
                         ))}
                       </div>
                     </td>
-                    <td><div className="acoes"><button type="button" className="btn-link" onClick={() => setEditando(i)}>Editar</button>{i.ativo && <button type="button" className="btn-link" onClick={() => setMovimentando(i)}>Movimentar</button>}<button type="button" className="btn-link" onClick={() => desativar(i)}>{i.ativo ? 'Desativar' : 'Reativar'}</button><button type="button" className="btn-link perigo" onClick={() => excluir(i)}>Excluir</button></div></td>
+                    <td><div className="acoes">{podeEditar && <button type="button" className="btn-link" onClick={() => setEditando(i)}>Editar</button>}{i.ativo && <button type="button" className="btn-link" onClick={() => setMovimentando(i)}>Movimentar</button>}{podeEditar && <button type="button" className="btn-link" onClick={() => desativar(i)}>{i.ativo ? 'Desativar' : 'Reativar'}</button>}{podeEditar && <button type="button" className="btn-link perigo" onClick={() => excluir(i)}>Excluir</button>}</div></td>
                   </tr>
                 ))}
               </tbody>
@@ -220,6 +222,7 @@ function MovimentarInsumo({ insumo, locaisAtivos, user, reload, onClose }) {
   const confirmar = useConfirm();
   const [acao, setAcao] = useState('entrada');
   const [local, setLocal] = useState(localInicial(user, locaisAtivos, insumo));
+  const podeCusto = podeAcessar(user, 'EditarInsumos'); // balanco que muda o custo exige a permissao de editar insumos
   const [form, setForm] = useState({ quantidade: '', custo_total: '', destino: '', novo_saldo: '', novo_custo: '', minimo: '', motivo: '' });
   const saldoAqui = Number((insumo.saldos_por_local.find((s) => s.location_id === local) || { saldo: 0 }).saldo);
   const minimoAqui = Number((insumo.saldos_por_local.find((s) => s.location_id === local) || { estoque_minimo: 0 }).estoque_minimo);
@@ -292,7 +295,7 @@ function MovimentarInsumo({ insumo, locaisAtivos, user, reload, onClose }) {
             <Field label={`Saldo contado (${insumo.unidade}) *`} hint={`Hoje: ${qtd(saldoAqui)}. Use 0 para zerar.`}>
               <input inputMode="decimal" value={form.novo_saldo} onChange={(e) => setForm({ ...form, novo_saldo: e.target.value })} required />
             </Field>
-            <Field label={`Novo custo por ${insumo.unidade} (opcional)`}><input inputMode="decimal" value={form.novo_custo} onChange={(e) => setForm({ ...form, novo_custo: e.target.value })} placeholder={brlFino(insumo.custo_unitario)} /></Field>
+            {podeCusto && <Field label={`Novo custo por ${insumo.unidade} (opcional)`}><input inputMode="decimal" value={form.novo_custo} onChange={(e) => setForm({ ...form, novo_custo: e.target.value })} placeholder={brlFino(insumo.custo_unitario)} /></Field>}
           </div>
         )}
 

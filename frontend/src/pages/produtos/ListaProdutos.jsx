@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react';
+import { useAuth } from '../../context/AuthContext.jsx';
+import { podeAcessar } from '../../utils/permissions.js';
 import { brl, qtd } from '../../utils/format';
 import { Vazio } from '../../components/ui.jsx';
 import FormProduto from './FormProduto.jsx';
@@ -41,6 +43,8 @@ export default function ListaProdutos(props) {
   const [chip, setChip] = useState('todos');
   const [visiveis, setVisiveis] = useState(POR_PAGINA);
   const [novo, setNovo] = useState(false);
+  const { user } = useAuth();
+  const podeEditar = podeAcessar(user, 'EditarProdutos'); // sem a permissao: sem lapis, sem editar grade/converter (o servidor tambem recusa)
   const [editandoId, setEditandoId] = useState(null);
   const [estoqueId, setEstoqueId] = useState(null);
   const [categoriasAberto, setCategoriasAberto] = useState(false);
@@ -93,7 +97,7 @@ export default function ListaProdutos(props) {
 
   function abrirEstoque(p) {
     // Produto composto nao tem estoque proprio: a caixa abre a edicao ja na receita.
-    if (p.tem_ficha_tecnica || p.e_combo) setEditandoId(p.id); else setEstoqueId(p.id);
+    if (p.tem_ficha_tecnica || p.e_combo) { if (podeEditar) setEditandoId(p.id); } else setEstoqueId(p.id);
   }
 
   return (
@@ -127,7 +131,7 @@ export default function ListaProdutos(props) {
         <span className="toolbar-espaco" />
         <button type="button" className="btn-link" onClick={() => setCategoriasAberto(true)}>Categorias</button>
         <button type="button" className="btn-link" onClick={() => setNovaGrade(true)} title="Cor, tamanho, voltagem: cada variação com estoque e código de barras próprios">+ Grade (variações)</button>
-        <button type="button" className="btn-link" onClick={() => setConverter(true)} title="Produtos já cadastrados (ex.: Camiseta Preta M, Camiseta Branca G) viram as variações de uma grade">Agrupar em grade</button>
+        {podeEditar && <button type="button" className="btn-link" onClick={() => setConverter(true)} title="Produtos já cadastrados (ex.: Camiseta Preta M, Camiseta Branca G) viram as variações de uma grade">Agrupar em grade</button>}
         <button type="button" className="btn-primario" onClick={() => setNovo(true)}>+ Novo produto</button>
       </div>
 
@@ -166,9 +170,9 @@ export default function ListaProdutos(props) {
                   <tr key={p.id} className={`es-row-${st.cls} ${p.ativo ? '' : 'row-inativa'}`}>
                     <td><div className="es-foto"><IconeImagem /></div></td>
                     <td>
-                      <button type="button" className="es-nome" title="Editar produto" onClick={() => setEditandoId(p.id)}>{p.nome}</button>
+                      {podeEditar ? <button type="button" className="es-nome" title="Editar produto" onClick={() => setEditandoId(p.id)}>{p.nome}</button> : <span className="es-nome" style={{ cursor: 'default' }}>{p.nome}</span>}
                       {!p.ativo && <> <span className="badge-inativo">inativo</span></>}
-                      <div className="celula-sub">{p.categoria_nome || 'Sem categoria'} · EAN {p.barcode}{p.grade_id && <> · <button type="button" className="link-grade" onClick={() => setGradeId(p.grade_id)} title="Abrir a grade de variações">grade {p.grade_nome}</button></>}</div>
+                      <div className="celula-sub">{p.categoria_nome || 'Sem categoria'} · EAN {p.barcode}{p.grade_id && <> · {podeEditar ? <button type="button" className="link-grade" onClick={() => setGradeId(p.grade_id)} title="Abrir a grade de variações">grade {p.grade_nome}</button> : <span>grade {p.grade_nome}</span>}</>}</div>
                     </td>
                     <td className="col-opcional">{p.codigo_interno}</td>
                     <td className="col-opcional">{p.unidade}</td>
@@ -182,8 +186,8 @@ export default function ListaProdutos(props) {
                     </td>
                     <td>
                       <div className="es-acoes">
-                        <button type="button" className="es-ico" title="Editar produto" aria-label="Editar produto" onClick={() => setEditandoId(p.id)}><IconeLapis /></button>
-                        <button type="button" className={`es-ico estoque ${st.cls === 'ok' ? '' : st.cls}`} data-tip={tip} title={tip} aria-label={tip} onClick={() => abrirEstoque(p)}><IconeCaixa /></button>
+                        {podeEditar && <button type="button" className="es-ico" title="Editar produto" aria-label="Editar produto" onClick={() => setEditandoId(p.id)}><IconeLapis /></button>}
+                        {(podeEditar || !(p.tem_ficha_tecnica || p.e_combo)) && <button type="button" className={`es-ico estoque ${st.cls === 'ok' ? '' : st.cls}`} data-tip={tip} title={tip} aria-label={tip} onClick={() => abrirEstoque(p)}><IconeCaixa /></button>}
                       </div>
                     </td>
                   </tr>

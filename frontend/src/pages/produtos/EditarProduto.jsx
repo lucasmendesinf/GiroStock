@@ -38,7 +38,7 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
       setP(d);
       const principal = d.supplier_id || '';
       setForm({
-        nome: d.nome, categoria_id: d.categoria_id || '', barcode: d.barcode, unidade: d.unidade,
+        nome: d.nome, descricao: d.descricao || '', categoria_id: d.categoria_id || '', barcode: d.barcode, unidade: d.unidade,
         preco_custo: numeroParaCampo(d.preco_custo), preco_venda: numeroParaCampo(d.preco_venda),
         supplier_id: principal, supplier_ids: d.fornecedores.map((f) => f.id).filter((id) => id !== principal),
       });
@@ -90,6 +90,7 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
     try {
       await api.put(`/products/${p.id}`, {
         nome: form.nome.trim(),
+        descricao: form.descricao,
         categoria_id: form.categoria_id,
         barcode: form.barcode.replace(/\D/g, ''),
         unidade: form.unidade,
@@ -154,6 +155,9 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
         <div className="form-grid">
           <Field label="Nome do produto *" style={{ flexBasis: '100%' }}>
             <input autoFocus value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
+          </Field>
+          <Field label="Descrição (opcional)" style={{ flexBasis: '100%' }}>
+            <textarea rows={2} maxLength={1000} value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} />
           </Field>
           <Field label="Categoria *">
             <select value={form.categoria_id} onChange={(e) => setForm({ ...form, categoria_id: e.target.value })}>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../api/client';
 import { useConfirm, useToast } from '../../context/UiContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
+import { podeAcessar } from '../../utils/permissions.js';
 import { Field, Modal } from '../../components/ui.jsx';
 import ProdutoPicker from '../../components/ProdutoPicker.jsx';
 import { brl, parseNumero, qtd } from '../../utils/format';
@@ -13,6 +14,7 @@ export default function Complementos({ products = [], ingredients = [], lanchone
   const toast = useToast();
   const confirmar = useConfirm();
   const { user } = useAuth();
+  const podeEditar = podeAcessar(user, 'EditarProdutos'); // criar grupos/opcoes e em Estoque; editar, ativar/desativar e excluir exigem EditarProdutos
   const usaIfood = temModulo(user, 'delivery_apps');
   const [grupos, setGrupos] = useState(null);
   const [grupoForm, setGrupoForm] = useState(null); // {} novo | grupo em edicao
@@ -58,9 +60,9 @@ export default function Complementos({ products = [], ingredients = [], lanchone
             <span className="muted">· em {g.produtos} produto(s)</span>
             <span className="row-actions" style={{ marginLeft: 'auto' }}>
               <button type="button" className="btn-link" onClick={() => setOpcaoForm({ grupo: g })}>+ Opção</button>
-              <button type="button" className="btn-link" onClick={() => setGrupoForm(g)}>Editar</button>
-              <button type="button" className="btn-link" onClick={() => alternarGrupo(g)}>{g.ativo ? 'Desativar' : 'Reativar'}</button>
-              <button type="button" className="btn-link perigo" onClick={() => excluirGrupo(g)}>Excluir</button>
+              {podeEditar && <button type="button" className="btn-link" onClick={() => setGrupoForm(g)}>Editar</button>}
+              {podeEditar && <button type="button" className="btn-link" onClick={() => alternarGrupo(g)}>{g.ativo ? 'Desativar' : 'Reativar'}</button>}
+              {podeEditar && <button type="button" className="btn-link perigo" onClick={() => excluirGrupo(g)}>Excluir</button>}
             </span>
           </div>
           {g.opcoes.length === 0 ? <p className="form-hint">Nenhuma opção. Clique em "+ Opção".</p> : (
@@ -75,9 +77,9 @@ export default function Complementos({ products = [], ingredients = [], lanchone
                       <td className="muted">{baixa(o)}</td>
                       {usaIfood && <td>{o.codigo || <span className="muted">—</span>}</td>}
                       <td className="num" style={{ whiteSpace: 'nowrap' }}>
-                        <button type="button" className="btn-link" onClick={() => setOpcaoForm({ grupo: g, opcao: o })}>Editar</button>
-                        <button type="button" className="btn-link" onClick={() => alternarOpcao(o)}>{o.ativo ? 'Desativar' : 'Reativar'}</button>
-                        <button type="button" className="btn-link perigo" onClick={() => excluirOpcao(o)}>Excluir</button>
+                        {podeEditar && <button type="button" className="btn-link" onClick={() => setOpcaoForm({ grupo: g, opcao: o })}>Editar</button>}
+                        {podeEditar && <button type="button" className="btn-link" onClick={() => alternarOpcao(o)}>{o.ativo ? 'Desativar' : 'Reativar'}</button>}
+                        {podeEditar && <button type="button" className="btn-link perigo" onClick={() => excluirOpcao(o)}>Excluir</button>}
                       </td>
                     </tr>
                   ))}

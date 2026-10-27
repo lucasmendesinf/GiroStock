@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useAuth } from '../../context/AuthContext.jsx';
+import { podeAcessar } from '../../utils/permissions.js';
 import { api } from '../../api/client';
 import { useToast, useConfirm } from '../../context/UiContext.jsx';
 import { Field, Modal } from '../../components/ui.jsx';
@@ -8,6 +10,9 @@ import { ordenarCategoriasHierarquia } from './comum.jsx';
 export default function Categorias({ categories, reload, onClose, onCriada }) {
   const toast = useToast();
   const confirmar = useConfirm();
+  const { user } = useAuth();
+  const podeEditar = podeAcessar(user, 'EditarProdutos');
+  const [renomeando, setRenomeando] = useState(null); // { id, nome }
   const [form, setForm] = useState({ nome: '', parent_id: '' });
   const arvore = ordenarCategoriasHierarquia(categories);
 
@@ -19,6 +24,16 @@ export default function Categorias({ categories, reload, onClose, onCriada }) {
       setForm({ nome: '', parent_id: '' });
       await reload();
       if (onCriada) onCriada(nova);
+    } catch (err) { toast.erro(err); }
+  }
+
+  async function renomear(e) {
+    e.preventDefault();
+    try {
+      await api.patch(`/categories/${renomeando.id}`, { nome: renomeando.nome });
+      toast.sucesso('Categoria renomeada.');
+      setRenomeando(null);
+      reload();
     } catch (err) { toast.erro(err); }
   }
 
@@ -48,11 +63,24 @@ export default function Categorias({ categories, reload, onClose, onCriada }) {
           const podeRemover = c.produto_count === 0 && c.subcategoria_count === 0;
           return (
             <li key={c.id}>
-              <span style={{ paddingLeft: `${c.nivel * 18}px` }}>{c.nivel > 0 ? '↳ ' : ''}{c.nome}
-                <span className="muted"> · {c.produto_count} produto(s){c.subcategoria_count > 0 ? ` · ${c.subcategoria_count} sub` : ''}</span>
-              </span>
-              <button type="button" className="btn-link perigo" disabled={!podeRemover} onClick={() => remover(c)}
-                title={podeRemover ? 'Remover categoria' : 'Só é possível remover categorias sem produtos ou subcategorias'}>Remover</button>
+              {renomeando && renomeando.id === c.id ? (
+                <form onSubmit={renomear} style={{ display: 'flex', gap: 8, flex: 1, paddingLeft: `${c.nivel * 18}px` }}>
+                  <input autoFocus value={renomeando.nome} onChange={(e) => setRenomeando({ ...renomeando, nome: e.target.value })} minLength={2} maxLength={80} required aria-label={`Novo nome de ${c.nome}`} />
+                  <button type="submit" className="btn-link">Salvar</button>
+                  <button type="button" className="btn-link" onClick={() => setRenomeando(null)}>Cancelar</button>
+                </form>
+              ) : (
+                <>
+                  <span style={{ paddingLeft: `${c.nivel * 18}px` }}>{c.nivel > 0 ? '↳ ' : ''}{c.nome}
+                    <span className="muted"> · {c.produto_count} produto(s){c.subcategoria_count > 0 ? ` · ${c.subcategoria_count} sub` : ''}</span>
+                  </span>
+                  {podeEditar && <span>
+                    <button type="button" className="btn-link" onClick={() => setRenomeando({ id: c.id, nome: c.nome })}>Renomear</button>{' '}
+                    <button type="button" className="btn-link perigo" disabled={!podeRemover} onClick={() => remover(c)}
+                      title={podeRemover ? 'Remover categoria' : 'Só é possível remover categorias sem produtos ou subcategorias'}>Remover</button>
+                  </span>}
+                </>
+              )}
             </li>
           );
         })}

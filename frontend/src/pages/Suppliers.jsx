@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 import { useToast, useConfirm } from '../context/UiContext.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
+import { podeAcessar } from '../utils/permissions.js';
 import { Field, Modal, Vazio } from '../components/ui.jsx';
 import { brl, data, qtd } from '../utils/format';
 
@@ -27,6 +29,8 @@ function normalizar(t) {
 
 export default function Suppliers() {
   const toast = useToast();
+  const { user } = useAuth();
+  const podeEditar = podeAcessar(user, 'EditarFornecedores');
   const confirmar = useConfirm();
   const [suppliers, setSuppliers] = useState([]);
   const [busca, setBusca] = useState('');
@@ -100,8 +104,8 @@ export default function Suppliers() {
                   <td>
                     <div className="row-actions">
                       <button className="btn-link" onClick={() => abrirDetalhe(s)}>Produtos e compras</button>
-                      <button className="btn-link" onClick={() => setFormAberto(s)}>Editar</button>
-                      <button className={`btn-link ${s.ativo ? 'perigo' : ''}`} onClick={() => alternarStatus(s)}>{s.ativo ? 'Desativar' : 'Reativar'}</button>
+                      {podeEditar && <button className="btn-link" onClick={() => setFormAberto(s)}>Editar</button>}
+                      {podeEditar && <button className={`btn-link ${s.ativo ? 'perigo' : ''}`} onClick={() => alternarStatus(s)}>{s.ativo ? 'Desativar' : 'Reativar'}</button>}
                     </div>
                   </td>
                 </tr>

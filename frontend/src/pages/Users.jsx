@@ -76,12 +76,13 @@ export default function Users() {
                   <td className="col-opcional">{u.totp_ativo ? <span className="badge selo-ok">Ativo</span> : <span className="muted">Não ativo</span>}{u.totp_exigido && <span className="badge" style={{ marginLeft: 6 }}>exigido</span>}</td>
                   <td className="col-opcional">{u.ativo ? 'Ativo' : <span className="badge-inativo">Inativo</span>}</td>
                   <td>
+                    {u.perfil === 'Administrador' && eu.perfil !== 'Administrador' ? <span className="muted">Só um Administrador altera</span> : (
                     <div className="row-actions">
                       <button className="btn-link" onClick={() => setEditando(u)}>Editar</button>
                       <button className="btn-link" onClick={() => setSenhaDe(u)}>Redefinir senha</button>
                       {u.totp_ativo && <button className="btn-link" onClick={() => resetar2fa(u)}>Resetar 2FA</button>}
                       {u.id !== eu.id && <button className={`btn-link ${u.ativo ? 'perigo' : ''}`} onClick={() => alternarStatus(u)}>{u.ativo ? 'Desativar' : 'Reativar'}</button>}
-                    </div>
+                    </div>)}
                   </td>
                 </tr>
               ))}
@@ -110,7 +111,9 @@ function efetivas(matriz, perfil, ajustes) {
 
 function CamposPerfilLoja({ form, setForm, locations, matriz }) {
   const { user: eu } = useAuth();
-  const perfis = PERFIS.filter((p) => p !== 'Garçom' || temModulo(eu, 'garcom') || form.perfil === 'Garçom');
+  const ehAdmin = eu?.perfil === 'Administrador';
+  // So Administrador cria/promove Administrador; e ninguem concede o que nao tem (o servidor tambem confere).
+  const perfis = PERFIS.filter((p) => (p !== 'Garçom' || temModulo(eu, 'garcom') || form.perfil === 'Garçom') && (p !== 'Administrador' || ehAdmin || form.perfil === 'Administrador'));
   const padrao = matriz.padrao[form.perfil] || {};
   const ajustado = Object.keys(matriz.permissoes).some((k) => !!form.permissoes[k] !== !!padrao[k]);
   return (
@@ -126,7 +129,7 @@ function CamposPerfilLoja({ form, setForm, locations, matriz }) {
             const diferente = !!form.permissoes[chave] !== !!padrao[chave];
             return (
               <label key={chave} className={`permissao-item ${diferente ? 'ajustada' : ''}`}>
-                <input type="checkbox" checked={!!form.permissoes[chave]}
+                <input type="checkbox" checked={!!form.permissoes[chave]} disabled={!ehAdmin && !(eu && eu.areas && eu.areas[chave])} title={!ehAdmin && !(eu && eu.areas && eu.areas[chave]) ? 'Você não tem esta permissão, então não pode concedê-la' : undefined}
                   onChange={(e) => setForm({ ...form, permissoes: { ...form.permissoes, [chave]: e.target.checked } })} />
                 <span>{descricao}{diferente && <em> (ajustado)</em>}</span>
               </label>

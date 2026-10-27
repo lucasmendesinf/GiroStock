@@ -27,6 +27,7 @@ export default function FormProduto({ categories, suppliers, ingredients, produc
   const [grupos, setGrupos] = useState([]);
   const [ifood, setIfood] = useState({ vende_ifood: false, codigo_ifood: '' });
   const [form, setForm] = useState({
+    descricao: '',
     nome: '', categoria_id: '', unidade: 'UN', barcode: '', preco_custo: '', preco_venda: '', supplier_id: '', supplier_ids: [],
   });
   const [composto, setComposto] = useState(false);
@@ -62,6 +63,7 @@ export default function FormProduto({ categories, suppliers, ingredients, produc
     try {
       const produto = await api.post('/products', {
         nome: form.nome.trim(),
+        descricao: form.descricao.trim() || undefined,
         categoria_id: form.categoria_id,
         unidade: form.unidade,
         barcode: form.barcode.replace(/\D/g, ''),
@@ -101,6 +103,9 @@ export default function FormProduto({ categories, suppliers, ingredients, produc
         <div className="form-grid">
           <Field label="Nome do produto *" style={{ flexBasis: '100%' }}>
             <input autoFocus value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} placeholder="Ex.: Cerveja Heineken Long Neck 330ml" />
+          </Field>
+          <Field label="Descrição (opcional)" style={{ flexBasis: '100%' }}>
+            <textarea rows={2} maxLength={1000} value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} placeholder="Detalhes do produto (aparece no detalhe e no site)" />
           </Field>
           <Field label="Categoria *">
             <select value={form.categoria_id} onChange={(e) => setForm({ ...form, categoria_id: e.target.value })}>

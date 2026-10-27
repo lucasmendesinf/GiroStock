@@ -4,7 +4,7 @@ import { useConfirm, useToast } from '../../context/UiContext.jsx';
 import { Field, Vazio } from '../../components/ui.jsx';
 import { brl, dataHora } from '../../utils/format';
 
-const NA_ENTREGA = [['dinheiro', 'Dinheiro (com troco)'], ['pix', 'Pix na entrega/retirada'], ['cartao', 'Cartão na maquininha']];
+const NA_ENTREGA = [['dinheiro', 'Dinheiro (com troco)'], ['pix', 'Pix na entrega/retirada'], ['cartao_credito', 'Cartão de crédito na maquininha'], ['cartao_debito', 'Cartão de débito na maquininha']];
 const SITUACAO = { aprovado: ['ok', 'Aprovado'], pendente: ['warn', 'Pendente'], recusado: ['err', 'Recusado'], expirado: ['', 'Expirado'], estornado: ['', 'Estornado'], erro: ['err', 'Erro'] };
 
 // Formas de pagamento do site e a conta do Mercado Pago do lojista (o dinheiro cai direto nela).
@@ -55,6 +55,7 @@ export default function Pagamentos({ config, onMudou }) {
             <span className="ped-rotulo">Pagar no site (Mercado Pago)</span>
             <label className="check"><input type="checkbox" checked={!!f.pix_online} onChange={(e) => setF({ ...f, pix_online: e.target.checked })} /> Pix (QR code / copia e cola)</label>
             <label className="check"><input type="checkbox" checked={!!f.cartao_online} onChange={(e) => setF({ ...f, cartao_online: e.target.checked })} /> Cartão de crédito</label>
+            <label className="check" title="O Mercado Pago ainda não permite cartão de débito neste fluxo"><input type="checkbox" checked={false} disabled /> Cartão de débito <span className="muted">(indisponível: use débito na entrega)</span></label>
             {!mp.conectado && (f.pix_online || f.cartao_online) && <p className="form-hint" style={{ color: 'var(--warn)' }}>Conecte a conta do Mercado Pago abaixo para estas formas aparecerem no site.</p>}
           </div>
           <div>

@@ -27,10 +27,18 @@ export default function Aparencia({ config, onMudou }) {
   const toast = useToast();
   const [t, setT] = useState(config.tema);
   const [banners, setBanners] = useState(config.banners.map((b) => ({ imagem_id: b.imagem_id, url: b.url, titulo: b.titulo || '', link: b.link || '' })));
+  const [capa, setCapa] = useState({ id: config.capa_id, url: config.capa_url });
   const [enviando, setEnviando] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const mover = (lista, i, d) => { const n = [...lista]; const [x] = n.splice(i, 1); n.splice(i + d, 0, x); return n; };
 
+  async function trocarCapa(e) {
+    const arq = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!arq) return;
+    setEnviando(true);
+    try { setCapa(await enviarImagem(arq, 1600)); } catch (err) { toast.erro(err); } finally { setEnviando(false); }
+  }
   async function addBanner(e) {
     const arq = e.target.files && e.target.files[0];
     e.target.value = '';
@@ -41,7 +49,7 @@ export default function Aparencia({ config, onMudou }) {
   async function salvar() {
     setSalvando(true);
     try {
-      await api.put('/loja-virtual', { tema: t, banners: banners.map(({ imagem_id, titulo, link }) => ({ imagem_id, titulo, link })) });
+      await api.put('/loja-virtual', { tema: t, capa_id: capa.id || null, banners: banners.map(({ imagem_id, titulo, link }) => ({ imagem_id, titulo, link })) });
       toast.sucesso('Aparência salva');
       await onMudou();
     } catch (err) { toast.erro(err); } finally { setSalvando(false); }
@@ -64,6 +72,30 @@ export default function Aparencia({ config, onMudou }) {
         {config.tipo === 'cardapio' && <p className="form-hint" style={{ margin: 0 }}>Loja do tipo <b>cardápio digital</b> (definido pelo suporte). Escolha as cores e as fotos das categorias abaixo.</p>}
         {t.exclusivo && <p className="form-hint" style={{ margin: 0 }}>Esta loja usa o tema exclusivo <b>{t.exclusivo}</b>.</p>}
       </div>
+
+      {config.tipo === 'cardapio' && (
+        <div className="card form-stack">
+          <h3 style={{ margin: 0 }}>Cardápio em página única</h3>
+          <p className="form-hint" style={{ margin: 0 }}>O cliente vê a capa, o perfil da loja e todos os produtos numa rolagem só, com a barra de categorias fixa no topo.</p>
+          <div className="lv-logo">
+            <div className="lv-logo-img" style={{ width: 160 }}>{capa.url ? <img src={capa.url} alt="Capa da loja" /> : <span className="muted">sem capa (usa a cor da loja)</span>}</div>
+            <div>
+              <label className="btn-link lv-arquivo">{enviando ? 'Enviando…' : capa.url ? 'Trocar capa' : 'Enviar capa'}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={trocarCapa} disabled={enviando} /></label>
+              {capa.url && <button type="button" className="btn-link perigo" onClick={() => setCapa({ id: null, url: null })}>Remover</button>}
+              <div className="form-hint">Imagem larga (ex.: 1200 × 480). Salve a aparência para valer.</div>
+            </div>
+          </div>
+          <Field label="Estilo dos cartões de produto">
+            <select value={t.cartao_estilo || 'esquerda'} onChange={(e) => setT({ ...t, cartao_estilo: e.target.value })}>
+              <option value="esquerda">Foto à esquerda</option>
+              <option value="direita">Foto à direita</option>
+              <option value="grade">Grade de 2 colunas</option>
+            </select>
+          </Field>
+          <label className="check"><input type="checkbox" checked={t.selo_off !== false} onChange={(e) => setT({ ...t, selo_off: e.target.checked })} /> Mostrar o selo “% OFF” nos produtos em promoção</label>
+          <label className="check"><input type="checkbox" checked={t.categoria_promocoes !== false} onChange={(e) => setT({ ...t, categoria_promocoes: e.target.checked })} /> Categoria automática “Promoções” no topo (produtos com preço promocional)</label>
+        </div>
+      )}
 
       <div className="card form-stack">
         <h3 style={{ margin: 0 }}>Cores e fonte</h3>

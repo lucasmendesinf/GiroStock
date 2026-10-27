@@ -92,7 +92,7 @@ const p118 = await api('POST', '/garcom/comandas', { tipo: 'pista', identificado
 check('abre a pista com pulseira 118 e nome opcional', p118.s === 201 && p118.j.identificador === 'Pulseira 118' && p118.j.cliente_nome === 'Joana' && p118.j.numero === 2, p118.j);
 const p119 = await api('POST', '/garcom/comandas', { tipo: 'pista', identificador: '119' }, GA.token);
 check('pista sem nome também abre', p119.s === 201 && p119.j.cliente_nome === '');
-check('tipo inválido -> 400 e pagamento na hora fica para a Fase 2', (await api('POST', '/garcom/comandas', { tipo: 'balcao', identificador: '1' }, GA.token)).s === 400 && (await api('POST', '/garcom/comandas', { tipo: 'mesa', identificador: '5', modo_pagamento: 'hora' }, GA.token)).s === 400);
+check('tipo ou modo inválido -> 400; pagamento na hora sem permissão -> 403', (await api('POST', '/garcom/comandas', { tipo: 'balcao', identificador: '1' }, GA.token)).s === 400 && (await api('POST', '/garcom/comandas', { tipo: 'mesa', identificador: '5', modo_pagamento: 'qualquer' }, GA.token)).s === 400 && (await api('POST', '/garcom/comandas', { tipo: 'mesa', identificador: '5', modo_pagamento: 'hora' }, GA.token)).s === 403);
 const bVe = await api('GET', '/garcom/comandas', null, GB.token);
 check('outro garçom não vê a comanda do A (lista vazia e 404 no detalhe)', bVe.s === 200 && bVe.j.length === 0 && (await api('GET', `/garcom/comandas/${m7.j.id}`, null, GB.token)).s === 404);
 check('o A vê as suas 3 comandas', (await api('GET', '/garcom/comandas', null, GA.token)).j.length === 3);

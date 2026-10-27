@@ -8,6 +8,7 @@ const { isQuantidadeValidaParaUnidade } = require('../utils/validators');
 const { HttpError } = require('../utils/http');
 const { configEfetiva } = require('../utils/cupom');
 const { registrarVenda } = require('../services/vendas');
+const { estornarRecebimentosDaVenda } = require('../services/recebimentos');
 
 const router = express.Router();
 const FORMAS_PAGAMENTO = ['pix', 'cartao_credito', 'cartao_debito', 'dinheiro'];
@@ -127,6 +128,9 @@ router.post('/sales/:id/cancel', requireArea('Vendas'), async (req, res) => {
       [req.user.id, motivo, sale.id, req.user.tenantId]
     );
 
+    // Venda de comanda com recebimentos do garcom: estorna os recebimentos (e a prestacao ja feita, por sangria no caixa da venda).
+    const estornoRecebimentos = await estornarRecebimentosDaVenda(client, req.user, { id: sale.id, numero: sale.numero, cash_session_id: sale.cash_session_id });
+
     await logAudit(client, {
       tenantId: req.user.tenantId,
       usuarioId: req.user.id,
@@ -138,6 +142,7 @@ router.post('/sales/:id/cancel', requireArea('Vendas'), async (req, res) => {
         total: Number(sale.total),
         estorno_produtos: saidas.rows.length,
         estorno_insumos: consumos.rows.length,
+        ...(estornoRecebimentos.recebimentos > 0 ? { recebimentos_estornados: estornoRecebimentos.recebimentos, sangria_prestacao: estornoRecebimentos.sangria } : {}),
       },
     });
 
@@ -166,7 +171,7 @@ function filtrosVendas(req) {
   }
   if (forma_pagamento) {
     params.push(forma_pagamento);
-    where += ` AND s.forma_pagamento = $${params.length}`;
+    where += ` AND EXISTS (SELECT 1 FROM v_sale_pagamentos vp WHERE vp.sale_id = s.id AND vp.forma::text = $${params.length})`;
   }
   if (status !== 'todas') {
     params.push(status === 'cancelada' ? 'cancelada' : 'concluida');
@@ -198,7 +203,7 @@ router.get('/sales/:id', async (req, res) => {
   }
   await getOwned(pool, 'sales', req.params.id, req.user.tenantId);
   const venda = await pool.query(
-    `SELECT s.id, s.numero, s.numero_pedido, s.criado_em, s.status, s.forma_pagamento, s.valor_recebido, s.troco, s.subtotal, s.desconto, s.taxa_entrega, s.total,
+    `SELECT s.id, s.numero, s.numero_pedido, s.criado_em, s.status, s.forma_pagamento, s.valor_recebido, s.troco, s.subtotal, s.desconto, s.taxa_entrega, s.taxa_servico, s.total, s.comanda_id,
             tn.nome AS empresa_nome, l.usa_comanda, l.cupom_config,
             s.location_id, l.nome AS location_nome, t.nome AS terminal_nome, u.nome AS operador_nome,
             s.cash_session_id, cs.fechado_em IS NULL AS caixa_aberto,
@@ -226,8 +231,10 @@ router.get('/sales/:id', async (req, res) => {
      ORDER BY p.nome, si.id`,
     [req.params.id, req.user.tenantId]
   );
+  // Partes pagas (uma ou varias formas). Venda antiga sem partes: uma so, com o total.
+  const pagamentos = (await pool.query(`SELECT forma, valor, entra_no_caixa FROM v_sale_pagamentos WHERE sale_id = $1 ORDER BY valor DESC, forma`, [v.id])).rows;
   const { cupom_config: cfgSalva, ...resto } = v;
-  res.json({ ...resto, cupom_config: configEfetiva(cfgSalva), pode_cancelar: v.status === 'concluida' && v.caixa_aberto && canCancelSales(req.user), itens: itens.rows });
+  res.json({ ...resto, pagamentos, cupom_config: configEfetiva(cfgSalva), pode_cancelar: v.status === 'concluida' && v.caixa_aberto && canCancelSales(req.user), itens: itens.rows });
 });
 
 module.exports = router;

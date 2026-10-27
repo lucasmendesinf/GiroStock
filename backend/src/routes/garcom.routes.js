@@ -10,7 +10,7 @@ const { assertLocationAccess, canAccessLocation, filtroLocais } = require('../ut
 const { HttpError } = require('../utils/http');
 const { FUSO } = require('../utils/query');
 const { criarPedido } = require('../services/pedidos');
-const { registrarVenda, FORMAS_PAGAMENTO } = require('../services/vendas');
+const recebimentos = require('../services/recebimentos');
 
 const router = express.Router();
 const ABERTAS = ['aberta', 'fechamento_solicitado'];
@@ -28,6 +28,8 @@ const SELECT_COMANDA = `
          c.aberta_por, ua.nome AS aberta_por_nome, c.aberta_em, c.fechamento_solicitado_em, c.fechada_em, c.fechada_por, c.sale_id,
          c.observacao, c.motivo_cancelamento,
          COALESCE((SELECT SUM(oi.subtotal) FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE o.comanda_id = c.id AND o.status <> 'cancelado'), 0) AS total,
+         COALESCE((SELECT SUM(cp.valor_produtos) FROM comanda_pagamentos cp WHERE cp.comanda_id = c.id AND cp.status = 'confirmado'), 0) AS pago_produtos,
+         COALESCE((SELECT SUM(cp.taxa_servico) FROM comanda_pagamentos cp WHERE cp.comanda_id = c.id AND cp.status = 'confirmado'), 0) AS taxa_paga,
          (SELECT COUNT(*)::int FROM orders o WHERE o.comanda_id = c.id AND o.status <> 'cancelado') AS rodadas,
          (SELECT COUNT(*)::int FROM orders o WHERE o.comanda_id = c.id AND o.status IN ('novo', 'em_preparo')) AS rodadas_na_cozinha,
          (SELECT COUNT(*)::int FROM orders o WHERE o.comanda_id = c.id AND o.status = 'pronto') AS rodadas_prontas,
@@ -61,8 +63,9 @@ async function detalhe(db, user, id) {
   const comanda = rows[0];
   const rod = await db.query(
     `SELECT o.id, o.numero AS pedido_numero, o.rodada, o.status, o.observacao, o.criado_em, o.atualizado_em, o.motivo_cancelamento,
-            COALESCE((SELECT SUM(oi.subtotal) FROM order_items oi WHERE oi.order_id = o.id), 0) AS total
-     FROM orders o WHERE o.comanda_id = $1 ORDER BY o.rodada`,
+            COALESCE((SELECT SUM(oi.subtotal) FROM order_items oi WHERE oi.order_id = o.id), 0) AS total, r.pagamento_id, cp.forma AS pago_forma
+     FROM orders o LEFT JOIN comanda_pagamento_rodadas r ON r.order_id = o.id LEFT JOIN comanda_pagamentos cp ON cp.id = r.pagamento_id
+     WHERE o.comanda_id = $1 ORDER BY o.rodada`,
     [id]
   );
   const itens = rod.rows.length === 0 ? { rows: [] } : await db.query(
@@ -72,7 +75,18 @@ async function detalhe(db, user, id) {
      WHERE oi.order_id = ANY($1::uuid[]) ORDER BY p.nome, oi.id`,
     [rod.rows.map((r) => r.id)]
   );
-  return { ...comanda, rodadas_lista: rod.rows.map((r) => ({ ...r, itens: itens.rows.filter((i) => i.order_id === r.id) })) };
+  const pag = await db.query(
+    `SELECT cp.id, cp.forma, cp.valor_produtos, cp.taxa_servico, cp.valor_recebido, cp.troco, cp.recebido_por, u.nome AS recebido_por_nome, cp.recebido_em,
+            cp.status, cp.prestado_em, cp.motivo_estorno,
+            COALESCE((SELECT json_agg(o.rodada ORDER BY o.rodada) FROM comanda_pagamento_rodadas r JOIN orders o ON o.id = r.order_id WHERE r.pagamento_id = cp.id), '[]') AS rodadas
+     FROM comanda_pagamentos cp JOIN users u ON u.id = cp.recebido_por WHERE cp.comanda_id = $1 ORDER BY cp.recebido_em`,
+    [id]
+  );
+  const cfg = await recebimentos.configDaLoja(db, comanda.location_id);
+  const receber = { permitido: cfg.garcom_recebe && !!(user.areas && user.areas.ReceberNoApp), loja_permite: cfg.garcom_recebe, formas: cfg.formas, taxa_servico_pct: cfg.taxa_servico_pct };
+  const ativas = rod.rows.filter((r) => r.status !== 'cancelado');
+  const falta = Number(ativas.filter((r) => !r.pagamento_id).reduce((x, r) => x + Number(r.total), 0).toFixed(2));
+  return { ...comanda, falta_produtos: falta, receber, pagamentos: pag.rows, rodadas_lista: rod.rows.map((r) => ({ ...r, itens: itens.rows.filter((i) => i.order_id === r.id) })) };
 }
 
 // Identificador legivel: "Mesa 7" / "Pulseira 118". So numeros viram "Mesa N" / "Pulseira N"; texto livre fica como foi digitado.
@@ -102,7 +116,7 @@ async function lojaDaComanda(db, user, locationId) {
 router.get('/garcom/lojas', async (req, res) => {
   const lojas = filtroLocais(req.user, null);
   const { rows } = await pool.query(
-    `SELECT id, nome FROM locations WHERE tenant_id = $1 AND ativo AND usa_pedidos AND ($2::uuid[] IS NULL OR id = ANY($2::uuid[])) ORDER BY nome`,
+    `SELECT id, nome, garcom_recebe FROM locations WHERE tenant_id = $1 AND ativo AND usa_pedidos AND ($2::uuid[] IS NULL OR id = ANY($2::uuid[])) ORDER BY nome`,
     [req.user.tenantId, lojas]
   );
   res.json(rows);
@@ -125,13 +139,18 @@ router.get('/garcom/comandas', async (req, res) => {
 router.post('/garcom/comandas', async (req, res) => {
   const b = req.body || {};
   if (!['mesa', 'pista'].includes(b.tipo)) throw new HttpError(400, 'tipo da comanda: mesa ou pista');
-  if (b.modo_pagamento !== undefined && b.modo_pagamento !== 'conta') throw new HttpError(400, 'por enquanto a comanda é sempre "conta aberta" (pagamento no caixa)');
+  const modo = b.modo_pagamento === undefined ? 'conta' : b.modo_pagamento;
+  if (!['conta', 'hora'].includes(modo)) throw new HttpError(400, 'modo de pagamento: conta (paga no fechamento) ou hora (paga a cada rodada)');
   const identificador = normalizarIdentificador(b.tipo, b.identificador);
   const clienteNome = String(b.cliente_nome || '').trim().slice(0, 80);
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const loja = await lojaDaComanda(client, req.user, b.location_id);
+    if (modo === 'hora') {
+      const cfg = await recebimentos.configDaLoja(client, loja.id);
+      if (!(req.user.areas && req.user.areas.ReceberNoApp) || !cfg.garcom_recebe) throw new HttpError(403, 'receber "na hora" não está liberado para você nesta loja');
+    }
     await client.query(`SELECT pg_advisory_xact_lock(hashtext('comanda:' || $1::text))`, [loja.id]);
     let existente = (await client.query(
       `SELECT id FROM comandas WHERE tenant_id = $1 AND location_id = $2 AND lower(identificador) = lower($3) AND status IN ('aberta', 'fechamento_solicitado')`,
@@ -141,8 +160,8 @@ router.post('/garcom/comandas', async (req, res) => {
     if (!existente) {
       const numero = (await client.query(`SELECT COALESCE(MAX(numero), 0) + 1 AS n FROM comandas WHERE tenant_id = $1 AND location_id = $2`, [req.user.tenantId, loja.id])).rows[0].n;
       existente = (await client.query(
-        `INSERT INTO comandas (tenant_id, location_id, numero, tipo, identificador, cliente_nome, aberta_por) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-        [req.user.tenantId, loja.id, numero, b.tipo, identificador, clienteNome, req.user.id]
+        `INSERT INTO comandas (tenant_id, location_id, numero, tipo, identificador, cliente_nome, aberta_por, modo_pagamento) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+        [req.user.tenantId, loja.id, numero, b.tipo, identificador, clienteNome, req.user.id, modo]
       )).rows[0];
       criada = true;
       await logAudit(client, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'abrir_comanda', recurso: 'comandas', recursoId: existente.id, detalhes: { tipo: b.tipo, identificador, numero } });
@@ -246,6 +265,7 @@ router.post('/garcom/rodadas/:orderId/cancelar', async (req, res) => {
     await client.query('BEGIN');
     const o = await rodadaOuErro(client, req.user, req.params.orderId);
     if (['finalizado', 'cancelado'].includes(o.status)) throw new HttpError(409, o.status === 'cancelado' ? 'esta rodada já foi cancelada' : 'a rodada já foi cobrada no caixa');
+    if ((await client.query(`SELECT 1 FROM comanda_pagamento_rodadas WHERE order_id = $1`, [o.id])).rows.length > 0) throw new HttpError(409, 'esta rodada já foi paga: estorne o recebimento antes de cancelá-la');
     const gerente = !!(req.user.areas && req.user.areas.CancelarVendas);
     if (o.status !== 'novo' && !gerente) throw new HttpError(403, 'a rodada já está em preparo: só o gerente pode cancelar');
     if (o.status !== 'novo' && motivo.length < 3) throw new HttpError(400, 'informe o motivo do cancelamento (mínimo 3 caracteres)');
@@ -339,6 +359,7 @@ router.post('/garcom/comandas/:id/cancelar', async (req, res) => {
     const c = await carregarComanda(client, req.user, req.params.id, { travar: true });
     if (!ABERTAS.includes(c.status)) throw new HttpError(409, 'esta comanda já está encerrada');
     const rod = (await client.query(`SELECT id, status FROM orders WHERE comanda_id = $1 AND status <> 'cancelado' FOR UPDATE`, [c.id])).rows;
+    if ((await client.query(`SELECT 1 FROM comanda_pagamentos WHERE comanda_id = $1 AND status = 'confirmado'`, [c.id])).rows.length > 0) throw new HttpError(409, 'a comanda tem recebimentos: estorne-os antes de cancelar');
     if (rod.some((r) => r.status === 'entregue')) throw new HttpError(409, 'há pedidos entregues nesta comanda: ela precisa ser fechada no caixa');
     const gerente = !!(req.user.areas && req.user.areas.CancelarVendas);
     if (rod.length > 0 && !gerente) throw new HttpError(403, 'a comanda já tem pedidos: só o gerente pode cancelá-la');
@@ -379,6 +400,64 @@ router.post('/garcom/comandas/:id/reabrir', requireArea('CancelarVendas'), async
   }
 });
 
+// ================================================================= receber no app (Fase 2)
+// Recebe uma ou mais rodadas (inteiras) em Pix, cartao ou dinheiro. Exige a permissao ReceberNoApp, a loja liberada e a forma liberada.
+router.post('/garcom/comandas/:id/receber', requireArea('ReceberNoApp'), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const c = await carregarComanda(client, req.user, req.params.id, { travar: true });
+    const pagamento = await recebimentos.confirmarRecebimento(client, req.user, c, req.body || {});
+    await client.query('COMMIT');
+    res.status(201).json({ pagamento, comanda: await detalhe(pool, req.user, c.id) });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    if (err.code === '23505') throw new HttpError(409, 'alguma dessas rodadas acabou de ser paga: atualize a comanda');
+    throw err;
+  } finally {
+    client.release();
+  }
+});
+
+// Estorno de um recebimento: so a gerencia, com motivo, enquanto a comanda nao esta paga e (dinheiro) antes da prestacao de contas.
+router.post('/garcom/comandas/:id/receber/:pagamentoId/estornar', requireArea('CancelarVendas'), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const c = await carregarComanda(client, req.user, req.params.id, { travar: true });
+    await recebimentos.estornarRecebimento(client, req.user, c, req.params.pagamentoId, (req.body || {}).motivo);
+    await client.query('COMMIT');
+    res.json(await detalhe(pool, req.user, c.id));
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+});
+
+// Encerra a comanda TODA paga no app: uma venda (com as partes pagas) sem passar pelo caixa, no terminal de comandas da loja.
+router.post('/garcom/comandas/:id/encerrar', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const c = await carregarComanda(client, req.user, req.params.id, { travar: true });
+    if (!ABERTAS.includes(c.status)) throw new HttpError(409, c.status === 'paga' ? 'esta comanda já foi encerrada' : 'esta comanda está cancelada');
+    const rodadas = await recebimentos.rodadasDaComanda(client, c.id, { travar: true });
+    if (rodadas.length === 0) throw new HttpError(409, 'a comanda não tem pedidos: cancele-a');
+    if (rodadas.some((r) => !r.pagamento_id)) throw new HttpError(409, 'ainda há rodadas não pagas: receba-as ou peça o fechamento no caixa');
+    const terminalId = await recebimentos.terminalParaEncerrar(client, req.user, c);
+    const venda = await recebimentos.fecharComanda(client, req.user, c, { terminalId, origem: 'garcom' });
+    await client.query('COMMIT');
+    res.json({ comanda: await detalhe(pool, req.user, c.id), venda });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+});
+
 // "Meu extrato": comandas fechadas (pagas) em que o garcom vendeu itens, com o total dele (sem comissao: Fase 3).
 router.get('/garcom/extrato', async (req, res) => {
   const de = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.de || '')) ? req.query.de : null;
@@ -401,10 +480,24 @@ router.get('/garcom/extrato', async (req, res) => {
      WHERE c.tenant_id = $1 AND c.status IN ('aberta', 'fechamento_solicitado') AND o.status <> 'cancelado' AND oi.garcom_id = $2`,
     [req.user.tenantId, req.user.id]
   );
+  const recebidos = (await pool.query(
+    `SELECT cp.id, cp.comanda_id, c.numero AS comanda_numero, c.identificador, cp.forma, cp.valor_produtos, cp.taxa_servico, cp.recebido_em, cp.status,
+            cp.prestado_em, cp.diferenca_prestacao
+     FROM comanda_pagamentos cp JOIN comandas c ON c.id = cp.comanda_id
+     WHERE cp.tenant_id = $1 AND cp.recebido_por = $2 AND cp.status = 'confirmado'
+       AND (cp.recebido_em AT TIME ZONE '${FUSO}')::date >= COALESCE($3::date, (now() AT TIME ZONE '${FUSO}')::date)
+       AND (cp.recebido_em AT TIME ZONE '${FUSO}')::date <= COALESCE($4::date, (now() AT TIME ZONE '${FUSO}')::date)
+     ORDER BY cp.recebido_em DESC`,
+    [req.user.tenantId, req.user.id, de, ate]
+  )).rows;
+  // Dinheiro que ainda esta com o garcom (de qualquer dia): recebimentos em dinheiro confirmados e nao entregues ao caixa.
+  const comigo = await recebimentos.pendenciasDeDinheiro(pool, req.user.tenantId, { garcomId: req.user.id });
   res.json({
     pagas: rows,
     total_vendido: rows.reduce((s, r) => s + Number(r.meu_total), 0),
     em_aberto: { total: Number(ab.rows[0].total), comandas: ab.rows[0].comandas },
+    recebidos_na_hora: recebidos.map((r) => ({ ...r, total: Number((Number(r.valor_produtos) + Number(r.taxa_servico)).toFixed(2)) })),
+    dinheiro_comigo: Number(comigo.reduce((s, p) => s + p.total, 0).toFixed(2)),
   });
 });
 
@@ -427,51 +520,82 @@ router.get('/comandas', async (req, res) => {
   res.json(rows);
 });
 
+// ---------- prestacao de contas do dinheiro que ficou com os garcons (caixa/gerencia, area Vendas)
+// Fica sob /comandas (area Vendas) e nao sob /garcom: quem presta contas e recebido pelo caixa, que nao tem a area Garcom.
+router.get('/comandas/prestacao', async (req, res) => {
+  const lojas = filtroLocais(req.user, req.query.location_id);
+  const pend = await recebimentos.pendenciasDeDinheiro(pool, req.user.tenantId, { locais: lojas });
+  const porGarcom = new Map();
+  for (const p of pend) {
+    if (!porGarcom.has(p.garcom_id)) porGarcom.set(p.garcom_id, { garcom_id: p.garcom_id, garcom_nome: p.garcom_nome, total: 0, recebimentos: [] });
+    const g = porGarcom.get(p.garcom_id);
+    g.total = Number((g.total + p.total).toFixed(2));
+    g.recebimentos.push(p);
+  }
+  // Recebido na hora hoje, por forma (Pix e cartao ja estao no sistema; dinheiro entra ao prestar contas).
+  const hoje = (await pool.query(
+    `SELECT cp.forma, COUNT(*)::int AS recebimentos, COALESCE(SUM(cp.valor_produtos + cp.taxa_servico), 0) AS total,
+            COALESCE(SUM(cp.valor_produtos + cp.taxa_servico) FILTER (WHERE cp.prestado_em IS NULL), 0) AS pendente
+     FROM comanda_pagamentos cp
+     WHERE cp.tenant_id = $1 AND cp.status = 'confirmado' AND ($2::uuid[] IS NULL OR cp.location_id = ANY($2::uuid[]))
+       AND (cp.recebido_em AT TIME ZONE '${FUSO}')::date = (now() AT TIME ZONE '${FUSO}')::date
+     GROUP BY cp.forma`,
+    [req.user.tenantId, lojas]
+  )).rows.map((r) => ({ ...r, total: Number(r.total), pendente: Number(r.pendente) }));
+  const recentes = (await pool.query(
+    `SELECT cp.id, cp.comanda_id, c.numero AS comanda_numero, c.identificador, cp.forma, (cp.valor_produtos + cp.taxa_servico) AS total, cp.recebido_em, cp.status,
+            cp.prestado_em, cp.diferenca_prestacao, u.nome AS garcom_nome
+     FROM comanda_pagamentos cp JOIN comandas c ON c.id = cp.comanda_id JOIN users u ON u.id = cp.recebido_por
+     WHERE cp.tenant_id = $1 AND ($2::uuid[] IS NULL OR cp.location_id = ANY($2::uuid[])) AND cp.recebido_em > now() - interval '3 days'
+     ORDER BY cp.recebido_em DESC LIMIT 100`,
+    [req.user.tenantId, lojas]
+  )).rows.map((r) => ({ ...r, total: Number(r.total) }));
+  res.json({
+    garcons: [...porGarcom.values()],
+    dinheiro_com_garcons: Number(pend.reduce((s, p) => s + p.total, 0).toFixed(2)),
+    hoje, recebimentos: recentes,
+  });
+});
+
+router.post('/comandas/prestacao', async (req, res) => {
+  const b = req.body || {};
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const r = await recebimentos.receberPrestacao(client, req.user, {
+      garcomId: b.garcom_id, valorConferido: b.valor_conferido, terminalId: b.terminal_id, pagamentoIds: b.pagamento_ids, locais: filtroLocais(req.user, null),
+    });
+    await client.query('COMMIT');
+    res.json(r);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+});
+
 router.get('/comandas/:id', async (req, res) => {
   const c = await carregarComanda(pool, req.user, req.params.id);
   res.json(await detalhe(pool, req.user, c.id));
 });
 
-// Fecha a comanda: UMA venda com todos os itens das rodadas nao canceladas; a reserva das rodadas vira baixa definitiva.
+// Fecha a comanda no caixa: UMA venda com todos os itens das rodadas nao canceladas. Cobra so o RESTANTE (o que o garcom ja recebeu
+// no app entra como parte paga), aceita uma forma (forma_pagamento) ou varias (pagamentos: [{ forma, valor, valor_recebido? }]),
+// desconto so sobre o restante e taxa de servico opcional (cobrar_taxa). A reserva das rodadas vira baixa definitiva.
 router.post('/comandas/:id/fechar', async (req, res) => {
   const b = req.body || {};
   const desconto = Number(b.desconto || 0);
   if (!(desconto >= 0)) throw new HttpError(400, 'desconto deve ser um valor em reais (0 ou mais)');
   if (desconto > 0 && !(req.user.areas && req.user.areas.Desconto)) throw new HttpError(403, 'seu usuário não tem permissão para dar desconto');
-  if (!isUuid(b.terminal_id)) throw new HttpError(400, 'escolha o terminal (caixa) que vai receber');
-  if (!FORMAS_PAGAMENTO.includes(b.forma_pagamento) || b.forma_pagamento === 'online') throw new HttpError(400, 'forma de pagamento inválida');
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const c = await carregarComanda(client, req.user, req.params.id, { travar: true });
     assertLocationAccess(req.user, c.location_id, 'fechar comandas desta loja');
-    if (!ABERTAS.includes(c.status)) throw new HttpError(409, c.status === 'paga' ? 'esta comanda já foi paga' : 'esta comanda está cancelada');
-    const terminal = await getOwned(client, 'terminals', b.terminal_id, req.user.tenantId, { columns: 'id, location_id, ativo' });
-    if (terminal.location_id !== c.location_id) throw new HttpError(409, 'este terminal é de outra loja: escolha um caixa da loja da comanda');
-    const cx = await client.query(
-      `SELECT 1 FROM cash_sessions cs JOIN cash_registers cr ON cr.id = cs.cash_register_id
-       WHERE cr.terminal_id = $1 AND cs.tenant_id = $2 AND cs.fechado_em IS NULL`, [terminal.id, req.user.tenantId]
-    );
-    if (cx.rows.length === 0) throw new HttpError(409, 'caixa fechado neste terminal: abra o caixa no PDV para receber a comanda');
-
-    const rodadas = (await client.query(`SELECT id, status FROM orders WHERE comanda_id = $1 AND status <> 'cancelado' ORDER BY rodada FOR UPDATE`, [c.id])).rows;
-    if (rodadas.length === 0) throw new HttpError(409, 'a comanda não tem pedidos para cobrar: cancele-a');
-    const itens = (await client.query(
-      `SELECT oi.product_id, oi.quantidade, oi.observacao, oi.complementos, oi.garcom_id
-       FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE o.comanda_id = $1 AND o.status <> 'cancelado' ORDER BY o.rodada, oi.id`, [c.id]
-    )).rows;
-    const venda = await registrarVenda(client, req.user, {
-      terminal_id: terminal.id,
-      itens: itens.map((i) => ({ product_id: i.product_id, quantidade: Number(i.quantidade), observacao: i.observacao, complementos: Array.isArray(i.complementos) ? i.complementos : [], garcom_id: i.garcom_id })),
-      forma_pagamento: b.forma_pagamento, valor_recebido: b.valor_recebido, desconto,
-      numero_pedido: c.numero, ignorar_pedidos_ids: rodadas.map((r) => r.id), comanda_id: c.id,
+    const venda = await recebimentos.fecharComanda(client, req.user, c, {
+      terminalId: b.terminal_id, forma_pagamento: b.forma_pagamento, valor_recebido: b.valor_recebido, pagamentos: b.pagamentos, desconto, cobrar_taxa: !!b.cobrar_taxa,
     });
-    for (const r of rodadas) {
-      await client.query(`INSERT INTO order_status_log (order_id, de, para, usuario_id) VALUES ($1, $2, 'finalizado', $3)`, [r.id, r.status, req.user.id]);
-    }
-    await client.query(`UPDATE orders SET status = 'finalizado', sale_id = $1, pago = true, finalizado_em = now(), atualizado_em = now() WHERE id = ANY($2::uuid[])`, [venda.id, rodadas.map((r) => r.id)]);
-    await client.query(`UPDATE comandas SET status = 'paga', sale_id = $1, fechada_em = now(), fechada_por = $2 WHERE id = $3`, [venda.id, req.user.id, c.id]);
-    await logAudit(client, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'fechar_comanda', recurso: 'comandas', recursoId: c.id, detalhes: { identificador: c.identificador, sale_id: venda.id, total: venda.total, forma_pagamento: b.forma_pagamento, rodadas: rodadas.length } });
     await client.query('COMMIT');
     res.json({ comanda: await detalhe(pool, req.user, c.id), venda });
   } catch (err) {

@@ -312,6 +312,7 @@ router.post('/orders/:id/cancel', async (req, res) => {
     assertLocationAccess(req.user, o.location_id, 'cancelar pedidos desta loja');
     if (o.status === 'finalizado') throw new HttpError(409, 'o pedido já foi finalizado: cancele pela venda (Relatórios), que devolve o estoque');
     if (o.status === 'cancelado') throw new HttpError(400, 'este pedido já foi cancelado');
+    if ((await client.query(`SELECT 1 FROM comanda_pagamento_rodadas WHERE order_id = $1`, [o.id])).rows.length > 0) throw new HttpError(409, 'esta rodada já foi paga no app: um gerente precisa estornar o recebimento antes (Comandas)');
     // Pedido do iFood/99Food com a loja conectada: o cancelamento e pedido a plataforma (motivo da lista dela); o pedido
     // daqui e cancelado quando ela confirmar, liberando a reserva de estoque.
     if (!req.user.modoTeste) {

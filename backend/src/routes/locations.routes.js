@@ -1,6 +1,6 @@
 const express = require('express');
 const pool = require('../db/pool');
-const { requireArea } = require('../middleware/permissions');
+const { requireArea, requireModulo } = require('../middleware/permissions');
 const { logAudit } = require('../utils/audit');
 const { getOwned, getOwnedLocation } = require('../utils/tenant');
 const { filtroLocais } = require('../utils/access');
@@ -12,7 +12,7 @@ const router = express.Router();
 
 router.get('/locations', async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT l.id, l.nome, l.ativo, l.usa_comanda, l.usa_pedidos, l.cupom_config,
+    `SELECT l.id, l.nome, l.ativo, l.usa_comanda, l.usa_pedidos, l.cupom_config, l.taxa_servico_pct, l.garcom_recebe, l.garcom_formas, l.terminal_comandas_id,
             (SELECT COUNT(*)::int FROM terminals t WHERE t.location_id = l.id AND t.tenant_id = l.tenant_id) AS terminal_count
      FROM locations l WHERE l.tenant_id = $1 ORDER BY l.ativo DESC, l.nome`,
     [req.user.tenantId]
@@ -88,6 +88,32 @@ router.patch('/locations/:id', requireArea('Configuracoes'), async (req, res) =>
   } finally {
     client.release();
   }
+});
+
+// Recebimento pelo garcom (modulo Garcom e comandas): liga/desliga, formas liberadas, taxa de servico e terminal de comandas.
+router.put('/locations/:id/recebimento-garcom', requireArea('Configuracoes'), requireModulo('garcom'), async (req, res) => {
+  const b = req.body || {};
+  const atual = await getOwned(pool, 'locations', req.params.id, req.user.tenantId, { columns: 'id, nome, taxa_servico_pct, garcom_recebe, garcom_formas, terminal_comandas_id' });
+  const recebe = b.garcom_recebe === undefined ? atual.garcom_recebe : !!b.garcom_recebe;
+  const f = b.garcom_formas === undefined ? atual.garcom_formas : b.garcom_formas;
+  if (!f || typeof f !== 'object' || Array.isArray(f) || ['pix', 'cartao', 'dinheiro'].some((k) => typeof f[k] !== 'boolean')) throw new HttpError(400, 'formas liberadas: informe pix, cartao e dinheiro (true/false)');
+  const pct = b.taxa_servico_pct === undefined ? Number(atual.taxa_servico_pct) : Number(b.taxa_servico_pct);
+  if (!(pct >= 0 && pct <= 100)) throw new HttpError(400, 'taxa de serviço: de 0 a 100%');
+  let terminalId = b.terminal_comandas_id === undefined ? atual.terminal_comandas_id : (b.terminal_comandas_id || null);
+  if (terminalId) {
+    const t = (await pool.query(`SELECT id FROM terminals WHERE id = $1 AND tenant_id = $2 AND location_id = $3 AND ativo`, [terminalId, req.user.tenantId, atual.id])).rows[0];
+    if (!t) throw new HttpError(400, 'o terminal de comandas precisa ser um PDV ativo desta loja');
+  } else terminalId = null;
+  const { rows } = await pool.query(
+    `UPDATE locations SET garcom_recebe = $1, garcom_formas = $2, taxa_servico_pct = $3, terminal_comandas_id = $4 WHERE id = $5 AND tenant_id = $6
+     RETURNING id, nome, taxa_servico_pct, garcom_recebe, garcom_formas, terminal_comandas_id`,
+    [recebe, JSON.stringify({ pix: f.pix, cartao: f.cartao, dinheiro: f.dinheiro }), pct, terminalId, atual.id, req.user.tenantId]
+  );
+  await logAudit(pool, {
+    tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'config_recebimento_garcom', recurso: 'locations', recursoId: atual.id,
+    detalhes: { antes: { garcom_recebe: atual.garcom_recebe, formas: atual.garcom_formas, taxa_servico_pct: Number(atual.taxa_servico_pct), terminal_comandas_id: atual.terminal_comandas_id }, depois: { garcom_recebe: recebe, formas: f, taxa_servico_pct: pct, terminal_comandas_id: terminalId } },
+  });
+  res.json(rows[0]);
 });
 
 // Uma loja so pode ser excluida se nunca teve movimentacao: sem saldo, sem entradas/saidas/transferencias

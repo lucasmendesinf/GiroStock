@@ -6,7 +6,7 @@ const { MODULOS } = require('../config/modulos');
 const { logAudit } = require('../utils/audit');
 const { getOwnedLocation } = require('../utils/tenant');
 const { HttpError } = require('../utils/http');
-const { PERFIS, criarUsuario, lojasAdicionais, gravarLojasAdicionais, resetarDoisFatores } = require('../services/usuarios');
+const { checarEscalada, garantirOutroAdmin, PERFIS, criarUsuario, lojasAdicionais, gravarLojasAdicionais, resetarDoisFatores } = require('../services/usuarios');
 
 const router = express.Router();
 
@@ -33,6 +33,7 @@ router.post('/users', requireArea('Configuracoes'), async (req, res) => {
   if (perfil === 'Master') throw new HttpError(403, 'o perfil Master só pode ser criado por script');
   const permissoes = normalizarOverrides(perfil, (req.body || {}).permissoes);
   if (permissoes === false) throw new HttpError(400, 'permissões inválidas');
+  checarEscalada(req.user, null, { perfil, permissoes });
 
   const client = await pool.connect();
   try {
@@ -97,6 +98,7 @@ router.patch('/users/:id', requireArea('Configuracoes'), async (req, res) => {
       if (!(comissaoPct >= 0 && comissaoPct <= 100)) throw new HttpError(400, 'comissão do garçom: informe de 0 a 100%');
     }
   }
+  checarEscalada(req.user, { id: atual.id, perfil: atual.perfil, permissoes: atual.permissoes }, { perfil, permissoes });
   if (req.params.id === req.user.id && !areasEfetivas(perfil, permissoes).Configuracoes) {
     throw new HttpError(400, 'você não pode tirar o seu próprio acesso a Configurações');
   }
@@ -107,6 +109,7 @@ router.patch('/users/:id', requireArea('Configuracoes'), async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    if (atual.perfil === 'Administrador' && perfil !== 'Administrador') await garantirOutroAdmin(client, req.user.tenantId, atual.id);
     const { rows } = await client.query(
       `UPDATE users SET perfil = $1, location_id = $2, nome = COALESCE($5, nome), permissoes = $6 WHERE id = $3 AND tenant_id = $4
        RETURNING id, nome, email, perfil, location_id, ativo, permissoes`,
@@ -143,8 +146,9 @@ router.patch('/users/:id', requireArea('Configuracoes'), async (req, res) => {
 router.patch('/users/:id/password', requireArea('Configuracoes'), async (req, res) => {
   const { senha } = req.body || {};
   if (!senha || String(senha).length < 6) throw new HttpError(400, 'a senha deve ter no mínimo 6 caracteres');
-  const alvo = await pool.query(`SELECT id FROM users WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.user.tenantId]);
+  const alvo = await pool.query(`SELECT id, perfil FROM users WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.user.tenantId]);
   if (alvo.rows.length === 0) return res.status(404).json({ erro: 'usuário não encontrado' });
+  if (alvo.rows[0].perfil === 'Administrador' && req.user.perfil !== 'Administrador') throw new HttpError(403, 'só um Administrador pode redefinir a senha de um Administrador');
   const hash = await bcrypt.hash(String(senha), 10);
   await pool.query(`UPDATE users SET senha_hash = $1 WHERE id = $2 AND tenant_id = $3`, [hash, req.params.id, req.user.tenantId]);
   await logAudit(pool, {
@@ -161,6 +165,11 @@ router.patch('/users/:id/status', requireArea('Configuracoes'), async (req, res)
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    const alvoSt = (await client.query(`SELECT id, perfil, ativo FROM users WHERE id = $1 AND tenant_id = $2 FOR UPDATE`, [req.params.id, req.user.tenantId])).rows[0];
+    if (alvoSt && alvoSt.perfil === 'Administrador') {
+      if (req.user.perfil !== 'Administrador') throw new HttpError(403, 'só um Administrador pode ativar ou desativar um Administrador');
+      if (!ativo && alvoSt.ativo) await garantirOutroAdmin(client, req.user.tenantId, alvoSt.id);
+    }
     const { rows } = await client.query(
       `UPDATE users SET ativo = $1 WHERE id = $2 AND tenant_id = $3 RETURNING id, ativo`,
       [!!ativo, req.params.id, req.user.tenantId]
@@ -192,6 +201,7 @@ router.post('/users/:id/2fa/resetar', requireArea('Configuracoes'), async (req, 
   const alvo = rows[0];
   if (alvo && alvo.perfil === 'Master') throw new HttpError(403, 'o 2FA do Master só pode ser resetado pelo próprio Master ou por script');
   if (!alvo || alvo.tenant_id !== req.user.tenantId) throw new HttpError(404, 'usuário não encontrado');
+  if (alvo.perfil === 'Administrador' && req.user.perfil !== 'Administrador') throw new HttpError(403, 'só um Administrador pode resetar o 2FA de um Administrador');
   await resetarDoisFatores(pool, alvo.id);
   await logAudit(pool, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'resetar_2fa', recurso: 'users', recursoId: alvo.id });
   res.json({ ok: true });

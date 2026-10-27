@@ -8,7 +8,7 @@ const { isUuid } = require('../utils/tenant');
 const { isValidDocumento, onlyDigits } = require('../utils/validators');
 const { dadosDaEmpresa, efetivos, uso, modulosDoPlano } = require('../utils/limites');
 const { CHAVES, catalogo, conflitoDeDependencia } = require('../config/modulos');
-const { criarUsuario, resetarDoisFatores, validarNovoEmail } = require('../services/usuarios');
+const { criarUsuario, resetarDoisFatores, validarNovoEmail, garantirOutroAdmin } = require('../services/usuarios');
 const { copiarProducao, status } = require('../services/copiaProducao');
 const modoTeste = require('../services/modoTeste');
 const config = require('../services/config');
@@ -447,7 +447,20 @@ router.patch('/master/usuarios/:id/exigir-2fa', async (req, res) => {
 router.patch('/master/usuarios/:id/status', async (req, res) => {
   const u = await alvoOuErro(req.params.id);
   const ativo = !!(req.body || {}).ativo;
-  await db.query(`UPDATE users SET ativo = $1 WHERE id = $2`, [ativo, u.id]);
+  // A empresa nunca fica sem Administrador ativo (nem pelo painel Master); lock + conferencia na mesma transacao.
+  const c = await db.connect();
+  try {
+    await c.query('BEGIN');
+    const alvo = (await c.query(`SELECT perfil, ativo FROM users WHERE id = $1 FOR UPDATE`, [u.id])).rows[0];
+    if (!ativo && alvo.perfil === 'Administrador' && alvo.ativo) await garantirOutroAdmin(c, u.tenant_id, u.id);
+    await c.query(`UPDATE users SET ativo = $1 WHERE id = $2`, [ativo, u.id]);
+    await c.query('COMMIT');
+  } catch (err) {
+    await c.query('ROLLBACK');
+    throw err;
+  } finally {
+    c.release();
+  }
   await logAudit(db, { tenantId: u.tenant_id, usuarioId: req.user.id, acao: ativo ? 'master_ativar_usuario' : 'master_desativar_usuario', recurso: 'users', recursoId: u.id });
   res.json({ ativo });
 });

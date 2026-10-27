@@ -6,6 +6,7 @@ const { logAudit } = require('../utils/audit');
 const { getOwnedLocation } = require('../utils/tenant');
 const { HttpError } = require('../utils/http');
 const { checarLimite } = require('../utils/limites');
+const { areasEfetivas } = require('../middleware/permissions');
 
 // Zera o 2FA do usuario (segredo, estado, bloqueio e codigos de recuperacao). A exigencia (totp_exigido) nao muda.
 async function resetarDoisFatores(db, userId) {
@@ -24,6 +25,41 @@ async function validarNovoEmail(db, userId, email) {
   const { rows } = await db.query(`SELECT id FROM users WHERE lower(email::text) = lower($1) AND id <> $2`, [novo, userId]);
   if (rows.length > 0) throw new HttpError(409, 'já existe um usuário com este email');
   return novo;
+}
+
+// ---------------------------------------------------------------- anti-escalada de acesso
+// Regras da gestao de usuarios (tela da empresa; o painel Master tambem respeita a do ultimo Administrador):
+//  1. ninguem concede o que nao tem: as areas efetivas do alvo (perfil + ajustes) devem caber nas de quem age (o Administrador concede
+//     qualquer coisa a OUTRAS pessoas, mas ninguem amplia o PROPRIO acesso);
+//  2. so Administrador cria/promove/edita/desativa/redefine senha de Administrador;
+//  3. a empresa nunca fica sem Administrador ativo (garantirOutroAdmin, com lock).
+// ator: req.user; alvo: { id, perfil, permissoes } ANTES da mudanca (null ao criar); novo: { perfil, permissoes } DEPOIS.
+function checarEscalada(ator, alvo, novo) {
+  const ehAdmin = ator.perfil === 'Administrador';
+  if ((novo.perfil === 'Administrador' || (alvo && alvo.perfil === 'Administrador')) && !ehAdmin) {
+    throw new HttpError(403, 'só um Administrador pode criar, promover ou alterar um Administrador');
+  }
+  const depois = areasEfetivas(novo.perfil, novo.permissoes);
+  const proprio = !!alvo && alvo.id === ator.id;
+  if (proprio) {
+    const antes = areasEfetivas(alvo.perfil, alvo.permissoes);
+    const ampliou = Object.keys(depois).filter((k) => k !== 'Master' && depois[k] && !antes[k]);
+    if (ampliou.length > 0) throw new HttpError(403, `você não pode ampliar o seu próprio acesso: ${ampliou.join(', ')}`);
+    return;
+  }
+  if (ehAdmin) return;
+  const faltam = Object.keys(depois).filter((k) => k !== 'Master' && depois[k] && !(ator.areas && ator.areas[k]));
+  // so o que o alvo GANHA em relacao ao que ja tinha conta como concessao (manter o que ele ja tinha nao e escalada)
+  const antes = alvo ? areasEfetivas(alvo.perfil, alvo.permissoes) : {};
+  const novas = faltam.filter((k) => !antes[k]);
+  if (novas.length > 0) throw new HttpError(403, `você não pode conceder permissões que não tem: ${novas.join(', ')}`);
+}
+
+// A empresa precisa de ao menos UM Administrador ativo alem de `alvoId`. Trava os administradores ativos (FOR UPDATE) dentro da
+// transacao do chamador: dois pedidos simultaneos que tirariam os dois ultimos nao passam juntos.
+async function garantirOutroAdmin(client, tenantId, alvoId) {
+  const { rows } = await client.query(`SELECT id FROM users WHERE tenant_id = $1 AND perfil = 'Administrador' AND ativo ORDER BY id FOR UPDATE`, [tenantId]);
+  if (!rows.some((r) => r.id !== alvoId)) throw new HttpError(400, 'a empresa precisa ter ao menos um Administrador ativo');
 }
 
 const PERFIS = ['Administrador', 'Gerente', 'Caixa/Operador', 'Estoque', 'Lanchonete/Cozinha', 'Financeiro', 'Garçom'];
@@ -83,4 +119,4 @@ async function criarUsuario(db, opcoes) {
   return { ...rows[0], location_ids: extras };
 }
 
-module.exports = { PERFIS, validarNovoEmail, criarUsuario, lojasAdicionais, gravarLojasAdicionais, resetarDoisFatores };
+module.exports = { checarEscalada, garantirOutroAdmin, PERFIS, validarNovoEmail, criarUsuario, lojasAdicionais, gravarLojasAdicionais, resetarDoisFatores };

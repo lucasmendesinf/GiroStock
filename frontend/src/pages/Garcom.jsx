@@ -23,6 +23,9 @@ function novoUuid() {
   const h = [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
+const NOME_FORMA = { pix: 'Pix', cartao_credito: 'Cartão crédito', cartao_debito: 'Cartão débito', dinheiro: 'Dinheiro' };
+const SIMBOLO_FORMA = { pix: '💠', cartao_credito: '💳', cartao_debito: '💳', dinheiro: '💵' };
+const arred = (v) => Math.round(Number(v) * 100) / 100;
 const semRede = (err) => !err || err.status === undefined; // queda de sinal: o pedido pode ou nao ter chegado
 
 // ---------- rascunho local ----------
@@ -126,6 +129,7 @@ function Inicio() {
               <div className="gc-linha">
                 <span className="gc-nome">{c.tipo === 'pista' ? '🎫' : '🍽'} {c.identificador}</span>
                 <span className="gc-tag">#{c.numero}</span>
+                {c.modo_pagamento === 'hora' && <span className="gc-tag">na hora</span>}
                 {c.cliente_nome && <span className="gc-tag">{c.cliente_nome}</span>}
                 <span className="gc-total">{brl(c.total)}</span>
               </div>
@@ -133,6 +137,7 @@ function Inicio() {
                 <span>{c.rodadas} rodada(s)</span>
                 {c.rodadas_prontas > 0 && <span className="gc-pill ok">{c.rodadas_prontas} pronta(s) p/ entregar</span>}
                 {c.rodadas_na_cozinha > 0 && <span className="gc-pill warn">{c.rodadas_na_cozinha} na cozinha</span>}
+                {Number(c.pago_produtos) > 0 && <span className="gc-pill ok">pago {brl(Number(c.pago_produtos) + Number(c.taxa_paga))}</span>}
                 {c.status === 'fechamento_solicitado' && <span className="gc-pill warn">fechamento pedido</span>}
                 {naoEnv > 0 && <span className="gc-pill warn">{naoEnv} item(ns) não enviado(s)</span>}
               </div>
@@ -157,12 +162,15 @@ function NovaComanda() {
   const [pulseira, setPulseira] = useState('');
   const [nome, setNome] = useState('');
   const [enviando, setEnviando] = useState(false);
+  const [modo, setModo] = useState('conta');
 
   useEffect(() => {
     api.get('/garcom/lojas').then((l) => { setLojas(l); if (!lojaId && l.length === 1) setLojaId(l[0].id); }).catch((e) => toast.erro(e));
     api.get('/garcom/comandas').then(setAbertas).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const lojaAtual = lojas.find((l) => l.id === lojaId);
+  const podeHora = !!(user?.areas?.ReceberNoApp && lojaAtual && lojaAtual.garcom_recebe);
   const ocupadas = new Set(abertas.filter((c) => c.tipo === 'mesa' && (!lojaId || c.location_id === lojaId)).map((c) => c.identificador.toLowerCase()));
 
   async function abrir(corpo) {
@@ -170,7 +178,7 @@ function NovaComanda() {
     if (!lojaId) { toast.erro('Escolha a loja da comanda.'); return; }
     setEnviando(true);
     try {
-      const c = await api.post('/garcom/comandas', { ...corpo, location_id: lojaId });
+      const c = await api.post('/garcom/comandas', { ...corpo, location_id: lojaId, modo_pagamento: podeHora && modo === 'hora' ? 'hora' : 'conta' });
       if (c.existente) toast.sucesso(`${c.identificador} já estava aberta: você entrou nela.`);
       navigate(`/garcom/comanda/${c.id}`, { replace: true });
     } catch (err) { toast.erro(err); setEnviando(false); }
@@ -183,6 +191,12 @@ function NovaComanda() {
         {lojas.length > 1 && (
           <Field label="Loja"><select value={lojaId} onChange={(e) => setLojaId(e.target.value)}><option value="">Escolha…</option>{lojas.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}</select></Field>
         )}
+        <div className="gc-rod" style={{ marginTop: 0 }}>Como o cliente vai pagar?</div>
+        <div className="gc-seg">
+          <button type="button" className={modo === 'conta' ? 'on' : ''} onClick={() => setModo('conta')}>Conta aberta<span>paga no fechamento</span></button>
+          <button type="button" className={modo === 'hora' && podeHora ? 'on' : ''} disabled={!podeHora} onClick={() => setModo('hora')}>Na hora<span>paga a cada pedido</span></button>
+        </div>
+        {!podeHora && <div className="gc-sub">{user?.areas?.ReceberNoApp ? 'Esta loja não liberou o recebimento no app.' : 'Seu perfil não recebe pagamentos no app. Peça liberação ao gerente.'}</div>}
         <div className="gc-rod">Mesa</div>
         <div className="gc-mesas">
           {MESAS.map((n) => (
@@ -225,6 +239,7 @@ function Comanda() {
   const [menu, setMenu] = useState(false);
   const [transferindo, setTransferindo] = useState(false);
   const [cancelandoRodada, setCancelandoRodada] = useState(null);
+  const [recebendo, setRecebendo] = useState(null); // { ids } rodadas a receber (folha "Receber agora")
 
   const carregar = useCallback(async () => {
     try { const d = await api.get(`/garcom/comandas/${id}`); setC(d); setErroCarga(''); } catch (err) { if (err.status === 404) setErroCarga('Comanda não encontrada ou sem acesso.'); else if (!semRede(err)) toast.erro(err); }
@@ -297,6 +312,7 @@ function Comanda() {
       mudarRascunho((r) => ({ ...r, pendente: null }));
       setC(novo);
       toast.sucesso(novo.repetida ? 'Esse pedido já tinha chegado.' : `Rodada ${novo.rodadas} enviada ao bar/cozinha.`);
+      if (!novo.repetida && novo.modo_pagamento === 'hora' && novo.receber && novo.receber.permitido && novo.rodada_id) setRecebendo({ ids: [novo.rodada_id] });
     } catch (err) {
       if (semRede(err)) {
         toast.erro('Sem conexão: o pedido NÃO foi confirmado. Toque em “Tentar de novo” quando o sinal voltar.');
@@ -330,6 +346,20 @@ function Comanda() {
     const r = await acao(api.post(`/garcom/comandas/${id}/cancelar`, {}), 'Comanda cancelada.');
     if (r) { gravarRascunho(id, { ...VAZIO }); navigate('/garcom', { replace: true }); }
   }
+  async function estornar(pagamentoId) {
+    const motivo = window.prompt('Motivo do estorno do recebimento:');
+    if (!motivo || motivo.trim().length < 3) return;
+    await acao(api.post(`/garcom/comandas/${id}/receber/${pagamentoId}/estornar`, { motivo: motivo.trim() }), 'Recebimento estornado: a rodada voltou para a conta.');
+  }
+  async function encerrar() {
+    if (!(await confirmar({ titulo: 'Encerrar a comanda?', mensagem: 'Tudo está pago. A venda é gerada agora e o estoque é baixado.', confirmar: 'Encerrar comanda' }))) return;
+    try {
+      const r = await api.post(`/garcom/comandas/${id}/encerrar`);
+      toast.sucesso('Comanda encerrada.');
+      gravarRascunho(id, { ...VAZIO });
+      setC(r.comanda);
+    } catch (err) { toast.erro(err); }
+  }
   async function entregue(rod) {
     await acao(api.post(`/garcom/rodadas/${rod.id}/status`, { para: 'entregue' }), `Rodada ${rod.rodada} entregue.`);
   }
@@ -347,11 +377,17 @@ function Comanda() {
   const encerrada = ['paga', 'cancelada'].includes(c.status);
   const gerente = !!user?.areas?.CancelarVendas;
   const semItensAtivos = c.rodadas === 0;
+  const rec = c.receber || {};
+  const faltaProdutos = Number(c.falta_produtos || 0);
+  const podeReceber = !!rec.permitido && ['aberta', 'fechamento_solicitado'].includes(c.status);
+  const naoPagas = c.rodadas_lista.filter((r) => r.status !== 'cancelado' && !r.pagamento_id);
+  const tudoPago = c.rodadas > 0 && naoPagas.length === 0 && ['aberta', 'fechamento_solicitado'].includes(c.status);
+  const pagoTotal = Number(c.pago_produtos) + Number(c.taxa_paga);
   const limitada = !online ? ' (sem conexão)' : '';
 
   return (
     <>
-      <CabecaTela titulo={`${c.tipo === 'pista' ? '🎫' : '🍽'} ${c.identificador}`} sub={`#${c.numero}${c.cliente_nome ? ` · ${c.cliente_nome}` : ''} · ${c.location_nome}`}
+      <CabecaTela titulo={`${c.tipo === 'pista' ? '🎫' : '🍽'} ${c.identificador}`} sub={pagoTotal > 0 ? `pago ${brl(pagoTotal)} · falta ${brl(faltaProdutos)}` : `#${c.numero}${c.cliente_nome ? ` · ${c.cliente_nome}` : ''} · ${c.location_nome}`}
         direita={<div className="gc-head-d"><b className="gc-total">{brl(Number(c.total) + totalRascunho)}</b><button type="button" className="gc-icone" aria-label="Mais opções" onClick={() => setMenu(true)}>⋯</button></div>} />
       <div className="gc-body gc-com">
         {c.status === 'fechamento_solicitado' && <div className="gc-aviso gc-aviso-warn">Fechamento pedido: o caixa já foi avisado. {gerente ? <button type="button" className="gc-link" onClick={() => acao(api.post(`/garcom/comandas/${id}/reabrir`), 'Comanda reaberta.')}>Reabrir</button> : 'Para lançar mais, peça ao gerente para reabrir.'}</div>}
@@ -420,6 +456,7 @@ function Comanda() {
             <div className="gc-rod">
               Rodada {r.rodada} · {new Date(r.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
               <span className={`gc-pill ${CLASSE_RODADA[r.status]}`}>{NOME_RODADA[r.status] || r.status}</span>
+              {r.status !== 'cancelado' && (r.pagamento_id ? <span className="gc-pill ok">pago · {NOME_FORMA[r.pago_forma] || r.pago_forma}</span> : <span className="gc-pill warn">na conta</span>)}
             </div>
             {r.itens.map((i) => (
               <div key={i.id} className="gc-item gc-item-env">
@@ -431,6 +468,8 @@ function Comanda() {
             {!encerrada && (
               <div className="gc-acoes">
                 {r.status === 'pronto' && <button type="button" className="gc-btn" onClick={() => entregue(r)}>Marcar entregue</button>}
+                {podeReceber && r.status !== 'cancelado' && !r.pagamento_id && <button type="button" className="gc-btn" onClick={() => setRecebendo({ ids: [r.id] })}>Receber {brl(r.total)}</button>}
+                {gerente && r.pagamento_id && <button type="button" className="gc-btn gc-btn-sec" onClick={() => estornar(r.pagamento_id)}>Estornar recebimento</button>}
                 {(r.status === 'novo' || (gerente && ['em_preparo', 'pronto', 'entregue'].includes(r.status))) && <button type="button" className="gc-btn gc-btn-sec" onClick={() => cancelarRodada(r)}>Cancelar rodada</button>}
               </div>
             )}
@@ -439,12 +478,21 @@ function Comanda() {
         {c.rodadas_lista.length === 0 && rasc.itens.length === 0 && aberta && <div className="gc-sub" style={{ textAlign: 'center' }}>Toque nos produtos para montar a primeira rodada.</div>}
       </div>
 
-      {aberta && (
+      {(aberta || (podeReceber && !encerrada)) && (
         <div className="gc-rodape">
-          <button type="button" className="gc-grande" disabled={rasc.itens.length === 0 || enviando || !!rasc.pendente} onClick={() => enviar(false)}>
-            {rasc.pendente ? 'Resolva o pedido não confirmado' : `Enviar pedido ao bar/cozinha${qtdRascunho ? ` (${qtdRascunho})` : ''}`}
-          </button>
-          <button type="button" className="gc-grande gc-sec" disabled={semItensAtivos} onClick={pedirFechamento}>Pedir fechamento (chamar caixa)</button>
+          {aberta && (
+            <button type="button" className="gc-grande" disabled={rasc.itens.length === 0 || enviando || !!rasc.pendente} onClick={() => enviar(false)}>
+              {rasc.pendente ? 'Resolva o pedido não confirmado' : `${c.modo_pagamento === 'hora' && podeReceber ? 'Enviar e receber agora' : 'Enviar pedido ao bar/cozinha'}${qtdRascunho ? ` (${qtdRascunho})` : ''}`}
+            </button>
+          )}
+          {podeReceber && naoPagas.length > 0 && (
+            <button type="button" className="gc-grande gc-sec" onClick={() => setRecebendo({ ids: naoPagas.map((r) => r.id) })}>Receber agora · {brl(faltaProdutos)}</button>
+          )}
+          {tudoPago ? (
+            <button type="button" className="gc-grande gc-sec" onClick={encerrar}>Encerrar comanda (tudo pago)</button>
+          ) : aberta && (
+            <button type="button" className="gc-grande gc-sec" disabled={semItensAtivos} onClick={pedirFechamento}>Pedir fechamento (chamar caixa)</button>
+          )}
         </div>
       )}
 
@@ -466,8 +514,63 @@ function Comanda() {
           const r = await acao(alvo.comanda ? api.post(`/garcom/comandas/${id}/cancelar`, { motivo }) : api.post(`/garcom/rodadas/${alvo.id}/cancelar`, { motivo }), alvo.comanda ? 'Comanda cancelada.' : `Rodada ${alvo.rodada} cancelada.`);
           if (r) { setCancelandoRodada(null); if (alvo.comanda) navigate('/garcom', { replace: true }); }
         }} />}
+      {recebendo && <ReceberAgora comanda={c} ids={recebendo.ids} onClose={() => setRecebendo(null)} onFeito={(novo) => { setRecebendo(null); setC(novo); }} />}
       {escolhendo && <EscolherComplementos produto={escolhendo} onClose={() => setEscolhendo(null)} onConfirmar={(comps) => { const p = escolhendo; setEscolhendo(null); adicionar(p, comps); }} />}
     </>
+  );
+}
+
+// Folha "Receber agora": Pix, cartao ou dinheiro, taxa de servico opcional e troco. Sem integracao com maquininha/banco: o garcom
+// CONFIRMA o recebimento (Pix caiu / cartao aprovado). O dinheiro fica com ele ate a prestacao de contas no caixa.
+function ReceberAgora({ comanda, ids, onClose, onFeito }) {
+  const toast = useToast();
+  const rec = comanda.receber || {};
+  const base = arred(comanda.rodadas_lista.filter((r) => ids.includes(r.id)).reduce((s, r) => s + Number(r.total), 0));
+  const formasLiberadas = [['pix', rec.formas && rec.formas.pix], ['cartao_credito', rec.formas && rec.formas.cartao], ['cartao_debito', rec.formas && rec.formas.cartao], ['dinheiro', rec.formas && rec.formas.dinheiro]].filter(([, ok]) => ok).map(([k]) => k);
+  const [forma, setForma] = useState('');
+  const [taxa, setTaxa] = useState(Number(rec.taxa_servico_pct) > 0);
+  const [recebido, setRecebido] = useState('');
+  const [salvando, setSalvando] = useState(false);
+  const pct = Number(rec.taxa_servico_pct || 0);
+  const valorTaxa = taxa ? arred(base * pct / 100) : 0;
+  const total = arred(base + valorTaxa);
+  const recebidoNum = Number(String(recebido).replace(',', '.'));
+  const troco = forma === 'dinheiro' && recebido && recebidoNum >= total ? arred(recebidoNum - total) : null;
+  const falta = forma === 'dinheiro' && recebido && recebidoNum < total ? arred(total - recebidoNum) : null;
+
+  async function confirmar() {
+    if (!forma) { toast.erro('Escolha a forma de pagamento.'); return; }
+    setSalvando(true);
+    try {
+      const r = await api.post(`/garcom/comandas/${comanda.id}/receber`, { order_ids: ids, forma, cobrar_taxa: taxa, ...(forma === 'dinheiro' ? { valor_recebido: recebido ? recebidoNum : total } : {}) });
+      toast.sucesso(forma === 'dinheiro' && r.pagamento.troco > 0 ? `Recebido. Troco: ${brl(r.pagamento.troco)}` : 'Recebimento confirmado.');
+      onFeito(r.comanda);
+    } catch (err) { toast.erro(err); setSalvando(false); }
+  }
+
+  return (
+    <Modal titulo="Receber agora" subtitulo={`${comanda.identificador} · produtos ${brl(base)}`} onClose={onClose}>
+      <div className="gc-formas">
+        {formasLiberadas.map((k) => <button key={k} type="button" className={forma === k ? 'on' : ''} onClick={() => setForma(k)}><span>{SIMBOLO_FORMA[k]}</span>{NOME_FORMA[k]}</button>)}
+      </div>
+      {formasLiberadas.length === 0 && <div className="gc-sub">Nenhuma forma de pagamento liberada nesta loja.</div>}
+      <label className="gc-switch"><input type="checkbox" checked={taxa} onChange={(e) => setTaxa(e.target.checked)} /> Cobrar taxa de serviço ({pct}%) · {brl(arred(base * pct / 100))}</label>
+      {forma === 'dinheiro' && (
+        <>
+          <input inputMode="decimal" value={recebido} onChange={(e) => setRecebido(e.target.value)} placeholder="Valor recebido (para o troco)" aria-label="Valor recebido" />
+          {troco !== null && <div className="gc-sub">Troco: <b>{brl(troco)}</b></div>}
+          {falta !== null && <div className="gc-sub" style={{ color: 'var(--err)' }}>Faltam {brl(falta)}</div>}
+          <div className="gc-sub" style={{ color: 'var(--warn)' }}>O dinheiro fica com você até a prestação de contas no caixa.</div>
+        </>
+      )}
+      {forma === 'pix' && <div className="gc-sub">Mostre o QR/chave do estabelecimento e confirme quando o Pix cair.</div>}
+      {(forma === 'cartao_credito' || forma === 'cartao_debito') && <div className="gc-sub">Passe na maquininha e confirme quando for aprovado.</div>}
+      <div className="gc-linha" style={{ fontSize: 18, marginTop: 8 }}><b>Total</b><b className="gc-total">{brl(total)}</b></div>
+      <div className="gc-acoes" style={{ flexDirection: 'column' }}>
+        <button type="button" className="gc-grande" disabled={salvando || !forma || (forma === 'dinheiro' && recebido && recebidoNum < total)} onClick={confirmar}>{salvando ? 'Confirmando…' : 'Confirmar recebimento'}</button>
+        <button type="button" className="gc-grande gc-sec" onClick={onClose}>Deixar na conta</button>
+      </div>
+    </Modal>
   );
 }
 
@@ -516,6 +619,21 @@ function Extrato() {
           <div className="gc-valor">{brl(d ? d.total_vendido : 0)}</div>
           <div className="gc-sub">Em aberto agora: {brl(d ? d.em_aberto.total : 0)} em {d ? d.em_aberto.comandas : 0} comanda(s)</div>
         </div>
+        {d && Number(d.dinheiro_comigo) > 0 && (
+          <div className="gc-card" style={{ borderColor: 'var(--warn)' }}>
+            <div className="gc-sub">Dinheiro que está com você</div>
+            <div className="gc-valor" style={{ color: 'var(--warn)' }}>{brl(d.dinheiro_comigo)}</div>
+            <div className="gc-sub">Entregue ao caixa para a prestação de contas.</div>
+          </div>
+        )}
+        <div className="gc-rod">Recebido por mim na hora</div>
+        {d && d.recebidos_na_hora.length === 0 && <div className="gc-vazio">Nada recebido na hora hoje.</div>}
+        {(d ? d.recebidos_na_hora : []).map((p) => (
+          <div key={p.id} className="gc-card">
+            <div className="gc-linha"><span className="gc-nome">{p.identificador}</span><span className="gc-tag">{NOME_FORMA[p.forma] || p.forma}</span><span className="gc-total">{brl(p.total)}</span></div>
+            <div className="gc-sub">{new Date(p.recebido_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}{p.forma === 'dinheiro' ? (p.prestado_em ? ' · entregue ao caixa' : ' · com você') : ''}{p.diferenca_prestacao && Number(p.diferenca_prestacao) !== 0 ? ` · diferença ${brl(p.diferenca_prestacao)}` : ''}</div>
+          </div>
+        ))}
         <div className="gc-rod">Comandas fechadas no caixa</div>
         {d && d.pagas.length === 0 && <div className="gc-vazio">Nenhuma comanda paga hoje.</div>}
         {(d ? d.pagas : []).map((p) => (

@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import { useToast, useConfirm } from '../context/UiContext.jsx';
 import { Field } from '../components/ui.jsx';
 import ConfigCupom from './ConfigCupom.jsx';
+import ConfigRecebimentoGarcom from '../components/ConfigRecebimentoGarcom.jsx';
 import IfoodConexoes from '../components/IfoodConexoes.jsx';
 import Food99Conexoes from '../components/Food99Conexoes.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -13,6 +14,7 @@ export default function Locations() {
   const toast = useToast();
   const { user } = useAuth();
   const moduloPedidos = temModulo(user, 'pedidos');
+  const moduloGarcom = temModulo(user, 'garcom');
   const moduloIfood = temModulo(user, 'delivery_apps') && !user.modoTeste; // o modo teste nao fala com o iFood nem com a 99Food
   const confirmar = useConfirm();
   const [locations, setLocations] = useState([]);
@@ -21,6 +23,7 @@ export default function Locations() {
   const [novaComanda, setNovaComanda] = useState(false);
   const [novaPedidos, setNovaPedidos] = useState(false);
   const [configurando, setConfigurando] = useState(null);
+  const [recebimento, setRecebimento] = useState(null);
   const [novoTerminal, setNovoTerminal] = useState({});
   const [renomeando, setRenomeando] = useState({});
 
@@ -167,6 +170,11 @@ export default function Locations() {
               </label>
             </div>}
 
+            {moduloGarcom && l.usa_pedidos && <div className="loja-config-linha">
+              <span className="form-hint" style={{ margin: 0 }}>Garçom: {l.garcom_recebe ? `recebe no app (taxa de serviço ${Number(l.taxa_servico_pct)}%)` : 'não recebe no app (só o caixa cobra)'}</span>
+              <button className="btn-link" onClick={() => setRecebimento(l)}>Configurar recebimento do garçom</button>
+            </div>}
+
             {daLoja.map((t) => (
               <div className="terminal-row" key={t.id}>
                 <span className="row-actions" style={{ alignItems: 'center' }}>
@@ -195,6 +203,7 @@ export default function Locations() {
       })}
       {moduloIfood && locations.length > 0 && <IfoodConexoes lojas={locations} />}
       {moduloIfood && locations.length > 0 && <Food99Conexoes lojas={locations} />}
+      {recebimento && <ConfigRecebimentoGarcom loja={locations.find((x) => x.id === recebimento.id) || recebimento} terminais={terminals} onClose={() => setRecebimento(null)} onSalvo={() => { setRecebimento(null); reload(); }} />}
       {configurando && <ConfigCupom loja={locations.find((x) => x.id === configurando.id) || configurando} onClose={() => setConfigurando(null)} onSalvo={() => { setConfigurando(null); reload(); }} />}
     </div>
   );

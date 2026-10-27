@@ -80,8 +80,11 @@ export function CupomCliente({ venda, config, teste }) {
       <div className="cupom-linha" />
       <div className="cupom-dir">Subtotal {brl(venda.subtotal)}</div>
       {c.mostrar_desconto && Number(venda.desconto) > 0 && <div className="cupom-dir">Desconto − {brl(venda.desconto)}</div>}
+      {Number(venda.taxa_servico) > 0 && <div className="cupom-dir">Taxa de serviço + {brl(venda.taxa_servico)}</div>}
       <div className="cupom-dir cupom-total">TOTAL {brl(venda.total)}</div>
-      {c.mostrar_forma_pagamento && <div className="cupom-dir">{FORMA_PAGAMENTO[venda.forma_pagamento]}</div>}
+      {c.mostrar_forma_pagamento && (venda.pagamentos && venda.pagamentos.length > 1
+        ? venda.pagamentos.map((p, k) => <div key={k} className="cupom-dir">{FORMA_PAGAMENTO[p.forma] || p.forma} {brl(p.valor)}</div>)
+        : <div className="cupom-dir">{FORMA_PAGAMENTO[venda.forma_pagamento]}</div>)}
       {c.mostrar_troco && venda.troco !== null && venda.troco !== undefined && <div className="cupom-dir">Recebido {brl(venda.valor_recebido)} · Troco {brl(venda.troco)}</div>}
       {venda.status === 'cancelada' && <div className="cupom-centro"><strong>VENDA CANCELADA</strong></div>}
       {c.rodape && (<><div className="cupom-linha" /><div className="cupom-centro cupom-texto">{c.rodape}</div></>)}

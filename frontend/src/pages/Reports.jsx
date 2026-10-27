@@ -318,7 +318,7 @@ function AbaCaixas({ query }) {
         </table>
       </div>
       {sessoes.length === 0 && <Vazio>Nenhum caixa aberto no período.</Vazio>}
-      <p className="form-hint">Esperado = valor inicial + vendas em dinheiro + suprimentos − sangrias.</p>
+      <p className="form-hint">Esperado = valor inicial + vendas em dinheiro no caixa + suprimentos − sangrias. O dinheiro recebido pelo garçom só entra pela prestação de contas (suprimento).</p>
     </div>
   );
 }

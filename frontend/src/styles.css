@@ -1572,3 +1572,19 @@ body.suporte-leitura main .btn-primario, body.suporte-leitura main form button[t
 
 /* Caixa: comanda que pediu fechamento fica em destaque */
 tr.cmd-fechando td { background: var(--warn-soft); }
+
+/* Garcom, fase 2: modo de pagamento, folha "Receber agora" */
+.gc-seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.gc-seg button { display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 56px; padding: 8px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ivory); font-weight: 700; cursor: pointer; }
+.gc-seg button span { font-size: 12px; font-weight: 500; color: var(--muted); }
+.gc-seg button.on { border-color: var(--gold); background: var(--accent-soft); }
+.gc-seg button:disabled { opacity: .45; cursor: not-allowed; }
+.gc-formas { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 8px; }
+.gc-formas button { display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 64px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel-alt); color: var(--ivory); font-weight: 700; cursor: pointer; }
+.gc-formas button span { font-size: 20px; }
+.gc-formas button.on { border-color: var(--gold); background: var(--accent-soft); }
+.gc-switch { display: flex; align-items: center; gap: 10px; margin: 8px 0; font-size: 15px; }
+.gc-switch input { width: 22px; height: 22px; padding: 0; }
+.gc-head-v { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.2; }
+.modal-content .gc-sub { margin: 4px 0; }
+.modal-content input[inputmode] { width: 100%; font-size: 16px; }

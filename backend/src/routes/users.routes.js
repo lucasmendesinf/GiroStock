@@ -73,6 +73,7 @@ router.patch('/users/:id', requireArea('Configuracoes'), async (req, res) => {
     if (locationId) await getOwnedLocation(pool, locationId, req.user.tenantId);
   }
   let extras = await lojasAdicionais(pool, req.user.tenantId, body.location_ids, locationId);
+  if (perfil === 'Garçom' && !locationId) throw new HttpError(400, 'o garçom precisa de uma loja principal');
   // Sem loja principal (todas as lojas) nao existem lojas adicionais; mudar a principal tira ela da lista.
   if (!locationId) extras = [];
   if (extras === undefined && body.location_id !== undefined) {

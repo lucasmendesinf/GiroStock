@@ -23,6 +23,11 @@ const MODULOS = [
     areas: ['Pedidos'],
   },
   {
+    chave: 'garcom', nome: 'Garçom e comandas', padrao: false, disponivel: true, requer: ['pedidos'],
+    descricao: 'Perfil Garçom e app no celular: comandas de mesa e de pista com várias rodadas, fechamento no caixa e base para comissões.',
+    areas: ['Garcom'],
+  },
+  {
     chave: 'clientes', nome: 'Clientes', padrao: false, disponivel: true, requer: [],
     descricao: 'Base de clientes, segmentos e mensagens por WhatsApp.',
     areas: ['Clientes'],

@@ -26,7 +26,7 @@ async function validarNovoEmail(db, userId, email) {
   return novo;
 }
 
-const PERFIS = ['Administrador', 'Gerente', 'Caixa/Operador', 'Estoque', 'Lanchonete/Cozinha', 'Financeiro'];
+const PERFIS = ['Administrador', 'Gerente', 'Caixa/Operador', 'Estoque', 'Lanchonete/Cozinha', 'Financeiro', 'Garçom'];
 
 // Valida a lista de lojas adicionais (ids de lojas da empresa, sem repetir a principal).
 async function lojasAdicionais(db, tenantId, ids, principal) {
@@ -58,6 +58,7 @@ async function criarUsuario(db, opcoes) {
   if (locationId) await getOwnedLocation(db, locationId, tenantId);
   const extras = (await lojasAdicionais(db, tenantId, opcoes.location_ids, locationId || null)) || [];
   if (extras.length > 0 && !locationId) throw new HttpError(400, 'escolha a loja principal antes de adicionar outras lojas');
+  if (perfil === 'Garçom' && !locationId) throw new HttpError(400, 'o garçom precisa de uma loja principal');
   if (exigirLoja && perfil !== 'Administrador' && !locationId) throw new HttpError(400, 'este perfil precisa de ao menos uma loja');
 
   // E-mail e unico no sistema todo: o login nao informa a empresa.

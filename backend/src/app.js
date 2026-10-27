@@ -22,6 +22,8 @@ const cashRoutes = require('./routes/cash.routes');
 const salesRoutes = require('./routes/sales.routes');
 const reportsRoutes = require('./routes/reports.routes');
 const ordersRoutes = require('./routes/orders.routes');
+const garcomRoutes = require('./routes/garcom.routes');
+const { soGarcom } = require('./middleware/garcomGuard');
 const customersRoutes = require('./routes/customers.routes');
 const masterSuporteRoutes = require('./routes/master.suporte.routes');
 const empresaRoutes = require('./routes/empresa.routes');
@@ -48,7 +50,7 @@ app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 app.use('/api/auth', authRoutes);
 
-app.use('/api', authRequired, empresaRoutes);
+app.use('/api', authRequired, soGarcom, empresaRoutes);
 app.use('/api', authRequired, usersRoutes);
 app.use('/api', authRequired, suppliersRoutes);
 app.use('/api', authRequired, complementosRoutes);
@@ -62,6 +64,7 @@ app.use('/api', authRequired, financeiroRoutes);
 app.use('/api', authRequired, salesRoutes);
 app.use('/api', authRequired, reportsRoutes);
 app.use('/api', authRequired, ordersRoutes);
+app.use('/api', authRequired, garcomRoutes);
 app.use('/api', authRequired, customersRoutes);
 app.use('/api', authRequired, masterSuporteRoutes); // antes do masterRoutes: "encerrar suporte" precisa passar sem a area Master
 app.use('/api', authRequired, masterRoutes);

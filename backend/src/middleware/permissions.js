@@ -3,14 +3,16 @@ const { POR_CHAVE } = require('../config/modulos');
 // Permissoes: cada perfil tem um padrao (MATRIX) e cada usuario pode ter ajustes
 // individuais (users.permissoes) que liberam ou bloqueiam permissoes especificas.
 const MATRIX = {
-  'Administrador':        { Vendas: true,  Estoque: true,  Financeiro: true,  Relatorios: true,  Configuracoes: true,  CancelarVendas: true,  SangriaSuprimento: true,  Desconto: true,  FecharCaixa: true,  Pedidos: true, Clientes: true, ModoTeste: false, Master: false },
-  'Gerente':              { Vendas: true,  Estoque: true,  Financeiro: false, Relatorios: true,  Configuracoes: false, CancelarVendas: true,  SangriaSuprimento: true,  Desconto: true,  FecharCaixa: true,  Pedidos: true, Clientes: true, ModoTeste: false, Master: false },
-  'Caixa/Operador':       { Vendas: true,  Estoque: false, Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: true,  Pedidos: true, Clientes: false, ModoTeste: false, Master: false },
-  'Estoque':              { Vendas: false, Estoque: true,  Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: false, Pedidos: false, Clientes: false, ModoTeste: false, Master: false },
-  'Lanchonete/Cozinha':   { Vendas: true,  Estoque: true,  Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: true,  Pedidos: true, Clientes: false, ModoTeste: false, Master: false },
-  'Financeiro':           { Vendas: false, Estoque: false, Financeiro: true,  Relatorios: true,  Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: false, Pedidos: false, Clientes: false, ModoTeste: false, Master: false },
+  'Administrador':        { Vendas: true,  Estoque: true,  Financeiro: true,  Relatorios: true,  Configuracoes: true,  CancelarVendas: true,  SangriaSuprimento: true,  Desconto: true,  FecharCaixa: true,  Pedidos: true, Clientes: true, Garcom: true, ModoTeste: false, Master: false },
+  'Gerente':              { Vendas: true,  Estoque: true,  Financeiro: false, Relatorios: true,  Configuracoes: false, CancelarVendas: true,  SangriaSuprimento: true,  Desconto: true,  FecharCaixa: true,  Pedidos: true, Clientes: true, Garcom: true, ModoTeste: false, Master: false },
+  'Caixa/Operador':       { Vendas: true,  Estoque: false, Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: true,  Pedidos: true, Clientes: false, Garcom: false, ModoTeste: false, Master: false },
+  'Estoque':              { Vendas: false, Estoque: true,  Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: false, Pedidos: false, Clientes: false, Garcom: false, ModoTeste: false, Master: false },
+  'Lanchonete/Cozinha':   { Vendas: true,  Estoque: true,  Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: true,  Pedidos: true, Clientes: false, Garcom: false, ModoTeste: false, Master: false },
+  'Financeiro':           { Vendas: false, Estoque: false, Financeiro: true,  Relatorios: true,  Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: false, Pedidos: false, Clientes: false, Garcom: false, ModoTeste: false, Master: false },
+  // Garcom: so o app de comandas no celular (nenhuma outra area).
+  'Garçom':               { Vendas: false, Estoque: false, Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: false, Pedidos: false, Clientes: false, Garcom: true,  ModoTeste: false, Master: false },
   // Dono da plataforma: nenhuma area de empresa; so o painel Master e o modo teste.
-  'Master':               { Vendas: false, Estoque: false, Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: false, Pedidos: false, Clientes: false, ModoTeste: true,  Master: true },
+  'Master':               { Vendas: false, Estoque: false, Financeiro: false, Relatorios: false, Configuracoes: false, CancelarVendas: false, SangriaSuprimento: false, Desconto: false, FecharCaixa: false, Pedidos: false, Clientes: false, Garcom: false, ModoTeste: true,  Master: true },
 };
 
 // Permissoes que podem ser ajustadas por usuario. 'Master' nao entra aqui:
@@ -22,6 +24,7 @@ const PERMISSOES = {
   FecharCaixa: 'PDV: fechar o caixa',
   Pedidos: 'Pedidos da lanchonete: gerar no PDV, acompanhar e finalizar',
   Clientes: 'Clientes: base de clientes, segmentos e mensagens',
+  Garcom: 'Garçom: usar o app de comandas no celular',
   ModoTeste: 'Modo teste: trabalhar em um banco de teste separado da produção',
   Estoque: 'Produtos, fornecedores, insumos, entradas e transferências',
   Relatorios: 'Relatórios e histórico de vendas',

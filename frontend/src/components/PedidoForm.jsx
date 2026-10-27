@@ -23,7 +23,7 @@ export function vendaDoPedido(p) {
     operador_nome: p.criado_por_nome || '',
     terminal_nome: '',
     itens: p.itens.map((i) => ({ ...i, unidade: i.unidade || 'UN' })),
-    pedido: { origem: NOME_ORIGEM[p.origem] || p.origem, tipo: p.tipo, cliente: p.cliente_nome, telefone: p.cliente_telefone, endereco: p.endereco, observacao: p.observacao },
+    pedido: { origem: NOME_ORIGEM[p.origem] || p.origem, tipo: p.tipo, cliente: p.cliente_nome, telefone: p.cliente_telefone, endereco: p.endereco, observacao: p.observacao, rodada: p.rodada || null, garcom: p.garcom_nome || '' },
   };
 }
 

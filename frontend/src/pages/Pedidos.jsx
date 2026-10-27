@@ -18,7 +18,7 @@ const COLUNAS = [
   ['saiu_entrega', 'Saiu p/ entrega', 'rota'],
   ['finalizado', 'Finalizado', 'fim'],
 ];
-const NOME_STATUS = { novo: 'Novo', em_preparo: 'Em preparo', pronto: 'Pronto', saiu_entrega: 'Saiu p/ entrega', finalizado: 'Finalizado', cancelado: 'Cancelado' };
+const NOME_STATUS = { novo: 'Novo', em_preparo: 'Em preparo', pronto: 'Pronto', saiu_entrega: 'Saiu p/ entrega', entregue: 'Entregue', finalizado: 'Finalizado', cancelado: 'Cancelado' };
 const ORIGENS_FILTRO = [['todas', 'Todas as origens'], ['balcao', 'Balcão'], ['telefone', 'Telefone'], ['whatsapp', 'WhatsApp']];
 const ORIGENS_IFOOD = [['ifood', 'iFood'], ['99food', '99Food']]; // com o modulo "iFood e 99Food"
 const ATRASO_PADRAO_MIN = 25; // padrao; o Master pode mudar em Configuracoes globais (user.parametros)
@@ -26,9 +26,12 @@ const INTERVALO_MS = 15000;
 
 // Entrega feita pela plataforma (iFood/99Food): a loja nao despacha; de pronto vai direto a finalizado (o entregador dela retira).
 const entregaDaLoja = (p) => p.tipo === 'entrega' && !(p.externo && p.externo.entrega_pela_plataforma);
-const proximo = (p) => ({ novo: 'em_preparo', em_preparo: 'pronto', pronto: entregaDaLoja(p) ? 'saiu_entrega' : 'finalizado', saiu_entrega: 'finalizado' })[p.status];
+// Rodada de comanda (mesa/pista do garcom): termina em "entregue"; a venda so nasce quando o caixa fecha a comanda.
+const proximo = (p) => ({ novo: 'em_preparo', em_preparo: 'pronto', pronto: p.comanda_id ? 'entregue' : entregaDaLoja(p) ? 'saiu_entrega' : 'finalizado', saiu_entrega: 'finalizado' })[p.status];
 const textoAcao = (p) => ({ novo: 'Iniciar preparo', em_preparo: 'Marcar pronto', pronto: entregaDaLoja(p) ? 'Saiu p/ entrega' : p.tipo === 'entrega' ? `Retirado pel${p.origem === '99food' ? 'a' : 'o'} ${nomePlataforma(p.origem)}` : 'Entregue ao cliente', saiu_entrega: 'Entregue ao cliente' })[p.status] || '';
 const aberto = (p) => !['finalizado', 'cancelado'].includes(p.status);
+// Destino legivel: "Mesa 7 · rodada 2 · Marcos" (comanda) ou a mesa/entrega/retirada de sempre.
+const destinoDoPedido = (p) => (p.comanda_id ? `${p.tipo === 'pista' ? '🎫' : '🍽'} ${p.endereco} · rodada ${p.rodada}${p.garcom_nome ? ` · ${p.garcom_nome}` : ''}` : p.tipo === 'entrega' ? '🛵 Entrega' : p.tipo === 'mesa' ? `🍽 ${p.endereco || 'Mesa'}` : '🛍 Retirada');
 
 
 export default function Pedidos() {
@@ -186,8 +189,8 @@ export default function Pedidos() {
         <div className="ped-cli">{p.cliente_nome || 'Cliente'}</div>
         <div className="ped-its">{p.itens.map((i) => `${qtd(i.quantidade)}× ${i.product_nome}`).join(' · ')}</div>
         <div className="ped-r3">
-          <span className="ped-tag">{p.tipo === 'entrega' ? '🛵 Entrega' : p.tipo === 'mesa' ? `🍽 ${p.endereco || 'Mesa'}` : '🛍 Retirada'}</span>
-          <span className={`ped-pill ${p.pago ? 'ok' : 'warn'}`}>{p.pago ? 'Pago' : 'Receber'}</span>
+          <span className="ped-tag">{destinoDoPedido(p)}</span>
+          {p.comanda_id ? <span className="ped-pill warn">Na comanda</span> : <span className={`ped-pill ${p.pago ? 'ok' : 'warn'}`}>{p.pago ? 'Pago' : 'Receber'}</span>}
           {aberto(p) && <span className="ped-tag">🔒 Reservado</span>}
           <span className="ped-tot">{brl(p.total)}</span>
         </div>
@@ -267,7 +270,7 @@ export default function Pedidos() {
                     <td><b>#{p.numero}</b></td>
                     <td><span className={`ped-tag ${classePlataforma(p.origem)}`}>{NOME_ORIGEM[p.origem]}{p.codigo_externo ? ` #${p.codigo_externo}` : ''}</span></td>
                     <td>{p.cliente_nome || 'Cliente'}</td>
-                    <td>{p.tipo === 'entrega' ? 'Entrega' : p.tipo === 'mesa' ? (p.endereco || 'Mesa') : 'Retirada'}</td>
+                    <td>{p.comanda_id ? `${p.endereco} · rod. ${p.rodada}` : p.tipo === 'entrega' ? 'Entrega' : p.tipo === 'mesa' ? (p.endereco || 'Mesa') : 'Retirada'}</td>
                     <td>{NOME_STATUS[p.status]}</td>
                     <td><span className={`ped-pill ${p.pago ? 'ok' : 'warn'}`}>{p.pago ? 'Pago' : 'Receber'}</span></td>
                     <td style={{ color: atrasado(p) ? 'var(--warn)' : 'var(--muted-2)' }}>{minutos(p)} min</td>
@@ -349,7 +352,7 @@ function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, onClose, onAva
         <button type="button" className="modal-close" style={{ float: 'right' }} aria-label="Fechar" onClick={onClose}>×</button>
         <h3>Pedido #{p.numero} <span className={`ped-tag ${classePlataforma(p.origem)}`}>{NOME_ORIGEM[p.origem]}{p.codigo_externo ? ` #${p.codigo_externo}` : ''}</span></h3>
         <div className="muted">{p.cliente_nome || 'Cliente'}{p.cliente_telefone ? ` · ${p.cliente_telefone}` : ''}{p.customer_id ? ' · 👤 cliente cadastrado' : ''}</div>
-        <div className="muted" style={{ marginTop: 4 }}>{entrega ? `🛵 ${p.endereco}` : p.tipo === 'mesa' ? `🍽 ${p.endereco || 'Mesa'}` : '🛍 Retirada no balcão'}</div>
+        <div className="muted" style={{ marginTop: 4 }}>{entrega ? `🛵 ${p.endereco}` : p.comanda_id ? destinoDoPedido(p) : p.tipo === 'mesa' ? `🍽 ${p.endereco || 'Mesa'}` : '🛍 Retirada no balcão'}</div>
         {p.observacao && <div className="ped-nota"><b>Obs.:</b> {p.observacao}</div>}
         <BlocoIfood p={p} onFeito={onIfood} />
 

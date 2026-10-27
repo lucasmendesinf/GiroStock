@@ -1489,3 +1489,86 @@ body.suporte-leitura main .btn-primario, body.suporte-leitura main form button[t
   .rel-part { justify-content: flex-end; min-width: 0; }
   .rel-trilha { width: 60px; }
 }
+
+/* ---------- Garcom: app de comandas no celular (mobile-first) ---------- */
+.garcom-shell main { padding: 0; }
+.gc { max-width: 560px; margin: 0 auto; min-height: calc(100vh - 56px); display: flex; flex-direction: column; background: var(--bg); }
+.gc input, .gc select { font-size: 16px; width: 100%; padding: 10px 12px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--panel-alt); color: var(--ivory); } /* 16px evita o zoom automatico do iPhone */
+.gc input:focus, .gc select:focus { border-color: var(--gold); outline: none; }
+.gc .gc-qtd button, .gc .gc-linha-form button { width: auto; }
+.gc-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; background: var(--bg); }
+.gc-head-t { flex: 1; min-width: 0; }
+.gc-head-t b { display: block; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gc-head-d { display: flex; align-items: center; gap: 8px; }
+.gc-voltar, .gc-icone { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ivory); font-size: 20px; text-decoration: none; cursor: pointer; }
+.gc-sub { color: var(--muted); font-size: 13px; }
+.gc-body { flex: 1; padding: 12px 14px 150px; display: flex; flex-direction: column; gap: 10px; }
+.gc-com { gap: 8px; }
+.gc-destaque { background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: 16px; padding: 14px 16px; }
+.gc-valor { font-size: 28px; font-weight: 800; color: var(--gold); }
+.gc-rod { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-top: 6px; }
+.gc-rod-novo { color: var(--warn); }
+.gc-vazio { color: var(--muted); text-align: center; padding: 22px 8px; }
+.gc-card { display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; text-decoration: none; color: var(--ivory); }
+.gc-card.fechando { border-color: var(--warn); }
+.gc-linha { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gc-linha + .gc-linha { margin-top: 6px; }
+.gc-nome { font-weight: 700; }
+.gc-total { margin-left: auto; font-weight: 800; color: var(--gold); }
+.gc-tag { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.gc-pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--panel-alt); color: var(--muted); font-weight: 600; text-transform: none; letter-spacing: 0; }
+.gc-pill.ok { background: var(--ok-soft); color: var(--ok); }
+.gc-pill.warn { background: var(--warn-soft); color: var(--warn); }
+.gc-pill.err { background: var(--err-soft); color: var(--err); }
+.gc-rodape { position: sticky; bottom: 0; padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); background: linear-gradient(to top, var(--bg) 78%, transparent); display: flex; flex-direction: column; gap: 8px; }
+.gc-grande { display: block; width: 100%; min-height: 52px; padding: 14px; border-radius: 14px; border: 0; background: var(--gold-light); color: var(--btn-text); font-size: 16px; font-weight: 800; text-align: center; text-decoration: none; cursor: pointer; }
+.gc-grande:disabled { opacity: .45; cursor: not-allowed; }
+.gc-grande.gc-sec { background: var(--panel); color: var(--ivory); border: 1px solid var(--line); font-weight: 700; }
+.gc-aviso { margin: 10px 14px 0; padding: 10px 12px; border-radius: 12px; background: var(--err-soft); color: var(--ivory); border: 1px solid var(--err); font-size: 14px; }
+.gc-body .gc-aviso { margin: 0; }
+.gc-aviso-warn { background: var(--warn-soft); border-color: var(--warn); }
+.gc-aviso-ok { background: var(--ok-soft); border-color: var(--ok); }
+.gc-link { background: none; border: 0; color: var(--gold); text-decoration: underline; font-size: inherit; cursor: pointer; padding: 0; }
+.gc-mesas { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.gc-mesas button { min-height: 48px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ivory); font-size: 16px; font-weight: 700; cursor: pointer; }
+.gc-mesas button.oc { background: var(--accent-soft); border-color: var(--gold); color: var(--gold); }
+.gc-linha-form { display: flex; gap: 8px; }
+.gc-linha-form input { flex: 1; min-width: 0; }
+.gc-linha-form button { min-height: 44px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ivory); font-weight: 700; }
+.gc-form { display: flex; flex-direction: column; gap: 8px; }
+.gc-busca { width: 100%; min-height: 46px; }
+.gc-cats { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.gc-cats button { flex: 0 0 auto; min-height: 38px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--ivory); font-weight: 600; cursor: pointer; }
+.gc-cats button.on { background: var(--gold-light); color: var(--btn-text); border-color: var(--gold-light); }
+.gc-prods { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; max-height: 44vh; overflow-y: auto; align-content: start; padding-right: 2px; } /* a grade rola sozinha: as rodadas enviadas ficam ao alcance */
+.gc-prods button { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-height: 72px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ivory); text-align: left; cursor: pointer; }
+.gc-prods button b { font-size: 14px; line-height: 1.2; }
+.gc-prods button span { color: var(--gold); font-weight: 700; }
+.gc-prods button em { font-size: 11px; color: var(--err); font-style: normal; }
+.gc-prods button.sem { opacity: .5; }
+.gc-prods .gc-vazio { grid-column: 1 / -1; }
+.gc-item { display: flex; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; }
+.gc-item-col { flex-direction: column; align-items: stretch; gap: 8px; }
+.gc-item-top, .gc-item-bot { display: flex; align-items: center; gap: 10px; }
+.gc-item-bot input { flex: 1; min-width: 0; min-height: 40px; }
+.gc-item-l { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.gc-item-l input { min-height: 38px; padding: 6px 10px; }
+.gc-item-v { min-width: 64px; text-align: right; }
+.gc-item-env { background: transparent; border: 0; border-bottom: 1px dashed var(--line); border-radius: 0; padding: 6px 2px; color: var(--muted); }
+.gc-item-env .gc-item-l { gap: 2px; }
+.gc-qtd { display: flex; align-items: center; gap: 4px; }
+.gc-qtd button { width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-alt); color: var(--ivory); font-size: 20px; cursor: pointer; }
+.gc-qtd b { min-width: 22px; text-align: center; }
+.gc-rodada { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; }
+.gc-rodada.cancelada { opacity: .6; }
+.gc-acoes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.gc-btn { min-height: 44px; padding: 0 16px; border-radius: 12px; border: 0; background: var(--gold-light); color: var(--btn-text); font-weight: 800; cursor: pointer; }
+.gc-btn.gc-btn-sec { background: var(--panel-alt); color: var(--ivory); border: 1px solid var(--line); font-weight: 600; }
+.gc-btn:disabled { opacity: .5; }
+.gc-menu { display: flex; flex-direction: column; gap: 8px; }
+.gc-menu button { min-height: 48px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel-alt); color: var(--ivory); font-size: 15px; font-weight: 600; cursor: pointer; }
+.gc-menu button.perigo { color: var(--err); border-color: var(--err); }
+@media (min-width: 700px) { .gc { border-left: 1px solid var(--line); border-right: 1px solid var(--line); } }
+
+/* Caixa: comanda que pediu fechamento fica em destaque */
+tr.cmd-fechando td { background: var(--warn-soft); }

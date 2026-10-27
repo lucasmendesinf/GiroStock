@@ -7,7 +7,7 @@ import { Field, Modal } from './components/ui.jsx';
 import SegurancaModal from './components/DoisFatores.jsx';
 import { api } from './api/client';
 import { exitFullscreen } from './utils/fullscreen.js';
-import { podeAcessar, rotaInicial, telasDoUsuario } from './utils/permissions.js';
+import { podeAcessar, rotaInicial, telasDoUsuario, temModulo } from './utils/permissions.js';
 import Login from './pages/Login.jsx';
 import Manutencao from './pages/Manutencao.jsx';
 import AvisoGlobal from './components/AvisoGlobal.jsx';
@@ -19,6 +19,8 @@ import { Logo } from './components/Logo.jsx';
 import Home from './pages/Home.jsx';
 import PDV from './pages/PDV.jsx';
 import Pedidos from './pages/Pedidos.jsx';
+import Garcom from './pages/Garcom.jsx';
+import Comandas from './pages/Comandas.jsx';
 import Clientes from './pages/Clientes.jsx';
 import Products from './pages/Products.jsx';
 import Users from './pages/Users.jsx';
@@ -31,12 +33,12 @@ import TrocaObrigatoria from './pages/TrocaObrigatoria.jsx';
 import ModoTesteModal from './components/ModoTesteModal.jsx';
 
 // Tela protegida: exige login e, se informada, acesso a area do perfil.
-function Private({ area, children }) {
+function Private({ area, modulo, children }) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
   // Troca obrigatoria de senha (usuario criado pelo Master ou com troca forcada): nada abre antes dela.
   if (user.deveTrocarSenha) return <TrocaObrigatoria />;
-  if (!podeAcessar(user, area)) return <Layout><SemAcesso /></Layout>;
+  if (!podeAcessar(user, area) || (modulo && !temModulo(user, modulo))) return <Layout><SemAcesso /></Layout>;
   return <Layout>{children}</Layout>;
 }
 
@@ -122,6 +124,24 @@ function Layout({ children }) {
     navigate('/login');
   }
 
+  // Garcom: so o app de comandas; barra minima (marca, nome, tema, sair), sem as demais telas.
+  if (user?.perfil === 'Garçom') {
+    return (
+      <div className="app-shell garcom-shell">
+        <FaixaTeste />
+        <header className="topbar topbar-pdv">
+          <div className="brand"><NavLink to="/garcom" className="brand-link" aria-label="GiroStock - início"><Logo tamanho={32} /></NavLink></div>
+          <span className="pdv-mode-user">{user?.nome}{user?.locationNome ? ` · ${user.locationNome}` : ''}</span>
+          <div className="user-box">
+            <ThemeToggle />
+            <button onClick={sair}>Sair</button>
+          </div>
+        </header>
+        <main>{children}</main>
+      </div>
+    );
+  }
+
   // No PDV a barra e compacta: o operador nao sai da venda por engano.
   if (noPdv) {
     const outrasTelas = telas.filter((t) => t.path !== '/pdv');
@@ -202,6 +222,8 @@ export default function App() {
       <Route path="/inicio" element={<Private><Home /></Private>} />
       <Route path="/pdv" element={<Private area="Vendas"><PDV /></Private>} />
       <Route path="/pedidos" element={<Private area="Pedidos"><Pedidos /></Private>} />
+      <Route path="/comandas" element={<Private area="Vendas" modulo="garcom"><Comandas /></Private>} />
+      <Route path="/garcom/*" element={<Private area="Garcom"><Garcom /></Private>} />
       <Route path="/clientes" element={<Private area="Clientes"><Clientes /></Private>} />
       <Route path="/produtos" element={<Private area="Estoque"><Products /></Private>} />
       <Route path="/insumos" element={<Navigate to="/produtos" replace />} />

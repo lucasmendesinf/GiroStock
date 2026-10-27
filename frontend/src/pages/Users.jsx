@@ -3,8 +3,9 @@ import { api } from '../api/client';
 import { useToast, useConfirm } from '../context/UiContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { Field, Modal, Vazio } from '../components/ui.jsx';
+import { temModulo } from '../utils/permissions.js';
 
-const PERFIS = ['Caixa/Operador', 'Gerente', 'Estoque', 'Financeiro', 'Lanchonete/Cozinha', 'Administrador'];
+const PERFIS = ['Caixa/Operador', 'Gerente', 'Estoque', 'Financeiro', 'Lanchonete/Cozinha', 'Garçom', 'Administrador'];
 const DESCRICAO_PERFIL = {
   'Administrador': 'Acesso total, inclusive usuários, lojas e configurações.',
   'Gerente': 'Vendas, estoque e relatórios. Pode cancelar vendas.',
@@ -12,6 +13,7 @@ const DESCRICAO_PERFIL = {
   'Estoque': 'Produtos, fornecedores, entradas, transferências e insumos.',
   'Financeiro': 'Relatórios e financeiro.',
   'Lanchonete/Cozinha': 'PDV e estoque/insumos da lanchonete (ajuste abaixo se precisar).',
+  'Garçom': 'Só o app de comandas no celular (mesas e pista). Precisa de uma loja.',
 };
 const FORM_VAZIO = { nome: '', email: '', senha: '', confirmarSenha: '', perfil: 'Caixa/Operador', location_id: '', location_ids: [] };
 
@@ -107,13 +109,15 @@ function efetivas(matriz, perfil, ajustes) {
 }
 
 function CamposPerfilLoja({ form, setForm, locations, matriz }) {
+  const { user: eu } = useAuth();
+  const perfis = PERFIS.filter((p) => p !== 'Garçom' || temModulo(eu, 'garcom') || form.perfil === 'Garçom');
   const padrao = matriz.padrao[form.perfil] || {};
   const ajustado = Object.keys(matriz.permissoes).some((k) => !!form.permissoes[k] !== !!padrao[k]);
   return (
     <>
       <Field label="Perfil" hint={DESCRICAO_PERFIL[form.perfil]}>
         <select value={form.perfil} onChange={(e) => setForm({ ...form, perfil: e.target.value, permissoes: { ...(matriz.padrao[e.target.value] || {}) } })}>
-          {PERFIS.map((p) => <option key={p} value={p}>{p}</option>)}
+          {perfis.map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
       </Field>
       <Field label="O que este usuário pode fazer" hint="Já vem marcado o padrão do perfil. Marque ou desmarque para dar acesso a mais ou a menos coisas só para este usuário.">
@@ -133,7 +137,8 @@ function CamposPerfilLoja({ form, setForm, locations, matriz }) {
       </Field>
       <Field label="Loja principal" hint="Com uma loja, o usuário só vende, movimenta estoque e vê relatórios dela. Administradores veem todas.">
         <select value={form.location_id || ''} onChange={(e) => setForm({ ...form, location_id: e.target.value, location_ids: (form.location_ids || []).filter((id) => id !== e.target.value) })}>
-          <option value="">Todas as lojas</option>
+          {form.perfil !== 'Garçom' && <option value="">Todas as lojas</option>}
+          {form.perfil === 'Garçom' && <option value="">Escolha a loja…</option>}
           {locations.filter((l) => l.ativo || l.id === form.location_id).map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
         </select>
       </Field>

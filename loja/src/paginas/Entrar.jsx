@@ -1,10 +1,28 @@
 import { useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { useLoja } from '../estado.jsx';
+import LoginTelefone from '../componentes/LoginTelefone.jsx';
 
 // Entrar, criar conta e recuperar a senha (codigo por e-mail).
 export default function Entrar({ modo }) {
+  const { loja } = useLoja();
+  const [params0] = useSearchParams();
+  const navegar0 = useNavigate();
+  if (loja && loja.tipo === 'cardapio') {
+    if (modo !== 'entrar') return <Navigate to="/entrar" replace />;
+    return (
+      <section className="bloco caixa-estreita">
+        <h1>Entrar</h1>
+        <LoginTelefone aoEntrar={() => navegar0(params0.get('depois') || '/', { replace: true })} />
+      </section>
+    );
+  }
+  return <EntrarEmail modo={modo} />;
+}
+
+// Entrar, criar conta e recuperar a senha por e-mail e senha (loja de varejo).
+function EntrarEmail({ modo }) {
   const { entrar, avisar } = useLoja();
   const navegar = useNavigate();
   const [params] = useSearchParams();

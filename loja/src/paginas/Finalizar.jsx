@@ -7,14 +7,27 @@ import CartaoMercadoPago from '../componentes/CartaoMercadoPago.jsx';
 import { itensParaApi } from './Carrinho.jsx';
 import { brl, parseValor } from '../util';
 
-const NA_ENTREGA = { dinheiro: 'Dinheiro', pix: 'Pix na entrega', cartao: 'Cartão na maquininha' };
+const NA_ENTREGA = { dinheiro: 'Dinheiro', pix: 'Pix', cartao: 'Cartão na maquininha', cartao_credito: 'Cartão de crédito', cartao_debito: 'Cartão de débito' };
+const EXPLICA_ENTREGA = {
+  dinheiro: 'Pague em dinheiro ao receber. Se precisar de troco, diga para quanto.',
+  pix: 'Pague por Pix ao receber: mostramos o QR code na hora.',
+  cartao: 'Pague na maquininha ao receber.',
+  cartao_credito: 'Pague no crédito na maquininha ao receber.',
+  cartao_debito: 'Pague no débito na maquininha ao receber.',
+};
 
 // Checkout: retirada ou entrega (endereco), forma de pagamento, observacao e resumo com os valores do servidor.
 export default function Finalizar() {
   const { loja, conta, carrinho, esvaziar, carregarLoja, avisar } = useLoja();
   const navegar = useNavigate();
   const pag = loja.pagamentos;
-  const [tipo, setTipo] = useState(loja.entrega.aceita ? 'entrega' : 'retirada');
+  const [tipo, setTipo] = useState(() => {
+    let t = null;
+    try { t = sessionStorage.getItem('lv_tipo'); } catch { /* */ }
+    if (t === 'retirada' && loja.retirada.aceita) return 'retirada';
+    if (t === 'entrega' && loja.entrega.aceita) return 'entrega';
+    return loja.entrega.aceita ? 'entrega' : 'retirada';
+  });
   const [frete, setFrete] = useState(null); // 'local' | id do servico da transportadora
   const servicoAtual = tipo === 'entrega' && frete && frete !== 'local' ? frete : null;
   const [enderecos, setEnderecos] = useState(null);
@@ -22,7 +35,7 @@ export default function Finalizar() {
   const [novoEndereco, setNovoEndereco] = useState(false);
   const formas = [
     ...(pag.pix_online ? [['pix', pag.pix_desconto_pct > 0 ? `Pix (pague agora) · ${String(pag.pix_desconto_pct).replace('.', ',')}% de desconto` : 'Pix (pague agora)']] : []),
-    ...(pag.cartao_online ? [['cartao', 'Cartão de crédito']] : []),
+    ...(pag.cartao_online ? [['cartao', 'Cartão de crédito (pague agora)']] : []),
     ...(pag.na_entrega.length && !servicoAtual ? [['na_entrega', tipo === 'entrega' ? 'Pagar na entrega' : 'Pagar na retirada']] : []),
   ];
   const [metodo, setMetodo] = useState(formas[0] ? formas[0][0] : null);
@@ -76,15 +89,18 @@ export default function Finalizar() {
   const avisos = previa ? previa.avisos.filter((a) => !(semEndereco && /bairro|endereço/.test(a)) && !(escolhendo && /escolha uma opção de frete/.test(a))) : [];
   const transp = loja.entrega.transportadora;
   const enderecoSel = enderecos && enderecos.find((e) => e.id === enderecoId);
-  const podePedir = previa && previa.pode_finalizar && !semEndereco && metodo && !enviando && (!previa.maior_idade || maiorIdade);
+  const trocoNum = metodo === 'na_entrega' && formaEntrega === 'dinheiro' && troco.trim() ? parseValor(troco) : null;
+  const trocoInvalido = trocoNum !== null && previa && !(trocoNum >= previa.total);
+  const podePedir = previa && previa.pode_finalizar && !semEndereco && metodo && !enviando && !trocoInvalido && (!previa.maior_idade || maiorIdade);
 
   async function pedir(cartao) {
     setErro(null);
     setEnviando(true);
     try {
+      // quando: 'online' (Pix ou cartao pelo site) ou 'entrega' (paga ao receber, na entrega ou na retirada)
       const pagamento = metodo === 'na_entrega'
-        ? { metodo, forma: formaEntrega, troco_para: formaEntrega === 'dinheiro' && troco.trim() ? parseValor(troco) : undefined }
-        : { metodo, cartao };
+        ? { quando: 'entrega', forma: formaEntrega, troco_para: formaEntrega === 'dinheiro' && troco.trim() ? parseValor(troco) : undefined }
+        : { quando: 'online', forma: metodo === 'pix' ? 'pix' : 'cartao_credito', cartao };
       const p = await api.post('/pedidos', { itens: itensParaApi(carrinho), tipo, endereco_id: tipo === 'entrega' ? enderecoId : undefined, frete_servico: servico, cupom, observacao: obs.trim() || undefined, pagamento, maior_idade: previa && previa.maior_idade ? maiorIdade : undefined });
       esvaziar();
       try { sessionStorage.removeItem('lv_cupom'); } catch { /* */ }
@@ -164,15 +180,19 @@ export default function Finalizar() {
         {formas.map(([k, nome]) => (
           <label key={k} className={`endereco-opcao ${metodo === k ? 'on' : ''}`}>
             <input type="radio" name="pagamento" checked={metodo === k} onChange={() => setMetodo(k)} />
-            <span><b>{nome}</b>{k === 'pix' && <><br /><small>QR code na próxima tela; o pedido vai para a loja assim que o Pix é pago.</small></>}</span>
+            <span><b>{nome}</b>
+              {k === 'pix' && <><br /><small>QR code na próxima tela; o pedido vai para a loja assim que o Pix é pago.</small></>}
+              {k === 'cartao' && <><br /><small>Você informa o cartão com segurança na etapa seguinte; o pedido vai para a loja assim que o pagamento é aprovado.</small></>}
+              {k === 'na_entrega' && <><br /><small>Escolha abaixo como vai pagar ao {tipo === 'entrega' ? 'receber' : 'retirar'}: o pedido já vai para a loja.</small></>}
+            </span>
           </label>
         ))}
         {metodo === 'na_entrega' && (
           <div className="sub-opcoes">
             {pag.na_entrega.map((f) => (
-              <label key={f} className="marcar"><input type="radio" name="forma" checked={formaEntrega === f} onChange={() => setFormaEntrega(f)} /> {NA_ENTREGA[f]}</label>
+              <label key={f} className="marcar cd-forma"><input type="radio" name="forma" checked={formaEntrega === f} onChange={() => setFormaEntrega(f)} /> <span>{NA_ENTREGA[f]}<small>{EXPLICA_ENTREGA[f]}</small></span></label>
             ))}
-            {formaEntrega === 'dinheiro' && <label className="campo"><span>Troco para quanto? (opcional)</span><input value={troco} onChange={(e) => setTroco(e.target.value)} inputMode="decimal" placeholder="Ex.: 50,00" /></label>}
+            {formaEntrega === 'dinheiro' && <label className="campo"><span>Troco para quanto? (opcional)</span><input value={troco} onChange={(e) => setTroco(e.target.value)} inputMode="decimal" placeholder="Ex.: 50,00" />{trocoInvalido && <small className="erro-texto">O valor precisa ser igual ou maior que o total ({brl(previa.total)}).</small>}</label>}
           </div>
         )}
       </div>
@@ -201,11 +221,11 @@ export default function Finalizar() {
       {metodo === 'cartao' && podePedir ? (
         <div className="painel">
           <h2>Dados do cartão</h2>
-          <CartaoMercadoPago publicKey={pag.mercadopago_public_key} valor={previa.total} email={conta.email} parcelasMax={pag.parcelas_max} onPagar={(c) => pedir(c)} />
+          <CartaoMercadoPago publicKey={pag.mercadopago_public_key} valor={previa.total} email={conta.email || `cliente.${conta.telefone}@girostock.calutec.com.br`} parcelasMax={pag.parcelas_max} onPagar={(c) => pedir(c)} />
         </div>
       ) : (
         <button type="button" className="botao largo" disabled={!podePedir} onClick={() => pedir()}>
-          {enviando ? 'Enviando…' : metodo === 'pix' ? 'Fazer pedido e pagar com Pix' : 'Fazer pedido'}
+          {enviando ? 'Enviando…' : loja.tipo === 'cardapio' ? (metodo === 'pix' ? 'Pagar e finalizar' : 'Finalizar pedido') : metodo === 'pix' ? 'Fazer pedido e pagar com Pix' : 'Fazer pedido'}
         </button>
       )}
       <Link to="/carrinho" className="link centro">Voltar ao carrinho</Link>

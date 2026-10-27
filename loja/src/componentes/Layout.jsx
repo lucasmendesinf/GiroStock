@@ -65,6 +65,16 @@ export default function Layout() {
   if (cardapio) {
     const taxas = loja.entrega.aceita ? [...loja.entrega.bairros.map((b) => b.taxa), ...(loja.entrega.outros_bairros ? [loja.entrega.outros_bairros.taxa] : [])] : [];
     const menorTaxa = taxas.length ? Math.min(...taxas) : null;
+    // Pagina inicial = cardapio em pagina unica (capa, barra de categorias e produtos): ela mesma mostra perfil, status e sacola.
+    if (pathname === '/') {
+      return (
+        <div className="app-cardapio cd-home">
+          {faixas}
+          <main className="conteudo conteudo-cd"><Outlet /></main>
+          {avisosTela}
+        </div>
+      );
+    }
     return (
       <div className="app-cardapio">
         {faixas}

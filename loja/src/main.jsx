@@ -2,9 +2,10 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { BASE_ROTAS } from './api';
-import { ProvedorLoja } from './estado.jsx';
+import { ProvedorLoja, useLoja } from './estado.jsx';
 import Layout from './componentes/Layout.jsx';
 import Inicio from './paginas/Inicio.jsx';
+import Cardapio from './paginas/Cardapio.jsx';
 import Produtos from './paginas/Produtos.jsx';
 import Produto from './paginas/Produto.jsx';
 import Carrinho from './paginas/Carrinho.jsx';
@@ -16,13 +17,19 @@ import Conta from './paginas/Conta.jsx';
 import Perfil from './paginas/Perfil.jsx';
 import './estilos.css';
 
+// Cardapio digital = pagina unica; varejo continua com a pagina inicial por blocos.
+function Raiz() {
+  const { loja } = useLoja();
+  return loja && loja.tipo === 'cardapio' ? <Cardapio /> : <Inicio />;
+}
+
 createRoot(document.getElementById('raiz')).render(
   <StrictMode>
     <BrowserRouter basename={BASE_ROTAS || undefined}>
       <ProvedorLoja>
         <Routes>
           <Route element={<Layout />}>
-            <Route index element={<Inicio />} />
+            <Route index element={<Raiz />} />
             <Route path="produtos" element={<Produtos />} />
             <Route path="produto/:id" element={<Produto />} />
             <Route path="carrinho" element={<Carrinho />} />
@@ -34,7 +41,7 @@ createRoot(document.getElementById('raiz')).render(
             <Route path="pedidos/:id" element={<Pedido />} />
             <Route path="conta" element={<Conta />} />
             <Route path="perfil" element={<Perfil />} />
-            <Route path="*" element={<Inicio />} />
+            <Route path="*" element={<Raiz />} />
           </Route>
         </Routes>
       </ProvedorLoja>

@@ -20,7 +20,7 @@ router.get('/users/permissoes', requireArea('Configuracoes'), (req, res) => {
 
 router.get('/users', requireArea('Configuracoes'), async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT u.id, u.nome, u.email, u.perfil, u.location_id, u.ativo, u.criado_em, u.permissoes, u.totp_ativo, u.totp_exigido,
+    `SELECT u.id, u.nome, u.email, u.perfil, u.location_id, u.ativo, u.criado_em, u.permissoes, u.totp_ativo, u.totp_exigido, u.comissao_pct,
             COALESCE((SELECT json_agg(ul.location_id) FROM user_locations ul WHERE ul.user_id = u.id), '[]') AS location_ids
      FROM users u WHERE u.tenant_id = $1 AND u.perfil <> 'Master' ORDER BY u.nome`,
     [req.user.tenantId]
@@ -88,6 +88,15 @@ router.patch('/users/:id', requireArea('Configuracoes'), async (req, res) => {
   } else if (perfil !== atual.perfil) {
     permissoes = null;
   }
+  // % de comissao deste garcom (vazio = usa a regra da empresa). So quem gere comissoes ou configuracoes altera (a rota ja exige Configuracoes).
+  let comissaoPct = null; let mudaComissao = false;
+  if (body.comissao_pct !== undefined) {
+    mudaComissao = true;
+    if (body.comissao_pct !== null && body.comissao_pct !== '') {
+      comissaoPct = Number(body.comissao_pct);
+      if (!(comissaoPct >= 0 && comissaoPct <= 100)) throw new HttpError(400, 'comissão do garçom: informe de 0 a 100%');
+    }
+  }
   if (req.params.id === req.user.id && !areasEfetivas(perfil, permissoes).Configuracoes) {
     throw new HttpError(400, 'você não pode tirar o seu próprio acesso a Configurações');
   }
@@ -104,6 +113,10 @@ router.patch('/users/:id', requireArea('Configuracoes'), async (req, res) => {
       [perfil, locationId, req.params.id, req.user.tenantId, nome, permissoes ? JSON.stringify(permissoes) : null]
     );
     if (extras !== undefined) await gravarLojasAdicionais(client, req.user.tenantId, req.params.id, extras);
+    if (mudaComissao) {
+      await client.query(`UPDATE users SET comissao_pct = $1 WHERE id = $2 AND tenant_id = $3`, [comissaoPct, req.params.id, req.user.tenantId]);
+      await logAudit(client, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'comissao_pct_garcom', recurso: 'users', recursoId: req.params.id, detalhes: { comissao_pct: comissaoPct } });
+    }
     if (typeof body.totp_exigido === 'boolean') {
       await client.query(`UPDATE users SET totp_exigido = $1 WHERE id = $2 AND tenant_id = $3`, [body.totp_exigido, req.params.id, req.user.tenantId]);
       await logAudit(client, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: body.totp_exigido ? 'exigir_2fa' : 'dispensar_2fa', recurso: 'users', recursoId: req.params.id });

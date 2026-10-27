@@ -195,7 +195,7 @@ check('rodadas ficam finalizadas e ligadas à venda', rodSt.length === 1 && rodS
 check('dinheiro entra no caixa aberto (venda ligada à sessão do caixa 1)', (await contar(`SELECT count(*) AS n FROM sales s JOIN cash_sessions cs ON cs.id = s.cash_session_id JOIN cash_registers cr ON cr.id = cs.cash_register_id WHERE s.id = $1 AND cr.terminal_id = $2 AND s.forma_pagamento = 'dinheiro'`, [fe.j.venda.id, T1])) === 1);
 check('fechar de novo -> 409', (await api('POST', `/comandas/${m7.j.id}/fechar`, { terminal_id: T1, forma_pagamento: 'pix' }, CX.token)).s === 409);
 const ext = await api('GET', '/garcom/extrato', null, GA.token);
-check('extrato do garçom lista a comanda paga com o total dele (sem comissão)', ext.s === 200 && ext.j.pagas.some((p) => p.id === m7.j.id && Number(p.meu_total) === 42) && Number(ext.j.total_vendido) === 42 && !('comissao' in ext.j), ext.j);
+check('extrato do garçom lista a comanda paga com o total dele (a comissão chegou na Fase 3)', ext.s === 200 && ext.j.pagas.some((p) => p.id === m7.j.id && Number(p.meu_total) === 42) && Number(ext.j.total_vendido) === 42, ext.j);
 check('comanda sem pedidos não fecha; vazia cancela pelo caixa/gerente', (await api('POST', `/comandas/${p119.j.id}/fechar`, { terminal_id: T1, forma_pagamento: 'pix' }, CX.token)).s === 409 && (await api('POST', `/garcom/comandas/${p119.j.id}/cancelar`, {}, GER.token)).s === 200);
 
 console.log('\n# 9. Módulo desligado, isolamento e regressão');

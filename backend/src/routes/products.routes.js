@@ -170,7 +170,7 @@ router.get('/products', async (req, res) => {
   const { rows } = await pool.query(
     `SELECT p.id, p.codigo_interno, p.nome, p.categoria_id, c.nome AS categoria_nome,
             p.supplier_id, s.nome AS supplier_nome, p.barcode,
-            p.unidade, p.preco_custo, p.preco_venda, p.ativo, p.vende_ifood, p.codigo_ifood,
+            p.unidade, p.preco_custo, p.preco_venda, p.ativo, p.vende_ifood, p.codigo_ifood, p.fora_da_comissao,
             ${SQL_FORNECEDORES},
             COALESCE((SELECT json_agg(json_build_object('product_id', ci.product_id, 'quantidade', ci.quantidade))
                       FROM combo_itens ci WHERE ci.combo_id = p.id), '[]') AS combo,
@@ -314,7 +314,7 @@ router.get('/products/search', async (req, res) => {
 
 router.get('/products/:id', async (req, res) => {
   const product = await getOwned(pool, 'products', req.params.id, req.user.tenantId, {
-    columns: 'id, codigo_interno, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, ativo, vende_ifood, codigo_ifood',
+    columns: 'id, codigo_interno, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, ativo, vende_ifood, codigo_ifood, fora_da_comissao',
   });
 
   const fornecedores = await pool.query(
@@ -485,6 +485,16 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
 });
 
 // Edicao do produto. Campos omitidos mantem o valor atual.
+// Produto "fora da comissao" (ingresso, couvert...): nao gera comissao para o garcom.
+router.patch('/products/:id', requireArea('Estoque'), async (req, res) => {
+  const body = req.body || {};
+  if (typeof body.fora_da_comissao !== 'boolean') throw new HttpError(400, 'informe fora_da_comissao: true ou false');
+  const atual = await getOwned(pool, 'products', req.params.id, req.user.tenantId, { columns: 'id, nome, fora_da_comissao' });
+  await pool.query(`UPDATE products SET fora_da_comissao = $1 WHERE id = $2 AND tenant_id = $3`, [body.fora_da_comissao, atual.id, req.user.tenantId]);
+  await logAudit(pool, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'produto_fora_da_comissao', recurso: 'products', recursoId: atual.id, detalhes: { nome: atual.nome, fora_da_comissao: body.fora_da_comissao } });
+  res.json({ id: atual.id, fora_da_comissao: body.fora_da_comissao });
+});
+
 router.put('/products/:id', requireArea('Estoque'), async (req, res) => {
   const body = req.body || {};
   const atual = await getOwned(pool, 'products', req.params.id, req.user.tenantId, {

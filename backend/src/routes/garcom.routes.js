@@ -11,6 +11,7 @@ const { HttpError } = require('../utils/http');
 const { FUSO } = require('../utils/query');
 const { criarPedido } = require('../services/pedidos');
 const recebimentos = require('../services/recebimentos');
+const comissoes = require('../services/comissoes');
 
 const router = express.Router();
 const ABERTAS = ['aberta', 'fechamento_solicitado'];
@@ -498,6 +499,8 @@ router.get('/garcom/extrato', async (req, res) => {
     em_aberto: { total: Number(ab.rows[0].total), comandas: ab.rows[0].comandas },
     recebidos_na_hora: recebidos.map((r) => ({ ...r, total: Number((Number(r.valor_produtos) + Number(r.taxa_servico)).toFixed(2)) })),
     dinheiro_comigo: Number(comigo.reduce((s, p) => s + p.total, 0).toFixed(2)),
+    // so o PROPRIO garcom: a comissao nunca mostra dados de outros
+    comissao: await comissoes.extratoProprio(pool, req.user.tenantId, req.user.id),
   });
 });
 

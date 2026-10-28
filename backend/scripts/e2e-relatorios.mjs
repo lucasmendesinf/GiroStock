@@ -99,6 +99,7 @@ const valorDb = Number((await db.query(`SELECT SUM(sb.saldo * p.preco_custo) AS 
 check('estoque: valor a custo confere com o banco', est.s === 200 && igual(est.j.totais.valor_custo, valorDb), { rel: est.j.totais.valor_custo, db: valorDb });
 check('estoque: valor a preco de venda maior que a custo', est.j.totais.valor_venda > est.j.totais.valor_custo);
 check('estoque: refrigerante abaixo do minimo na Lanchonete', est.j.abaixo_minimo.some((x) => x.id === REFRI.id && x.loja === 'Lanchonete' && Number(x.falta) > 0), est.j.abaixo_minimo);
+check('estoque baixo: traz codigo de barras, categoria e a lista de fornecedores', est.j.abaixo_minimo.every((x) => x.barcode && Array.isArray(x.fornecedores) && 'categoria' in x), est.j.abaixo_minimo[0]);
 const novo = await api('POST', '/products', { nome: 'Produto Parado E2E', categoria_id: (await api('GET', '/categories', null, A)).j[0].id, barcode: '7891999000017', unidade: 'UN', preco_custo: 10, preco_venda: 15, location_id: L.Distribuidora, estoque_inicial: 7 }, A);
 const est2 = (await api('GET', `/reports/estoque?${P}`, null, A)).j;
 check('estoque: produto com saldo e sem venda no periodo aparece como parado (R$ 70 a custo)', novo.s === 201 && est2.parados.some((x) => x.id === novo.j.id && igual(x.valor_parado, 70)), est2.parados);

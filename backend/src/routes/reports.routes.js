@@ -343,10 +343,13 @@ router.get('/reports/estoque', requireArea('Relatorios'), async (req, res) => {
      GROUP BY l.id, l.nome ORDER BY l.nome`, pLoc
   )).rows.map((r) => ({ ...r, unidades: Number(r.unidades), valor_custo: n2(r.valor_custo), valor_venda: n2(r.valor_venda) }));
   const abaixo = (await pool.query(
-    `SELECT p.id, p.nome, p.codigo_interno, p.unidade, l.nome AS loja, sb.saldo, sb.estoque_minimo, (sb.estoque_minimo - sb.saldo) AS falta, p.preco_custo
-     FROM stock_balances sb JOIN products p ON p.id = sb.product_id JOIN locations l ON l.id = sb.location_id
+    `SELECT p.id, p.nome, p.codigo_interno, p.barcode, p.unidade, l.nome AS loja, sb.saldo, sb.estoque_minimo, (sb.estoque_minimo - sb.saldo) AS falta, p.preco_custo,
+            c.nome AS categoria,
+            COALESCE((SELECT array_agg(s.nome ORDER BY s.nome) FROM product_suppliers ps JOIN suppliers s ON s.id = ps.supplier_id
+             WHERE ps.product_id = p.id AND s.ativo), '{}') AS fornecedores
+     FROM stock_balances sb JOIN products p ON p.id = sb.product_id JOIN locations l ON l.id = sb.location_id LEFT JOIN categories c ON c.id = p.categoria_id
      WHERE sb.tenant_id = $1 AND p.ativo AND l.ativo AND sb.estoque_minimo > 0 AND sb.saldo < sb.estoque_minimo ${filtroLoc}
-     ORDER BY (sb.saldo / NULLIF(sb.estoque_minimo, 0)), p.nome LIMIT 200`, pLoc
+     ORDER BY (sb.saldo / NULLIF(sb.estoque_minimo, 0)), p.nome LIMIT 5000`, pLoc
   )).rows;
   const vendidosSql = `SELECT si.product_id, s.location_id, SUM(si.quantidade) AS qtd, SUM(si.subtotal) AS fat
      FROM sale_items si JOIN sales s ON s.id = si.sale_id

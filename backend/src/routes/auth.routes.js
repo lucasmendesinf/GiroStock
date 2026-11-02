@@ -13,6 +13,10 @@ const { validarNovoEmail } = require('../services/usuarios');
 const { dadosDaEmpresa, efetivos, aplicarRecursos } = require('../utils/limites');
 
 const router = express.Router();
+
+// Painel Master no admin da Calutec: com ADMIN_URL definido, o Master entra SO pelo admin (mesmo usuario, senha e 2FA).
+// Aqui o login dele e recusado como senha errada; o admin abre o GiroStock com um token (suporte / modo teste) em /entrar-admin.
+const adminUrl = () => (process.env.ADMIN_URL || '').trim().replace(/\/+$/, '') || null;
 // Login, /me, troca de senha e ativacao do modo teste usam SEMPRE a producao (usuarios e permissoes moram la).
 const db = pool.producao;
 
@@ -85,6 +89,10 @@ router.post('/login', async (req, res) => {
   const user = rows[0];
   if (!user || !user.ativo) {
     if (!user) await registrarFalhaDeUsuarioInexistente(email);
+    return res.status(401).json({ erro: 'Credenciais invalidas' });
+  }
+
+  if (user.perfil === 'Master' && adminUrl()) {
     return res.status(401).json({ erro: 'Credenciais invalidas' });
   }
 
@@ -175,7 +183,7 @@ router.get('/me', authRequired, async (req, res) => {
     }
   }
   const manut = await config.obter('manutencao');
-  res.json({ ...dadosDoUsuario(rows[0]), suporte: req.user.suporte ? { ativo: true, empresa: req.user.suporte.empresaNome, empresaId: req.user.suporte.empresaId, edicao: req.user.suporte.edicao, expiraEm: req.user.suporte.expiraEm } : null, parametros: await config.parametrosPublicos(), manutencao: manut.ativo && !req.user.master ? { ativo: true, mensagem: manut.mensagem || '' } : null });
+  res.json({ ...dadosDoUsuario(rows[0]), adminUrl: req.user.master ? adminUrl() : null, suporte: req.user.suporte ? { ativo: true, empresa: req.user.suporte.empresaNome, empresaId: req.user.suporte.empresaId, edicao: req.user.suporte.edicao, expiraEm: req.user.suporte.expiraEm } : null, parametros: await config.parametrosPublicos(), manutencao: manut.ativo && !req.user.master ? { ativo: true, mensagem: manut.mensagem || '' } : null });
 });
 
 // Troca da propria senha (exige a senha atual).
@@ -425,7 +433,7 @@ router.post('/redefinir-senha', async (req, res) => {
   const generico = new HttpError(400, 'Não foi possível redefinir: confira o e-mail e o código.');
   const { rows } = await db.query(`SELECT ${COLUNAS_LOGIN} ${DE_LOGIN} WHERE lower(u.email::text) = lower($1)`, [String(email).trim()]);
   const user = rows[0];
-  if (!user || !user.ativo || !user.totp_ativo || !totp.disponivel()) {
+  if (!user || !user.ativo || !user.totp_ativo || !totp.disponivel() || (user.perfil === 'Master' && adminUrl())) {
     await new Promise((ok) => setTimeout(ok, 400)); // atraso parecido com o caminho real
     throw generico;
   }

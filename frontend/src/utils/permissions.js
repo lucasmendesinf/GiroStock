@@ -29,7 +29,8 @@ export function podeAcessar(user, area) {
 }
 
 export function telasDoUsuario(user) {
-  return TELAS.filter((t) => podeAcessar(user, t.area) && (!t.requer || user[t.requer]) && (!t.modulo || temModulo(user, t.modulo)) && (!t.paraPerfis || t.paraPerfis.includes(user.perfil)));
+  // Com o admin da Calutec configurado (user.adminUrl), o painel Master nao aparece aqui: ele mora no admin.
+  return TELAS.filter((t) => !(t.area === 'Master' && user.adminUrl) && podeAcessar(user, t.area) && (!t.requer || user[t.requer]) && (!t.modulo || temModulo(user, t.modulo)) && (!t.paraPerfis || t.paraPerfis.includes(user.perfil)));
 }
 
 // Tela inicial apos o login: caixa vai direto ao PDV, estoque aos produtos, etc.

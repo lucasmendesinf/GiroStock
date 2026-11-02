@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { api, saveSession, clearSession, getCurrentUser, updateStoredUser } from '../api/client';
+import { api, saveSession, clearSession, getCurrentUser, updateStoredUser, voltarAoAdmin } from '../api/client';
 
 const AuthContext = createContext(null);
 
@@ -25,6 +25,8 @@ export function AuthProvider({ children }) {
   // Liga/desliga o modo teste da sessao: o servidor devolve um novo token; depois recarrega o usuario (/auth/me).
   const alternarModoTeste = useCallback(async (ativo, extra = {}) => {
     const { token } = await api.post('/auth/modo-teste', { ativo, ...extra });
+    // Modo teste aberto pelo admin da Calutec: ao desligar, volta para o admin (a pagina sai daqui).
+    if (!ativo && voltarAoAdmin()) return new Promise(() => {});
     localStorage.setItem('girostock_token', token);
     const u = await api.get('/auth/me');
     updateStoredUser(u);
@@ -46,6 +48,8 @@ export function AuthProvider({ children }) {
 
   // Troca o token de suporte pelo do Master guardado (sem chamar a API: serve tambem quando a sessao ja expirou).
   const voltarAoMasterLocal = useCallback((aviso) => {
+    // Sessao aberta pelo admin da Calutec: volta para ele (o painel Master mora la).
+    if (voltarAoAdmin(aviso)) return;
     const tokenMaster = localStorage.getItem('girostock_master_token');
     if (!tokenMaster) { clearSession(); window.location.assign('/login'); return; }
     localStorage.setItem('girostock_token', tokenMaster);
@@ -58,10 +62,24 @@ export function AuthProvider({ children }) {
 
   const encerrarSuporte = useCallback(async () => {
     const r = await api.post('/master/suporte/encerrar');
+    // Suporte aberto pelo admin da Calutec: volta para o admin (a pagina sai daqui).
+    if (voltarAoAdmin()) return new Promise(() => {});
     localStorage.setItem('girostock_token', r.token);
     localStorage.setItem('girostock_user', localStorage.getItem('girostock_master_user') || '');
     localStorage.removeItem('girostock_master_token');
     localStorage.removeItem('girostock_master_user');
+  }, []);
+
+  // ---- Admin da Calutec: o admin abre o GiroStock com um token (suporte ou modo teste) em /entrar-admin ----
+  const entrarComToken = useCallback(async (token) => {
+    localStorage.removeItem('girostock_master_token');
+    localStorage.removeItem('girostock_master_user');
+    localStorage.setItem('girostock_token', token);
+    const u = await api.get('/auth/me');
+    if (u.adminUrl) localStorage.setItem('girostock_admin_url', u.adminUrl);
+    updateStoredUser(u);
+    setUser(u);
+    return u;
   }, []);
 
   // Recarrega o usuario (ex.: depois da troca obrigatoria de senha).
@@ -73,6 +91,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = useCallback(() => {
+    localStorage.removeItem('girostock_admin_url');
     localStorage.removeItem('girostock_master_token');
     localStorage.removeItem('girostock_master_user');
     clearSession();
@@ -92,7 +111,7 @@ export function AuthProvider({ children }) {
   }, [logout]);
 
   return (
-    <AuthContext.Provider value={{ user, login, concluirLogin, entrarSuporte, encerrarSuporte, voltarAoMasterLocal, logout, alternarModoTeste, recarregarUsuario }}>
+    <AuthContext.Provider value={{ user, login, concluirLogin, entrarSuporte, encerrarSuporte, voltarAoMasterLocal, logout, alternarModoTeste, recarregarUsuario, entrarComToken }}>
       {children}
     </AuthContext.Provider>
   );

@@ -33,6 +33,7 @@ import Financeiro from './pages/Financeiro.jsx';
 import LojaVirtual from './pages/LojaVirtual.jsx';
 import Locations from './pages/Locations.jsx';
 import Master from './pages/Master.jsx';
+import EntrarAdmin from './pages/EntrarAdmin.jsx';
 import TrocaObrigatoria from './pages/TrocaObrigatoria.jsx';
 import ModoTesteModal from './components/ModoTesteModal.jsx';
 
@@ -212,6 +213,14 @@ function Layout({ children }) {
   );
 }
 
+// Com o admin da Calutec configurado (ADMIN_URL no servidor), o painel Master fica so la.
+function MasterOuAdmin() {
+  const { user } = useAuth();
+  useEffect(() => { if (user && user.adminUrl) window.location.assign(user.adminUrl); }, [user]);
+  if (user && user.adminUrl) return null;
+  return <Master />;
+}
+
 function Inicial() {
   const { user } = useAuth();
   return <Navigate to={rotaInicial(user)} replace />;
@@ -222,7 +231,8 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/manutencao" element={<Manutencao />} />
-      <Route path="/master/*" element={<Private area="Master"><Master /></Private>} />
+      <Route path="/entrar-admin" element={<EntrarAdmin />} />
+      <Route path="/master/*" element={<Private area="Master"><MasterOuAdmin /></Private>} />
       <Route path="/inicio" element={<Private><Home /></Private>} />
       <Route path="/pdv" element={<Private area="Vendas"><PDV /></Private>} />
       <Route path="/pedidos" element={<Private area="Pedidos"><Pedidos /></Private>} />

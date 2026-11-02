@@ -36,7 +36,8 @@ export function podeAlgumaArea(user, areas) {
   return !areas || areas.some((a) => podeAcessar(user, a));
 }
 export function telasDoUsuario(user) {
-  return TELAS.filter((t) => podeAcessar(user, t.area) && podeAlgumaArea(user, t.algumaArea) && (!t.requer || user[t.requer])
+  // Com o admin da Calutec configurado (user.adminUrl), o painel Master nao aparece aqui: ele mora no admin.
+  return TELAS.filter((t) => !(t.area === 'Master' && user.adminUrl) && podeAcessar(user, t.area) && podeAlgumaArea(user, t.algumaArea) && (!t.requer || user[t.requer])
     && (!t.modulo || (t.exigeModulo ? !!(user.modulos && user.modulos[t.modulo]) : temModulo(user, t.modulo))) && (!t.paraPerfis || t.paraPerfis.includes(user.perfil)));
 }
 

@@ -22,7 +22,9 @@ async function request(path, { method = 'GET', body, token: tokenExplicito } = {
   if (!res.ok) {
     // Sessao expirada/usuario desativado: volta para o login.
     // Sessao de suporte vencida/encerrada: volta ao painel Master com o token guardado (em vez de cair no login).
-    if (res.status === 401 && token && !tokenExplicito && data && data.suporteEncerrado && localStorage.getItem('girostock_master_token')) {
+    if (res.status === 401 && token && !tokenExplicito && data && data.suporteEncerrado && voltarAoAdmin('A sessão de suporte foi encerrada.')) {
+      // Sessao de suporte aberta pelo admin da Calutec: volta para o admin.
+    } else if (res.status === 401 && token && !tokenExplicito && data && data.suporteEncerrado && localStorage.getItem('girostock_master_token')) {
       localStorage.setItem('girostock_token', localStorage.getItem('girostock_master_token'));
       localStorage.setItem('girostock_user', localStorage.getItem('girostock_master_user') || '');
       localStorage.removeItem('girostock_master_token');
@@ -64,6 +66,18 @@ export const api = {
   patch: (path, body) => request(path, { method: 'PATCH', body }),
   del: (path) => request(path, { method: 'DELETE' }),
 };
+
+// Sessao (suporte ou modo teste do Master) aberta pelo admin da Calutec: encerra aqui e volta para o admin.
+// Devolve false quando a sessao nao veio do admin (o fluxo antigo, com o Master logado no proprio GiroStock, segue igual).
+export function voltarAoAdmin(aviso) {
+  let url = null;
+  try { url = localStorage.getItem('girostock_admin_url'); } catch { /* sem armazenamento */ }
+  if (!url) return false;
+  clearSession();
+  localStorage.removeItem('girostock_admin_url');
+  window.location.assign(aviso ? `${url}/?aviso=${encodeURIComponent(aviso)}` : url);
+  return true;
+}
 
 export function saveSession(token, usuario) {
   localStorage.setItem('girostock_token', token);

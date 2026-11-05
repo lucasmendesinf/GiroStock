@@ -49,7 +49,8 @@ async function assertReceitasPermitidas(db, user, productIds) {
 //          cada item pode trazer garcom_id), taxa_servico (compoe o total), pagamentos ([{ forma, valor, valor_recebido?, entra_no_caixa?,
 //          comanda_pagamento_id?, recebido_por? }]: varias formas na mesma venda; a soma TEM de fechar com o total; no lugar de
 //          forma_pagamento/valor_recebido), precos_informados (pedido de plataforma: cada item traz preco_unitario, o preco cobrado pela
-//          plataforma, e os complementos ja vem com o preco dela; a regra de minimo/maximo dos grupos nao se aplica) }
+//          plataforma, e os complementos ja vem com o preco dela; a regra de minimo/maximo dos grupos nao se aplica),
+//          sem_caixa + location_id (pedido pago no site: a venda nao passa pelo caixa; so com forma 'online') }
 async function registrarVenda(client, user, dados) {
   const { terminal_id, itens, forma_pagamento, valor_recebido } = dados;
   const descontoInformado = Number(dados.desconto || 0);
@@ -58,7 +59,9 @@ async function registrarVenda(client, user, dados) {
   const usaPagamentos = Array.isArray(dados.pagamentos) && dados.pagamentos.length > 0;
   if (!(descontoInformado >= 0)) throw new HttpError(400, 'desconto deve ser um valor em reais (0 ou mais)');
   if (!(taxaServico >= 0)) throw new HttpError(400, 'taxa de serviço inválida');
-  if (!terminal_id || !Array.isArray(itens) || itens.length === 0 || (!forma_pagamento && !usaPagamentos)) {
+  const semCaixa = !!dados.sem_caixa;
+  if (semCaixa && (usaPagamentos || forma_pagamento !== 'online')) throw new HttpError(400, 'venda sem caixa só para pedido pago online');
+  if ((!terminal_id && !semCaixa) || !Array.isArray(itens) || itens.length === 0 || (!forma_pagamento && !usaPagamentos)) {
     throw new HttpError(400, 'terminal_id, itens (não vazio) e forma_pagamento são obrigatórios');
   }
   if (!usaPagamentos) {
@@ -76,29 +79,37 @@ async function registrarVenda(client, user, dados) {
     complementos_pedidos: Array.isArray(i.complementos) ? i.complementos : [],
   }));
 
-  const terminal = await getOwned(client, 'terminals', terminal_id, user.tenantId, { columns: 'id, location_id, ativo' });
-  if (!terminal.ativo) throw new HttpError(400, 'terminal inativo');
-  const register = await client.query(
-    `SELECT cr.id, l.ativo AS location_ativo
-     FROM cash_registers cr JOIN locations l ON l.id = $3
-     WHERE cr.terminal_id = $1 AND cr.tenant_id = $2`,
-    [terminal_id, user.tenantId, terminal.location_id]
-  );
-  if (register.rows.length === 0) throw new HttpError(404, 'terminal sem caixa configurado');
-  if (!register.rows[0].location_ativo) throw new HttpError(400, 'o local deste terminal está inativo');
-  const locationId = terminal.location_id;
-  const cashRegisterId = register.rows[0].id;
-  assertLocationAccess(user, locationId, 'vender neste terminal');
+  let locationId;
+  let cashSessionId = null;
+  if (semCaixa) {
+    const local = await getOwned(client, 'locations', dados.location_id, user.tenantId, { columns: 'id, ativo' });
+    if (!local.ativo) throw new HttpError(400, 'este local está inativo');
+    locationId = local.id;
+    assertLocationAccess(user, locationId, 'vender neste local');
+  } else {
+    const terminal = await getOwned(client, 'terminals', terminal_id, user.tenantId, { columns: 'id, location_id, ativo' });
+    if (!terminal.ativo) throw new HttpError(400, 'terminal inativo');
+    const register = await client.query(
+      `SELECT cr.id, l.ativo AS location_ativo
+       FROM cash_registers cr JOIN locations l ON l.id = $3
+       WHERE cr.terminal_id = $1 AND cr.tenant_id = $2`,
+      [terminal_id, user.tenantId, terminal.location_id]
+    );
+    if (register.rows.length === 0) throw new HttpError(404, 'terminal sem caixa configurado');
+    if (!register.rows[0].location_ativo) throw new HttpError(400, 'o local deste terminal está inativo');
+    locationId = terminal.location_id;
+    assertLocationAccess(user, locationId, 'vender neste terminal');
 
-  // Nao e possivel registrar venda com o caixa fechado
-  const session = await client.query(
-    `SELECT id FROM cash_sessions WHERE cash_register_id = $1 AND tenant_id = $2 AND fechado_em IS NULL FOR UPDATE`,
-    [cashRegisterId, user.tenantId]
-  );
-  if (session.rows.length === 0) {
-    throw new HttpError(400, 'caixa fechado: abra o caixa antes de registrar vendas');
+    // Nao e possivel registrar venda com o caixa fechado
+    const session = await client.query(
+      `SELECT id FROM cash_sessions WHERE cash_register_id = $1 AND tenant_id = $2 AND fechado_em IS NULL FOR UPDATE`,
+      [register.rows[0].id, user.tenantId]
+    );
+    if (session.rows.length === 0) {
+      throw new HttpError(400, 'caixa fechado: abra o caixa antes de registrar vendas');
+    }
+    cashSessionId = session.rows[0].id;
   }
-  const cashSessionId = session.rows[0].id;
 
   // Carrega e trava os produtos vendidos (sempre em ordem de id, como nas movimentacoes de estoque)
   const productIds = itensAgrupados.map((i) => i.product_id);
@@ -182,7 +193,8 @@ async function registrarVenda(client, user, dados) {
     valorRecebidoFinal = recebido;
     troco = Number((recebido - total).toFixed(2));
   }
-  if (!usaPagamentos) pagamentosFinal = [{ forma: forma_pagamento, valor: total, valor_recebido: valorRecebidoFinal, troco, comanda_pagamento_id: null, recebido_por: null, entra_no_caixa: true }];
+  // venda paga no site (sem caixa): o valor nao entra em nenhum caixa
+  if (!usaPagamentos) pagamentosFinal = [{ forma: forma_pagamento, valor: total, valor_recebido: valorRecebidoFinal, troco, comanda_pagamento_id: null, recebido_por: null, entra_no_caixa: !semCaixa }];
 
   // Consumo total da venda (produtos com estoque proprio e insumos), validado contra o disponivel DA LOJA do terminal:
   // saldo menos o reservado por pedidos em aberto (a reserva do pedido que esta sendo finalizado vira baixa).
@@ -229,7 +241,7 @@ async function registrarVenda(client, user, dados) {
                         valor_recebido, troco, subtotal, desconto, total, status, numero_pedido, taxa_entrega, comanda_id, taxa_servico)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'concluida', $13, $14, $15, $16)
      RETURNING id, numero, subtotal, desconto, total, troco, forma_pagamento, criado_em`,
-    [user.tenantId, numero, locationId, terminal_id, cashSessionId, user.id, formaPredominante,
+    [user.tenantId, numero, locationId, semCaixa ? null : terminal_id, cashSessionId, user.id, formaPredominante,
       valorRecebidoFinal, troco, subtotalVenda, desconto, total, numeroPedido, taxaEntrega, dados.comanda_id || null, taxaServico]
   );
   const saleId = sale.rows[0].id;

@@ -241,6 +241,17 @@ Pedidos do cardápio digital entram na tela **Pedidos** como canal "Loja virtual
 
 Documentação da API: [docs/API_LOJA_VIRTUAL.md](docs/API_LOJA_VIRTUAL.md). Variáveis novas no `.env`: `URL_PUBLICA`, `SMTP_*`, `LOJA_DOMINIO_BASE`, `LOJA_DNS_ALVO`, `LOJA_DNS_IP` (veja `.env.example`). Desenvolvimento do site: `cd loja && npm install && npm run build` (o backend serve `loja/dist`). Teste: `npm run mp:simulador` + `npm run me:simulador` (Melhor Envio, porta 4996; no `.env`: `ME_API_URL=http://localhost:4996`) + `npm run test:e2e:loja-virtual`. Antes de usar o Melhor Envio em produção, confira a integração com uma conta **sandbox** do Melhor Envio (a integração foi feita sobre a API v2 e testada com o simulador). Variável `ME_CONTATO`: e-mail de contato técnico enviado ao Melhor Envio.
 
+## Casa de shows e eventos (módulo "Casa de shows e eventos")
+
+Menu **Eventos** (permissão *Eventos*: Administrador e Gerente). Cada evento tem nome, início e fim previsto (horário de Brasília), **setor** (o local de estoque e de PDVs do evento, ex.: "Bar do Show"), depósito (de onde sai a carga e para onde volta a sobra), atrações, descrição, preço e link do ingresso (só informativos) e a opção de divulgar no site.
+
+- **Agenda:** próximos eventos, calendário do mês e encerrados/cancelados.
+- **Abrir / encerrar:** só um evento aberto por vez. Enquanto ele está aberto, **toda venda do setor** fica ligada ao evento: PDV, fechamento de comanda de pista e pedido. O PDV e a tela de Comandas mostram a faixa "Evento: ...". Para encerrar, não pode haver comanda aberta nem pedido em aberto no setor.
+- **Cancelar:** só evento agendado, com motivo (sai do site).
+- **Resumo do evento:** faturamento, ticket médio, canceladas, primeira e última venda, por operador, por PDV e por forma de pagamento.
+
+API: `GET/POST /api/eventos`, `GET/PUT /api/eventos/:id`, `POST /api/eventos/:id/abrir|encerrar|cancelar`, `GET /api/evento-em-andamento?location_id=`. Teste: `npm run test:e2e:eventos`.
+
 ## Financeiro (módulo "Financeiro")
 
 Liberado pelo Master por plano ou por empresa; acesso pela permissão **Financeiro** (perfis Administrador e Financeiro; dá para liberar a outros usuários em Usuários). Menu **Financeiro**, com as abas:

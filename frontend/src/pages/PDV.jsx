@@ -9,6 +9,7 @@ import { podeAcessar, telasDoUsuario } from '../utils/permissions';
 import PedidoForm, { ORIGENS, NOME_ORIGEM, PAGAMENTOS, vendaDoPedido } from '../components/PedidoForm.jsx';
 import { Field, Modal } from '../components/ui.jsx';
 import ClienteTelefone from '../components/ClienteTelefone.jsx';
+import FaixaEvento from '../components/FaixaEvento.jsx';
 import Cupom, { imprimirCupom as abrirImpressao, modoAutomatico, configDaVenda } from '../components/Cupom.jsx';
 import EscolherComplementos, { assinatura, precoComplementos, textoComplementos } from '../components/EscolherComplementos.jsx';
 
@@ -709,6 +710,7 @@ export default function PDV() {
           {terminals.map((t) => <option key={t.id} value={t.id}>{t.nome} — {t.location_nome}</option>)}
         </select>
         <span className="pdv-caixa-info">Caixa aberto às {dataHora(session.aberto_em).slice(-5)}</span>
+        <FaixaEvento locationId={terminal && terminal.location_id} />
         <div className="pdv-header-acoes">
           {podeSangria && <button onClick={() => setMovModalAberto(true)}>Sangria/Suprimento <kbd>F4</kbd></button>}
           {ultimaVendaId && <button onClick={() => imprimirCupom(ultimaVendaId)}>Reimprimir cupom <kbd>F9</kbd></button>}

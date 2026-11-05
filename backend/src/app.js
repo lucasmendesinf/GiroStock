@@ -25,6 +25,7 @@ const reportsRoutes = require('./routes/reports.routes');
 const ordersRoutes = require('./routes/orders.routes');
 const garcomRoutes = require('./routes/garcom.routes');
 const comissoesRoutes = require('./routes/comissoes.routes');
+const eventosRoutes = require('./routes/eventos.routes');
 const { soGarcom } = require('./middleware/garcomGuard');
 const customersRoutes = require('./routes/customers.routes');
 const masterSuporteRoutes = require('./routes/master.suporte.routes');
@@ -76,6 +77,7 @@ app.use('/api', authRequired, reportsRoutes);
 app.use('/api', authRequired, ordersRoutes);
 app.use('/api', authRequired, garcomRoutes);
 app.use('/api', authRequired, comissoesRoutes);
+app.use('/api', authRequired, eventosRoutes);
 app.use('/api', authRequired, customersRoutes);
 app.use('/api', authRequired, masterSuporteRoutes); // antes do masterRoutes: "encerrar suporte" precisa passar sem a area Master
 app.use('/api', authRequired, masterRoutes);

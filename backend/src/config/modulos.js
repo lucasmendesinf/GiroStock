@@ -38,9 +38,9 @@ const MODULOS = [
     areas: [],
   },
   {
-    chave: 'eventos', nome: 'Casa de shows e eventos', padrao: false, disponivel: false, requer: ['pdv'],
+    chave: 'eventos', nome: 'Casa de shows e eventos', padrao: false, disponivel: true, requer: ['pdv'],
     descricao: 'Agenda de eventos, PDVs e estoque do evento, faturamento e perdas por evento.',
-    areas: [],
+    areas: ['Eventos'],
   },
   {
     chave: 'loja_virtual', nome: 'Loja virtual', padrao: false, disponivel: true, requer: [],

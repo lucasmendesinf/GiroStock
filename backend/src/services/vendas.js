@@ -245,6 +245,9 @@ async function registrarVenda(client, user, dados) {
       valorRecebidoFinal, troco, subtotalVenda, desconto, total, numeroPedido, taxaEntrega, dados.comanda_id || null, taxaServico]
   );
   const saleId = sale.rows[0].id;
+  // Casa de shows: venda no setor de um evento aberto fica ligada ao evento (PDV, comanda de pista, pedido).
+  const evento = await client.query(`SELECT id FROM eventos WHERE tenant_id = $1 AND location_id = $2 AND status = 'aberto'`, [user.tenantId, locationId]);
+  if (evento.rows.length) await client.query(`UPDATE sales SET evento_id = $1 WHERE id = $2`, [evento.rows[0].id, saleId]);
   for (const p of pagamentosFinal) {
     await client.query(
       `INSERT INTO sale_payments (tenant_id, sale_id, forma, valor, valor_recebido, troco, comanda_pagamento_id, recebido_por, entra_no_caixa)

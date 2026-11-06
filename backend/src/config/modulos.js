@@ -48,6 +48,11 @@ const MODULOS = [
     areas: ['LojaVirtual'],
   },
   {
+    chave: 'nota_fiscal', nome: 'Nota fiscal (NFC-e)', padrao: false, disponivel: true, requer: ['pdv'],
+    descricao: 'Cupom fiscal eletrônico (NFC-e) emitido direto na SEFAZ, sem custo por nota: configuração fiscal por loja (certificado A1, CSC), ambiente de teste, perfis fiscais e "cupom fiscal ou só cupom" no PDV.',
+    areas: [],
+  },
+  {
     chave: 'financeiro', nome: 'Financeiro', padrao: false, disponivel: true, requer: [],
     descricao: 'Contas a pagar e a receber (com parcelas e duplicatas da nota), fluxo de caixa com as vendas e o prazo de cada forma de pagamento, resultado do mês e indicadores.',
     areas: ['Financeiro'],

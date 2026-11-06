@@ -17,3 +17,4 @@ lojaVirtual.iniciarVarreduraEnvios(); // loja virtual: acompanha as etiquetas do
 app.listen(port, () => {
   console.log(`GiroStock API rodando na porta ${port}`);
 });
+require('./services/fiscal').iniciarVarredura(); // nota fiscal: envia as NFC-e emitidas em contingencia quando a SEFAZ volta (a cada 2 min)

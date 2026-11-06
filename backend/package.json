@@ -40,7 +40,8 @@
     "me:simulador": "node scripts/melhorenvio-simulador.mjs",
     "test:e2e:loja-virtual": "node scripts/e2e-loja-virtual.mjs",
     "test:e2e:cardapio": "node scripts/e2e-cardapio.mjs",
-    "test:e2e:eventos": "node scripts/e2e-eventos.mjs"
+    "test:e2e:eventos": "node scripts/e2e-eventos.mjs",
+    "test:e2e:fiscal": "node scripts/e2e-fiscal.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

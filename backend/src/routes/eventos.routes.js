@@ -10,7 +10,6 @@ const { HttpError } = require('../utils/http');
 const { FUSO } = require('../utils/query');
 const eventos = require('../services/eventos');
 const estoqueEv = require('../services/eventosEstoque');
-const agenda = require('../services/agenda');
 
 const router = express.Router();
 const DATA = /^\d{4}-\d{2}-\d{2}$/;
@@ -37,8 +36,7 @@ const SELECT_EVENTO = `
          (SELECT COALESCE(SUM(s.total), 0) FROM sales s WHERE s.evento_id = e.id AND s.status = 'concluida') AS faturamento
   FROM eventos e JOIN locations l ON l.id = e.location_id LEFT JOIN locations d ON d.id = e.deposito_id
   LEFT JOIN users ua ON ua.id = e.aberto_por LEFT JOIN users ue ON ue.id = e.encerrado_por`;
-const baseUrl = (req) => (process.env.URL_PUBLICA || `${req.get('x-forwarded-proto') || req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
-const saida = (r) => ({ ...r, imagem_url: r.imagem_id ? `/api/loja/v1/imagens/${r.imagem_id}` : null, faturamento: Number(Number(r.faturamento || 0).toFixed(2)), preco_ingresso: r.preco_ingresso === null ? null : Number(r.preco_ingresso) });
+const saida = (r) => ({ ...r, popup_inicio: eventos.diaTexto(r.popup_inicio), popup_fim: eventos.diaTexto(r.popup_fim), imagem_url: r.imagem_id ? `/api/loja/v1/imagens/${r.imagem_id}` : null, faturamento: Number(Number(r.faturamento || 0).toFixed(2)), preco_ingresso: r.preco_ingresso === null ? null : Number(r.preco_ingresso) });
 
 async function eventoCompleto(tenantId, id) {
   const { rows } = await pool.query(`${SELECT_EVENTO} WHERE e.id = $1 AND e.tenant_id = $2`, [id, tenantId]);
@@ -61,7 +59,6 @@ router.get('/evento-em-andamento', requireModulo('eventos'), async (req, res) =>
 
 router.use('/eventos', requireModulo('eventos'), requireArea('Eventos'));
 router.use('/eventos-imagens', requireModulo('eventos'), requireArea('Eventos'));
-router.use('/eventos-agenda', requireModulo('eventos'), requireArea('Eventos'));
 
 // Foto do evento (JPG, PNG ou WebP ate 2 MB; a tela ja reduz). Mesmo armazenamento das fotos da loja virtual.
 router.post('/eventos-imagens', async (req, res) => {
@@ -73,29 +70,6 @@ router.post('/eventos-imagens', async (req, res) => {
   if (!mime) throw new HttpError(400, 'formato não suportado: use JPG, PNG ou WebP');
   const { rows } = await pool.query(`INSERT INTO lv_imagens (tenant_id, mime, dados, tamanho) VALUES ($1, $2, $3, $4) RETURNING id`, [req.user.tenantId, mime, buf, buf.length]);
   res.status(201).json({ id: rows[0].id, url: `/api/loja/v1/imagens/${rows[0].id}` });
-});
-
-// Agenda no site: chave publica, liga/desliga e o codigo para colar no site.
-async function respostaAgenda(req) {
-  const ag = await agenda.agendaDaEmpresa(pool, req.user.tenantId);
-  const base = baseUrl(req);
-  const publicados = await agenda.eventosPublicos(pool, req.user.tenantId, base, 50);
-  return {
-    chave: ag.chave, ativa: ag.ativa, eventos_no_site: publicados.length,
-    url_api: `${base}/api/agenda/v1/eventos?chave=${ag.chave}`,
-    codigo: `<div id="agenda-eventos"></div>\n<script src="${base}/agenda.js" data-chave="${ag.chave}" data-alvo="#agenda-eventos" defer></script>`,
-  };
-}
-router.get('/eventos-agenda', async (req, res) => { res.json(await respostaAgenda(req)); });
-router.put('/eventos-agenda', async (req, res) => {
-  await agenda.definirAtiva(pool, req.user.tenantId, !!(req.body && req.body.ativa));
-  await logAudit(pool, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'agenda_site', recurso: 'eventos_agenda', recursoId: null, detalhes: { ativa: !!(req.body && req.body.ativa) } });
-  res.json(await respostaAgenda(req));
-});
-router.post('/eventos-agenda/chave', async (req, res) => {
-  await agenda.trocarChave(pool, req.user.tenantId);
-  await logAudit(pool, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'agenda_site_nova_chave', recurso: 'eventos_agenda', recursoId: null, detalhes: {} });
-  res.json(await respostaAgenda(req));
 });
 
 // Agenda: ?status=agendado,aberto & de=AAAA-MM-DD & ate=AAAA-MM-DD (dias no horario de Brasilia)

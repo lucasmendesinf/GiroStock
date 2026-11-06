@@ -255,9 +255,9 @@ Menu **Eventos** (permissão *Eventos*: Administrador e Gerente). Cada evento te
   - Depois de encerrar, *Fazer a contagem* do que sobrou: a diferença para o sistema vira perda ("diferença na contagem") ou sobra, e o que sobrou volta ao depósito (opcional). O estoque do evento fica fechado.
   - Relatório produto a produto: enviado, vendido, perdas, contado, diferença, devolvido e quebra (quantidade e R$ a custo), com *Imprimir / PDF* e CSV.
 
-- **Agenda no site** (botão em Eventos): os eventos marcados *Divulgar no site* (com foto/banner, atrações, ingresso) aparecem no site da casa e somem sozinhos depois que acontecem.
-  - Qualquer site: colar o código `<div id="agenda-eventos"></div><script src="https://<sistema>/agenda.js" data-chave="ag_..." data-alvo="#agenda-eventos" defer></script>` (opções: `data-limite`, `data-tema`, `data-cor`, `data-estilo="nenhum"`).
-  - Integração própria: `GET /api/agenda/v1/eventos?chave=ag_...` (JSON público, CORS liberado). Exemplo em PHP, feito para o site da J&A: `docs/agenda-site/proximos-eventos.php`.
+- **No site da empresa** (site feito e hospedado pela Calutec; só para quem tem o sistema completo): os eventos marcados *Divulgar no site* (foto/banner, atrações, ingresso) aparecem na agenda do site e somem sozinhos depois que acontecem. Com *Mostrar o banner como pop-up*, quem entra no site vê o banner (uma vez por visita) no período escolhido (padrão: de hoje até o dia do evento), com o botão "Ver a agenda".
+  - A chave da agenda fica no **Master** (ficha da empresa → *Eventos · agenda no site*); o cliente não vê código.
+  - O site busca `GET /api/agenda/v1/eventos?chave=ag_...` (eventos + pop-up do dia; JSON público). Em PHP: `docs/agenda-site/proximos-eventos.php` (feito para o site da J&A: lista no quadro "Próximos Eventos" e pop-up).
 
 API: `GET/POST /api/eventos`, `GET/PUT /api/eventos/:id`, `POST /api/eventos/:id/abrir|encerrar|cancelar`, `GET /api/evento-em-andamento?location_id=`, `GET /api/eventos/:id/estoque`, `POST /api/eventos/:id/carga|perdas|fechar-estoque`. Teste: `npm run test:e2e:eventos`.
 

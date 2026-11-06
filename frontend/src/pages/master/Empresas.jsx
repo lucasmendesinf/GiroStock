@@ -7,6 +7,7 @@ import SenhaUnicaModal from './SenhaUnicaModal.jsx';
 import NovoUsuarioModal from './NovoUsuarioModal.jsx';
 import SuporteModal from './SuporteModal.jsx';
 import LojaEndereco from './LojaEndereco.jsx';
+import AgendaSite from './AgendaSite.jsx';
 import { ListaModulos, alternarModulo, resumoModulos, useCatalogoModulos, usePlanos } from './Modulos.jsx';
 
 const NOME_LIMITE = { lojas: 'Lojas', usuarios: 'Usuários', pdvs: 'PDVs' };
@@ -181,6 +182,7 @@ export default function Empresas() {
             </div>
 
             <LojaEndereco key={ficha.id} empresaId={ficha.id} />
+            <AgendaSite key={`ag-${ficha.id}`} empresaId={ficha.id} />
 
             <div className="cl-linha-btn" style={{ justifyContent: 'flex-start', marginTop: 18, flexWrap: 'wrap' }}>
               <button type="button" className="btn-link" disabled={ficha.status !== 'ativa'} title={ficha.status !== 'ativa' ? 'Só empresas ativas recebem suporte' : ''} onClick={() => setSuporteDe(ficha)}>Entrar como suporte</button>

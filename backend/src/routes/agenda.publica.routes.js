@@ -1,5 +1,5 @@
 // Agenda publica de eventos (sem login): ?chave=ag_... (ou cabecalho x-agenda-chave). So eventos marcados "Divulgar no site",
-// agendados ou em andamento. Usada pelo widget /agenda.js e por sites com integracao propria (ex.: PHP no servidor do site).
+// agendados ou em andamento, e o pop-up do dia. Lida pelo site do cliente (ex.: PHP no servidor do site da J&A).
 const express = require('express');
 const pool = require('../db/pool');
 const { isUuid } = require('../utils/tenant');
@@ -18,7 +18,16 @@ router.use(async (req, res, next) => {
 });
 
 router.get('/eventos', async (req, res) => {
-  res.json({ empresa: req.agenda.empresa, eventos: await agenda.eventosPublicos(pool, req.agenda.tenantId, baseUrl(req), req.query.limite) });
+  const base = baseUrl(req);
+  res.json({
+    empresa: req.agenda.empresa,
+    eventos: await agenda.eventosPublicos(pool, req.agenda.tenantId, base, req.query.limite),
+    popup: await agenda.popupDoDia(pool, req.agenda.tenantId, base),
+  });
+});
+
+router.get('/popup', async (req, res) => {
+  res.json({ popup: await agenda.popupDoDia(pool, req.agenda.tenantId, baseUrl(req)) });
 });
 
 router.get('/eventos/:id', async (req, res) => {

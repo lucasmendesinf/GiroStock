@@ -60,14 +60,8 @@ app.get('/health', (req, res) => res.json({ status: 'ok' }));
 app.use('/api/auth', authRoutes);
 // API publica do site da loja virtual (chave da loja; sem login do sistema).
 app.use('/api/loja/v1', lojaPublicaRoutes);
-// Agenda publica de eventos (chave publica da empresa) e o widget que os sites colam (<script src=".../agenda.js">).
+// Agenda publica de eventos (chave publica da empresa): o site do cliente busca os eventos e o pop-up.
 app.use('/api/agenda/v1', agendaPublicaRoutes);
-app.get('/agenda.js', (req, res) => {
-  res.set('Content-Type', 'application/javascript; charset=utf-8');
-  res.set('Cross-Origin-Resource-Policy', 'cross-origin');
-  res.set('Cache-Control', 'public, max-age=300');
-  res.sendFile(path.join(__dirname, 'public', 'agenda.js'));
-});
 
 app.use('/api', authRequired, soGarcom, empresaRoutes);
 app.use('/api', authRequired, usersRoutes);

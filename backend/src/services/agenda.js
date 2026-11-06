@@ -1,5 +1,5 @@
-// Agenda publica de eventos (Fase 4): o site do cliente lista os eventos marcados "Divulgar no site", pela chave publica da
-// empresa (vai no codigo do site; so le eventos publicados). Usada pelo widget /agenda.js e por sites com integracao propria.
+// Agenda publica de eventos (Fase 4): o site do cliente (feito e hospedado pela Calutec) lista os eventos marcados "Divulgar
+// no site" e o pop-up do dia, pela chave publica da empresa (o Master a ve na ficha da empresa; so le eventos publicados).
 const crypto = require('crypto');
 const { HttpError } = require('../utils/http');
 const { dadosDaEmpresa, efetivos } = require('../utils/limites');
@@ -73,4 +73,15 @@ async function eventoPublico(db, tenantId, base, id) {
   return publico(base, rows[0]);
 }
 
-module.exports = { CHAVE_RE, agendaDaEmpresa, trocarChave, definirAtiva, empresaDaChave, eventosPublicos, eventoPublico };
+// Pop-up do dia: evento divulgado, com o pop-up ligado e o dia de hoje (Brasilia) no periodo escolhido; o mais proximo.
+async function popupDoDia(db, tenantId, base) {
+  const { rows } = await db.query(
+    `${SELECT_PUBLICO} AND e.popup_site AND e.imagem_id IS NOT NULL
+       AND (now() AT TIME ZONE '${FUSO}')::date BETWEEN COALESCE(e.popup_inicio, '-infinity') AND COALESCE(e.popup_fim, 'infinity')
+     ORDER BY e.inicio LIMIT 1`,
+    [tenantId]
+  );
+  return rows[0] ? publico(base, rows[0]) : null;
+}
+
+module.exports = { popupDoDia, CHAVE_RE, agendaDaEmpresa, trocarChave, definirAtiva, empresaDaChave, eventosPublicos, eventoPublico };

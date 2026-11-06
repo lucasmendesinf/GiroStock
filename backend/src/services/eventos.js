@@ -9,6 +9,8 @@ const STATUS = ['agendado', 'aberto', 'encerrado', 'cancelado'];
 const n2 = (v) => Number(Number(v || 0).toFixed(2));
 const texto = (v, max) => String(v === undefined || v === null ? '' : v).trim().slice(0, max);
 const DATA_HORA = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/; // hora local da empresa (sem fuso)
+// Coluna DATE: o driver devolve Date a meia-noite local -> "AAAA-MM-DD" (null fica null).
+const diaTexto = (d) => (d instanceof Date ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : d || null);
 
 // "2026-11-20T21:00" (horario de Brasilia) ou ISO com fuso -> texto que o Postgres le como timestamptz.
 async function dataHora(db, v, nome, { nulo = false } = {}) {
@@ -62,7 +64,28 @@ async function campos(db, user, b, atual = null) {
     const ok = (await db.query(`SELECT 1 FROM lv_imagens WHERE id = $1 AND tenant_id = $2`, [imagemId, user.tenantId])).rows.length;
     if (!ok) throw new HttpError(400, 'foto do evento não encontrada');
   }
+  // Pop-up do banner no site: precisa da foto e de estar divulgado; periodo padrao = de hoje ate o dia do evento.
+  const popup = !!v('popup_site');
+  let popupInicio = null;
+  let popupFim = null;
+  if (popup) {
+    if (!imagemId) throw new HttpError(400, 'para o pop-up, envie a foto/banner do evento');
+    if (!v('publicado_site')) throw new HttpError(400, 'para o pop-up, marque também "Divulgar no site"');
+    const dia = async (k, padrao) => {
+      const x = b[k] === undefined && atual ? atual[k] : b[k];
+      if (x === null || x === undefined || x === '') return padrao;
+      const t = String(diaTexto(x)).slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(t)) throw new HttpError(400, 'datas do pop-up inválidas');
+      return t;
+    };
+    const hojeSP = (await db.query(`SELECT (now() AT TIME ZONE '${FUSO}')::date::text AS d`)).rows[0].d;
+    const diaEvento = (await db.query(`SELECT ($1::timestamptz AT TIME ZONE '${FUSO}')::date::text AS d`, [inicio])).rows[0].d;
+    popupInicio = await dia('popup_inicio', hojeSP);
+    popupFim = await dia('popup_fim', diaEvento);
+    if (popupFim < popupInicio) throw new HttpError(400, 'o pop-up deve terminar depois de começar');
+  }
   return {
+    popup_site: popup, popup_inicio: popupInicio, popup_fim: popupFim,
     imagem_id: imagemId, nome, descricao: texto(v('descricao'), 4000), atracoes: texto(v('atracoes'), 1000), inicio, fim, location_id: locationId, deposito_id: depositoId,
     preco_ingresso: b.preco_ingresso === undefined && atual ? atual.preco_ingresso : precoOpcional(b.preco_ingresso),
     link_ingresso: b.link_ingresso === undefined && atual ? atual.link_ingresso : linkOpcional(b.link_ingresso),
@@ -73,9 +96,11 @@ async function campos(db, user, b, atual = null) {
 async function criar(client, user, b) {
   const c = await campos(client, user, b);
   const { rows } = await client.query(
-    `INSERT INTO eventos (tenant_id, nome, descricao, atracoes, inicio, fim, location_id, deposito_id, preco_ingresso, link_ingresso, publicado_site, imagem_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
-    [user.tenantId, c.nome, c.descricao, c.atracoes, c.inicio, c.fim, c.location_id, c.deposito_id, c.preco_ingresso, c.link_ingresso, c.publicado_site, c.imagem_id]
+    `INSERT INTO eventos (tenant_id, nome, descricao, atracoes, inicio, fim, location_id, deposito_id, preco_ingresso, link_ingresso, publicado_site, imagem_id,
+                          popup_site, popup_inicio, popup_fim)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING *`,
+    [user.tenantId, c.nome, c.descricao, c.atracoes, c.inicio, c.fim, c.location_id, c.deposito_id, c.preco_ingresso, c.link_ingresso, c.publicado_site, c.imagem_id,
+      c.popup_site, c.popup_inicio, c.popup_fim]
   );
   return rows[0];
 }
@@ -93,8 +118,10 @@ async function editar(client, user, id, b) {
   const c = await campos(client, user, b, e);
   const { rows } = await client.query(
     `UPDATE eventos SET nome = $2, descricao = $3, atracoes = $4, inicio = $5, fim = $6, location_id = $7, deposito_id = $8, preco_ingresso = $9,
-            link_ingresso = $10, publicado_site = $11, imagem_id = $12, atualizado_em = now() WHERE id = $1 RETURNING *`,
-    [e.id, c.nome, c.descricao, c.atracoes, c.inicio, c.fim, c.location_id, c.deposito_id, c.preco_ingresso, c.link_ingresso, c.publicado_site, c.imagem_id]
+            link_ingresso = $10, publicado_site = $11, imagem_id = $12, popup_site = $13, popup_inicio = $14, popup_fim = $15, atualizado_em = now()
+     WHERE id = $1 RETURNING *`,
+    [e.id, c.nome, c.descricao, c.atracoes, c.inicio, c.fim, c.location_id, c.deposito_id, c.preco_ingresso, c.link_ingresso, c.publicado_site, c.imagem_id,
+      c.popup_site, c.popup_inicio, c.popup_fim]
   );
   return { antes: e, depois: rows[0] };
 }
@@ -144,7 +171,7 @@ async function cancelar(client, user, id, motivo) {
   const m = texto(motivo, 300);
   if (m.length < 3) throw new HttpError(400, 'informe o motivo do cancelamento');
   const { rows } = await client.query(
-    `UPDATE eventos SET status = 'cancelado', cancelado_em = now(), motivo_cancelamento = $2, publicado_site = false, atualizado_em = now()
+    `UPDATE eventos SET status = 'cancelado', cancelado_em = now(), motivo_cancelamento = $2, publicado_site = false, popup_site = false, atualizado_em = now()
      WHERE id = $1 RETURNING *`, [e.id, m]
   );
   return rows[0];
@@ -190,4 +217,4 @@ async function resumo(db, tenantId, eventoId) {
   };
 }
 
-module.exports = { STATUS, eventoDaEmpresa, criar, editar, abrir, encerrar, cancelar, pendencias, abertoNoLocal, resumo };
+module.exports = { diaTexto, STATUS, eventoDaEmpresa, criar, editar, abrir, encerrar, cancelar, pendencias, abertoNoLocal, resumo };

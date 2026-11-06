@@ -4,7 +4,6 @@ import { useConfirm, useToast } from '../context/UiContext.jsx';
 import { Field, Modal, Vazio } from '../components/ui.jsx';
 import { brl, dataHora, FORMA_PAGAMENTO, parseNumero } from '../utils/format';
 import EstoqueEvento from './eventos/EstoqueEvento.jsx';
-import AgendaSite from './eventos/AgendaSite.jsx';
 import { enviarImagem } from '../utils/imagem';
 
 // Casa de shows e eventos: agenda (lista e calendario), cadastro, abrir/encerrar/cancelar e o resumo de vendas do evento.
@@ -37,7 +36,6 @@ export default function Eventos() {
   const [locais, setLocais] = useState([]);
   const [form, setForm] = useState(null); // evento em edicao ({} = novo)
   const [abertoId, setAbertoId] = useState(null);
-  const [agenda, setAgenda] = useState(false);
   const carregar = useCallback(async () => {
     try { setLista(await api.get('/eventos')); } catch (err) { toast.erro(err); }
   }, [toast]);
@@ -51,10 +49,7 @@ export default function Eventos() {
     <div className="page">
       <div className="page-header">
         <h2>Eventos</h2>
-        <span className="lv-acoes">
-          <button type="button" className="btn-link" onClick={() => setAgenda(true)}>Agenda no site</button>
-          <button type="button" className="btn-primario" onClick={() => setForm({})}>+ Novo evento</button>
-        </span>
+        <button type="button" className="btn-primario" onClick={() => setForm({})}>+ Novo evento</button>
       </div>
       {emAndamento && (
         <button type="button" className="card ev-andamento" onClick={() => setAbertoId(emAndamento.id)}>
@@ -77,7 +72,6 @@ export default function Eventos() {
         </>
       )}
       {form && <FormEvento evento={form} locais={locais} onClose={() => setForm(null)} onSalvo={async (e) => { setForm(null); await carregar(); setAbertoId(e.id); }} />}
-      {agenda && <AgendaSite onClose={() => setAgenda(false)} />}
       {abertoId && <DetalheEvento id={abertoId} onClose={() => setAbertoId(null)} onEditar={(e) => { setAbertoId(null); setForm(e); }} onMudou={carregar} />}
     </div>
   );
@@ -103,7 +97,7 @@ function ListaEventos({ itens, vazio, onAbrir }) {
             <span className="ev-lado">
               <span className={`ped-pill ${COR_STATUS[e.status]}`}>{NOME_STATUS[e.status]}</span>
               {e.status === 'encerrado' && <b>{brl(e.faturamento)}</b>}
-              {e.publicado_site && e.status === 'agendado' && <small className="cl-sub">no site</small>}
+              {e.publicado_site && e.status !== 'encerrado' && e.status !== 'cancelado' && <small className="cl-sub">no site{e.popup_site ? ' · pop-up' : ''}</small>}
             </span>
           </button>
         );
@@ -159,6 +153,7 @@ function FormEvento({ evento, locais, onClose, onSalvo }) {
     preco_ingresso: evento.preco_ingresso === null || evento.preco_ingresso === undefined ? '' : String(evento.preco_ingresso).replace('.', ','),
     link_ingresso: evento.link_ingresso || '', publicado_site: !!evento.publicado_site,
     imagem_id: evento.imagem_id || null,
+    popup_site: !!evento.popup_site, popup_inicio: evento.popup_inicio || '', popup_fim: evento.popup_fim || '',
   });
   const [foto, setFoto] = useState(evento.imagem_url || null);
   const [enviandoFoto, setEnviandoFoto] = useState(false);
@@ -180,7 +175,7 @@ function FormEvento({ evento, locais, onClose, onSalvo }) {
     if (f.nome.trim().length < 3) return setErro('Informe o nome do evento.');
     if (!f.inicio) return setErro('Informe a data e a hora de início.');
     if (!f.location_id) return setErro('Escolha o setor do evento.');
-    const corpo = { ...f, fim: f.fim || null, deposito_id: f.deposito_id || null, preco_ingresso: f.preco_ingresso.trim() ? parseNumero(f.preco_ingresso) : null, link_ingresso: f.link_ingresso.trim() || null };
+    const corpo = { ...f, popup_inicio: f.popup_site ? f.popup_inicio || null : null, popup_fim: f.popup_site ? f.popup_fim || null : null, fim: f.fim || null, deposito_id: f.deposito_id || null, preco_ingresso: f.preco_ingresso.trim() ? parseNumero(f.preco_ingresso) : null, link_ingresso: f.link_ingresso.trim() || null };
     if (editando && evento.status === 'encerrado') { for (const k of ['nome', 'inicio', 'fim', 'location_id', 'deposito_id']) delete corpo[k]; }
     if (editando && evento.status === 'aberto') delete corpo.location_id;
     setSalvando(true);
@@ -223,11 +218,21 @@ function FormEvento({ evento, locais, onClose, onSalvo }) {
             <span className="cl-sub">Aparece no site. JPG, PNG ou WebP; a imagem é reduzida antes de enviar.</span>
             <span className="lv-acoes">
               <label className="lv-arquivo btn-link">{enviandoFoto ? 'Enviando...' : foto ? 'Trocar foto' : 'Enviar foto'}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={escolherFoto} disabled={enviandoFoto} /></label>
-              {foto && <button type="button" className="btn-link" style={{ color: 'var(--err)', background: 'none', border: 0 }} onClick={() => { setFoto(null); setF((x) => ({ ...x, imagem_id: null })); }}>Remover</button>}
+              {foto && <button type="button" className="btn-link" style={{ color: 'var(--err)', background: 'none', border: 0 }} onClick={() => { setFoto(null); setF((x) => ({ ...x, imagem_id: null, popup_site: false })); }}>Remover</button>}
             </span>
           </div>
         </div>
-        <label className="check"><input type="checkbox" checked={f.publicado_site} onChange={so('publicado_site')} /> Divulgar no site da casa</label>
+        <label className="check"><input type="checkbox" checked={f.publicado_site} onChange={(ev) => setF({ ...f, publicado_site: ev.target.checked, popup_site: ev.target.checked && f.popup_site })} /> Divulgar no site da casa</label>
+        <div className={`ev-popup ${f.popup_site ? 'on' : ''}`}>
+          <label className="check"><input type="checkbox" checked={f.popup_site} disabled={!f.publicado_site || !foto} onChange={so('popup_site')} /> Mostrar o banner como pop-up quando alguém entrar no site</label>
+          {(!f.publicado_site || !foto) && <span className="cl-sub">Para o pop-up, envie a foto/banner e marque “Divulgar no site da casa”.</span>}
+          {f.popup_site && (
+            <div className="form-grid">
+              <Field label="Aparece a partir de" hint="Vazio = a partir de hoje"><input type="date" value={f.popup_inicio} onChange={so('popup_inicio')} /></Field>
+              <Field label="Até" hint="Vazio = até o dia do evento"><input type="date" value={f.popup_fim} onChange={so('popup_fim')} /></Field>
+            </div>
+          )}
+        </div>
         {erro && <div className="es-erro">{erro}</div>}
         <div className="modal-actions">
           <button type="button" onClick={onClose}>Cancelar</button>
@@ -278,7 +283,7 @@ function DetalheEvento({ id, onClose, onEditar, onMudou }) {
           <div className="ev-texto">
             {e.atracoes && <p><b>Atrações:</b> {e.atracoes}</p>}
             {e.descricao && <p>{e.descricao}</p>}
-            <p className="cl-sub">{e.preco_ingresso !== null ? `Ingresso ${brl(e.preco_ingresso)}` : 'Ingresso: —'}{e.link_ingresso ? <> · <a href={e.link_ingresso} target="_blank" rel="noreferrer">link de venda</a></> : null} · {e.publicado_site ? 'divulgado no site' : 'fora do site'}{e.deposito_nome ? ` · depósito: ${e.deposito_nome}` : ''}</p>
+            <p className="cl-sub">{e.preco_ingresso !== null ? `Ingresso ${brl(e.preco_ingresso)}` : 'Ingresso: —'}{e.link_ingresso ? <> · <a href={e.link_ingresso} target="_blank" rel="noreferrer">link de venda</a></> : null} · {e.publicado_site ? `divulgado no site${e.popup_site ? ` · pop-up ${e.popup_inicio ? e.popup_inicio.split('-').reverse().join('/') : ''} a ${e.popup_fim ? e.popup_fim.split('-').reverse().join('/') : ''}` : ''}` : 'fora do site'}{e.deposito_nome ? ` · depósito: ${e.deposito_nome}` : ''}</p>
           </div>
         )}
         {e.status === 'aberto' && pend ? (

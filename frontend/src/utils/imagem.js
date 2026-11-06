@@ -29,11 +29,11 @@ export async function reduzirImagem(arquivo, max = 1200) {
   }
 }
 
-// Envia a foto (corpo binario) e devolve { id, url }.
-export async function enviarImagem(arquivo, max) {
+// Envia a foto (corpo binario) e devolve { id, url }. rota: '/api/loja-virtual/imagens' (loja) ou '/api/eventos-imagens' (eventos).
+export async function enviarImagem(arquivo, max, rota = '/api/loja-virtual/imagens') {
   const blob = await reduzirImagem(arquivo, max);
   const token = localStorage.getItem('girostock_token');
-  const res = await fetch('/api/loja-virtual/imagens', {
+  const res = await fetch(rota, {
     method: 'POST',
     headers: { 'Content-Type': blob.type || 'image/jpeg', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: blob,

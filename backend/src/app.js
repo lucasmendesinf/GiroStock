@@ -26,6 +26,7 @@ const ordersRoutes = require('./routes/orders.routes');
 const garcomRoutes = require('./routes/garcom.routes');
 const comissoesRoutes = require('./routes/comissoes.routes');
 const eventosRoutes = require('./routes/eventos.routes');
+const agendaPublicaRoutes = require('./routes/agenda.publica.routes');
 const { soGarcom } = require('./middleware/garcomGuard');
 const customersRoutes = require('./routes/customers.routes');
 const masterSuporteRoutes = require('./routes/master.suporte.routes');
@@ -50,6 +51,7 @@ app.use(cors());
 app.use('/api/webhooks', webhooksRoutes);
 // Fotos da loja virtual: corpo binario (a tela ja reduz a imagem); o limite real (2 MB) e conferido na rota.
 app.use('/api/loja-virtual/imagens', express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: '3mb' }));
+app.use('/api/eventos-imagens', express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: '3mb' }));
 app.use(express.json());
 app.use('/api', monitoramento.contarRequisicao);
 
@@ -58,6 +60,14 @@ app.get('/health', (req, res) => res.json({ status: 'ok' }));
 app.use('/api/auth', authRoutes);
 // API publica do site da loja virtual (chave da loja; sem login do sistema).
 app.use('/api/loja/v1', lojaPublicaRoutes);
+// Agenda publica de eventos (chave publica da empresa) e o widget que os sites colam (<script src=".../agenda.js">).
+app.use('/api/agenda/v1', agendaPublicaRoutes);
+app.get('/agenda.js', (req, res) => {
+  res.set('Content-Type', 'application/javascript; charset=utf-8');
+  res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.set('Cache-Control', 'public, max-age=300');
+  res.sendFile(path.join(__dirname, 'public', 'agenda.js'));
+});
 
 app.use('/api', authRequired, soGarcom, empresaRoutes);
 app.use('/api', authRequired, usersRoutes);

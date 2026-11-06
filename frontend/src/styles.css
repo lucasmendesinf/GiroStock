@@ -1792,3 +1792,9 @@ tr.cmd-fechando td { background: var(--warn-soft); }
 .ev-acoes-estoque button.btn-primario { background: var(--gold); color: var(--btn-text); border-color: var(--gold); text-transform: uppercase; }
 .ev-busca { width: 100%; flex: 0 0 auto; }
 .ev-acoes-estoque .toolbar-espaco { flex: 1; }
+.ev-foto-campo { display: flex; gap: 14px; align-items: center; }
+.ev-foto { width: 160px; height: 90px; flex: 0 0 auto; border-radius: 10px; overflow: hidden; border: 1px dashed var(--line); background: var(--panel-alt); display: grid; place-items: center; color: var(--muted); font-size: 12px; }
+.ev-foto img, .ev-det-foto { width: 100%; height: 100%; object-fit: cover; }
+.ev-det-foto { height: 180px; border-radius: 12px; }
+.ev-codigo { white-space: pre-wrap; word-break: break-all; background: var(--panel-alt); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 12px; margin: 0 0 8px; user-select: all; }
+.ev-agenda-status { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

@@ -4,6 +4,8 @@ import { useConfirm, useToast } from '../context/UiContext.jsx';
 import { Field, Modal, Vazio } from '../components/ui.jsx';
 import { brl, dataHora, FORMA_PAGAMENTO, parseNumero } from '../utils/format';
 import EstoqueEvento from './eventos/EstoqueEvento.jsx';
+import AgendaSite from './eventos/AgendaSite.jsx';
+import { enviarImagem } from '../utils/imagem';
 
 // Casa de shows e eventos: agenda (lista e calendario), cadastro, abrir/encerrar/cancelar e o resumo de vendas do evento.
 // Enquanto o evento esta aberto, toda venda do setor dele (PDV, comanda de pista, pedido) fica ligada ao evento.
@@ -35,6 +37,7 @@ export default function Eventos() {
   const [locais, setLocais] = useState([]);
   const [form, setForm] = useState(null); // evento em edicao ({} = novo)
   const [abertoId, setAbertoId] = useState(null);
+  const [agenda, setAgenda] = useState(false);
   const carregar = useCallback(async () => {
     try { setLista(await api.get('/eventos')); } catch (err) { toast.erro(err); }
   }, [toast]);
@@ -48,7 +51,10 @@ export default function Eventos() {
     <div className="page">
       <div className="page-header">
         <h2>Eventos</h2>
-        <button type="button" className="btn-primario" onClick={() => setForm({})}>+ Novo evento</button>
+        <span className="lv-acoes">
+          <button type="button" className="btn-link" onClick={() => setAgenda(true)}>Agenda no site</button>
+          <button type="button" className="btn-primario" onClick={() => setForm({})}>+ Novo evento</button>
+        </span>
       </div>
       {emAndamento && (
         <button type="button" className="card ev-andamento" onClick={() => setAbertoId(emAndamento.id)}>
@@ -71,6 +77,7 @@ export default function Eventos() {
         </>
       )}
       {form && <FormEvento evento={form} locais={locais} onClose={() => setForm(null)} onSalvo={async (e) => { setForm(null); await carregar(); setAbertoId(e.id); }} />}
+      {agenda && <AgendaSite onClose={() => setAgenda(false)} />}
       {abertoId && <DetalheEvento id={abertoId} onClose={() => setAbertoId(null)} onEditar={(e) => { setAbertoId(null); setForm(e); }} onMudou={carregar} />}
     </div>
   );
@@ -151,7 +158,17 @@ function FormEvento({ evento, locais, onClose, onSalvo }) {
     location_id: evento.location_id || '', deposito_id: evento.deposito_id || '', atracoes: evento.atracoes || '', descricao: evento.descricao || '',
     preco_ingresso: evento.preco_ingresso === null || evento.preco_ingresso === undefined ? '' : String(evento.preco_ingresso).replace('.', ','),
     link_ingresso: evento.link_ingresso || '', publicado_site: !!evento.publicado_site,
+    imagem_id: evento.imagem_id || null,
   });
+  const [foto, setFoto] = useState(evento.imagem_url || null);
+  const [enviandoFoto, setEnviandoFoto] = useState(false);
+  async function escolherFoto(ev) {
+    const arq = ev.target.files && ev.target.files[0];
+    ev.target.value = '';
+    if (!arq) return;
+    setEnviandoFoto(true);
+    try { const r = await enviarImagem(arq, 1400, '/api/eventos-imagens'); setF((x) => ({ ...x, imagem_id: r.id })); setFoto(r.url); } catch (err) { toast.erro(err); } finally { setEnviandoFoto(false); }
+  }
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
   const travado = editando && evento.status !== 'agendado';
@@ -199,6 +216,17 @@ function FormEvento({ evento, locais, onClose, onSalvo }) {
           <Field label="Preço do ingresso (R$)" hint="Só informativo"><input inputMode="decimal" value={f.preco_ingresso} onChange={so('preco_ingresso')} placeholder="0,00" /></Field>
           <Field label="Link de venda do ingresso"><input value={f.link_ingresso} onChange={so('link_ingresso')} placeholder="https://..." /></Field>
         </div>
+        <div className="ev-foto-campo">
+          <div className="ev-foto">{foto ? <img src={foto} alt="" /> : <span>sem foto</span>}</div>
+          <div className="form-stack" style={{ gap: 6 }}>
+            <b>Foto ou banner do evento</b>
+            <span className="cl-sub">Aparece no site. JPG, PNG ou WebP; a imagem é reduzida antes de enviar.</span>
+            <span className="lv-acoes">
+              <label className="lv-arquivo btn-link">{enviandoFoto ? 'Enviando...' : foto ? 'Trocar foto' : 'Enviar foto'}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={escolherFoto} disabled={enviandoFoto} /></label>
+              {foto && <button type="button" className="btn-link" style={{ color: 'var(--err)', background: 'none', border: 0 }} onClick={() => { setFoto(null); setF((x) => ({ ...x, imagem_id: null })); }}>Remover</button>}
+            </span>
+          </div>
+        </div>
         <label className="check"><input type="checkbox" checked={f.publicado_site} onChange={so('publicado_site')} /> Divulgar no site da casa</label>
         {erro && <div className="es-erro">{erro}</div>}
         <div className="modal-actions">
@@ -245,6 +273,7 @@ function DetalheEvento({ id, onClose, onEditar, onMudou }) {
           {e.encerrado_em && <span className="cl-sub">· encerrado {dataHora(e.encerrado_em)}{e.encerrado_por_nome ? ` por ${e.encerrado_por_nome}` : ''}</span>}
           {e.status === 'cancelado' && <span className="cl-sub">motivo: {e.motivo_cancelamento}</span>}
         </div>
+        {e.imagem_url && <img className="ev-det-foto" src={e.imagem_url} alt="" />}
         {(e.atracoes || e.descricao) && (
           <div className="ev-texto">
             {e.atracoes && <p><b>Atrações:</b> {e.atracoes}</p>}

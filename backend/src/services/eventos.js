@@ -57,8 +57,13 @@ async function campos(db, user, b, atual = null) {
     if (depositoId === locationId) throw new HttpError(400, 'o depósito deve ser diferente do setor do evento');
     await getOwnedLocation(db, depositoId, user.tenantId);
   }
+  let imagemId = b.imagem_id === undefined && atual ? atual.imagem_id : b.imagem_id || null;
+  if (imagemId && b.imagem_id !== undefined) {
+    const ok = (await db.query(`SELECT 1 FROM lv_imagens WHERE id = $1 AND tenant_id = $2`, [imagemId, user.tenantId])).rows.length;
+    if (!ok) throw new HttpError(400, 'foto do evento não encontrada');
+  }
   return {
-    nome, descricao: texto(v('descricao'), 4000), atracoes: texto(v('atracoes'), 1000), inicio, fim, location_id: locationId, deposito_id: depositoId,
+    imagem_id: imagemId, nome, descricao: texto(v('descricao'), 4000), atracoes: texto(v('atracoes'), 1000), inicio, fim, location_id: locationId, deposito_id: depositoId,
     preco_ingresso: b.preco_ingresso === undefined && atual ? atual.preco_ingresso : precoOpcional(b.preco_ingresso),
     link_ingresso: b.link_ingresso === undefined && atual ? atual.link_ingresso : linkOpcional(b.link_ingresso),
     publicado_site: !!v('publicado_site'),
@@ -68,9 +73,9 @@ async function campos(db, user, b, atual = null) {
 async function criar(client, user, b) {
   const c = await campos(client, user, b);
   const { rows } = await client.query(
-    `INSERT INTO eventos (tenant_id, nome, descricao, atracoes, inicio, fim, location_id, deposito_id, preco_ingresso, link_ingresso, publicado_site)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
-    [user.tenantId, c.nome, c.descricao, c.atracoes, c.inicio, c.fim, c.location_id, c.deposito_id, c.preco_ingresso, c.link_ingresso, c.publicado_site]
+    `INSERT INTO eventos (tenant_id, nome, descricao, atracoes, inicio, fim, location_id, deposito_id, preco_ingresso, link_ingresso, publicado_site, imagem_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
+    [user.tenantId, c.nome, c.descricao, c.atracoes, c.inicio, c.fim, c.location_id, c.deposito_id, c.preco_ingresso, c.link_ingresso, c.publicado_site, c.imagem_id]
   );
   return rows[0];
 }
@@ -88,8 +93,8 @@ async function editar(client, user, id, b) {
   const c = await campos(client, user, b, e);
   const { rows } = await client.query(
     `UPDATE eventos SET nome = $2, descricao = $3, atracoes = $4, inicio = $5, fim = $6, location_id = $7, deposito_id = $8, preco_ingresso = $9,
-            link_ingresso = $10, publicado_site = $11, atualizado_em = now() WHERE id = $1 RETURNING *`,
-    [e.id, c.nome, c.descricao, c.atracoes, c.inicio, c.fim, c.location_id, c.deposito_id, c.preco_ingresso, c.link_ingresso, c.publicado_site]
+            link_ingresso = $10, publicado_site = $11, imagem_id = $12, atualizado_em = now() WHERE id = $1 RETURNING *`,
+    [e.id, c.nome, c.descricao, c.atracoes, c.inicio, c.fim, c.location_id, c.deposito_id, c.preco_ingresso, c.link_ingresso, c.publicado_site, c.imagem_id]
   );
   return { antes: e, depois: rows[0] };
 }

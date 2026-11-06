@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../api/client';
 import { useToast } from '../../context/UiContext.jsx';
+import { useAuth } from '../../context/AuthContext.jsx';
+import { temModulo } from '../../utils/permissions';
 import { Vazio } from '../../components/ui.jsx';
 import { brl, qtd } from '../../utils/format';
 import { baixarCsv, numeroCsv } from '../../utils/csv';
@@ -23,6 +25,8 @@ const nomeArq = (base, query) => `${base}_${query.get('data_inicio') || 'inicio'
 
 // Vendas comparadas por loja, operador, canal, categoria, produto, forma, dia da semana, horario ou dia.
 export function AbaComparativos({ query }) {
+  const { user } = useAuth();
+  const grupos = temModulo(user, 'eventos') ? [...AGRUPAMENTOS, ['evento', 'Por evento']] : AGRUPAMENTOS;
   const toast = useToast();
   const [por, setPor] = useState('loja');
   const [d, setD] = useState(null);
@@ -43,13 +47,13 @@ export function AbaComparativos({ query }) {
   return (
     <div className="form-stack">
       <div className="es-chips" role="group" aria-label="Agrupar por">
-        {AGRUPAMENTOS.map(([id, n]) => <button key={id} type="button" className={`es-chip ${por === id ? 'on' : ''}`} aria-pressed={por === id} onClick={() => setPor(id)}>{n}</button>)}
+        {grupos.map(([id, n]) => <button key={id} type="button" className={`es-chip ${por === id ? 'on' : ''}`} aria-pressed={por === id} onClick={() => setPor(id)}>{n}</button>)}
       </div>
       <div className="card">
         {!d ? <p className="muted">Calculando…</p> : d.linhas.length === 0 ? <Vazio>Sem vendas no período.</Vazio> : (
           <>
             <div className="ped-head" style={{ marginBottom: 6 }}>
-              <h3 style={{ margin: 0 }}>{AGRUPAMENTOS.find((a) => a[0] === por)[1]} · {brl(d.total)}</h3>
+              <h3 style={{ margin: 0 }}>{grupos.find((a) => a[0] === por)[1]} · {brl(d.total)}</h3>
               <button type="button" className="btn-link" onClick={exportar}>Exportar CSV</button>
             </div>
             {porItem && <p className="form-hint" style={{ marginTop: 0 }}>Valor dos itens, antes do desconto dado na venda inteira.</p>}
@@ -60,7 +64,7 @@ export function AbaComparativos({ query }) {
               <table className="tabela-cartoes rel-comp">
                 <thead>
                   <tr>
-                    <th>{AGRUPAMENTOS.find((a) => a[0] === por)[1].replace('Por ', '').replace(/^./, (c) => c.toUpperCase())}</th>
+                    <th>{grupos.find((a) => a[0] === por)[1].replace('Por ', '').replace(/^./, (c) => c.toUpperCase())}</th>
                     <th className="num">Vendas</th><th className="num">{porItem ? 'Quantidade' : 'Itens'}</th><th className="num">Total</th><th>Participação</th>
                     {!porItem && <th className="num">Ticket médio</th>}<th className="num">Lucro bruto</th><th className="num">Margem</th>
                     {!porItem && <th className="num">Canceladas</th>}

@@ -1,6 +1,6 @@
 const express = require('express');
 const pool = require('../db/pool');
-const { requireArea } = require('../middleware/permissions');
+const { requireArea, requireModulo } = require('../middleware/permissions');
 const { filtroLocais } = require('../utils/access');
 const { filtroPeriodo, paginacao, FUSO } = require('../utils/query');
 const { HttpError } = require('../utils/http');
@@ -215,6 +215,8 @@ const AGRUPAR = {
   dia: { chave: `((s.criado_em AT TIME ZONE '${FUSO}')::date)::text`, nome: `((s.criado_em AT TIME ZONE '${FUSO}')::date)::text`, ordem: 'chave' },
   dia_semana: { chave: `EXTRACT(ISODOW FROM s.criado_em AT TIME ZONE '${FUSO}')::int::text`, nome: `EXTRACT(ISODOW FROM s.criado_em AT TIME ZONE '${FUSO}')::int::text`, ordem: 'chave' },
   hora: { chave: `lpad(EXTRACT(HOUR FROM s.criado_em AT TIME ZONE '${FUSO}')::int::text, 2, '0')`, nome: `lpad(EXTRACT(HOUR FROM s.criado_em AT TIME ZONE '${FUSO}')::int::text, 2, '0')`, ordem: 'chave' },
+  // casa de shows: so as vendas feitas durante um evento (fora de evento nao entram)
+  evento: { chave: 's.evento_id::text', nome: '(SELECT nome FROM eventos WHERE id = s.evento_id)', filtro: 's.evento_id IS NOT NULL', modulo: 'eventos' },
 };
 
 router.get('/reports/comparativo', requireArea('Relatorios'), async (req, res) => {
@@ -235,17 +237,19 @@ router.get('/reports/comparativo', requireArea('Relatorios'), async (req, res) =
   } else {
     const g = AGRUPAR[por];
     if (!g) throw new HttpError(400, 'agrupamento inválido');
+    if (g.modulo && req.user.modulos && req.user.modulos[g.modulo] === false) throw new HttpError(403, 'o módulo de eventos não faz parte do plano da sua empresa');
+    const soEvento = g.filtro ? ` AND ${g.filtro}` : '';
     const peso = g.pagamentos ? '(vp.valor / NULLIF(s.total, 0))' : '1';
     const de = g.pagamentos ? 'sales s JOIN v_sale_pagamentos vp ON vp.sale_id = s.id' : 'sales s';
     linhas = (await pool.query(
       `SELECT ${g.chave} AS chave, ${g.nome} AS nome, COUNT(DISTINCT s.id)::int AS vendas, SUM(${ITENS_DA_VENDA} * ${peso}) AS itens,
               SUM(s.total * ${peso}) AS total, SUM(s.desconto * ${peso}) AS descontos, SUM(${CUSTO_DA_VENDA} * ${peso}) AS custo
-       FROM ${de} WHERE ${where} GROUP BY 1, 2 ORDER BY ${g.ordem === 'chave' ? '1' : `SUM(s.total * ${peso}) DESC`}`, params
+       FROM ${de} WHERE ${where}${soEvento} GROUP BY 1, 2 ORDER BY ${g.ordem === 'chave' ? '1' : `SUM(s.total * ${peso}) DESC`}`, params
     )).rows;
     // cancelamentos no mesmo agrupamento
     const c = filtros(req, { incluirStatus: true });
     const canc = (await pool.query(
-      `SELECT ${g.chave} AS chave, COUNT(DISTINCT s.id)::int AS n, SUM(s.total * ${peso}) AS total FROM ${de} WHERE ${c.where} AND s.status = 'cancelada' GROUP BY 1`, c.params
+      `SELECT ${g.chave} AS chave, COUNT(DISTINCT s.id)::int AS n, SUM(s.total * ${peso}) AS total FROM ${de} WHERE ${c.where}${soEvento} AND s.status = 'cancelada' GROUP BY 1`, c.params
     )).rows;
     const porChave = Object.fromEntries(canc.map((r) => [r.chave, r]));
     linhas = linhas.map((l) => ({ ...l, canceladas: porChave[l.chave] ? porChave[l.chave].n : 0, total_cancelado: porChave[l.chave] ? n2(porChave[l.chave].total) : 0 }));
@@ -272,6 +276,60 @@ router.get('/reports/comparativo', requireArea('Relatorios'), async (req, res) =
       };
     }),
   });
+});
+
+// Casa de shows: os eventos do periodo (pelo dia de inicio) lado a lado: vendas, custo e margem, estoque enviado ao setor e
+// quebra/perdas (perdas lancadas + diferenca na contagem - sobras, a preco de custo), com a variacao para o evento anterior.
+router.get('/reports/eventos', requireArea('Relatorios'), requireModulo('eventos'), async (req, res) => {
+  const params = [req.user.tenantId];
+  let where = `e.tenant_id = $1 AND e.status IN ('aberto', 'encerrado')`;
+  const locais = filtroLocais(req.user, req.query.location_id);
+  if (locais) { params.push(locais); where += ` AND e.location_id = ANY($${params.length}::uuid[])`; }
+  where += filtroPeriodo('e.inicio', req.query, params);
+  const { rows } = await pool.query(
+    `SELECT e.id, e.nome, e.inicio, e.status, e.estoque_fechado_em, l.nome AS setor,
+            COALESCE(v.vendas, 0) AS vendas, COALESCE(v.total, 0) AS total, COALESCE(v.custo, 0) AS custo,
+            COALESCE(c.n, 0) AS canceladas, COALESCE(c.total, 0) AS total_cancelado,
+            COALESCE(m.enviado, 0) AS enviado, COALESCE(m.perdas, 0) AS perdas, COALESCE(m.sobras, 0) AS sobras
+     FROM eventos e JOIN locations l ON l.id = e.location_id
+     LEFT JOIN LATERAL (
+       SELECT COUNT(*)::int AS vendas, SUM(s.total) AS total, SUM(${CUSTO_DA_VENDA}) AS custo FROM sales s WHERE s.evento_id = e.id AND s.status = 'concluida'
+     ) v ON true
+     LEFT JOIN LATERAL (SELECT COUNT(*)::int AS n, SUM(s.total) AS total FROM sales s WHERE s.evento_id = e.id AND s.status = 'cancelada') c ON true
+     LEFT JOIN LATERAL (
+       SELECT SUM(sm.quantidade * COALESCE(sm.custo_unitario, p.preco_custo)) FILTER (WHERE sm.tipo = 'transferencia' AND sm.location_destino_id = e.location_id) AS enviado,
+              SUM(sm.quantidade * COALESCE(sm.custo_unitario, p.preco_custo)) FILTER (WHERE sm.tipo = 'saida' AND sm.perda_tipo IS NOT NULL) AS perdas,
+              SUM(sm.quantidade * COALESCE(sm.custo_unitario, p.preco_custo)) FILTER (WHERE sm.tipo = 'entrada' AND sm.sale_id IS NULL) AS sobras
+       FROM stock_movements sm JOIN products p ON p.id = sm.product_id WHERE sm.evento_id = e.id
+     ) m ON true
+     WHERE ${where} ORDER BY e.inicio`,
+    params
+  );
+  let anterior = null;
+  const linhas = rows.map((r) => {
+    const total = n2(r.total);
+    const custo = n2(r.custo);
+    const lucro = n2(total - custo);
+    const enviado = n2(r.enviado);
+    const quebra = n2(Number(r.perdas) - Number(r.sobras));
+    const l = {
+      id: r.id, nome: r.nome, inicio: r.inicio, status: r.status, setor: r.setor, contagem_feita: !!r.estoque_fechado_em,
+      vendas: r.vendas, total, ticket: r.vendas ? n2(total / r.vendas) : 0, custo, lucro, margem: total > 0 ? Number(((lucro / total) * 100).toFixed(1)) : 0,
+      canceladas: r.canceladas, total_cancelado: n2(r.total_cancelado),
+      enviado_custo: enviado, quebra, quebra_pct: enviado > 0 ? Number(((quebra / enviado) * 100).toFixed(1)) : null,
+      variacao_pct: anterior && anterior.total > 0 ? Number((((total - anterior.total) / anterior.total) * 100).toFixed(1)) : null,
+    };
+    anterior = l;
+    return l;
+  });
+  const soma = (k) => n2(linhas.reduce((t, l) => t + l[k], 0));
+  const totais = { eventos: linhas.length, vendas: linhas.reduce((t, l) => t + l.vendas, 0), total: soma('total'), custo: soma('custo'), lucro: soma('lucro'), quebra: soma('quebra'), enviado_custo: soma('enviado_custo') };
+  totais.ticket = totais.vendas ? n2(totais.total / totais.vendas) : 0;
+  totais.media_por_evento = linhas.length ? n2(totais.total / linhas.length) : 0;
+  totais.margem = totais.total > 0 ? Number(((totais.lucro / totais.total) * 100).toFixed(1)) : 0;
+  totais.quebra_pct = totais.enviado_custo > 0 ? Number(((totais.quebra / totais.enviado_custo) * 100).toFixed(1)) : null;
+  const melhor = linhas.reduce((m, l) => (!m || l.total > m.total ? l : m), null);
+  res.json({ totais, melhor: melhor ? { id: melhor.id, nome: melhor.nome, total: melhor.total } : null, linhas });
 });
 
 // Indicadores do periodo comparados com o periodo anterior de mesmo tamanho.

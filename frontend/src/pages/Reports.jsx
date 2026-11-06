@@ -7,6 +7,8 @@ import Cupom, { imprimirCupom, configDaVenda } from '../components/Cupom.jsx';
 import { brl, dataHora, isoLocal, pct, qtd, FORMA_PAGAMENTO } from '../utils/format';
 import { baixarCsv, numeroCsv } from '../utils/csv';
 import { AbaComparativos, AbaEstoque, AbaIndicadores } from './relatorios/Avancados.jsx';
+import AbaEventos from './relatorios/AbaEventos.jsx';
+import { temModulo } from '../utils/permissions';
 
 const LIMITE = 30;
 
@@ -24,7 +26,7 @@ function periodo(tipo) {
     default: return null;
   }
 }
-const ABAS = [['vendas', 'Vendas'], ['comparativos', 'Comparativos'], ['indicadores', 'Indicadores'], ['estoque', 'Estoque'], ['caixas', 'Fechamentos de caixa']];
+const ABAS = [['vendas', 'Vendas'], ['comparativos', 'Comparativos'], ['indicadores', 'Indicadores'], ['estoque', 'Estoque'], ['eventos', 'Eventos'], ['caixas', 'Fechamentos de caixa']];
 const PERIODOS = [['hoje', 'Hoje'], ['ontem', 'Ontem'], ['7dias', '7 dias'], ['mes', 'Este mês'], ['mes_passado', 'Mês passado'], ['personalizado', 'Período...']];
 
 // Nome do arquivo com o periodo filtrado, ex.: vendas_2026-10-01_a_2026-10-07.csv
@@ -36,6 +38,8 @@ function nomeCsv(base, query) {
 
 export default function Reports() {
   const toast = useToast();
+  const { user: usuario } = useAuth();
+  const abas = ABAS.filter(([id]) => id !== 'eventos' || temModulo(usuario, 'eventos'));
   const [aba, setAba] = useState('vendas');
   const [locations, setLocations] = useState([]);
   const [users, setUsers] = useState([]);
@@ -73,7 +77,7 @@ export default function Reports() {
       <div className="page-header">
         <h2>Relatórios</h2>
         <div className="segmentado rel-abas">
-          {ABAS.map(([id, nome]) => <button key={id} type="button" className={aba === id ? 'ativo' : ''} aria-pressed={aba === id} onClick={() => setAba(id)}>{nome}</button>)}
+          {abas.map(([id, nome]) => <button key={id} type="button" className={aba === id ? 'ativo' : ''} aria-pressed={aba === id} onClick={() => setAba(id)}>{nome}</button>)}
         </div>
       </div>
 
@@ -130,6 +134,7 @@ export default function Reports() {
       {aba === 'comparativos' && <AbaComparativos query={querySemSituacao} />}
       {aba === 'indicadores' && <AbaIndicadores query={querySemSituacao} />}
       {aba === 'estoque' && <AbaEstoque query={querySemSituacao} />}
+      {aba === 'eventos' && <AbaEventos query={querySemSituacao} />}
       {aba === 'caixas' && <AbaCaixas query={query} />}
 
       {vendaId && (

@@ -248,6 +248,23 @@ await api('PATCH', `/master/empresas/${E.id}`, { recursos: { pedidos: true, garc
 check('sem o módulo de eventos, a agenda pública some (403)', (await pubApi(`?chave=${nova.chave}`)).s === 403);
 await api('PATCH', `/master/empresas/${E.id}`, { recursos: { pedidos: true, garcom: true, eventos: true } }, MAS);
 
+console.log('\n# 10. Relatório por evento');
+const rel = await api('GET', '/reports/eventos?data_inicio=2026-12-01&data_fim=2026-12-31', null, E.token);
+const rEv1 = rel.j.linhas && rel.j.linhas.find((l) => l.id === ev1.j.id);
+const rEv2 = rel.j.linhas && rel.j.linhas.find((l) => l.id === ev2.id);
+check('relatório lista os eventos abertos/encerrados do período (cancelado fora)', rel.s === 200 && rEv1 && rEv2 && !rel.j.linhas.some((l) => l.id === ev3.id), rel.j);
+check('evento 1: faturamento, vendas, ticket, canceladas e margem', igual(rEv1.total, 100) && rEv1.vendas === 3 && igual(rEv1.ticket, 100 / 3) && rEv1.canceladas === 1 && rEv1.margem > 0, rEv1);
+check('evento 2: quebra = cortesia + falta na contagem − sobra, a custo (e % do enviado)', igual(rEv2.quebra, 6) && igual(rEv2.enviado_custo, 110) && rEv2.quebra_pct === 5.5 && rEv2.contagem_feita, rEv2);
+check('variação para o evento anterior', rEv1.variacao_pct === null && rEv2.variacao_pct === -40, [rEv1.variacao_pct, rEv2.variacao_pct]);
+check('totais e melhor evento', igual(rel.j.totais.total, rEv1.total + rEv2.total) && rel.j.totais.eventos === rel.j.linhas.length && rel.j.melhor.id === ev1.j.id, rel.j.totais);
+const comp = await api('GET', '/reports/comparativo?por=evento&data_inicio=2026-01-01&data_fim=2030-12-31', null, E.token);
+const somaEv = Number((await prod.query(`SELECT COALESCE(SUM(total), 0) AS t FROM sales WHERE tenant_id = $1 AND evento_id IS NOT NULL AND status = 'concluida'`, [E.id])).rows[0].t);
+check('comparativo "por evento": só vendas de evento, soma confere', comp.s === 200 && igual(comp.j.total, somaEv) && comp.j.linhas.some((l) => l.nome === 'Show de Sábado' && igual(l.total, 100)), comp.j);
+check('caixa (sem Relatórios) não vê o relatório (403)', (await api('GET', '/reports/eventos', null, CX.token)).s === 403);
+await api('PATCH', `/master/empresas/${E.id}`, { recursos: { pedidos: true, garcom: true, eventos: false } }, MAS);
+check('sem o módulo de eventos: relatório e agrupamento recusados (403)', (await api('GET', '/reports/eventos', null, E.token)).s === 403 && (await api('GET', '/reports/comparativo?por=evento', null, E.token)).s === 403);
+await api('PATCH', `/master/empresas/${E.id}`, { recursos: { pedidos: true, garcom: true, eventos: true } }, MAS);
+
 console.log(`\n${pass} ok, ${fail} falha(s)`);
 await prod.end();
 process.exit(fail ? 1 : 0);

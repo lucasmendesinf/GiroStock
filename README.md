@@ -248,6 +248,7 @@ Menu **Eventos** (permissão *Eventos*: Administrador e Gerente). Cada evento te
 - **Agenda:** próximos eventos, calendário do mês e encerrados/cancelados.
 - **Abrir / encerrar:** só um evento aberto por vez. Enquanto ele está aberto, **toda venda do setor** fica ligada ao evento: PDV, fechamento de comanda de pista e pedido. O PDV e a tela de Comandas mostram a faixa "Evento: ...". Para encerrar, não pode haver comanda aberta nem pedido em aberto no setor.
 - **Cancelar:** só evento agendado, com motivo (sai do site).
+- **Relatórios → Eventos:** os eventos do período lado a lado (faturamento, vendas, ticket médio, custo, margem, canceladas, estoque enviado ao setor e quebra em R$ e % do enviado), o melhor evento e a variação para o evento anterior, com Imprimir/PDF e CSV. Nos *Comparativos* há também o agrupamento **Por evento** (só as vendas feitas durante eventos).
 - **Resumo do evento:** faturamento, ticket médio, canceladas, primeira e última venda, por operador, por PDV e por forma de pagamento.
 - **Estoque do evento** (aba *Estoque do evento*): o setor funciona como estoque temporário do evento.
   - *Enviar carga* leva os produtos do depósito para o setor (antes ou durante o evento; durante, vira *reforço*).

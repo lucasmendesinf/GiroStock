@@ -1800,3 +1800,5 @@ tr.cmd-fechando td { background: var(--warn-soft); }
 .ev-agenda-status { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .ev-popup { display: grid; gap: 6px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 10px; }
 .ev-popup.on { border-style: solid; border-color: var(--gold-light); background: var(--accent-soft); }
+.rel-barra { height: 4px; border-radius: 4px; background: var(--line); margin-top: 6px; overflow: hidden; max-width: 260px; }
+.rel-barra i { display: block; height: 100%; background: var(--gold-light); }

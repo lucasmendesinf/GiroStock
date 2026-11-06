@@ -64,8 +64,8 @@ function normalizarSubdominio(v) {
   if (SUBDOMINIOS_RESERVADOS.includes(s)) throw new HttpError(400, `o subdomínio "${s}" é reservado`);
   return s;
 }
-// Sugestao de subdominio a partir do nome da empresa ("JA Conveniência" -> "ja-conveniencia").
-const sugerirSubdominio = (nome) => semAcento(nome).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'loja';
+// Sugestao de subdominio a partir do nome da empresa ("J&A Conveniência" -> "ja-conveniencia", "Bar do Zé's" -> "bar-do-zes").
+const sugerirSubdominio = (nome) => semAcento(nome).replace(/[&'’`´.]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'loja';
 
 function normalizarDominio(v) {
   const d = String(v || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/[/?#].*$/, '').replace(/:\d+$/, '').replace(/\.$/, '');

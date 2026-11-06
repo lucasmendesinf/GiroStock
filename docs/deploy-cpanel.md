@@ -96,3 +96,28 @@ Fluxo: você faz `git push` na `main` → o GitHub Actions (`.github/workflows/p
 - **Log:** `/home/calutecc/logs/deploy-girostock.log`. Erro em qualquer passo (ex.: migração) para ali e o app segue na versão anterior.
 - **Pausar o deploy automático:** desligue o Cron (Trabalhos Cron). Voltar versão: `git revert` na main e push.
 - **Atenção:** migrações rodam sozinhas a cada deploy; revise o que vai para a `main`.
+
+## Endereço das lojas: `nome-da-loja.girostock.calutec.com.br`
+
+Cada loja virtual (varejo ou cardápio de delivery) ganha sozinha um endereço próprio, com o nome da empresa:
+`ja-conveniencia.girostock.calutec.com.br`, `lanchonete-sao-joao.girostock.calutec.com.br`… O endereço é criado na hora em
+que a loja da empresa é aberta pela primeira vez (Loja virtual no painel) e pode ser trocado pelo Master (ficha da empresa →
+Loja virtual → subdomínio, ex.: só `ja`). Não é preciso mexer na hospedagem a cada cliente novo: isso é configurado **uma
+vez só**, com um subdomínio curinga.
+
+1. **Subdomínio curinga.** cPanel → **Domínios** → Criar domínio: `*.girostock.calutec.com.br`, com a **mesma raiz do
+   documento** do `girostock.calutec.com.br` (ex.: `/home/calutecc/girostock/public`). Assim o mesmo aplicativo Node atende
+   todas as lojas (o `.htaccess` do Passenger que o Setup Node.js App gravou nessa pasta vale para os dois).
+2. **DNS.** Se o DNS do `calutec.com.br` fica no próprio cPanel, o passo 1 já cria o registro `*.girostock` apontando para o
+   servidor (confira em **Zone Editor**). Se o DNS estiver em outro lugar (Registro.br, Cloudflare…), crie lá um registro
+   `A` para `*.girostock` com o mesmo IP do `girostock.calutec.com.br`.
+3. **Certificado (cadeado).** Em **SSL/TLS Status**, rode o AutoSSL e confira se `*.girostock.calutec.com.br` ficou com
+   certificado. O certificado curinga exige que o AutoSSL da hospedagem use Let's Encrypt com o DNS no próprio servidor;
+   se não aparecer, peça ao suporte da Hostmidia: *"preciso de certificado SSL curinga para *.girostock.calutec.com.br"*.
+4. **Variáveis do app** (Setup Node.js App): `LOJA_DOMINIO_BASE=girostock.calutec.com.br` e
+   `URL_PUBLICA=https://girostock.calutec.com.br`. Reinicie o app.
+5. **Conferir:** abra a Loja virtual de uma empresa → *Link da loja*: deve mostrar `https://<nome>.girostock.calutec.com.br`
+   (com *Copiar link*, *Enviar pelo WhatsApp* e o QR Code para imprimir). Abra o link no celular.
+
+Enquanto o curinga não estiver pronto, toda loja já funciona pelo link reserva, sem configurar nada:
+`https://girostock.calutec.com.br/loja/<nome>/`.

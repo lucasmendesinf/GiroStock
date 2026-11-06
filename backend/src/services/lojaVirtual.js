@@ -55,12 +55,12 @@ async function lojaPorChave(chave) {
 // O mesmo servidor atende o sistema e todas as lojas: a loja e escolhida pelo endereco acessado.
 // LOJA_DOMINIO_BASE: dominio da plataforma para os subdominios gratis (ex.: lojas.calutec.com.br -> joao.lojas.calutec.com.br).
 const dominioBase = () => String(process.env.LOJA_DOMINIO_BASE || '').trim().toLowerCase().replace(/^\*\./, '');
-const SUBDOMINIO_RE = /^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])?$/;
+const SUBDOMINIO_RE = /^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$/;
 const SUBDOMINIOS_RESERVADOS = ['www', 'api', 'admin', 'app', 'sistema', 'painel', 'mail', 'email', 'ftp', 'cpanel', 'webmail', 'loja', 'lojas', 'master', 'suporte'];
 
 function normalizarSubdominio(v) {
   const s = String(v || '').trim().toLowerCase();
-  if (!SUBDOMINIO_RE.test(s)) throw new HttpError(400, 'subdomínio inválido: de 3 a 40 letras, números ou hífen (sem acento nem espaço)');
+  if (!SUBDOMINIO_RE.test(s)) throw new HttpError(400, 'subdomínio inválido: de 2 a 40 letras, números ou hífen (sem acento nem espaço)');
   if (SUBDOMINIOS_RESERVADOS.includes(s)) throw new HttpError(400, `o subdomínio "${s}" é reservado`);
   return s;
 }

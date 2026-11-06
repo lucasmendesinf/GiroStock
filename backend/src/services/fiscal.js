@@ -248,6 +248,23 @@ async function notaPorId(db, tenantId, id) {
   return { ...r, valor: Number(r.valor), teste: r.ambiente === 'homologacao' };
 }
 
+// Dados da NFC-e para imprimir o DANFE junto do cupom (so nota autorizada ou em contingencia), com o QR Code pronto.
+async function notaParaCupom(db, tenantId, saleId) {
+  const n = (await db.query(
+    `SELECT n.*, f.razao_social, f.nome_fantasia, f.ie, f.logradouro, f.numero AS end_numero, f.bairro, f.municipio, f.uf
+     FROM notas_fiscais n JOIN fiscal_lojas f ON f.location_id = n.location_id
+     WHERE n.sale_id = $1 AND n.tenant_id = $2 AND n.situacao IN ('autorizada', 'contingencia') ORDER BY n.emitida_em DESC LIMIT 1`, [saleId, tenantId]
+  )).rows[0];
+  if (!n) return null;
+  const QRCode = require('qrcode');
+  return {
+    id: n.id, situacao: n.situacao, ambiente: n.ambiente, teste: n.ambiente === 'homologacao', numero: n.numero, serie: n.serie, chave: n.chave,
+    protocolo: n.protocolo, emitida_em: n.emitida_em, autorizada_em: n.autorizada_em, cpf: n.cpf, url_consulta: n.url_consulta,
+    qr_img: n.qrcode ? await QRCode.toDataURL(n.qrcode, { margin: 0, width: 220 }) : null,
+    emitente: { razao: n.razao_social, fantasia: n.nome_fantasia, cnpj: n.cnpj, ie: n.ie, endereco: `${n.logradouro}, ${n.end_numero} - ${n.bairro} - ${n.municipio}/${n.uf}` },
+  };
+}
+
 // Envia (ou reenvia) a nota: autorizada, rejeitada (motivo da SEFAZ), contingencia (sem conexao) ou erro (dados).
 async function transmitirNova(nota, c, dados, extra) {
   const cfg = configMotor(c);
@@ -381,5 +398,5 @@ function iniciarVarredura() {
 
 module.exports = {
   chamarMotor, cnpjValido, cpfValido, configDaLoja, publica, pendencias, salvarConfig, salvarCertificado, configMotor, emitirNFCe, reenviar, cancelar,
-  transmitirContingencia, varrerContingencia, iniciarVarredura, notaPorId, SELECT_NOTA, MODOS, T_PAG,
+  transmitirContingencia, varrerContingencia, iniciarVarredura, notaPorId, notaParaCupom, SELECT_NOTA, MODOS, T_PAG,
 };

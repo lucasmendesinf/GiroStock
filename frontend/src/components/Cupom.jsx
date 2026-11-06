@@ -93,6 +93,72 @@ export function CupomCliente({ venda, config, teste }) {
   );
 }
 
+const cnpjFmt = (c) => String(c || '').replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+const cpfFmt = (c) => String(c || '').replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
+const chaveFmt = (c) => String(c || '').replace(/(\d{4})(?=\d)/g, '$1 ');
+
+// DANFE NFC-e (cupom fiscal): layout do Manual do DANFE NFC-e com QR Code. Em homologacao sai "SEM VALOR FISCAL".
+export function CupomFiscal({ venda, config, teste }) {
+  const c = config.cliente;
+  const n = venda.nota_fiscal;
+  const e = n.emitente;
+  return (
+    <div className="cupom-doc" style={{ width: larguraDoc(c.largura_mm) }}>
+      {teste && <FaixaTeste />}
+      <div className="cupom-centro">
+        <strong>{e.fantasia || e.razao}</strong>
+        {e.fantasia && <div className="cupom-pequeno">{e.razao}</div>}
+        <div className="cupom-pequeno">CNPJ {cnpjFmt(e.cnpj)} · IE {e.ie}</div>
+        <div className="cupom-pequeno cupom-texto">{e.endereco}</div>
+        <div className="cupom-linha" />
+        <strong>DANFE NFC-e</strong>
+        <div className="cupom-pequeno">Documento Auxiliar da Nota Fiscal de Consumidor Eletrônica</div>
+        {n.teste && <div><strong>EMITIDA EM AMBIENTE DE HOMOLOGAÇÃO – SEM VALOR FISCAL</strong></div>}
+      </div>
+      <Pedido numero={venda.numero_pedido} tamanho={c.tamanho_pedido} />
+      <div className="cupom-linha" />
+      <div className="cupom-item cupom-pequeno"><b>Cód · Descrição · Qtd · Un · Vl unit · Vl total</b></div>
+      {venda.itens.map((i, k) => (
+        <div key={i.id} className="cupom-item">
+          <div>{String(k + 1).padStart(3, '0')} {i.codigo_interno ? `${i.codigo_interno} ` : ''}{i.product_nome}</div>
+          <div className="cupom-dir">{qtd(i.quantidade, i.unidade)} {i.unidade} x {brl(i.preco_unitario)} = {brl(i.subtotal)}</div>
+        </div>
+      ))}
+      <div className="cupom-linha" />
+      <div className="cupom-dir">Qtd. total de itens {venda.itens.length}</div>
+      <div className="cupom-dir">Valor total {brl(venda.subtotal)}</div>
+      {Number(venda.desconto) > 0 && <div className="cupom-dir">Desconto − {brl(venda.desconto)}</div>}
+      {Number(venda.total) - (Number(venda.subtotal) - Number(venda.desconto || 0)) > 0.004 && <div className="cupom-dir">Acréscimos + {brl(Number(venda.total) - (Number(venda.subtotal) - Number(venda.desconto || 0)))}</div>}
+      <div className="cupom-dir cupom-total">VALOR A PAGAR {brl(venda.total)}</div>
+      <div className="cupom-dir cupom-pequeno"><b>FORMA DE PAGAMENTO · VALOR PAGO</b></div>
+      {(venda.pagamentos && venda.pagamentos.length ? venda.pagamentos : [{ forma: venda.forma_pagamento, valor: venda.total }]).map((p, k) => (
+        <div key={k} className="cupom-dir">{FORMA_PAGAMENTO[p.forma] || p.forma} {brl(p.forma === 'dinheiro' && venda.valor_recebido ? venda.valor_recebido : p.valor)}</div>
+      ))}
+      {venda.troco !== null && venda.troco !== undefined && Number(venda.troco) > 0 && <div className="cupom-dir">Troco {brl(venda.troco)}</div>}
+      <div className="cupom-linha" />
+      <div className="cupom-centro cupom-pequeno">
+        <div>Consulte pela chave de acesso em</div>
+        <div className="cupom-texto">{n.url_consulta}</div>
+        <div><b>{chaveFmt(n.chave)}</b></div>
+      </div>
+      <div className="cupom-linha" />
+      <div className="cupom-centro cupom-pequeno">{n.cpf ? `CONSUMIDOR CPF ${cpfFmt(n.cpf)}` : 'CONSUMIDOR NÃO IDENTIFICADO'}</div>
+      <div className="cupom-linha" />
+      <div className="cupom-centro cupom-pequeno">
+        <div><b>NFC-e nº {String(n.numero).padStart(9, '0')} Série {String(n.serie).padStart(3, '0')} {dataHora(n.emitida_em)}</b></div>
+        {n.situacao === 'contingencia'
+          ? <div><strong>EMITIDA EM CONTINGÊNCIA</strong><br />Pendente de autorização</div>
+          : <div>Protocolo de autorização: {n.protocolo}<br />Data de autorização: {dataHora(n.autorizada_em)}</div>}
+      </div>
+      {n.qr_img && <div className="cupom-centro"><img className="cupom-qr" src={n.qr_img} alt="QR Code da NFC-e" /></div>}
+      {n.teste && <div className="cupom-centro"><strong>SEM VALOR FISCAL</strong></div>}
+      <div className="cupom-centro cupom-pequeno">Venda nº {venda.numero}{c.mostrar_operador ? ` · Operador: ${venda.operador_nome}` : ''}</div>
+      {c.rodape && <div className="cupom-centro cupom-texto">{c.rodape}</div>}
+      {teste && <FaixaTeste />}
+    </div>
+  );
+}
+
 // Comanda da cozinha: so o que precisa ser preparado, com o numero do pedido em destaque.
 export function ComandaCozinha({ venda, config, teste }) {
   const k = config.cozinha;
@@ -181,7 +247,13 @@ export default function Cupom({ venda }) {
   const vias = Math.max(1, Number(config.cliente.vias) || 1);
   const docs = [];
   for (const m of modos) {
-    if (m === 'cliente') for (let v = 0; v < vias; v += 1) docs.push(<CupomCliente key={`c${v}`} venda={venda} config={config} teste={teste} />);
+    if (m === 'cliente') {
+      for (let v = 0; v < vias; v += 1) {
+        docs.push(venda.nota_fiscal && venda.status !== 'cancelada'
+          ? <CupomFiscal key={`c${v}`} venda={venda} config={config} teste={teste} />
+          : <CupomCliente key={`c${v}`} venda={venda} config={config} teste={teste} />);
+      }
+    }
     if (m === 'cozinha') docs.push(<ComandaCozinha key="k" venda={venda} config={config} teste={teste} />);
     if (m === 'senha') docs.push(<SenhaCliente key="s" venda={venda} config={config} teste={teste} />);
   }

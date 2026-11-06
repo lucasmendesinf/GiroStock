@@ -121,3 +121,13 @@ vez só**, com um subdomínio curinga.
 
 Enquanto o curinga não estiver pronto, toda loja já funciona pelo link reserva, sem configurar nada:
 `https://girostock.calutec.com.br/loja/<nome>/`.
+
+## Nota fiscal (NFC-e): PHP no servidor
+
+O módulo de nota fiscal usa o PHP do servidor (linha de comando) para assinar e enviar as notas. Precisa de PHP 8.1+ com
+`curl dom json libxml mbstring openssl simplexml zlib`. Confira no Terminal do cPanel, dentro da pasta do sistema:
+
+    echo '{"acao":"diagnostico"}' | php backend/fiscal/motor.php
+
+Se o `php` padrão for antigo, use o do MultiPHP (ex.: `/opt/cpanel/ea-php83/root/usr/bin/php`) e informe esse caminho na
+variável `FISCAL_PHP` do aplicativo Node.js. Detalhes em `docs/nota-fiscal.md`.

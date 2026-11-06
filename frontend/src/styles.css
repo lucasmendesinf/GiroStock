@@ -729,6 +729,8 @@ kbd { display: inline-block; min-width: 18px; padding: 1px 5px; border-radius: 5
   .cupom-total { font-weight: 700; font-size: 13px; }
   .cupom-doc { page-break-after: always; break-after: page; }
   .cupom-doc:last-child { page-break-after: auto; break-after: auto; }
+  .cupom-pequeno { font-size: 9.5px; }
+  .cupom-qr { width: 32mm; height: 32mm; margin: 3px auto; display: block; image-rendering: pixelated; }
 }
 
 /* ---------- Tabelas, barras de ferramentas e componentes de cadastro ---------- */
@@ -1802,3 +1804,27 @@ tr.cmd-fechando td { background: var(--warn-soft); }
 .ev-popup.on { border-style: solid; border-color: var(--gold-light); background: var(--accent-soft); }
 .rel-barra { height: 4px; border-radius: 4px; background: var(--line); margin-top: 6px; overflow: hidden; max-width: 260px; }
 .rel-barra i { display: block; height: 100%; background: var(--gold-light); }
+
+/* ---------- Nota fiscal no PDV ---------- */
+.pdv-fiscal { margin: 4px 0 10px; display: grid; gap: 8px; }
+.pdv-fiscal-opcoes { grid-template-columns: 1fr 1fr; }
+.pdv-fiscal-info { margin: 0; font-size: 13px; }
+.pdv-nota { border-radius: 10px; padding: 10px 12px; margin: 10px 0; font-size: 14px; border: 1px solid var(--line); }
+.pdv-nota.ok { border-color: var(--ok); background: var(--ok-soft); }
+.pdv-nota.aviso { border-color: var(--warn); background: var(--warn-soft); }
+.pdv-nota.erro { border-color: var(--err); background: var(--err-soft); }
+.pdv-nota .btn-link { padding: 0; }
+
+/* ---------- Nota fiscal ---------- */
+.nf-loja { display: grid; gap: 10px; }
+.nf-loja h3 { margin: 0; }
+.nf-loja-topo { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
+.nf-selos { display: flex; gap: 6px; flex-wrap: wrap; }
+.nf-resumo, .nf-passos { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 13.5px; }
+.nf-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.nf-grade .nf-largo { grid-column: span 2; }
+@media (max-width: 520px) { .nf-grade .nf-largo { grid-column: auto; } }
+.nf-produtos input.nf-ncm { width: 110px; }
+.nf-produtos input.nf-cest { width: 90px; }
+.nf-produtos select { max-width: 280px; }
+.nf-produtos input.nf-falta { border-color: var(--err); }

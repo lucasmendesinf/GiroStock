@@ -7,7 +7,7 @@ import { Field, Modal } from './components/ui.jsx';
 import SegurancaModal from './components/DoisFatores.jsx';
 import { api } from './api/client';
 import { exitFullscreen } from './utils/fullscreen.js';
-import { podeAcessar, rotaInicial, telasDoUsuario, temModulo } from './utils/permissions.js';
+import { podeAcessar, podeAlgumaArea, rotaInicial, telasDoUsuario, temModulo } from './utils/permissions.js';
 import Login from './pages/Login.jsx';
 import Manutencao from './pages/Manutencao.jsx';
 import AvisoGlobal from './components/AvisoGlobal.jsx';
@@ -23,6 +23,7 @@ import Garcom from './pages/Garcom.jsx';
 import Comandas from './pages/Comandas.jsx';
 import Comissoes from './pages/Comissoes.jsx';
 import Eventos from './pages/Eventos.jsx';
+import NotaFiscal from './pages/NotaFiscal.jsx';
 import Clientes from './pages/Clientes.jsx';
 import Products from './pages/Products.jsx';
 import Users from './pages/Users.jsx';
@@ -36,12 +37,12 @@ import TrocaObrigatoria from './pages/TrocaObrigatoria.jsx';
 import ModoTesteModal from './components/ModoTesteModal.jsx';
 
 // Tela protegida: exige login e, se informada, acesso a area do perfil.
-function Private({ area, modulo, children }) {
+function Private({ area, algumaArea, modulo, children }) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
   // Troca obrigatoria de senha (usuario criado pelo Master ou com troca forcada): nada abre antes dela.
   if (user.deveTrocarSenha) return <TrocaObrigatoria />;
-  if (!podeAcessar(user, area) || (modulo && !temModulo(user, modulo))) return <Layout><SemAcesso /></Layout>;
+  if (!podeAcessar(user, area) || !podeAlgumaArea(user, algumaArea) || (modulo && !temModulo(user, modulo))) return <Layout><SemAcesso /></Layout>;
   return <Layout>{children}</Layout>;
 }
 
@@ -229,6 +230,7 @@ export default function App() {
       <Route path="/garcom/*" element={<Private area="Garcom"><Garcom /></Private>} />
       <Route path="/comissoes" element={<Private area="Comissoes" modulo="garcom"><Comissoes /></Private>} />
       <Route path="/eventos" element={<Private area="Eventos" modulo="eventos"><Eventos /></Private>} />
+      <Route path="/nota-fiscal" element={<Private algumaArea={['Configuracoes', 'Estoque', 'CancelarVendas']} modulo="nota_fiscal"><NotaFiscal /></Private>} />
       <Route path="/clientes" element={<Private area="Clientes"><Clientes /></Private>} />
       <Route path="/produtos" element={<Private area="Estoque"><Products /></Private>} />
       <Route path="/insumos" element={<Navigate to="/produtos" replace />} />

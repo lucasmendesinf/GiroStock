@@ -97,7 +97,8 @@ Cada cliente usa só os módulos (segmentos) que contratou. O Master define isso
 | Pedidos | mesa, retirada, entrega, WhatsApp, entregadores | PDV |
 | Clientes | base de clientes, segmentos e mensagens | — |
 | iFood e 99Food | pedidos das plataformas na tela de Pedidos | Pedidos |
-| Casa de shows e eventos *(em breve)* | eventos, PDVs e estoque do evento | PDV |
+| Casa de shows e eventos | eventos, PDVs e estoque do evento, agenda no site | PDV |
+| Nota fiscal (NFC-e) | cupom fiscal direto na SEFAZ (sem custo por nota), modo teste, contingência e cancelamento | PDV |
 | Loja virtual | site da loja ligado por API, produtos com fotos, cupons, entrega por bairro, Pix/cartão (Mercado Pago), pedidos com separação, envio e rastreio | — (cardápio digital usa a tela de Pedidos) |
 | Financeiro | contas a pagar/receber, fluxo de caixa, resultado do mês | Financeiro |
 
@@ -259,6 +260,15 @@ Menu **Eventos** (permissão *Eventos*: Administrador e Gerente). Cada evento te
 - **No site da empresa** (site feito e hospedado pela Calutec; só para quem tem o sistema completo): os eventos marcados *Divulgar no site* (foto/banner, atrações, ingresso) aparecem na agenda do site e somem sozinhos depois que acontecem. Com *Mostrar o banner como pop-up*, quem entra no site vê o banner (uma vez por visita) no período escolhido (padrão: de hoje até o dia do evento), com o botão "Ver a agenda".
   - A chave da agenda fica no **Master** (ficha da empresa → *Eventos · agenda no site*); o cliente não vê código.
   - O site busca `GET /api/agenda/v1/eventos?chave=ag_...` (eventos + pop-up do dia; JSON público). Em PHP: `docs/agenda-site/proximos-eventos.php` (feito para o site da J&A: lista no quadro "Próximos Eventos" e pop-up).
+
+## Nota fiscal (módulo "Nota fiscal (NFC-e)")
+
+Menu **Nota fiscal** (vem desligado; o Master liga por empresa). A NFC-e é emitida direto na SEFAZ pelo motor PHP
+(`backend/fiscal`, NFePHP), sem intermediário e sem custo por nota. Cada loja tem a sua configuração (CNPJ/IE, certificado
+A1, CSC, série) e escolhe **Teste (homologação)** ou **Produção**. No PDV, o caixa escolhe **Cupom fiscal (NFC-e)** ou
+**Só cupom** (ou a loja deixa sempre fiscal); o cupom impresso sai como DANFE NFC-e com QR Code. Sem conexão com a SEFAZ a
+nota sai em contingência e é enviada sozinha depois. Abas: *Notas emitidas* (XML, reenviar, cancelar), *Configuração da
+loja*, *Produtos (NCM)* e *Perfis fiscais*. Guia completo: `docs/nota-fiscal.md`.
 
 API: `GET/POST /api/eventos`, `GET/PUT /api/eventos/:id`, `POST /api/eventos/:id/abrir|encerrar|cancelar`, `GET /api/evento-em-andamento?location_id=`, `GET /api/eventos/:id/estoque`, `POST /api/eventos/:id/carga|perdas|fechar-estoque`. Teste: `npm run test:e2e:eventos`.
 

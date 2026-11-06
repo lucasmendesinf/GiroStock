@@ -235,7 +235,8 @@ router.get('/sales/:id', async (req, res) => {
   // Partes pagas (uma ou varias formas). Venda antiga sem partes: uma so, com o total.
   const pagamentos = (await pool.query(`SELECT forma, valor, entra_no_caixa FROM v_sale_pagamentos WHERE sale_id = $1 ORDER BY valor DESC, forma`, [v.id])).rows;
   const { cupom_config: cfgSalva, ...resto } = v;
-  res.json({ ...resto, pagamentos, cupom_config: configEfetiva(cfgSalva), pode_cancelar: v.status === 'concluida' && v.caixa_aberto && canCancelSales(req.user), itens: itens.rows });
+  const notaFiscal = await require('../services/fiscal').notaParaCupom(pool, req.user.tenantId, v.id).catch(() => null);
+  res.json({ ...resto, pagamentos, nota_fiscal: notaFiscal, cupom_config: configEfetiva(cfgSalva), pode_cancelar: v.status === 'concluida' && v.caixa_aberto && canCancelSales(req.user), itens: itens.rows });
 });
 
 module.exports = router;

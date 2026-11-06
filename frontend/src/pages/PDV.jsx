@@ -14,6 +14,20 @@ import Cupom, { imprimirCupom as abrirImpressao, modoAutomatico, configDaVenda }
 import EscolherComplementos, { assinatura, precoComplementos, textoComplementos } from '../components/EscolherComplementos.jsx';
 
 const TROCOS_RAPIDOS = [10, 20, 50, 100, 200];
+
+// Situacao da NFC-e na janela de venda concluida.
+function StatusNota({ nota, onTentar }) {
+  if (nota.situacao === 'emitindo') return <div className="pdv-nota info">🧾 Emitindo o cupom fiscal…</div>;
+  const n = nota.numero ? `NFC-e nº ${nota.numero}` : 'NFC-e';
+  if (nota.situacao === 'autorizada') return <div className="pdv-nota ok">✔ {n} autorizada{nota.teste ? ' · TESTE (sem valor fiscal)' : ''}</div>;
+  if (nota.situacao === 'contingencia') return <div className="pdv-nota aviso">⚠ {n} emitida em contingência (sem conexão com a SEFAZ). O sistema envia sozinho quando a conexão voltar; o cupom já pode ser entregue.</div>;
+  return (
+    <div className="pdv-nota erro">
+      ✖ {n} não autorizada: {nota.motivo || 'erro ao emitir'}
+      <div><button type="button" className="btn-link" onClick={onTentar}>Tentar de novo</button> · a venda está registrada; você também pode reenviar em Nota fiscal → Notas.</div>
+    </div>
+  );
+}
 const FORMAS = ['pix', 'cartao_credito', 'cartao_debito', 'dinheiro'];
 // "3*7891234567890" ou "0,350*7891234567890": quantidade antes do asterisco.
 const RE_QTD = /^(\d+(?:[.,]\d+)?)\s*\*\s*(.+)$/;
@@ -495,6 +509,34 @@ export default function PDV() {
   const [enviando, setEnviando] = useState(false);
   const recebidoRef = useRef(null);
 
+  // ---------- nota fiscal (NFC-e): "cupom fiscal" ou "so cupom" ----------
+  const usaFiscal = !!(user && user.modulos && user.modulos.nota_fiscal);
+  const [fiscalPdv, setFiscalPdv] = useState(null);
+  const localFiscal = terminal ? terminal.location_id : null;
+  useEffect(() => {
+    if (!usaFiscal || !localFiscal) { setFiscalPdv(null); return; }
+    api.get(`/fiscal/pdv?location_id=${localFiscal}`).then(setFiscalPdv).catch(() => setFiscalPdv(null));
+  }, [usaFiscal, localFiscal]);
+  const modoFiscal = fiscalPdv ? fiscalPdv.modo_pdv : 'desligado';
+  const [emitirFiscal, setEmitirFiscal] = useState(true);
+  const [cpfNota, setCpfNota] = useState('');
+  const [notaSucesso, setNotaSucesso] = useState(null); // { situacao: 'emitindo' | autorizada | contingencia | rejeitada | erro | 'falhou', ... }
+  function escolherFiscal(sim) {
+    setEmitirFiscal(sim);
+    try { localStorage.setItem('girostock_pdv_fiscal', sim ? 'sim' : 'nao'); } catch { /* sem armazenamento */ }
+  }
+  async function emitirNota(vendaId, cpf) {
+    setNotaSucesso({ situacao: 'emitindo' });
+    try {
+      const n = await api.post('/fiscal/nfce', { sale_id: vendaId, cpf: cpf || undefined });
+      setNotaSucesso(n);
+      return n;
+    } catch (err) {
+      setNotaSucesso({ situacao: 'falhou', motivo: err.message });
+      return null;
+    }
+  }
+
   const descontoNumero = parseNumero(descontoTexto || '0');
   const desconto = Number.isFinite(descontoNumero) && descontoNumero > 0
     ? Number((descontoTipo === 'percentual' ? subtotal * (descontoNumero / 100) : descontoNumero).toFixed(2))
@@ -503,7 +545,9 @@ export default function PDV() {
   const descontoInvalido = desconto >= subtotal && desconto > 0;
   const recebido = parseNumero(valorRecebido);
   const troco = formaPagamento === 'dinheiro' && Number.isFinite(recebido) ? recebido - total : null;
-  const podeConfirmar = !!formaPagamento && !descontoInvalido && !enviando
+  const cpfDigitos = cpfNota.replace(/\D/g, '');
+  const cpfInvalido = cpfDigitos.length > 0 && cpfDigitos.length !== 11;
+  const podeConfirmar = !!formaPagamento && !descontoInvalido && !enviando && !cpfInvalido
     && (formaPagamento !== 'dinheiro' || (Number.isFinite(recebido) && recebido >= total));
 
   function abrirPagamento() {
@@ -513,6 +557,10 @@ export default function PDV() {
     setValorRecebido('');
     setDescontoTexto('');
     setDescontoTipo('valor');
+    setCpfNota('');
+    let lembrado = true;
+    try { lembrado = localStorage.getItem('girostock_pdv_fiscal') !== 'nao'; } catch { /* sem armazenamento */ }
+    setEmitirFiscal(modoFiscal === 'sempre' ? true : lembrado);
     setPagamentoAberto(true);
     buscaRef.current?.blur();
   }
@@ -534,15 +582,21 @@ export default function PDV() {
       };
       if (formaPagamento === 'dinheiro') payload.valor_recebido = recebido;
       const venda = await api.post('/sales', payload);
+      const fiscal = modoFiscal !== 'desligado' && emitirFiscal;
+      const cpf = cpfNota.replace(/\D/g, '');
       setSucesso(venda);
       setSucessoCompleta(null);
+      setNotaSucesso(null);
       setUltimaVendaId(venda.id);
+      // Cupom fiscal: emite a NFC-e antes de imprimir (o cupom sai com chave e QR Code).
       // Dados completos (config do cupom da loja) para imprimir; imprime sozinho se a loja configurou.
-      api.get(`/sales/${venda.id}`).then((completa) => {
+      (async () => {
+        if (fiscal) await emitirNota(venda.id, cpf);
+        const completa = await api.get(`/sales/${venda.id}`);
         setSucessoCompleta(completa);
         const modo = modoAutomatico(completa);
         if (modo) abrirImpressao(setCupom, completa, modo, (m) => toast.sucesso(m));
-      }).catch(() => {});
+      })().catch(() => {});
       setCart([]);
       setPagamentoAberto(false);
     } catch (err) {
@@ -992,6 +1046,25 @@ export default function PDV() {
             </div>
           )}
 
+          {modoFiscal !== 'desligado' && (
+            <div className="pdv-fiscal">
+              {modoFiscal === 'perguntar' ? (
+                <div className="formas-pagamento pdv-fiscal-opcoes" role="radiogroup" aria-label="Tipo de cupom">
+                  <button type="button" role="radio" aria-checked={emitirFiscal} className={emitirFiscal ? 'ativo' : ''} onClick={() => escolherFiscal(true)}>🧾 Cupom fiscal (NFC-e)</button>
+                  <button type="button" role="radio" aria-checked={!emitirFiscal} className={!emitirFiscal ? 'ativo' : ''} onClick={() => escolherFiscal(false)}>Só cupom</button>
+                </div>
+              ) : <p className="muted pdv-fiscal-info">🧾 Esta venda sai com cupom fiscal (NFC-e).</p>}
+              {emitirFiscal && (
+                <Field label="CPF na nota (opcional)">
+                  <input inputMode="numeric" placeholder="000.000.000-00" maxLength={14} value={cpfNota} onChange={(e) => setCpfNota(e.target.value.replace(/[^\d.-]/g, ''))} />
+                </Field>
+              )}
+              {cpfInvalido && <p className="error">CPF incompleto: são 11 números.</p>}
+              {emitirFiscal && fiscalPdv && fiscalPdv.ambiente === 'homologacao' && <p className="muted pdv-fiscal-info">Modo de teste: a nota sai “sem valor fiscal”.</p>}
+              {emitirFiscal && fiscalPdv && !fiscalPdv.pronta && <p className="error">Nota fiscal ainda não configurada nesta loja ({(fiscalPdv.pendencias || []).join('; ')}). A venda é registrada e a nota pode ser emitida depois.</p>}
+            </div>
+          )}
+
           <div className="pagamento-resumo">
             {desconto > 0 && <div><span>Desconto</span><span>− {brl(desconto)}</span></div>}
             <div className="pagamento-total"><span>Total a pagar</span><strong>{brl(total)}</strong></div>
@@ -1020,6 +1093,10 @@ export default function PDV() {
             <div className="pagamento-total"><span>Total</span><strong>{brl(sucesso.total)}</strong></div>
             {sucesso.troco !== null && <div className="troco destaque"><span>Troco</span><strong>{brl(sucesso.troco)}</strong></div>}
           </div>
+          {notaSucesso && <StatusNota nota={notaSucesso} onTentar={() => emitirNota(sucesso.id, notaSucesso.cpf || cpfNota.replace(/\D/g, ''))} />}
+          {!notaSucesso && modoFiscal !== 'desligado' && (
+            <p className="muted">Saiu só o cupom. <button type="button" className="btn-link" onClick={() => emitirNota(sucesso.id, '')}>Emitir cupom fiscal (NFC-e) desta venda</button></p>
+          )}
           <div className="modal-actions">
             <button type="button" onClick={() => imprimirCupom(sucesso.id)}>Imprimir cupom <kbd>P</kbd></button>
             {sucessoCompleta && configDaVenda(sucessoCompleta).cozinha.ativo && (

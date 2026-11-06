@@ -9,6 +9,7 @@ export const TELAS = [
   { path: '/garcom', label: 'Garçom', area: 'Garcom', modulo: 'garcom' },
   { path: '/comissoes', label: 'Comissões', area: 'Comissoes', modulo: 'garcom' },
   { path: '/eventos', label: 'Eventos', area: 'Eventos', modulo: 'eventos' },
+  { path: '/nota-fiscal', label: 'Nota fiscal', area: null, algumaArea: ['Configuracoes', 'Estoque', 'CancelarVendas'], modulo: 'nota_fiscal', exigeModulo: true },
   { path: '/clientes', label: 'Clientes', area: 'Clientes' },
   { path: '/produtos', label: 'Produtos & Estoque', area: 'Estoque' },
   { path: '/fornecedores', label: 'Fornecedores', area: 'Estoque' },
@@ -30,8 +31,13 @@ export function podeAcessar(user, area) {
   return !!(user.areas && user.areas[area]);
 }
 
+// algumaArea: a tela aparece para quem tem qualquer uma delas. exigeModulo: modulo que vem desligado (precisa estar marcado na empresa).
+export function podeAlgumaArea(user, areas) {
+  return !areas || areas.some((a) => podeAcessar(user, a));
+}
 export function telasDoUsuario(user) {
-  return TELAS.filter((t) => podeAcessar(user, t.area) && (!t.requer || user[t.requer]) && (!t.modulo || temModulo(user, t.modulo)) && (!t.paraPerfis || t.paraPerfis.includes(user.perfil)));
+  return TELAS.filter((t) => podeAcessar(user, t.area) && podeAlgumaArea(user, t.algumaArea) && (!t.requer || user[t.requer])
+    && (!t.modulo || (t.exigeModulo ? !!(user.modulos && user.modulos[t.modulo]) : temModulo(user, t.modulo))) && (!t.paraPerfis || t.paraPerfis.includes(user.perfil)));
 }
 
 // Tela inicial apos o login: caixa vai direto ao PDV, estoque aos produtos, etc.

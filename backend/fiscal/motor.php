@@ -268,6 +268,11 @@ $acao = $entrada['acao'] ?? '';
 $c = $entrada['config'] ?? [];
 
 try {
+    // Confere o PHP do servidor: echo '{"acao":"diagnostico"}' | php motor.php
+    if ($acao === 'diagnostico') {
+        $faltam = array_values(array_filter(['curl', 'dom', 'json', 'libxml', 'mbstring', 'openssl', 'simplexml', 'zlib'], function ($e) { return !extension_loaded($e); }));
+        responder(['ok' => !$faltam && version_compare(PHP_VERSION, '8.1.0', '>='), 'php' => PHP_VERSION, 'faltam' => $faltam]);
+    }
     if ($acao === 'certificado') {
         $cert = Certificate::readPfx(base64_decode($entrada['pfx_b64'] ?? ''), (string) ($entrada['senha'] ?? ''));
         $ate = $cert->getValidTo();

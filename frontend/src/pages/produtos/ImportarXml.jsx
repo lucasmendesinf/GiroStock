@@ -52,7 +52,7 @@ function lerNfe(texto) {
     const qCom = Number(tag(prod, 'qCom'));
     const vProd = Number(tag(prod, 'vProd'));
     return {
-      cProd: tag(prod, 'cProd'), nome: tag(prod, 'xProd'), unidade: tag(prod, 'uCom'),
+      cProd: tag(prod, 'cProd'), nome: tag(prod, 'xProd'), unidade: tag(prod, 'uCom'), ncm: tag(prod, 'NCM'), cest: tag(prod, 'CEST'),
       eans: [eanValido(tag(prod, 'cEAN')), eanValido(tag(prod, 'cEANTrib'))].filter(Boolean),
       quantidade: qCom, custo: qCom > 0 ? Math.round((vProd / qCom) * 10000) / 10000 : 0,
     };
@@ -78,6 +78,7 @@ export default function ImportarXml({ products, suppliers, locations, categories
   const toast = useToast();
   const { user } = useAuth();
   const usaFinanceiro = temModulo(user, 'financeiro') && podeAcessar(user, 'Financeiro');
+  const usaNotaFiscal = !!(user && user.modulos && user.modulos.nota_fiscal);
   const [contasNota, setContasNota] = useState(null); // nota lancada no estoque: oferecer as contas a pagar
   const inputRef = useRef(null);
   const [nota, setNota] = useState(null);
@@ -200,6 +201,7 @@ export default function ImportarXml({ products, suppliers, locations, categories
       }
       // Itens que apontam para o mesmo produto viram uma linha so (soma das quantidades, custo medio).
       const porProduto = new Map();
+      const ncms = []; // NCM/CEST da nota de compra: preenchem os produtos que ainda nao tem (nota fiscal de venda)
       for (const l of lancaveis) {
         let productId = l.modo === 'vincular' ? l.produtoId : criados.current.produtos[l.chave];
         if (!productId) {
@@ -211,6 +213,7 @@ export default function ImportarXml({ products, suppliers, locations, categories
           productId = p.id;
           criados.current.produtos[l.chave] = p.id;
         }
+        if (/^\d{8}$/.test(l.ncm || '')) ncms.push({ product_id: productId, ncm: l.ncm, cest: l.cest || undefined });
         const q = qtdFinal(l);
         const c = custoFinal(l);
         const ja = porProduto.get(productId);
@@ -223,6 +226,7 @@ export default function ImportarXml({ products, suppliers, locations, categories
         location_id: loja, supplier_id: supplierId || null, documento_fiscal: nota.numero, itens: [...porProduto.values()],
       });
       lembrarLoja(loja);
+      if (usaNotaFiscal && ncms.length) await api.post('/fiscal/produtos/ncm-da-nota', { itens: ncms }).catch(() => {});
       toast.sucesso(`NF-e ${nota.numero} importada: ${r.itens} produto(s) (${novos.length} novo(s)), ${brl(r.valor_total)}.`);
       if (usaFinanceiro) setContasNota({ ...nota, supplierId: supplierId || null, valorEstoque: r.valor_total });
       setNota(null);

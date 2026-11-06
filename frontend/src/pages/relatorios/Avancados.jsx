@@ -135,6 +135,7 @@ export function AbaEstoque({ query }) {
   const toast = useToast();
   const [d, setD] = useState(null);
   const [ver, setVer] = useState('abc');
+  const [fornecedor, setFornecedor] = useState('');
   useEffect(() => {
     setD(null);
     const q = new URLSearchParams();
@@ -142,10 +143,30 @@ export function AbaEstoque({ query }) {
     api.get(`/reports/estoque?${q}`).then(setD).catch((err) => toast.erro(err));
   }, [query, toast]);
   if (!d) return <p className="muted">Calculando…</p>;
+  // Estoque baixo: filtro por fornecedor (para montar o pedido de cada um por fora)
+  const SEM = 'Sem fornecedor';
+  const fornecedores = [...new Set(d.abaixo_minimo.flatMap((x) => (x.fornecedores.length ? x.fornecedores : [SEM])))].sort((a, b) => a.localeCompare(b));
+  const baixos = d.abaixo_minimo.filter((x) => !fornecedor || (fornecedor === SEM ? !x.fornecedores.length : x.fornecedores.includes(fornecedor)));
+  function imprimirBaixos() {
+    const w = window.open('', '_blank', 'width=900,height=900');
+    if (!w) return toast.erro('Libere as janelas (pop-up) do navegador para imprimir');
+    const esc = (t) => String(t === null || t === undefined ? '' : t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Estoque baixo</title><style>
+      body{font:13px system-ui,sans-serif;margin:24px;color:#111} h1{font-size:20px;margin:0 0 4px} .sub{color:#555}
+      table{width:100%;border-collapse:collapse;margin-top:14px} td,th{border-bottom:1px solid #ccc;padding:6px 4px;text-align:left;vertical-align:top}
+      th{font-size:11px;text-transform:uppercase;color:#444} .n{text-align:right;white-space:nowrap} small{color:#666} @page{margin:14mm}</style></head><body>
+      <h1>Produtos com estoque baixo</h1>
+      <div class="sub">${esc(new Date().toLocaleString('pt-BR'))}${fornecedor ? ` · Fornecedor: ${esc(fornecedor)}` : ''} · ${baixos.length} item(ns)</div>
+      <table><tr><th>✔</th><th>Produto</th><th>Fornecedor</th><th>Loja</th><th class="n">Saldo</th><th class="n">Mínimo</th><th class="n">Falta</th></tr>
+      ${baixos.map((x) => `<tr><td>☐</td><td><b>${esc(x.nome)}</b><br><small>${esc(x.codigo_interno)} · EAN ${esc(x.barcode)}</small></td><td>${esc(x.fornecedores.join(', ') || '—')}</td><td>${esc(x.loja)}</td>
+        <td class="n">${esc(qtd(x.saldo, x.unidade))}</td><td class="n">${esc(qtd(x.estoque_minimo, x.unidade))}</td><td class="n"><b>${esc(qtd(x.falta, x.unidade))}</b></td></tr>`).join('')}
+      </table><script>window.print()</script></body></html>`);
+    w.document.close();
+  }
   function exportar() {
     if (ver === 'abc') baixarCsv(nomeArq('curva_abc', query), ['Classe', 'Produto', 'Código', 'Quantidade', 'Faturamento', 'Participação %', 'Acumulado %'], d.abc.map((x) => [x.classe, x.nome, x.codigo_interno, numeroCsv(x.quantidade), numeroCsv(x.faturamento), numeroCsv(x.participacao), numeroCsv(x.acumulado)]));
     if (ver === 'parados') baixarCsv(nomeArq('estoque_parado', query), ['Produto', 'Código', 'Loja', 'Saldo', 'Valor a custo', 'Última venda'], d.parados.map((x) => [x.nome, x.codigo_interno, x.loja, numeroCsv(x.saldo), numeroCsv(x.valor_parado), x.ultima_venda ? new Date(x.ultima_venda).toLocaleDateString('pt-BR') : 'nunca']));
-    if (ver === 'minimo') baixarCsv('abaixo_do_minimo.csv', ['Produto', 'Código', 'Loja', 'Saldo', 'Mínimo', 'Falta'], d.abaixo_minimo.map((x) => [x.nome, x.codigo_interno, x.loja, numeroCsv(x.saldo), numeroCsv(x.estoque_minimo), numeroCsv(x.falta)]));
+    if (ver === 'minimo') baixarCsv('estoque_baixo.csv', ['Produto', 'Código', 'Código de barras', 'Categoria', 'Fornecedor', 'Loja', 'Saldo', 'Mínimo', 'Falta'], baixos.map((x) => [x.nome, x.codigo_interno, x.barcode, x.categoria || '', x.fornecedores.join(', '), x.loja, numeroCsv(x.saldo), numeroCsv(x.estoque_minimo), numeroCsv(x.falta)]));
   }
   const corClasse = { A: 'ok', B: 'warn', C: '' };
   return (
@@ -171,7 +192,16 @@ export function AbaEstoque({ query }) {
           <div className="es-chips" role="group" aria-label="Lista" style={{ margin: 0 }}>
             {[['abc', 'Curva ABC'], ['parados', `Sem venda (${d.parados.length})`], ['minimo', `Abaixo do mínimo (${d.abaixo_minimo.length})`]].map(([id, n]) => <button key={id} type="button" className={`es-chip ${ver === id ? 'on' : ''}`} aria-pressed={ver === id} onClick={() => setVer(id)}>{n}</button>)}
           </div>
-          <button type="button" className="btn-link" onClick={exportar}>Exportar CSV</button>
+          <div className="lv-acoes-linha">
+            {ver === 'minimo' && d.abaixo_minimo.length > 0 && (
+              <select value={fornecedor} onChange={(e) => setFornecedor(e.target.value)} aria-label="Fornecedor">
+                <option value="">Todos os fornecedores</option>
+                {fornecedores.map((f) => <option key={f} value={f}>{f}</option>)}
+              </select>
+            )}
+            {ver === 'minimo' && baixos.length > 0 && <button type="button" className="btn-link" onClick={imprimirBaixos}>Imprimir / PDF</button>}
+            <button type="button" className="btn-link" onClick={exportar}>Exportar CSV</button>
+          </div>
         </div>
         {ver === 'abc' && (d.abc.length === 0 ? <Vazio>Sem vendas no período.</Vazio> : (
           <>
@@ -192,11 +222,11 @@ export function AbaEstoque({ query }) {
             </table>
           </div>
         ))}
-        {ver === 'minimo' && (d.abaixo_minimo.length === 0 ? <Vazio>Nenhum produto abaixo do estoque mínimo.</Vazio> : (
+        {ver === 'minimo' && (d.abaixo_minimo.length === 0 ? <Vazio>Nenhum produto abaixo do estoque mínimo (o mínimo de cada produto por loja fica em Produtos & Estoque → estoque do produto).</Vazio> : (
           <div className="tabela-wrap">
             <table className="tabela-cartoes">
-              <thead><tr><th>Produto</th><th>Loja</th><th className="num">Saldo</th><th className="num">Mínimo</th><th className="num">Falta</th></tr></thead>
-              <tbody>{d.abaixo_minimo.map((x) => <tr key={`${x.id}-${x.loja}`}><td><b>{x.nome}</b><div className="celula-sub">{x.codigo_interno}</div></td><td>{x.loja}</td><td className="num">{qtd(x.saldo, x.unidade)}</td><td className="num">{qtd(x.estoque_minimo, x.unidade)}</td><td className="num"><b style={{ color: 'var(--warn)' }}>{qtd(x.falta, x.unidade)}</b></td></tr>)}</tbody>
+              <thead><tr><th>Produto</th><th>Fornecedor</th><th>Loja</th><th className="num">Saldo</th><th className="num">Mínimo</th><th className="num">Falta</th></tr></thead>
+              <tbody>{baixos.map((x) => <tr key={`${x.id}-${x.loja}`}><td><b>{x.nome}</b><div className="celula-sub">{x.codigo_interno} · EAN {x.barcode}</div></td><td>{x.fornecedores.join(', ') || '—'}</td><td>{x.loja}</td><td className="num">{qtd(x.saldo, x.unidade)}</td><td className="num">{qtd(x.estoque_minimo, x.unidade)}</td><td className="num"><b style={{ color: 'var(--warn)' }}>{qtd(x.falta, x.unidade)}</b></td></tr>)}</tbody>
             </table>
           </div>
         ))}

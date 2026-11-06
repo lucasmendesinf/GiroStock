@@ -241,6 +241,26 @@ Pedidos do cardápio digital entram na tela **Pedidos** como canal "Loja virtual
 
 Documentação da API: [docs/API_LOJA_VIRTUAL.md](docs/API_LOJA_VIRTUAL.md). Variáveis novas no `.env`: `URL_PUBLICA`, `SMTP_*`, `LOJA_DOMINIO_BASE`, `LOJA_DNS_ALVO`, `LOJA_DNS_IP` (veja `.env.example`). Desenvolvimento do site: `cd loja && npm install && npm run build` (o backend serve `loja/dist`). Teste: `npm run mp:simulador` + `npm run me:simulador` (Melhor Envio, porta 4996; no `.env`: `ME_API_URL=http://localhost:4996`) + `npm run test:e2e:loja-virtual`. Antes de usar o Melhor Envio em produção, confira a integração com uma conta **sandbox** do Melhor Envio (a integração foi feita sobre a API v2 e testada com o simulador). Variável `ME_CONTATO`: e-mail de contato técnico enviado ao Melhor Envio.
 
+## Casa de shows e eventos (módulo "Casa de shows e eventos")
+
+Menu **Eventos** (permissão *Eventos*: Administrador e Gerente). Cada evento tem nome, início e fim previsto (horário de Brasília), **setor** (o local de estoque e de PDVs do evento, ex.: "Bar do Show"), depósito (de onde sai a carga e para onde volta a sobra), atrações, descrição, preço e link do ingresso (só informativos) e a opção de divulgar no site.
+
+- **Agenda:** próximos eventos, calendário do mês e encerrados/cancelados.
+- **Abrir / encerrar:** só um evento aberto por vez. Enquanto ele está aberto, **toda venda do setor** fica ligada ao evento: PDV, fechamento de comanda de pista e pedido. O PDV e a tela de Comandas mostram a faixa "Evento: ...". Para encerrar, não pode haver comanda aberta nem pedido em aberto no setor.
+- **Cancelar:** só evento agendado, com motivo (sai do site).
+- **Resumo do evento:** faturamento, ticket médio, canceladas, primeira e última venda, por operador, por PDV e por forma de pagamento.
+- **Estoque do evento** (aba *Estoque do evento*): o setor funciona como estoque temporário do evento.
+  - *Enviar carga* leva os produtos do depósito para o setor (antes ou durante o evento; durante, vira *reforço*).
+  - *Lançar perda* durante o evento: quebra, vencido, cortesia, consumo interno, furto/desvio ou outro.
+  - Depois de encerrar, *Fazer a contagem* do que sobrou: a diferença para o sistema vira perda ("diferença na contagem") ou sobra, e o que sobrou volta ao depósito (opcional). O estoque do evento fica fechado.
+  - Relatório produto a produto: enviado, vendido, perdas, contado, diferença, devolvido e quebra (quantidade e R$ a custo), com *Imprimir / PDF* e CSV.
+
+- **No site da empresa** (site feito e hospedado pela Calutec; só para quem tem o sistema completo): os eventos marcados *Divulgar no site* (foto/banner, atrações, ingresso) aparecem na agenda do site e somem sozinhos depois que acontecem. Com *Mostrar o banner como pop-up*, quem entra no site vê o banner (uma vez por visita) no período escolhido (padrão: de hoje até o dia do evento), com o botão "Ver a agenda".
+  - A chave da agenda fica no **Master** (ficha da empresa → *Eventos · agenda no site*); o cliente não vê código.
+  - O site busca `GET /api/agenda/v1/eventos?chave=ag_...` (eventos + pop-up do dia; JSON público). Em PHP: `docs/agenda-site/proximos-eventos.php` (feito para o site da J&A: lista no quadro "Próximos Eventos" e pop-up).
+
+API: `GET/POST /api/eventos`, `GET/PUT /api/eventos/:id`, `POST /api/eventos/:id/abrir|encerrar|cancelar`, `GET /api/evento-em-andamento?location_id=`, `GET /api/eventos/:id/estoque`, `POST /api/eventos/:id/carga|perdas|fechar-estoque`. Teste: `npm run test:e2e:eventos`.
+
 ## Financeiro (módulo "Financeiro")
 
 Liberado pelo Master por plano ou por empresa; acesso pela permissão **Financeiro** (perfis Administrador e Financeiro; dá para liberar a outros usuários em Usuários). Menu **Financeiro**, com as abas:

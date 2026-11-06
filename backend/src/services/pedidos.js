@@ -153,7 +153,7 @@ async function criarPedido(client, user, b, opcoes = {}) {
     const preco = l.preco_unitario !== undefined ? l.preco_unitario : Number((Number(mapa.get(l.product_id).preco_venda) + precoDosComplementos(l.complementos)).toFixed(2));
     // Observacao: itens com preparo (consomem insumos), com complementos ou combo; de plataforma, em qualquer item.
     const preparo = consumoDaLinha(comp, l).insumos.size > 0 || l.complementos.length > 0 || comp.combos.has(l.product_id);
-    const obs = (preparo || externo || opcoes.comanda || loja) && l.observacao ? l.observacao : null;
+    const obs = (preparo || externo || loja || opcoes.comanda) && l.observacao ? l.observacao : null;
     await client.query(
       `INSERT INTO order_items (order_id, product_id, quantidade, preco_unitario, subtotal, observacao, complementos, garcom_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [orderId, l.product_id, l.quantidade, preco, Number((preco * l.quantidade).toFixed(2)), obs, l.complementos.length ? JSON.stringify(l.complementos) : null, opcoes.comanda ? opcoes.comanda.garcomId || null : null]

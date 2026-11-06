@@ -58,9 +58,9 @@ async function registrarVenda(client, user, dados) {
   const taxaServico = Number(Number(dados.taxa_servico || 0).toFixed(2));
   const usaPagamentos = Array.isArray(dados.pagamentos) && dados.pagamentos.length > 0;
   if (!(descontoInformado >= 0)) throw new HttpError(400, 'desconto deve ser um valor em reais (0 ou mais)');
-  const semCaixa = !!dados.sem_caixa;
-  if (semCaixa && forma_pagamento !== 'online') throw new HttpError(400, 'venda sem caixa só para pedido pago online');
   if (!(taxaServico >= 0)) throw new HttpError(400, 'taxa de serviço inválida');
+  const semCaixa = !!dados.sem_caixa;
+  if (semCaixa && (usaPagamentos || forma_pagamento !== 'online')) throw new HttpError(400, 'venda sem caixa só para pedido pago online');
   if ((!terminal_id && !semCaixa) || !Array.isArray(itens) || itens.length === 0 || (!forma_pagamento && !usaPagamentos)) {
     throw new HttpError(400, 'terminal_id, itens (não vazio) e forma_pagamento são obrigatórios');
   }
@@ -193,7 +193,8 @@ async function registrarVenda(client, user, dados) {
     valorRecebidoFinal = recebido;
     troco = Number((recebido - total).toFixed(2));
   }
-  if (!usaPagamentos) pagamentosFinal = [{ forma: forma_pagamento, valor: total, valor_recebido: valorRecebidoFinal, troco, comanda_pagamento_id: null, recebido_por: null, entra_no_caixa: true }];
+  // venda paga no site (sem caixa): o valor nao entra em nenhum caixa
+  if (!usaPagamentos) pagamentosFinal = [{ forma: forma_pagamento, valor: total, valor_recebido: valorRecebidoFinal, troco, comanda_pagamento_id: null, recebido_por: null, entra_no_caixa: !semCaixa }];
 
   // Consumo total da venda (produtos com estoque proprio e insumos), validado contra o disponivel DA LOJA do terminal:
   // saldo menos o reservado por pedidos em aberto (a reserva do pedido que esta sendo finalizado vira baixa).
@@ -244,6 +245,9 @@ async function registrarVenda(client, user, dados) {
       valorRecebidoFinal, troco, subtotalVenda, desconto, total, numeroPedido, taxaEntrega, dados.comanda_id || null, taxaServico]
   );
   const saleId = sale.rows[0].id;
+  // Casa de shows: venda no setor de um evento aberto fica ligada ao evento (PDV, comanda de pista, pedido).
+  const evento = await client.query(`SELECT id FROM eventos WHERE tenant_id = $1 AND location_id = $2 AND status = 'aberto'`, [user.tenantId, locationId]);
+  if (evento.rows.length) await client.query(`UPDATE sales SET evento_id = $1 WHERE id = $2`, [evento.rows[0].id, saleId]);
   for (const p of pagamentosFinal) {
     await client.query(
       `INSERT INTO sale_payments (tenant_id, sale_id, forma, valor, valor_recebido, troco, comanda_pagamento_id, recebido_por, entra_no_caixa)

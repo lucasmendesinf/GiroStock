@@ -116,7 +116,7 @@ r2 = await edita(EST.token);
 check('revogar tudo: volta a 403 nas três', r2.produto === 403 && r2.fornecedor === 403 && r2.insumo === 403, r2);
 
 console.log('\n# 3. Migration preserva o que já existia');
-const sqlMig = fs.readFileSync(path.join(raiz, 'src/db/migrations/036_permissoes_edicao.sql'), 'utf8').split('\n').filter((l) => !l.startsWith('--')).join('\n').split(/;\s*\n/)[0];
+const sqlMig = fs.readFileSync(path.join(raiz, 'src/db/migrations/043_permissoes_edicao.sql'), 'utf8').split('\n').filter((l) => !l.startsWith('--')).join('\n').split(/;\s*\n/)[0];
 const escopo = (sql) => sql.replace('WHERE perfil::text NOT IN', `WHERE tenant_id = '${E.id}' AND perfil::text NOT IN`);
 check('o SQL da migration foi encontrado', /UPDATE users/.test(sqlMig), sqlMig.slice(0, 80));
 // usuários "antigos": criados antes da migration (sem os ajustes novos), um com ajuste previo e um com Estoque revogado

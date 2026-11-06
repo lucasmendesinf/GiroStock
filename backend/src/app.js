@@ -25,6 +25,8 @@ const reportsRoutes = require('./routes/reports.routes');
 const ordersRoutes = require('./routes/orders.routes');
 const garcomRoutes = require('./routes/garcom.routes');
 const comissoesRoutes = require('./routes/comissoes.routes');
+const eventosRoutes = require('./routes/eventos.routes');
+const agendaPublicaRoutes = require('./routes/agenda.publica.routes');
 const { soGarcom } = require('./middleware/garcomGuard');
 const customersRoutes = require('./routes/customers.routes');
 const masterSuporteRoutes = require('./routes/master.suporte.routes');
@@ -49,6 +51,7 @@ app.use(cors());
 app.use('/api/webhooks', webhooksRoutes);
 // Fotos da loja virtual: corpo binario (a tela ja reduz a imagem); o limite real (2 MB) e conferido na rota.
 app.use('/api/loja-virtual/imagens', express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: '3mb' }));
+app.use('/api/eventos-imagens', express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: '3mb' }));
 app.use(express.json());
 app.use('/api', monitoramento.contarRequisicao);
 
@@ -57,6 +60,8 @@ app.get('/health', (req, res) => res.json({ status: 'ok' }));
 app.use('/api/auth', authRoutes);
 // API publica do site da loja virtual (chave da loja; sem login do sistema).
 app.use('/api/loja/v1', lojaPublicaRoutes);
+// Agenda publica de eventos (chave publica da empresa): o site do cliente busca os eventos e o pop-up.
+app.use('/api/agenda/v1', agendaPublicaRoutes);
 
 app.use('/api', authRequired, soGarcom, empresaRoutes);
 app.use('/api', authRequired, usersRoutes);
@@ -76,6 +81,7 @@ app.use('/api', authRequired, reportsRoutes);
 app.use('/api', authRequired, ordersRoutes);
 app.use('/api', authRequired, garcomRoutes);
 app.use('/api', authRequired, comissoesRoutes);
+app.use('/api', authRequired, eventosRoutes);
 app.use('/api', authRequired, customersRoutes);
 app.use('/api', authRequired, masterSuporteRoutes); // antes do masterRoutes: "encerrar suporte" precisa passar sem a area Master
 app.use('/api', authRequired, masterRoutes);

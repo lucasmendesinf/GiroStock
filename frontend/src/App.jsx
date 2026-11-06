@@ -22,6 +22,7 @@ import Pedidos from './pages/Pedidos.jsx';
 import Garcom from './pages/Garcom.jsx';
 import Comandas from './pages/Comandas.jsx';
 import Comissoes from './pages/Comissoes.jsx';
+import Eventos from './pages/Eventos.jsx';
 import Clientes from './pages/Clientes.jsx';
 import Products from './pages/Products.jsx';
 import Users from './pages/Users.jsx';
@@ -227,6 +228,7 @@ export default function App() {
       <Route path="/comandas" element={<Private area="Vendas" modulo="garcom"><Comandas /></Private>} />
       <Route path="/garcom/*" element={<Private area="Garcom"><Garcom /></Private>} />
       <Route path="/comissoes" element={<Private area="Comissoes" modulo="garcom"><Comissoes /></Private>} />
+      <Route path="/eventos" element={<Private area="Eventos" modulo="eventos"><Eventos /></Private>} />
       <Route path="/clientes" element={<Private area="Clientes"><Clientes /></Private>} />
       <Route path="/produtos" element={<Private area="Estoque"><Products /></Private>} />
       <Route path="/insumos" element={<Navigate to="/produtos" replace />} />

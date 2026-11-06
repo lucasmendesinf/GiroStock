@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
+import FaixaEvento from '../components/FaixaEvento.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/UiContext.jsx';
 import { Field, Modal } from '../components/ui.jsx';
@@ -55,7 +56,7 @@ export default function Comandas() {
 
   return (
     <div className="page">
-      <div className="page-header"><h2>Comandas</h2></div>
+      <div className="page-header"><h2>Comandas</h2><FaixaEvento locationId={loja || null} /></div>
       <div className="ped-bar" role="tablist">
         <button type="button" role="tab" aria-selected={aba === 'comandas'} className={`btn-link ${aba === 'comandas' ? 'ativo' : ''}`} onClick={() => setAba('comandas')}>Comandas</button>
         <button type="button" role="tab" aria-selected={aba === 'prestacao'} className={`btn-link ${aba === 'prestacao' ? 'ativo' : ''}`} onClick={() => setAba('prestacao')}>Prestação de contas</button>

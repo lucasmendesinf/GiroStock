@@ -196,7 +196,9 @@ export default function Pedidos() {
         <div className="ped-its">{p.itens.map((i) => `${qtd(i.quantidade)}× ${i.product_nome}`).join(' · ')}</div>
         <div className="ped-r3">
           <span className="ped-tag">{destinoDoPedido(p)}</span>
-          {p.comanda_id ? <span className="ped-pill warn">Na comanda</span> : aguardandoPagamento(p) ? <span className="ped-pill warn">Aguardando pagamento</span> : <span className={`ped-pill ${p.pago ? 'ok' : 'warn'}`}>{p.pago ? 'Pago' : 'Receber'}</span>}
+          {p.comanda_id ? <span className="ped-pill warn">Na comanda</span>
+            : aguardandoPagamento(p) ? <span className="ped-pill warn">Aguardando pagamento</span>
+            : <span className={`ped-pill ${p.pago ? 'ok' : 'warn'}`}>{p.pago ? 'Pago' : 'Receber'}</span>}
           {aberto(p) && <span className="ped-tag">🔒 Reservado</span>}
           <span className="ped-tot">{brl(p.total)}</span>
         </div>

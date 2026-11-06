@@ -19,6 +19,7 @@ const dnsLoja = require('../services/dnsLoja');
 
 // Painel Master. Todas as rotas exigem a area Master e usam SEMPRE a producao (pool.producao), mesmo em modo teste.
 // Nada aqui le ou devolve vendas, pedidos, clientes ou produtos das empresas: o Master administra a plataforma.
+const agendaSite = require('../services/agenda');
 const router = express.Router();
 router.use('/master', requireArea('Master'));
 const db = pool.producao;
@@ -311,6 +312,33 @@ router.put('/master/empresas/:id/loja-virtual', async (req, res) => {
 });
 
 // Confere se os dominios proprios ja apontam para o servidor (consulta DNS publica).
+// ---------------------------------------------------------------- Agenda de eventos no site (Calutec)
+// Chave publica que o site do cliente (feito e hospedado pela Calutec) usa para buscar os eventos e o pop-up do dia.
+async function agendaDoMaster(emp, req) {
+  const ag = await agendaSite.agendaDaEmpresa(db, emp.id);
+  const base = (process.env.URL_PUBLICA || `${req.get('x-forwarded-proto') || req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
+  return {
+    modulo_ligado: !!efetivos(await dadosDaEmpresa(db, emp.id)).recursos.eventos,
+    chave: ag.chave, ativa: ag.ativa, url_api: `${base}/api/agenda/v1/eventos?chave=${ag.chave}`,
+    eventos_no_site: (await agendaSite.eventosPublicos(db, emp.id, base, 50)).length,
+  };
+}
+router.get('/master/empresas/:id/agenda-site', async (req, res) => {
+  res.json(await agendaDoMaster(await empresaOuErro(req.params.id), req));
+});
+router.put('/master/empresas/:id/agenda-site', async (req, res) => {
+  const emp = await empresaOuErro(req.params.id);
+  await agendaSite.definirAtiva(db, emp.id, !!(req.body && req.body.ativa));
+  await logAudit(db, { tenantId: emp.id, usuarioId: req.user.id, acao: 'master_agenda_site', recurso: 'eventos_agenda', recursoId: null, detalhes: { ativa: !!(req.body && req.body.ativa) } });
+  res.json(await agendaDoMaster(emp, req));
+});
+router.post('/master/empresas/:id/agenda-site/chave', async (req, res) => {
+  const emp = await empresaOuErro(req.params.id);
+  await agendaSite.trocarChave(db, emp.id);
+  await logAudit(db, { tenantId: emp.id, usuarioId: req.user.id, acao: 'master_agenda_site_nova_chave', recurso: 'eventos_agenda', recursoId: null, detalhes: {} });
+  res.json(await agendaDoMaster(emp, req));
+});
+
 router.get('/master/empresas/:id/loja-virtual/dns', async (req, res) => {
   const emp = await empresaOuErro(req.params.id);
   const loja = await lojaVirtual.lojaDaEmpresa(db, emp.id);

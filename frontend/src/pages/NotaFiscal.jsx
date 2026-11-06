@@ -155,7 +155,7 @@ function CancelarNota({ nota, onClose, onFeito }) {
   return (
     <Modal titulo={`Cancelar a NFC-e nº ${nota.numero}`} subtitulo={`${brl(nota.valor)} · venda nº ${nota.venda_numero || '—'}`} onClose={onClose}>
       <form className="form-stack" onSubmit={enviar}>
-        <p className="muted">A SEFAZ aceita o cancelamento da NFC-e em até 30 minutos depois da autorização (no Paraná). Depois disso, o caminho é a nota de devolução, feita pelo contador. Cancelar a nota não cancela a venda: se precisar, cancele a venda também.</p>
+        <p className="muted">A SEFAZ aceita o cancelamento da NFC-e em até 30 minutos depois da autorização (no Paraná). Depois disso, o caminho é a nota de devolução, feita pelo contador. Aqui cancela só a nota (ex.: CPF errado; depois dá para emitir de novo). Para desfazer a venda inteira, cancele a venda em Relatórios → Vendas: a nota é cancelada junto.</p>
         <Field label="Motivo do cancelamento (mínimo 15 letras)">
           <input autoFocus value={just} onChange={(e) => setJust(e.target.value)} placeholder="Ex.: cliente desistiu da compra no caixa" maxLength={255} required />
         </Field>

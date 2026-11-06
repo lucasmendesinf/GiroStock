@@ -32,8 +32,12 @@ por nota. Quem monta, assina e envia a nota é o motor PHP em `backend/fiscal/mo
 - **Sem internet com a SEFAZ**: a nota sai em contingência offline (tpEmis 9), com QR Code, e o servidor envia sozinho
   a cada 2 minutos (`FISCAL_VARREDURA_SEGUNDOS`). Em *Nota fiscal → Notas* dá para “Enviar agora”.
 - **Rejeitada** (ex.: NCM errado): corrigir o cadastro e clicar em “Reenviar” (mesmo número).
-- **Cancelar**: em *Notas*, com a permissão “Cancelar vendas”, justificativa de 15+ letras. No Paraná a SEFAZ aceita até
-  30 minutos depois da autorização. Cancelar a nota não cancela a venda.
+- **Cancelar a venda cancela a nota**: ao cancelar a venda (Relatórios → Vendas), a NFC-e dela é cancelada na SEFAZ junto,
+  com o motivo da venda. Se a SEFAZ recusar (ex.: fora do prazo, que no Paraná é de 30 minutos), a venda **não** é
+  cancelada e aparece o motivo (fora do prazo, o caminho é a nota de devolução, com o contador). Nota em contingência é
+  enviada antes; sem conexão, a venda espera. Nota rejeitada não tem valor e não impede o cancelamento.
+- **Cancelar só a nota**: em *Notas* (ex.: CPF errado), com a permissão “Cancelar vendas” e justificativa de 15+ letras.
+  A venda continua valendo e dá para emitir a nota de novo.
 - Produto sem NCM ou sem perfil: a nota é recusada **antes** de gastar um número.
 
 ## Servidor (cPanel)
@@ -46,7 +50,7 @@ por nota. Quem monta, assina e envia a nota é o motor PHP em `backend/fiscal/mo
 - Opcional: responsável técnico na nota (`FISCAL_RESP_TEC_CNPJ`, `FISCAL_RESP_TEC_CONTATO`, `FISCAL_RESP_TEC_EMAIL`,
   `FISCAL_RESP_TEC_FONE`).
 - Testes: `FISCAL_SIMULADOR=1` monta, assina e valida a nota de verdade mas não envia à SEFAZ;
-  `npm run test:e2e:fiscal` (47 checagens).
+  `npm run test:e2e:fiscal` (55 checagens).
 
 ## Ainda não faz (próximas etapas)
 

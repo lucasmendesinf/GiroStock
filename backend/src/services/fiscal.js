@@ -378,6 +378,30 @@ async function cancelar(user, id, justificativa, { simular } = {}) {
   return notaPorId(pool, user.tenantId, id);
 }
 
+// Cancelamento da venda: cancela junto a NFC-e valida dela (autorizada; em contingencia, envia antes).
+// Se a SEFAZ recusar, quem chama nao cancela a venda (venda cancelada com nota valida nao pode ficar).
+// Nota rejeitada/com erro nao tem valor: a venda cancela normalmente. Devolve a nota cancelada ou null.
+async function cancelarNotaDaVenda(user, saleId, vendaNumero, motivo, { simular } = {}) {
+  const n = (await pool.query(
+    `SELECT id, numero, situacao FROM notas_fiscais WHERE sale_id = $1 AND tenant_id = $2 AND situacao IN ('autorizada', 'contingencia') ORDER BY emitida_em DESC LIMIT 1`,
+    [saleId, user.tenantId]
+  )).rows[0];
+  if (!n) return null;
+  if (n.situacao === 'contingencia') {
+    const s = await transmitirContingencia(n.id, { simular: simular === 'sem_conexao' ? simular : undefined });
+    if (s === 'contingencia' || s === null) {
+      throw new HttpError(409, `a NFC-e nº ${n.numero} desta venda ainda não chegou à SEFAZ (sem conexão). A venda não foi cancelada: tente de novo quando a conexão voltar.`);
+    }
+    if (s !== 'autorizada') return null;   // a SEFAZ rejeitou a nota de contingencia: nao ha nota valida a cancelar
+  }
+  const just = texto(`Cancelamento da venda ${vendaNumero}: ${motivo}`, 255);
+  try {
+    return await cancelar(user, n.id, just, { simular });
+  } catch (err) {
+    throw new HttpError(err.status && err.status < 500 ? 422 : 502, `A venda não foi cancelada porque a NFC-e nº ${n.numero} não pôde ser cancelada: ${err.message}. Fale com o contador (fora do prazo, o caminho é a nota de devolução).`);
+  }
+}
+
 // Varredura: envia as notas de contingencia (a cada FISCAL_VARREDURA_SEGUNDOS, padrao 120).
 let varrendo = false;
 async function varrerContingencia() {
@@ -398,5 +422,5 @@ function iniciarVarredura() {
 
 module.exports = {
   chamarMotor, cnpjValido, cpfValido, configDaLoja, publica, pendencias, salvarConfig, salvarCertificado, configMotor, emitirNFCe, reenviar, cancelar,
-  transmitirContingencia, varrerContingencia, iniciarVarredura, notaPorId, notaParaCupom, SELECT_NOTA, MODOS, T_PAG,
+  transmitirContingencia, varrerContingencia, iniciarVarredura, notaPorId, notaParaCupom, cancelarNotaDaVenda, SELECT_NOTA, MODOS, T_PAG,
 };

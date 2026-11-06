@@ -343,12 +343,12 @@ function DetalheVenda({ id, onClose, onImprimir, onCancelada }) {
     e.preventDefault();
     if (!(await confirmar({
       titulo: `Cancelar a venda nº ${venda.numero}?`,
-      mensagem: `O estoque volta para ${venda.location_nome} e ${brl(venda.total)} sai do caixa aberto. Não dá para desfazer.`,
+      mensagem: `O estoque volta para ${venda.location_nome} e ${brl(venda.total)} sai do caixa aberto.${venda.nota_fiscal ? ` A NFC-e nº ${venda.nota_fiscal.numero} também é cancelada na SEFAZ.` : ''} Não dá para desfazer.`,
       confirmar: 'Cancelar venda', perigo: true,
     }))) return;
     try {
-      await api.post(`/sales/${venda.id}/cancel`, { motivo });
-      toast.sucesso(`Venda nº ${venda.numero} cancelada e estoque devolvido.`);
+      const r = await api.post(`/sales/${venda.id}/cancel`, { motivo });
+      toast.sucesso(`Venda nº ${venda.numero} cancelada e estoque devolvido.${r && r.nfce_cancelada ? ` NFC-e nº ${r.nfce_cancelada.numero} cancelada na SEFAZ.` : ''}`);
       onCancelada();
     } catch (err) { toast.erro(err); }
   }

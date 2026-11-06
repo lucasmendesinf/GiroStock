@@ -340,6 +340,9 @@ try {
     if ($acao === 'cancelar') {
         $just = textoNota($entrada['justificativa'] ?? '', 255);
         if (mb_strlen($just) < 15) responder(['ok' => false, 'situacao' => 'erro', 'motivo' => 'a justificativa do cancelamento precisa ter ao menos 15 letras']);
+        if ($simulador && $simular === 'rejeitar') {
+            responder(['ok' => false, 'situacao' => 'rejeitada', 'cStat' => '501', 'motivo' => 'Rejeicao: Prazo de cancelamento superior ao previsto na Legislacao (simulador)']);
+        }
         if ($simulador) {
             responder(['ok' => true, 'situacao' => 'cancelada', 'cStat' => '135', 'motivo' => 'Evento registrado e vinculado a NF-e (simulador)', 'protocolo' => '141' . date('y') . random_int(1000000000, 9999999999)]);
         }

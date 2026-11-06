@@ -145,6 +145,34 @@ check('lista as notas (mais recente primeiro, com a venda)', lista.length === 4 
 check('filtro por situação', (await api('GET', '/fiscal/notas?situacao=cancelada', null, E.token)).j.length === 1);
 check('PDV sabe o modo da loja (perguntar)', (await api('GET', `/fiscal/pdv?location_id=${LOJA}`, null, CX)).j.modo_pdv === 'perguntar');
 
+console.log('\n# 5b. Cancelar a venda cancela a nota');
+const vendaCom = async (simular) => {
+  const v = (await api('POST', '/sales', { terminal_id: T, itens: [{ product_id: REFRI, quantidade: 1 }], forma_pagamento: 'pix' }, E.token)).j;
+  const n = (await api('POST', '/fiscal/nfce', { sale_id: v.id, simular }, E.token)).j;
+  return { v, n };
+};
+const situacaoVenda = async (id) => (await prod.query(`SELECT status FROM sales WHERE id = $1`, [id])).rows[0].status;
+const situacaoNota = async (id) => (await prod.query(`SELECT situacao FROM notas_fiscais WHERE id = $1`, [id])).rows[0].situacao;
+const a1 = await vendaCom();
+const ca = await api('POST', `/sales/${a1.v.id}/cancel`, { motivo: 'cliente desistiu' }, E.token);
+check('cancelar a venda cancela a NFC-e autorizada na SEFAZ', ca.s === 200 && ca.j.nfce_cancelada && ca.j.nfce_cancelada.numero === a1.n.numero && await situacaoNota(a1.n.id) === 'cancelada', ca.j);
+check('justificativa da nota vem do motivo da venda', /Cancelamento da venda \d+: cliente desistiu/.test((await prod.query(`SELECT cancel_justificativa FROM notas_fiscais WHERE id = $1`, [a1.n.id])).rows[0].cancel_justificativa));
+const a2 = await vendaCom();
+const cr = await api('POST', `/sales/${a2.v.id}/cancel`, { motivo: 'cliente desistiu', simular_nota: 'rejeitar' }, E.token);
+check('SEFAZ recusa o cancelamento (prazo): a venda NÃO é cancelada (422)', cr.s === 422 && /não foi cancelada/.test(cr.j.erro) && await situacaoVenda(a2.v.id) === 'concluida' && await situacaoNota(a2.n.id) === 'autorizada', cr.j);
+const a3 = await vendaCom('sem_conexao');
+const cc = await api('POST', `/sales/${a3.v.id}/cancel`, { motivo: 'cliente desistiu', simular_nota: 'sem_conexao' }, E.token);
+check('nota em contingência sem conexão: a venda não é cancelada (409)', cc.s === 409 && await situacaoVenda(a3.v.id) === 'concluida', cc.j);
+const cc2 = await api('POST', `/sales/${a3.v.id}/cancel`, { motivo: 'cliente desistiu' }, E.token);
+check('com a conexão de volta: envia a nota de contingência e cancela as duas', cc2.s === 200 && cc2.j.nfce_cancelada && await situacaoNota(a3.n.id) === 'cancelada' && await situacaoVenda(a3.v.id) === 'cancelada', cc2.j);
+const a4 = await vendaCom('rejeitar');
+const cj = await api('POST', `/sales/${a4.v.id}/cancel`, { motivo: 'cliente desistiu' }, E.token);
+check('nota rejeitada (sem valor): a venda cancela normalmente', cj.s === 200 && cj.j.nfce_cancelada === null && a4.n.situacao === 'rejeitada', cj.j);
+const v6 = (await api('POST', '/sales', { terminal_id: T, itens: [{ product_id: REFRI, quantidade: 1 }], forma_pagamento: 'pix' }, E.token)).j;
+const cs = await api('POST', `/sales/${v6.id}/cancel`, { motivo: 'cliente desistiu' }, E.token);
+check('venda sem nota: cancela como sempre', cs.s === 200 && cs.j.nfce_cancelada === null, cs.j);
+check('nota cancelada sozinha deixa emitir de novo para a venda', (await api('POST', `/fiscal/nfce`, { sale_id: v4.id }, E.token)).j.situacao === 'autorizada');
+
 console.log('\n# 6. Produção e isolamento');
 check('passar para produção pede confirmação (409)', (await salvar({ ambiente: 'producao' })).s === 409);
 const pr = await salvar({ ambiente: 'producao', confirmar_producao: true });

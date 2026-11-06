@@ -9,6 +9,7 @@ const { HttpError } = require('../utils/http');
 const { configEfetiva } = require('../utils/cupom');
 const { registrarVenda } = require('../services/vendas');
 const { estornarRecebimentosDaVenda } = require('../services/recebimentos');
+const fiscal = require('../services/fiscal');
 
 const router = express.Router();
 const FORMAS_PAGAMENTO = ['pix', 'cartao_credito', 'cartao_debito', 'dinheiro'];
@@ -66,6 +67,10 @@ router.post('/sales/:id/cancel', requireArea('Vendas'), async (req, res) => {
     if (session.rows[0].fechado_em) {
       throw new HttpError(400, 'o caixa desta venda já foi fechado; não e possível cancelá-la');
     }
+
+    // Nota fiscal da venda: cancela na SEFAZ antes de estornar (se a SEFAZ recusar, a venda continua valida).
+    const notaCancelada = await fiscal.cancelarNotaDaVenda(req.user, sale.id, sale.numero, motivo,
+      { simular: process.env.FISCAL_SIMULADOR === '1' && req.body && req.body.simular_nota ? String(req.body.simular_nota) : undefined });
 
     const itens = await client.query(
       `SELECT si.id, si.product_id, si.quantidade FROM sale_items si
@@ -143,12 +148,13 @@ router.post('/sales/:id/cancel', requireArea('Vendas'), async (req, res) => {
         total: Number(sale.total),
         estorno_produtos: saidas.rows.length,
         estorno_insumos: consumos.rows.length,
+        ...(notaCancelada ? { nfce_cancelada: notaCancelada.numero } : {}),
         ...(estornoRecebimentos.recebimentos > 0 ? { recebimentos_estornados: estornoRecebimentos.recebimentos, sangria_prestacao: estornoRecebimentos.sangria } : {}),
       },
     });
 
     await client.query('COMMIT');
-    res.json(rows[0]);
+    res.json({ ...rows[0], nfce_cancelada: notaCancelada ? { numero: notaCancelada.numero } : null });
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -235,7 +241,7 @@ router.get('/sales/:id', async (req, res) => {
   // Partes pagas (uma ou varias formas). Venda antiga sem partes: uma so, com o total.
   const pagamentos = (await pool.query(`SELECT forma, valor, entra_no_caixa FROM v_sale_pagamentos WHERE sale_id = $1 ORDER BY valor DESC, forma`, [v.id])).rows;
   const { cupom_config: cfgSalva, ...resto } = v;
-  const notaFiscal = await require('../services/fiscal').notaParaCupom(pool, req.user.tenantId, v.id).catch(() => null);
+  const notaFiscal = await fiscal.notaParaCupom(pool, req.user.tenantId, v.id).catch(() => null);
   res.json({ ...resto, pagamentos, nota_fiscal: notaFiscal, cupom_config: configEfetiva(cfgSalva), pode_cancelar: v.status === 'concluida' && v.caixa_aberto && canCancelSales(req.user), itens: itens.rows });
 });
 

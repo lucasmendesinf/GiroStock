@@ -1828,3 +1828,8 @@ tr.cmd-fechando td { background: var(--warn-soft); }
 .nf-produtos input.nf-cest { width: 90px; }
 .nf-produtos select { max-width: 280px; }
 .nf-produtos input.nf-falta { border-color: var(--err); }
+.nf-alerta { border: 1px solid var(--warn); background: var(--warn-soft); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; font-size: 14px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.nf-alerta .btn-link { padding: 0; }
+.nf-filtro { margin: 0; }
+.nf-pill-devolucao { display: inline-block; margin-top: 4px; }
+table.tabela-cartoes tr.nf-linha-pendente td:first-child { box-shadow: inset 4px 0 0 var(--warn); }

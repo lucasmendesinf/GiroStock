@@ -73,7 +73,7 @@ function publica(c, loja) {
     location_id: c.location_id, location_nome: loja.nome, configurada: true, ambiente: c.ambiente, modo_pdv: c.modo_pdv,
     cnpj: c.cnpj, ie: c.ie, razao_social: c.razao_social, nome_fantasia: c.nome_fantasia, crt: c.crt, logradouro: c.logradouro, numero: c.numero,
     complemento: c.complemento, bairro: c.bairro, cod_municipio: c.cod_municipio, municipio: c.municipio, uf: c.uf, cep: c.cep, telefone: c.telefone,
-    serie_nfce: c.serie_nfce, certificado: c.cert_cript ? { titular: c.cert_titular, validade: c.cert_validade } : null,
+    serie_nfce: c.serie_nfce, serie_nfe: c.serie_nfe, certificado: c.cert_cript ? { titular: c.cert_titular, validade: c.cert_validade } : null,
     csc_homologacao: !!c.csc_homolog_cript, csc_homolog_id: c.csc_homolog_id, csc_producao: !!c.csc_prod_cript, csc_prod_id: c.csc_prod_id,
     pronta: prontaPara(c),
   };
@@ -114,6 +114,8 @@ async function salvarConfig(client, user, locationId, b) {
   if (!MODOS.includes(modo)) throw new HttpError(400, 'modo do PDV inválido');
   const serie = Number(v('serie_nfce', 1));
   if (!Number.isInteger(serie) || serie < 0 || serie > 999) throw new HttpError(400, 'série inválida (0 a 999)');
+  const serieNfe = Number(v('serie_nfe', 1));
+  if (!Number.isInteger(serieNfe) || serieNfe < 0 || serieNfe > 999) throw new HttpError(400, 'série da NF-e inválida (0 a 999)');
   const crt = Number(v('crt', 1));
   if (![1, 2, 3, 4].includes(crt)) throw new HttpError(400, 'regime tributário inválido');
   // CSC: so muda quando informado (o valor salvo nunca volta para a tela)
@@ -134,6 +136,7 @@ async function salvarConfig(client, user, locationId, b) {
       texto(v('complemento'), 60), texto(v('bairro'), 60), codMun, texto(v('municipio'), 60), uf, cep, digitos(v('telefone')).slice(0, 14), serie,
       cscHom, idCsc('csc_homolog_id', 'csc_homolog_id'), cscProd, idCsc('csc_prod_id', 'csc_prod_id')]
   );
+  await client.query(`UPDATE fiscal_lojas SET serie_nfe = $2 WHERE location_id = $1`, [locationId, serieNfe]);
   return { ambiente, modo_pdv: modo, cnpj };
 }
 
@@ -154,10 +157,10 @@ async function salvarCertificado(client, user, locationId, { pfx_b64: pfx, senha
 }
 
 // Configuracao no formato do motor.
-function configMotor(c) {
+function configMotor(c, modelo = 65) {
   const hom = c.ambiente === 'homologacao';
   return {
-    tpAmb: hom ? 2 : 1, razao: c.razao_social, fantasia: c.nome_fantasia, cnpj: c.cnpj, ie: c.ie, crt: c.crt, uf: c.uf, cUF: COD_UF[c.uf],
+    modelo: String(modelo), tpAmb: hom ? 2 : 1, razao: c.razao_social, fantasia: c.nome_fantasia, cnpj: c.cnpj, ie: c.ie, crt: c.crt, uf: c.uf, cUF: COD_UF[c.uf],
     endereco: { xLgr: c.logradouro, nro: c.numero, xCpl: c.complemento, xBairro: c.bairro, cMun: c.cod_municipio, xMun: c.municipio, CEP: c.cep, fone: c.telefone },
     csc: decifrar(hom ? c.csc_homolog_cript : c.csc_prod_cript), cscId: (hom ? c.csc_homolog_id : c.csc_prod_id) || '000001',
     pfx_b64: decifrar(c.cert_cript), senha: decifrar(c.cert_senha_cript),
@@ -230,18 +233,24 @@ async function agoraSP(db) {
   return (await db.query(`SELECT to_char(now() AT TIME ZONE '${FUSO}', 'YYYY-MM-DD"T"HH24:MI:SS') || '-03:00' AS t`)).rows[0].t;
 }
 
-async function reservarNumero(tenantId, c) {
+async function reservarNumero(tenantId, c, modelo = 65, serie = c.serie_nfce) {
   const { rows } = await pool.query(
-    `INSERT INTO fiscal_numeracao (tenant_id, cnpj, ambiente, modelo, serie, proximo) VALUES ($1, $2, $3, 65, $4, 2)
+    `INSERT INTO fiscal_numeracao (tenant_id, cnpj, ambiente, modelo, serie, proximo) VALUES ($1, $2, $3, $4, $5, 2)
      ON CONFLICT (tenant_id, cnpj, ambiente, modelo, serie) DO UPDATE SET proximo = fiscal_numeracao.proximo + 1 RETURNING proximo - 1 AS numero`,
-    [tenantId, c.cnpj, c.ambiente, c.serie_nfce]
+    [tenantId, c.cnpj, c.ambiente, modelo, serie]
   );
   return rows[0].numero;
 }
 
 const SELECT_NOTA = `SELECT n.id, n.sale_id, n.location_id, n.modelo, n.ambiente, n.serie, n.numero, n.chave, n.situacao, n.cstat, n.motivo, n.protocolo, n.qrcode,
-  n.url_consulta, n.cpf, n.valor, n.tentativas, n.emitida_em, n.autorizada_em, n.cancelada_em, n.cancel_justificativa, s.numero AS venda_numero, l.nome AS location_nome
-  FROM notas_fiscais n LEFT JOIN sales s ON s.id = n.sale_id JOIN locations l ON l.id = n.location_id`;
+  n.url_consulta, n.cpf, n.valor, n.tentativas, n.emitida_em, n.autorizada_em, n.cancelada_em, n.cancel_justificativa, s.numero AS venda_numero, l.nome AS location_nome,
+  n.finalidade, n.pendencia, n.pendencia_motivo, n.pendencia_em, n.nota_referenciada_id, s.status AS venda_status,
+  ref.numero AS ref_numero, ref.modelo AS ref_modelo, ref.chave AS ref_chave, rs.numero AS ref_venda_numero,
+  dev.id AS devolucao_id, dev.numero AS devolucao_numero, dev.situacao AS devolucao_situacao
+  FROM notas_fiscais n LEFT JOIN sales s ON s.id = n.sale_id JOIN locations l ON l.id = n.location_id
+  LEFT JOIN notas_fiscais ref ON ref.id = n.nota_referenciada_id LEFT JOIN sales rs ON rs.id = ref.sale_id
+  LEFT JOIN LATERAL (SELECT d.id, d.numero, d.situacao FROM notas_fiscais d WHERE d.nota_referenciada_id = n.id AND d.situacao <> 'cancelada'
+                     ORDER BY d.emitida_em DESC LIMIT 1) dev ON true`;
 async function notaPorId(db, tenantId, id) {
   const r = (await db.query(`${SELECT_NOTA} WHERE n.id = $1 AND n.tenant_id = $2`, [id, tenantId])).rows[0];
   if (!r) throw new HttpError(404, 'nota não encontrada');
@@ -295,7 +304,7 @@ async function emitirNFCe(user, saleId, { cpf, simular } = {}) {
   const { venda } = dados;
   if (venda.status !== 'concluida') throw new HttpError(409, 'só venda concluída gera nota');
   const existente = (await pool.query(
-    `SELECT id FROM notas_fiscais WHERE sale_id = $1 AND situacao IN ('processando', 'autorizada', 'contingencia', 'rejeitada', 'erro') ORDER BY emitida_em DESC LIMIT 1`, [saleId]
+    `SELECT id FROM notas_fiscais WHERE sale_id = $1 AND finalidade = 1 AND situacao IN ('processando', 'autorizada', 'contingencia', 'rejeitada', 'erro') ORDER BY emitida_em DESC LIMIT 1`, [saleId]
   )).rows[0];
   if (existente) {
     const n = await notaPorId(pool, user.tenantId, existente.id);
@@ -333,6 +342,7 @@ async function reenviar(user, id, { simular } = {}) {
     if (n.situacao === 'contingencia') { await transmitirContingencia(id, { simular }); return notaPorId(pool, user.tenantId, id); }
     throw new HttpError(409, 'esta nota não precisa ser reenviada');
   }
+  if (n.finalidade === 4) return transmitirDevolucao(user, id);
   const c = await configDaLoja(pool, user.tenantId, n.location_id);
   const falta = pendencias(c);
   if (falta.length) throw new HttpError(400, falta.join('; '));
@@ -372,9 +382,20 @@ async function cancelar(user, id, justificativa, { simular } = {}) {
   const just = texto(justificativa, 255);
   if (just.length < 15) throw new HttpError(400, 'a justificativa do cancelamento precisa ter ao menos 15 letras');
   const c = await configDaLoja(pool, user.tenantId, n.location_id);
-  const r = await chamarMotor({ acao: 'cancelar', config: configMotor({ ...c, ambiente: n.ambiente }), chave: n.chave, protocolo: n.protocolo, justificativa: just, ...(simular ? { simular } : {}) });
-  if (!r.ok) throw new HttpError(422, `a SEFAZ recusou o cancelamento: ${r.motivo}`);
-  await pool.query(`UPDATE notas_fiscais SET situacao = 'cancelada', cancelada_em = now(), cancel_justificativa = $2, cancel_protocolo = $3 WHERE id = $1`, [id, just, r.protocolo || null]);
+  const r = await chamarMotor({ acao: 'cancelar', config: configMotor({ ...c, ambiente: n.ambiente }, n.modelo), chave: n.chave, protocolo: n.protocolo, justificativa: just, ...(simular ? { simular } : {}) });
+  if (!r.ok) {
+    const e = new HttpError(422, r.situacao === 'rejeitada' ? `a SEFAZ recusou o cancelamento: ${r.motivo}` : `não foi possível falar com a SEFAZ: ${r.motivo}`);
+    e.sefaz = r;
+    throw e;
+  }
+  await pool.query(`UPDATE notas_fiscais SET situacao = 'cancelada', cancelada_em = now(), cancel_justificativa = $2, cancel_protocolo = $3, pendencia = NULL WHERE id = $1`, [id, just, r.protocolo || null]);
+  // Devolucao cancelada: a nota devolvida volta a precisar de devolucao (se a venda dela esta cancelada)
+  if (n.finalidade === 4 && n.nota_referenciada_id) {
+    await pool.query(
+      `UPDATE notas_fiscais o SET pendencia = 'devolucao', pendencia_em = now(), pendencia_motivo = 'A NF-e de devolução foi cancelada'
+       FROM sales s WHERE o.id = $1 AND s.id = o.sale_id AND s.status = 'cancelada' AND o.situacao = 'autorizada'`, [n.nota_referenciada_id]
+    );
+  }
   return notaPorId(pool, user.tenantId, id);
 }
 
@@ -396,10 +417,103 @@ async function cancelarNotaDaVenda(user, saleId, vendaNumero, motivo, { simular 
   }
   const just = texto(`Cancelamento da venda ${vendaNumero}: ${motivo}`, 255);
   try {
-    return await cancelar(user, n.id, just, { simular });
+    return { cancelada: await cancelar(user, n.id, just, { simular }) };
   } catch (err) {
-    throw new HttpError(err.status && err.status < 500 ? 422 : 502, `A venda não foi cancelada porque a NFC-e nº ${n.numero} não pôde ser cancelada: ${err.message}. Fale com o contador (fora do prazo, o caminho é a nota de devolução).`);
+    // A SEFAZ respondeu e recusou (ex.: prazo de cancelamento vencido): a venda e cancelada assim mesmo e a nota fica
+    // na lista "Precisam de devolucao" (dali sai a NF-e de devolucao). Sem resposta da SEFAZ: a venda espera.
+    if (err.sefaz && err.sefaz.situacao === 'rejeitada') {
+      await pool.query(`UPDATE notas_fiscais SET pendencia = 'devolucao', pendencia_motivo = $2, pendencia_em = now() WHERE id = $1`, [n.id, String(err.sefaz.motivo || '').slice(0, 500)]);
+      return { pendente: { id: n.id, numero: n.numero, motivo: err.sefaz.motivo } };
+    }
+    throw new HttpError(err.status && err.status < 500 ? 422 : 502, `A venda não foi cancelada porque a NFC-e nº ${n.numero} não pôde ser cancelada: ${err.message}. Tente de novo em instantes.`);
   }
+}
+
+// ---------- devolucao (NF-e modelo 55, entrada, finalidade 4) ----------
+const UF_DE_COD = Object.fromEntries(Object.entries(COD_UF).map(([uf, cod]) => [String(cod), uf]));
+function destinatarioDevolucao(b) {
+  const d = b || {};
+  const nome = texto(d.nome, 60);
+  if (nome.length < 3) throw new HttpError(400, 'informe o nome de quem devolveu');
+  const cpf = digitos(d.cpf);
+  const cnpj = digitos(d.cnpj);
+  if (cpf ? !cpfValido(cpf) : !cnpjValido(cnpj)) throw new HttpError(400, 'informe um CPF (ou CNPJ) válido de quem devolveu');
+  const codMun = digitos(d.cod_municipio);
+  const uf = String(d.uf || '').toUpperCase();
+  if (codMun.length !== 7 || UF_DE_COD[codMun.slice(0, 2)] !== uf) throw new HttpError(400, 'código IBGE da cidade inválido (7 números; Curitiba = 4106902)');
+  const cep = digitos(d.cep);
+  if (cep.length !== 8) throw new HttpError(400, 'CEP inválido');
+  const out = { nome, cpf: cpf || null, cnpj: cpf ? null : cnpj, cod_municipio: codMun, uf, cep, complemento: texto(d.complemento, 60) };
+  for (const [k, n] of [['logradouro', 'a rua'], ['numero', 'o número'], ['bairro', 'o bairro'], ['municipio', 'a cidade']]) {
+    out[k] = texto(d[k], 60);
+    if (!out[k]) throw new HttpError(400, `informe ${n} do endereço de quem devolveu`);
+  }
+  return out;
+}
+
+// Gera a NF-e de devolucao de uma nota autorizada (normalmente a NFC-e de venda cancelada fora do prazo).
+async function emitirDevolucao(user, notaId, b = {}, { simular } = {}) {
+  const o = (await pool.query(`SELECT * FROM notas_fiscais WHERE id = $1 AND tenant_id = $2`, [notaId, user.tenantId])).rows[0];
+  if (!o) throw new HttpError(404, 'nota não encontrada');
+  if (o.finalidade !== 1) throw new HttpError(409, 'esta nota já é uma devolução');
+  if (o.situacao !== 'autorizada') throw new HttpError(409, 'só nota autorizada pode ser devolvida');
+  const ja = (await pool.query(`SELECT id, numero, situacao FROM notas_fiscais WHERE nota_referenciada_id = $1 AND situacao <> 'cancelada' LIMIT 1`, [o.id])).rows[0];
+  if (ja) {
+    if (ja.situacao === 'autorizada') throw new HttpError(409, `esta nota já tem a NF-e de devolução nº ${ja.numero}`);
+    throw new HttpError(409, `já existe a NF-e de devolução nº ${ja.numero} (${ja.situacao}): reenvie ou cancele ela em Notas`);
+  }
+  const c = await configDaLoja(pool, user.tenantId, o.location_id);
+  if (!c || !c.cert_cript) throw new HttpError(400, 'nota fiscal não configurada nesta loja (certificado)');
+  if (c.cnpj !== o.cnpj) throw new HttpError(409, 'o CNPJ da loja mudou desde a nota: fale com o contador');
+  const dest = destinatarioDevolucao(b.destinatario);
+  const cfg = { ...c, ambiente: o.ambiente };
+  const numero = await reservarNumero(user.tenantId, cfg, 55, c.serie_nfe);
+  const { rows } = await pool.query(
+    `INSERT INTO notas_fiscais (tenant_id, location_id, sale_id, modelo, ambiente, cnpj, serie, numero, cpf, valor, emitida_por, finalidade, nota_referenciada_id, dados)
+     VALUES ($1, $2, NULL, 55, $3, $4, $5, $6, $7, $8, $9, 4, $10, $11) RETURNING id`,
+    [user.tenantId, o.location_id, o.ambiente, o.cnpj, c.serie_nfe, numero, dest.cpf, o.valor, user.id, o.id,
+      JSON.stringify({ destinatario: dest, observacao: texto(b.observacao, 500) })]
+  );
+  return transmitirDevolucao(user, rows[0].id, { simular });
+}
+
+// Monta e envia (ou reenvia, com o mesmo numero) a NF-e de devolucao.
+async function transmitirDevolucao(user, id, { simular } = {}) {
+  const n = (await pool.query(`SELECT * FROM notas_fiscais WHERE id = $1 AND tenant_id = $2 AND finalidade = 4`, [id, user.tenantId])).rows[0];
+  if (!n) throw new HttpError(404, 'nota não encontrada');
+  const o = (await pool.query(`SELECT n.*, s.numero AS venda_numero FROM notas_fiscais n LEFT JOIN sales s ON s.id = n.sale_id WHERE n.id = $1`, [n.nota_referenciada_id])).rows[0];
+  const c = await configDaLoja(pool, user.tenantId, n.location_id);
+  if (!c || !c.cert_cript) throw new HttpError(400, 'nota fiscal não configurada nesta loja (certificado)');
+  const dados = n.dados || {};
+  const nomeDoc = o.modelo === 65 ? 'NFC-e' : 'NF-e';
+  let r;
+  try {
+    r = await chamarMotor({
+      acao: 'devolucao', config: configMotor({ ...c, ambiente: n.ambiente }, 55), ...(simular ? { simular } : {}),
+      nota: {
+        serie: n.serie, numero: n.numero, cNF: String(Math.floor(10000000 + Math.random() * 89999999)), dhEmi: await agoraSP(pool),
+        ref_chave: o.chave, xml_original: o.xml, dest: dados.destinatario,
+        infCpl: texto(`Devolução da ${nomeDoc} nº ${o.numero} série ${o.serie}${o.venda_numero ? ` (venda nº ${o.venda_numero} cancelada)` : ''}, chave ${o.chave}.${dados.observacao ? ` ${dados.observacao}` : ''} - GiroStock`, 2000),
+      },
+    });
+  } catch (err) {
+    r = { situacao: 'erro', motivo: err.message };
+  }
+  if (r.situacao === 'sem_conexao') r = { ...r, situacao: 'erro', motivo: `Sem conexão com a SEFAZ: clique em Reenviar quando a conexão voltar (${r.motivo})` };
+  await gravarResultado(id, r);
+  if (r.situacao === 'autorizada') await pool.query(`UPDATE notas_fiscais SET pendencia = NULL WHERE id = $1`, [o.id]);
+  return notaPorId(pool, user.tenantId, id);
+}
+
+// PDF do DANFE (NF-e modelo 55).
+async function danfePdf(tenantId, id) {
+  const n = (await pool.query(`SELECT modelo, chave, xml, situacao FROM notas_fiscais WHERE id = $1 AND tenant_id = $2`, [id, tenantId])).rows[0];
+  if (!n || !n.xml) throw new HttpError(404, 'nota não encontrada');
+  if (n.modelo !== 55) throw new HttpError(400, 'o DANFE em PDF é da NF-e (a NFC-e sai no cupom)');
+  if (!['autorizada', 'cancelada'].includes(n.situacao)) throw new HttpError(409, 'a nota ainda não foi autorizada');
+  const r = await chamarMotor({ acao: 'danfe', xml: n.xml });
+  if (!r.ok) throw new HttpError(500, `não foi possível gerar o DANFE: ${r.motivo}`);
+  return { chave: n.chave, pdf: Buffer.from(r.pdf_b64, 'base64') };
 }
 
 // Varredura: envia as notas de contingencia (a cada FISCAL_VARREDURA_SEGUNDOS, padrao 120).
@@ -422,5 +536,5 @@ function iniciarVarredura() {
 
 module.exports = {
   chamarMotor, cnpjValido, cpfValido, configDaLoja, publica, pendencias, salvarConfig, salvarCertificado, configMotor, emitirNFCe, reenviar, cancelar,
-  transmitirContingencia, varrerContingencia, iniciarVarredura, notaPorId, notaParaCupom, cancelarNotaDaVenda, SELECT_NOTA, MODOS, T_PAG,
+  transmitirContingencia, varrerContingencia, iniciarVarredura, notaPorId, notaParaCupom, cancelarNotaDaVenda, emitirDevolucao, danfePdf, SELECT_NOTA, MODOS, T_PAG,
 };

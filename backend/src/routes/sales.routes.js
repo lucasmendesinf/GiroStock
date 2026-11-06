@@ -68,8 +68,9 @@ router.post('/sales/:id/cancel', requireArea('Vendas'), async (req, res) => {
       throw new HttpError(400, 'o caixa desta venda já foi fechado; não e possível cancelá-la');
     }
 
-    // Nota fiscal da venda: cancela na SEFAZ antes de estornar (se a SEFAZ recusar, a venda continua valida).
-    const notaCancelada = await fiscal.cancelarNotaDaVenda(req.user, sale.id, sale.numero, motivo,
+    // Nota fiscal da venda: cancela na SEFAZ antes de estornar. Fora do prazo (a SEFAZ recusa), a venda cancela assim mesmo
+    // e a nota fica pendente de devolucao; sem resposta da SEFAZ, a venda nao cancela (tentar de novo).
+    const nota = await fiscal.cancelarNotaDaVenda(req.user, sale.id, sale.numero, motivo,
       { simular: process.env.FISCAL_SIMULADOR === '1' && req.body && req.body.simular_nota ? String(req.body.simular_nota) : undefined });
 
     const itens = await client.query(
@@ -148,13 +149,15 @@ router.post('/sales/:id/cancel', requireArea('Vendas'), async (req, res) => {
         total: Number(sale.total),
         estorno_produtos: saidas.rows.length,
         estorno_insumos: consumos.rows.length,
-        ...(notaCancelada ? { nfce_cancelada: notaCancelada.numero } : {}),
+        ...(nota && nota.cancelada ? { nfce_cancelada: nota.cancelada.numero } : {}),
+        ...(nota && nota.pendente ? { nfce_pendente_devolucao: nota.pendente.numero } : {}),
         ...(estornoRecebimentos.recebimentos > 0 ? { recebimentos_estornados: estornoRecebimentos.recebimentos, sangria_prestacao: estornoRecebimentos.sangria } : {}),
       },
     });
 
     await client.query('COMMIT');
-    res.json({ ...rows[0], nfce_cancelada: notaCancelada ? { numero: notaCancelada.numero } : null });
+    res.json({ ...rows[0], nfce_cancelada: nota && nota.cancelada ? { numero: nota.cancelada.numero } : null,
+      nfce_pendente: nota && nota.pendente ? nota.pendente : null });
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

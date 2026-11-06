@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useConfirm, useToast } from '../context/UiContext.jsx';
@@ -26,7 +27,8 @@ export default function NotaFiscal() {
     podeAcessar(user, 'Estoque') && ['produtos', 'Produtos (NCM)'],
     podeAcessar(user, 'Estoque') && ['perfis', 'Perfis fiscais'],
   ].filter(Boolean);
-  const [aba, setAba] = useState(abas.length ? abas[0][0] : null);
+  const estado = useLocation().state || {};
+  const [aba, setAba] = useState(estado.aba && abas.some(([k]) => k === estado.aba) ? estado.aba : abas.length ? abas[0][0] : null);
   return (
     <div className="page">
       <div className="page-header"><h2>Nota fiscal</h2></div>
@@ -35,7 +37,7 @@ export default function NotaFiscal() {
           <button key={k} type="button" role="tab" aria-selected={aba === k} className={`btn-link ${aba === k ? 'ativo' : ''}`} onClick={() => setAba(k)}>{n}</button>
         ))}
       </div>
-      {aba === 'notas' && <AbaNotas />}
+      {aba === 'notas' && <AbaNotas inicioDevolucao={estado.devolucao} />}
       {aba === 'config' && <AbaConfig />}
       {aba === 'produtos' && <AbaProdutos />}
       {aba === 'perfis' && <AbaPerfis />}
@@ -45,87 +47,131 @@ export default function NotaFiscal() {
 }
 
 // ---------- notas emitidas ----------
-function AbaNotas() {
+const docNome = (n) => (n.modelo === 55 ? 'NF-e' : 'NFC-e');
+const cpfFmt = (c) => String(c || '').replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
+
+async function baixar(rota, nome, toast, abrir = false) {
+  try {
+    const res = await fetch(`/api${rota}`, { headers: { Authorization: `Bearer ${localStorage.getItem('girostock_token')}` } });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).erro || 'arquivo não encontrado');
+    const url = URL.createObjectURL(await res.blob());
+    if (abrir) window.open(url, '_blank', 'noopener');
+    else {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = nome;
+      a.click();
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (err) { toast.erro(err); }
+}
+
+function AbaNotas({ inicioDevolucao }) {
   const toast = useToast();
   const { user } = useAuth();
+  const podeCancelar = podeAcessar(user, 'CancelarVendas');
   const [lista, setLista] = useState(null);
   const [situacao, setSituacao] = useState('');
   const [ambiente, setAmbiente] = useState('');
+  const [soDevolucao, setSoDevolucao] = useState(!!inicioDevolucao);
+  const [qtdDevolucao, setQtdDevolucao] = useState(0);
   const [cancelando, setCancelando] = useState(null);
+  const [devolvendo, setDevolvendo] = useState(null);
   const [ocupado, setOcupado] = useState(null);
   const carregar = useCallback(async () => {
     const q = new URLSearchParams();
-    if (situacao) q.set('situacao', situacao);
-    if (ambiente) q.set('ambiente', ambiente);
-    try { setLista(await api.get(`/fiscal/notas?${q}`)); } catch (err) { toast.erro(err); }
-  }, [situacao, ambiente, toast]);
+    if (soDevolucao) q.set('pendencia', 'devolucao');
+    else {
+      if (situacao) q.set('situacao', situacao);
+      if (ambiente) q.set('ambiente', ambiente);
+    }
+    try {
+      const [l, p] = await Promise.all([api.get(`/fiscal/notas?${q}`), api.get('/fiscal/notas?pendencia=devolucao')]);
+      setLista(l);
+      setQtdDevolucao(p.length);
+    } catch (err) { toast.erro(err); }
+  }, [situacao, ambiente, soDevolucao, toast]);
   useEffect(() => { carregar(); }, [carregar]);
 
-  async function baixarXml(n) {
-    try {
-      const res = await fetch(`/api/fiscal/notas/${n.id}/xml`, { headers: { Authorization: `Bearer ${localStorage.getItem('girostock_token')}` } });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).erro || 'XML não encontrado');
-      const url = URL.createObjectURL(await res.blob());
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${n.chave || n.id}-nfce.xml`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (err) { toast.erro(err); }
-  }
   async function reenviar(n) {
     setOcupado(n.id);
     try {
       const r = await api.post(`/fiscal/notas/${n.id}/reenviar`, {});
-      if (r.situacao === 'autorizada') toast.sucesso(`NFC-e nº ${r.numero} autorizada`);
+      if (r.situacao === 'autorizada') toast.sucesso(`${docNome(r)} nº ${r.numero} autorizada`);
       else toast.erro(new Error(r.motivo || `Situação: ${NOME_SITUACAO[r.situacao]}`));
       await carregar();
     } catch (err) { toast.erro(err); } finally { setOcupado(null); }
   }
 
-  const pendentes = (lista || []).filter((n) => ['contingencia', 'rejeitada', 'erro'].includes(n.situacao)).length;
+  const atencao = (lista || []).filter((n) => ['contingencia', 'rejeitada', 'erro'].includes(n.situacao)).length;
   return (
     <div className="card">
+      {qtdDevolucao > 0 && !soDevolucao && (
+        <div className="nf-alerta" role="alert">
+          <b>{qtdDevolucao} nota(s) de vendas canceladas precisam de devolução.</b> A venda foi cancelada depois do prazo de cancelamento da nota na SEFAZ.
+          <button type="button" className="btn-link" onClick={() => setSoDevolucao(true)}>Ver e gerar a devolução</button>
+        </div>
+      )}
       <div className="toolbar">
-        <select value={situacao} onChange={(e) => setSituacao(e.target.value)} aria-label="Situação">
-          <option value="">Todas as situações</option>
-          {Object.entries(NOME_SITUACAO).map(([k, n]) => <option key={k} value={k}>{n}</option>)}
-        </select>
-        <select value={ambiente} onChange={(e) => setAmbiente(e.target.value)} aria-label="Ambiente">
-          <option value="">Teste e produção</option>
-          <option value="producao">Só produção (notas reais)</option>
-          <option value="homologacao">Só teste</option>
-        </select>
+        <div className="ped-bar nf-filtro" role="tablist">
+          <button type="button" role="tab" aria-selected={!soDevolucao} className={`btn-link ${!soDevolucao ? 'ativo' : ''}`} onClick={() => setSoDevolucao(false)}>Todas</button>
+          <button type="button" role="tab" aria-selected={soDevolucao} className={`btn-link ${soDevolucao ? 'ativo' : ''}`} onClick={() => setSoDevolucao(true)}>Precisam de devolução{qtdDevolucao ? ` (${qtdDevolucao})` : ''}</button>
+        </div>
+        {!soDevolucao && (
+          <>
+            <select value={situacao} onChange={(e) => setSituacao(e.target.value)} aria-label="Situação">
+              <option value="">Todas as situações</option>
+              {Object.entries(NOME_SITUACAO).map(([k, n]) => <option key={k} value={k}>{n}</option>)}
+            </select>
+            <select value={ambiente} onChange={(e) => setAmbiente(e.target.value)} aria-label="Ambiente">
+              <option value="">Teste e produção</option>
+              <option value="producao">Só produção (notas reais)</option>
+              <option value="homologacao">Só teste</option>
+            </select>
+          </>
+        )}
         <span className="toolbar-espaco" />
         <button type="button" className="btn-link" onClick={carregar}>Atualizar</button>
       </div>
-      {pendentes > 0 && <p className="muted">⚠ {pendentes} nota(s) precisam de atenção: em contingência (o sistema envia sozinho quando a SEFAZ responder) ou rejeitadas (corrija o motivo e clique em “Reenviar”).</p>}
-      {!lista ? <p className="muted">Carregando…</p> : lista.length === 0 ? <Vazio>Nenhuma nota emitida ainda. No PDV, escolha “Cupom fiscal (NFC-e)” no pagamento.</Vazio> : (
+      {soDevolucao && <p className="muted">Vendas canceladas cuja nota a SEFAZ não deixou cancelar (fora do prazo). Para regularizar, gere a NF-e de devolução: uma nota de entrada que devolve os itens e referencia a nota da venda. Confira com o seu contador.</p>}
+      {!soDevolucao && atencao > 0 && <p className="muted">⚠ {atencao} nota(s) precisam de atenção: em contingência (o sistema envia sozinho quando a SEFAZ responder) ou rejeitadas (corrija o motivo e clique em “Reenviar”).</p>}
+      {!lista ? <p className="muted">Carregando…</p> : lista.length === 0 ? (
+        <Vazio>{soDevolucao ? 'Nenhuma nota pendente de devolução. ✔' : 'Nenhuma nota emitida ainda. No PDV, escolha “Cupom fiscal (NFC-e)” no pagamento.'}</Vazio>
+      ) : (
         <div className="tabela-wrap">
           <table className="tabela-cartoes">
-            <thead><tr><th>NFC-e</th><th>Venda</th><th>Valor</th><th>Situação</th><th className="col-opcional">Emitida</th><th /></tr></thead>
+            <thead><tr><th>Nota</th><th>Venda</th><th>Valor</th><th>Situação</th><th className="col-opcional">Emitida</th><th /></tr></thead>
             <tbody>
               {lista.map((n) => (
-                <tr key={n.id}>
+                <tr key={n.id} className={n.pendencia ? 'nf-linha-pendente' : ''}>
                   <td>
-                    <div className="celula-principal">nº {n.numero} <span className="muted">série {n.serie}</span>{n.teste && <span className="badge" style={{ marginLeft: 6 }}>TESTE</span>}</div>
-                    <div className="celula-sub">{n.location_nome}{n.cpf ? ` · CPF ${String(n.cpf).replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4')}` : ''}</div>
+                    <div className="celula-principal">{docNome(n)} nº {n.numero} <span className="muted">série {n.serie}</span>{n.teste && <span className="badge" style={{ marginLeft: 6 }}>TESTE</span>}</div>
+                    {n.finalidade === 4 && <div className="celula-sub">Devolução da {n.ref_modelo === 55 ? 'NF-e' : 'NFC-e'} nº {n.ref_numero}{n.ref_venda_numero ? ` (venda nº ${n.ref_venda_numero})` : ''}</div>}
+                    <div className="celula-sub">{n.location_nome}{n.cpf ? ` · CPF ${cpfFmt(n.cpf)}` : ''}</div>
                   </td>
-                  <td>{n.venda_numero ? `nº ${n.venda_numero}` : '—'}</td>
+                  <td>
+                    {n.venda_numero ? `nº ${n.venda_numero}` : '—'}
+                    {n.venda_status === 'cancelada' && <div className="celula-sub error">venda cancelada</div>}
+                  </td>
                   <td>{brl(n.valor)}</td>
                   <td>
                     <span className={`ped-pill ${COR_SITUACAO[n.situacao] || ''}`}>{NOME_SITUACAO[n.situacao] || n.situacao}</span>
-                    {n.motivo && n.situacao !== 'autorizada' && <div className="celula-sub">{n.motivo}</div>}
+                    {n.pendencia === 'devolucao' && <div><span className="ped-pill warn nf-pill-devolucao">Precisa de devolução</span></div>}
+                    {n.pendencia === 'devolucao' && n.pendencia_motivo && <div className="celula-sub">Não cancelada: {n.pendencia_motivo}</div>}
+                    {n.devolucao_id && <div className="celula-sub">Devolução: NF-e nº {n.devolucao_numero} ({(NOME_SITUACAO[n.devolucao_situacao] || n.devolucao_situacao).toLowerCase()})</div>}
+                    {n.motivo && !['autorizada', 'cancelada'].includes(n.situacao) && <div className="celula-sub">{n.motivo}</div>}
                     {n.situacao === 'cancelada' && n.cancel_justificativa && <div className="celula-sub">{n.cancel_justificativa}</div>}
                   </td>
                   <td className="col-opcional">{dataHora(n.emitida_em)}</td>
                   <td>
                     <div className="row-actions">
-                      {n.chave && <button type="button" className="btn-link" onClick={() => baixarXml(n)}>XML</button>}
+                      {n.pendencia === 'devolucao' && !n.devolucao_id && podeCancelar && <button type="button" className="btn-primario" onClick={() => setDevolvendo(n)}>Gerar devolução</button>}
+                      {n.modelo === 55 && ['autorizada', 'cancelada'].includes(n.situacao) && <button type="button" className="btn-link" onClick={() => baixar(`/fiscal/notas/${n.id}/danfe`, `${n.chave}-nfe.pdf`, toast, true)}>DANFE (PDF)</button>}
+                      {n.chave && <button type="button" className="btn-link" onClick={() => baixar(`/fiscal/notas/${n.id}/xml`, `${n.chave}-${n.modelo === 55 ? 'nfe' : 'nfce'}.xml`, toast)}>XML</button>}
                       {['contingencia', 'rejeitada', 'erro'].includes(n.situacao) && (
                         <button type="button" className="btn-link" disabled={ocupado === n.id} onClick={() => reenviar(n)}>{ocupado === n.id ? 'Enviando…' : n.situacao === 'contingencia' ? 'Enviar agora' : 'Reenviar'}</button>
                       )}
-                      {n.situacao === 'autorizada' && podeAcessar(user, 'CancelarVendas') && <button type="button" className="btn-link perigo" onClick={() => setCancelando(n)}>Cancelar nota</button>}
+                      {n.situacao === 'autorizada' && podeCancelar && n.venda_status !== 'cancelada' && <button type="button" className="btn-link perigo" onClick={() => setCancelando(n)}>Cancelar nota</button>}
                     </div>
                   </td>
                 </tr>
@@ -135,7 +181,52 @@ function AbaNotas() {
         </div>
       )}
       {cancelando && <CancelarNota nota={cancelando} onClose={() => setCancelando(null)} onFeito={() => { setCancelando(null); carregar(); }} />}
+      {devolvendo && <FormDevolucao nota={devolvendo} onClose={() => setDevolvendo(null)} onFeito={() => { setDevolvendo(null); carregar(); }} />}
     </div>
+  );
+}
+
+// NF-e de devolucao: quem devolveu (nome, CPF/CNPJ e endereco sao obrigatorios na NF-e).
+function FormDevolucao({ nota, onClose, onFeito }) {
+  const toast = useToast();
+  const [d, setD] = useState({ nome: '', doc: nota.cpf ? cpfFmt(nota.cpf) : '', logradouro: '', numero: '', complemento: '', bairro: '', municipio: 'Curitiba', cod_municipio: '4106902', uf: 'PR', cep: '' });
+  const [obs, setObs] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const set = (k) => (e) => setD((x) => ({ ...x, [k]: e.target.value }));
+  async function enviar(e) {
+    e.preventDefault();
+    const doc = d.doc.replace(/\D/g, '');
+    setEnviando(true);
+    try {
+      const r = await api.post(`/fiscal/notas/${nota.id}/devolucao`, { destinatario: { ...d, cpf: doc.length === 11 ? doc : '', cnpj: doc.length === 14 ? doc : '' }, observacao: obs });
+      if (r.situacao === 'autorizada') toast.sucesso(`NF-e de devolução nº ${r.numero} autorizada`);
+      else toast.erro(new Error(`NF-e de devolução nº ${r.numero}: ${r.motivo || NOME_SITUACAO[r.situacao]}. Corrija e clique em “Reenviar” na lista.`));
+      onFeito();
+    } catch (err) { toast.erro(err); } finally { setEnviando(false); }
+  }
+  return (
+    <Modal titulo={`Devolução da ${docNome(nota)} nº ${nota.numero}`} subtitulo={`${brl(nota.valor)} · venda nº ${nota.venda_numero || '—'}${nota.teste ? ' · TESTE' : ''}`} onClose={onClose} largura="larga">
+      <form className="form-stack" onSubmit={enviar}>
+        <p className="muted">Sai uma NF-e de entrada (devolução de venda) com os mesmos itens e valores da nota, referenciando a chave dela. A NF-e exige os dados de quem devolveu.</p>
+        <div className="nf-grade">
+          <Field label="Nome de quem devolveu" className="nf-largo"><input autoFocus value={d.nome} onChange={set('nome')} required /></Field>
+          <Field label="CPF ou CNPJ"><input value={d.doc} onChange={set('doc')} inputMode="numeric" required /></Field>
+          <Field label="Rua" className="nf-largo"><input value={d.logradouro} onChange={set('logradouro')} required /></Field>
+          <Field label="Número"><input value={d.numero} onChange={set('numero')} required /></Field>
+          <Field label="Complemento"><input value={d.complemento} onChange={set('complemento')} /></Field>
+          <Field label="Bairro"><input value={d.bairro} onChange={set('bairro')} required /></Field>
+          <Field label="Cidade"><input value={d.municipio} onChange={set('municipio')} required /></Field>
+          <Field label="Código IBGE da cidade" hint="Curitiba = 4106902"><input value={d.cod_municipio} onChange={set('cod_municipio')} inputMode="numeric" maxLength={7} required /></Field>
+          <Field label="UF"><input value={d.uf} onChange={(e) => setD((x) => ({ ...x, uf: e.target.value.toUpperCase() }))} maxLength={2} required /></Field>
+          <Field label="CEP"><input value={d.cep} onChange={set('cep')} inputMode="numeric" required /></Field>
+        </div>
+        <Field label="Observação (opcional)"><input value={obs} onChange={(e) => setObs(e.target.value)} maxLength={500} placeholder="Ex.: produto devolvido pelo cliente na loja" /></Field>
+        <div className="modal-actions">
+          <button type="button" onClick={onClose}>Voltar</button>
+          <button type="submit" className="btn-primario" disabled={enviando}>{enviando ? 'Enviando à SEFAZ…' : 'Gerar NF-e de devolução'}</button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -148,14 +239,16 @@ function CancelarNota({ nota, onClose, onFeito }) {
     setEnviando(true);
     try {
       await api.post(`/fiscal/notas/${nota.id}/cancelar`, { justificativa: just });
-      toast.sucesso(`NFC-e nº ${nota.numero} cancelada`);
+      toast.sucesso(`${docNome(nota)} nº ${nota.numero} cancelada`);
       onFeito();
     } catch (err) { toast.erro(err); } finally { setEnviando(false); }
   }
   return (
-    <Modal titulo={`Cancelar a NFC-e nº ${nota.numero}`} subtitulo={`${brl(nota.valor)} · venda nº ${nota.venda_numero || '—'}`} onClose={onClose}>
+    <Modal titulo={`Cancelar a ${docNome(nota)} nº ${nota.numero}`} subtitulo={`${brl(nota.valor)}${nota.venda_numero ? ` · venda nº ${nota.venda_numero}` : ''}`} onClose={onClose}>
       <form className="form-stack" onSubmit={enviar}>
-        <p className="muted">A SEFAZ aceita o cancelamento da NFC-e em até 30 minutos depois da autorização (no Paraná). Depois disso, o caminho é a nota de devolução, feita pelo contador. Aqui cancela só a nota (ex.: CPF errado; depois dá para emitir de novo). Para desfazer a venda inteira, cancele a venda em Relatórios → Vendas: a nota é cancelada junto.</p>
+        {nota.finalidade === 4
+          ? <p className="muted">A NF-e pode ser cancelada em até 24 horas depois da autorização. Cancelando a devolução, a nota da venda volta para a lista “Precisam de devolução”.</p>
+          : <p className="muted">A SEFAZ aceita o cancelamento da NFC-e em até 30 minutos depois da autorização (no Paraná). Depois disso, o caminho é a NF-e de devolução. Aqui cancela só a nota (ex.: CPF errado; depois dá para emitir de novo). Para desfazer a venda inteira, cancele a venda em Relatórios → Vendas: a nota é cancelada junto (ou vai para a lista de devolução, se o prazo passou).</p>}
         <Field label="Motivo do cancelamento (mínimo 15 letras)">
           <input autoFocus value={just} onChange={(e) => setJust(e.target.value)} placeholder="Ex.: cliente desistiu da compra no caixa" maxLength={255} required />
         </Field>
@@ -308,6 +401,7 @@ function FormConfig({ loja, onClose, onSalvo }) {
           <Field label="CEP"><input value={f.cep} onChange={set('cep')} inputMode="numeric" required /></Field>
           <Field label="Telefone"><input value={f.telefone} onChange={set('telefone')} /></Field>
           <Field label="Série da NFC-e" hint="Normalmente 1"><input type="number" min={0} max={999} value={f.serie_nfce} onChange={(e) => setF((x) => ({ ...x, serie_nfce: Number(e.target.value) }))} /></Field>
+          <Field label="Série da NF-e (devoluções)" hint="Normalmente 1"><input type="number" min={0} max={999} value={f.serie_nfe ?? 1} onChange={(e) => setF((x) => ({ ...x, serie_nfe: Number(e.target.value) }))} /></Field>
         </div>
         <h4>CSC (código de segurança do contribuinte)</h4>
         <p className="muted">Gerado no site da Receita Estadual. Por segurança, o código salvo não aparece aqui: preencha só para trocar.</p>

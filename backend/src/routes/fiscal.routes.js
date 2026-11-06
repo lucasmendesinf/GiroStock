@@ -237,6 +237,8 @@ router.get('/fiscal/notas', requireArea('Vendas'), async (req, res) => {
   if (req.query.situacao) { params.push(String(req.query.situacao).split(',')); where += ` AND n.situacao = ANY($${params.length}::text[])`; }
   if (req.query.ambiente) { params.push(String(req.query.ambiente)); where += ` AND n.ambiente = $${params.length}`; }
   if (isUuid(req.query.sale_id)) { params.push(req.query.sale_id); where += ` AND n.sale_id = $${params.length}`; }
+  if (req.query.pendencia === 'devolucao') where += ` AND n.pendencia = 'devolucao'`;
+  if (req.query.modelo === '55' || req.query.modelo === '65') { params.push(Number(req.query.modelo)); where += ` AND n.modelo = $${params.length}`; }
   where += filtroPeriodo('n.emitida_em', req.query, params);
   const { rows } = await pool.query(`${fiscal.SELECT_NOTA} WHERE ${where} ORDER BY n.emitida_em DESC LIMIT 500`, params);
   res.json(rows.map((r) => ({ ...r, valor: Number(r.valor), teste: r.ambiente === 'homologacao' })));
@@ -253,6 +255,24 @@ router.get('/fiscal/notas/:id/xml', requireArea('Vendas'), async (req, res) => {
   res.set('Content-Type', 'application/xml; charset=utf-8');
   res.set('Content-Disposition', `attachment; filename="${n.chave || id}-nfce.xml"`);
   res.send(n.xml);
+});
+
+// PDF do DANFE da NF-e (devolucao).
+router.get('/fiscal/notas/:id/danfe', requireArea('Vendas'), async (req, res) => {
+  const d = await fiscal.danfePdf(req.user.tenantId, idValido(req.params.id));
+  res.set('Content-Type', 'application/pdf');
+  res.set('Content-Disposition', `inline; filename="${d.chave || 'danfe'}-nfe.pdf"`);
+  res.send(d.pdf);
+});
+
+// NF-e de devolucao de uma nota autorizada (venda cancelada fora do prazo de cancelamento da nota).
+router.post('/fiscal/notas/:id/devolucao', requireArea('CancelarVendas'), async (req, res) => {
+  const id = idValido(req.params.id);
+  const n = await fiscal.notaPorId(pool, req.user.tenantId, id);
+  assertLocationAccess(req.user, n.location_id, 'emitir nota desta loja');
+  const d = await fiscal.emitirDevolucao(req.user, id, req.body || {}, { simular: simular(req.body) });
+  await logAudit(pool, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'nfe_devolucao', recurso: 'notas_fiscais', recursoId: d.id, detalhes: { nota_original: n.numero, numero: d.numero, situacao: d.situacao } });
+  res.status(201).json(d);
 });
 
 router.post('/fiscal/notas/:id/reenviar', requireArea('Vendas'), async (req, res) => {

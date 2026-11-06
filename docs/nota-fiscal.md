@@ -33,9 +33,15 @@ por nota. Quem monta, assina e envia a nota é o motor PHP em `backend/fiscal/mo
   a cada 2 minutos (`FISCAL_VARREDURA_SEGUNDOS`). Em *Nota fiscal → Notas* dá para “Enviar agora”.
 - **Rejeitada** (ex.: NCM errado): corrigir o cadastro e clicar em “Reenviar” (mesmo número).
 - **Cancelar a venda cancela a nota**: ao cancelar a venda (Relatórios → Vendas), a NFC-e dela é cancelada na SEFAZ junto,
-  com o motivo da venda. Se a SEFAZ recusar (ex.: fora do prazo, que no Paraná é de 30 minutos), a venda **não** é
-  cancelada e aparece o motivo (fora do prazo, o caminho é a nota de devolução, com o contador). Nota em contingência é
-  enviada antes; sem conexão, a venda espera. Nota rejeitada não tem valor e não impede o cancelamento.
+  com o motivo da venda. Nota em contingência é enviada antes; sem resposta da SEFAZ, a venda espera (tentar de novo).
+  Nota rejeitada não tem valor e não impede o cancelamento.
+- **Fora do prazo** (no Paraná, 30 minutos): a SEFAZ recusa cancelar a nota, mas **a venda é cancelada assim mesmo**. Aparece
+  um aviso e a nota vai para *Nota fiscal → Notas → Precisam de devolução* (com um alerta no topo da lista).
+- **NF-e de devolução**: na lista, *Gerar devolução* pede nome, CPF/CNPJ e endereço de quem devolveu e emite uma NF-e
+  (modelo 55) de **entrada**, finalidade 4, com os mesmos itens e valores e a chave da NFC-e referenciada. CFOP 1202
+  (ou 1411 quando a venda foi com ST, 5405), CSOSN 900, PIS/COFINS 99, sem pagamento (tPag 90). Série própria (*Série da
+  NF-e* na configuração da loja), numeração separada. DANFE em PDF e XML na lista. Rejeitada: *Reenviar* (mesmo número).
+  Cancelar a devolução (até 24 h) devolve a nota para a lista de pendências. **Confira esses códigos com o contador.**
 - **Cancelar só a nota**: em *Notas* (ex.: CPF errado), com a permissão “Cancelar vendas” e justificativa de 15+ letras.
   A venda continua valendo e dá para emitir a nota de novo.
 - Produto sem NCM ou sem perfil: a nota é recusada **antes** de gastar um número.
@@ -50,10 +56,10 @@ por nota. Quem monta, assina e envia a nota é o motor PHP em `backend/fiscal/mo
 - Opcional: responsável técnico na nota (`FISCAL_RESP_TEC_CNPJ`, `FISCAL_RESP_TEC_CONTATO`, `FISCAL_RESP_TEC_EMAIL`,
   `FISCAL_RESP_TEC_FONE`).
 - Testes: `FISCAL_SIMULADOR=1` monta, assina e valida a nota de verdade mas não envia à SEFAZ;
-  `npm run test:e2e:fiscal` (55 checagens).
+  `npm run test:e2e:fiscal` (71 checagens).
 
 ## Ainda não faz (próximas etapas)
 
-- NF-e modelo 55 (venda para CNPJ), inutilização de números pulados, carta de correção.
+- NF-e modelo 55 de venda (para CNPJ; a de devolução já existe), inutilização de números pulados, carta de correção.
 - Exportação do lote de XML do mês para o contador (hoje: XML nota a nota).
 - Reforma tributária (IBS/CBS): ainda não obrigatória para o Simples Nacional.

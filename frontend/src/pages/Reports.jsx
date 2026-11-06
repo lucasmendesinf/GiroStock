@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useToast, useConfirm } from '../context/UiContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -329,6 +330,7 @@ function AbaCaixas({ query }) {
 }
 
 function DetalheVenda({ id, onClose, onImprimir, onCancelada }) {
+  const navigate = useNavigate();
   const toast = useToast();
   const confirmar = useConfirm();
   const { user } = useAuth();
@@ -343,13 +345,21 @@ function DetalheVenda({ id, onClose, onImprimir, onCancelada }) {
     e.preventDefault();
     if (!(await confirmar({
       titulo: `Cancelar a venda nº ${venda.numero}?`,
-      mensagem: `O estoque volta para ${venda.location_nome} e ${brl(venda.total)} sai do caixa aberto.${venda.nota_fiscal ? ` A NFC-e nº ${venda.nota_fiscal.numero} também é cancelada na SEFAZ.` : ''} Não dá para desfazer.`,
+      mensagem: `O estoque volta para ${venda.location_nome} e ${brl(venda.total)} sai do caixa aberto.${venda.nota_fiscal ? ` A NFC-e nº ${venda.nota_fiscal.numero} também é cancelada na SEFAZ (se o prazo já passou, a venda é cancelada e a nota vai para a lista de devolução).` : ''} Não dá para desfazer.`,
       confirmar: 'Cancelar venda', perigo: true,
     }))) return;
     try {
       const r = await api.post(`/sales/${venda.id}/cancel`, { motivo });
       toast.sucesso(`Venda nº ${venda.numero} cancelada e estoque devolvido.${r && r.nfce_cancelada ? ` NFC-e nº ${r.nfce_cancelada.numero} cancelada na SEFAZ.` : ''}`);
       onCancelada();
+      if (r && r.nfce_pendente) {
+        const ver = await confirmar({
+          titulo: `A NFC-e nº ${r.nfce_pendente.numero} não foi cancelada`,
+          mensagem: `A venda foi cancelada, mas a SEFAZ não aceitou cancelar a nota: ${r.nfce_pendente.motivo}. Ela ficou em Nota fiscal → Notas → “Precisam de devolução”, onde dá para gerar a NF-e de devolução.`,
+          confirmar: 'Ver notas para devolução',
+        });
+        if (ver) navigate('/nota-fiscal', { state: { aba: 'notas', devolucao: true } });
+      }
     } catch (err) { toast.erro(err); }
   }
 

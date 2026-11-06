@@ -10,6 +10,8 @@
  *   cancelar    evento de cancelamento (chave, protocolo, justificativa de 15+ letras)
  *   status      consulta se o servico da SEFAZ esta no ar
  *   certificado le o certificado A1 (.pfx + senha): titular, CNPJ e validade (nao precisa do resto da configuracao)
+ *   devolucao   NF-e (modelo 55) de entrada, finalidade 4, devolvendo os itens de uma nota autorizada (xml_original)
+ *   danfe       PDF do DANFE (NF-e) a partir do XML autorizado
  *
  * Ambiente: config.tpAmb 2 = homologacao (notas de TESTE, sem valor fiscal), 1 = producao.
  * FISCAL_SIMULADOR=1 (ou entrada.simulador): monta, assina e valida a nota de verdade, mas nao envia (resposta simulada).
@@ -67,7 +69,7 @@ function ferramentas(array $c): Tools
     }
     $cert = Certificate::readPfx(base64_decode($c['pfx_b64']), $c['senha']);
     $tools = new Tools(json_encode($cfg), $cert);
-    $tools->model('65');
+    $tools->model((string) ($c['modelo'] ?? '65'));
     return $tools;
 }
 
@@ -251,6 +253,233 @@ function suplementos(string $xml): array
     return [$q ? trim($q->nodeValue) : null, $u ? trim($u->nodeValue) : null];
 }
 
+// Envia uma nota assinada (sincrono; se a SEFAZ responder "lote em processamento", consulta o recibo) e devolve a resposta
+// no formato do motor. $extra vai junto na resposta (qrcode/url da NFC-e).
+function enviar(Tools $tools, array $c, string $xml, string $chave, bool $simulador, ?string $simular, array $extra = []): array
+{
+    try {
+        if ($simulador) {
+            if ($simular === 'sem_conexao') throw new RuntimeException('Simulador: falha de comunicação com a SEFAZ (timeout)');
+            $cStat = $simular === 'rejeitar' ? '778' : '100';
+            $motivo = $simular === 'rejeitar' ? 'Rejeicao: Informado NCM inexistente (simulador)' : 'Autorizado o uso da NF-e';
+            $nProt = '141' . date('y') . str_pad((string) random_int(0, 9999999999), 10, '0', STR_PAD_LEFT);
+            $prot = '<protNFe versao="4.00"><infProt><tpAmb>' . (int) $c['tpAmb'] . '</tpAmb><verAplic>SIMULADOR</verAplic><chNFe>' . $chave . '</chNFe><dhRecbto>' . date('c') . '</dhRecbto>'
+                . ($cStat === '100' ? '<nProt>' . $nProt . '</nProt>' : '') . '<digVal>x</digVal><cStat>' . $cStat . '</cStat><xMotivo>' . $motivo . '</xMotivo></infProt></protNFe>';
+            if ($cStat !== '100') return ['ok' => false, 'situacao' => 'rejeitada', 'cStat' => $cStat, 'motivo' => $motivo, 'chave' => $chave, 'xml' => $xml];
+            $autorizado = '<?xml version="1.0" encoding="UTF-8"?><nfeProc versao="4.00" xmlns="http://www.portalfiscal.inf.br/nfe">' . preg_replace('/^<\?xml[^>]*\?>/', '', $xml) . $prot . '</nfeProc>';
+            return ['ok' => true, 'situacao' => 'autorizada', 'cStat' => '100', 'motivo' => $motivo, 'chave' => $chave, 'protocolo' => $nProt, 'xml' => $autorizado] + $extra;
+        }
+        $idLote = str_pad((string) random_int(1, 999999999999999), 15, '0', STR_PAD_LEFT);
+        $resp = $tools->sefazEnviaLote([$xml], $idLote, 1);
+        $std = (new Standardize())->toStd($resp);
+        // SEFAZ sem modo sincrono: "lote recebido" -> consulta o recibo
+        for ($i = 0; $i < 4 && in_array((string) $std->cStat, ['103', '105'], true) && !isset($std->protNFe) && isset($std->infRec->nRec); $i++) {
+            sleep(3);
+            $resp = $tools->sefazConsultaRecibo((string) $std->infRec->nRec);
+            $std = (new Standardize())->toStd($resp);
+        }
+    } catch (\Throwable $t) {
+        if (semConexao($t)) return ['ok' => false, 'situacao' => 'sem_conexao', 'motivo' => $t->getMessage(), 'chave' => $chave, 'xml' => $xml];
+        throw $t;
+    }
+    $prot = isset($std->protNFe->infProt) ? $std->protNFe->infProt : null;
+    $cStat = $prot ? (string) $prot->cStat : (string) $std->cStat;
+    $motivo = $prot ? (string) $prot->xMotivo : (string) $std->xMotivo;
+    if (in_array($cStat, ['100', '150'], true)) {
+        return ['ok' => true, 'situacao' => 'autorizada', 'cStat' => $cStat, 'motivo' => $motivo, 'chave' => $chave, 'protocolo' => (string) $prot->nProt, 'xml' => Complements::toAuthorize($xml, $resp)] + $extra;
+    }
+    if ($cStat === '204' || $cStat === '539') {   // ja autorizada (duplicidade): consulta o protocolo
+        $consulta = $tools->sefazConsultaChave($chave);
+        $cons = (new Standardize())->toStd($consulta);
+        if (isset($cons->protNFe->infProt->cStat) && (string) $cons->protNFe->infProt->cStat === '100') {
+            return ['ok' => true, 'situacao' => 'autorizada', 'cStat' => '100', 'motivo' => (string) $cons->protNFe->infProt->xMotivo, 'chave' => $chave, 'protocolo' => (string) $cons->protNFe->infProt->nProt, 'xml' => Complements::toAuthorize($xml, $consulta)] + $extra;
+        }
+    }
+    return ['ok' => false, 'situacao' => 'rejeitada', 'cStat' => $cStat, 'motivo' => $motivo, 'chave' => $chave, 'xml' => $xml];
+}
+
+// CFOP de entrada da devolucao a partir do CFOP da venda (5405/5403 com ST -> 1411; demais -> 1202).
+function cfopDevolucao(string $cfop): string
+{
+    return in_array($cfop, ['5401', '5403', '5405'], true) ? '1411' : '1202';
+}
+
+// NF-e de devolucao (modelo 55, entrada, finalidade 4) dos itens da nota original (xml autorizado). Devolve [xml, chave].
+function montarDevolucao(Tools $tools, array $c, array $n): array
+{
+    $hom = (int) $c['tpAmb'] === 2;
+    $orig = new DOMDocument();
+    if (!$orig->loadXML($n['xml_original'])) throw new RuntimeException('XML da nota original inválido');
+    $mk = new Make();
+    $inf = new stdClass();
+    $inf->versao = '4.00';
+    $inf->Id = null;
+    $inf->pk_nItem = null;
+    $mk->taginfNFe($inf);
+
+    $ide = new stdClass();
+    $ide->cUF = (int) $c['cUF'];
+    $ide->cNF = str_pad((string) $n['cNF'], 8, '0', STR_PAD_LEFT);
+    $ide->natOp = 'DEVOLUCAO DE VENDA';
+    $ide->mod = 55;
+    $ide->serie = (int) $n['serie'];
+    $ide->nNF = (int) $n['numero'];
+    $ide->dhEmi = $n['dhEmi'];
+    $ide->dhSaiEnt = $n['dhEmi'];
+    $ide->tpNF = 0;            // entrada
+    $ide->idDest = 1;
+    $ide->cMunFG = $c['endereco']['cMun'];
+    $ide->tpImp = 1;
+    $ide->tpEmis = 1;
+    $ide->cDV = 0;
+    $ide->tpAmb = (int) $c['tpAmb'];
+    $ide->finNFe = 4;          // devolucao
+    $ide->indFinal = 1;
+    $ide->indPres = 1;
+    $ide->indIntermed = null;
+    $ide->procEmi = 0;
+    $ide->verProc = 'GiroStock 1.0';
+    $mk->tagide($ide);
+    $ref = new stdClass();
+    $ref->refNFe = preg_replace('/\D/', '', $n['ref_chave']);
+    $mk->tagrefNFe($ref);
+
+    $em = new stdClass();
+    $em->xNome = textoNota($c['razao'], 60);
+    $em->xFant = textoNota($c['fantasia'] ?: $c['razao'], 60);
+    $em->IE = preg_replace('/\D/', '', $c['ie']);
+    $em->CRT = (int) $c['crt'];
+    $em->CNPJ = $c['cnpj'];
+    $mk->tagemit($em);
+    $e = $c['endereco'];
+    $end = new stdClass();
+    $end->xLgr = textoNota($e['xLgr'], 60);
+    $end->nro = textoNota($e['nro'], 60);
+    $end->xCpl = !empty($e['xCpl']) ? textoNota($e['xCpl'], 60) : null;
+    $end->xBairro = textoNota($e['xBairro'], 60);
+    $end->cMun = $e['cMun'];
+    $end->xMun = textoNota($e['xMun'], 60);
+    $end->UF = $c['uf'];
+    $end->CEP = preg_replace('/\D/', '', $e['CEP']);
+    $end->cPais = '1058';
+    $end->xPais = 'BRASIL';
+    $end->fone = !empty($e['fone']) ? preg_replace('/\D/', '', $e['fone']) : null;
+    $mk->tagenderEmit($end);
+
+    // Destinatario: o cliente que devolveu (consumidor final, sem IE)
+    $dd = $n['dest'];
+    $d = new stdClass();
+    $d->xNome = $hom ? HOMOLOG_DEST : textoNota($dd['nome'], 60);
+    if (!empty($dd['cpf'])) $d->CPF = preg_replace('/\D/', '', $dd['cpf']);
+    else $d->CNPJ = preg_replace('/\D/', '', $dd['cnpj']);
+    $d->indIEDest = 9;
+    $mk->tagdest($d);
+    $ed = new stdClass();
+    $ed->xLgr = textoNota($dd['logradouro'], 60);
+    $ed->nro = textoNota($dd['numero'], 60);
+    $ed->xCpl = !empty($dd['complemento']) ? textoNota($dd['complemento'], 60) : null;
+    $ed->xBairro = textoNota($dd['bairro'], 60);
+    $ed->cMun = preg_replace('/\D/', '', $dd['cod_municipio']);
+    $ed->xMun = textoNota($dd['municipio'], 60);
+    $ed->UF = strtoupper($dd['uf']);
+    $ed->CEP = preg_replace('/\D/', '', $dd['cep']);
+    $ed->cPais = '1058';
+    $ed->xPais = 'BRASIL';
+    $mk->tagenderDest($ed);
+
+    $txt = function ($el, $tag) { $x = $el->getElementsByTagName($tag)->item(0); return $x ? trim($x->nodeValue) : ''; };
+    $item = 0;
+    foreach ($orig->getElementsByTagName('det') as $det) {
+        $item++;
+        $pr = $det->getElementsByTagName('prod')->item(0);
+        $p = new stdClass();
+        $p->item = $item;
+        $p->cProd = $txt($pr, 'cProd');
+        $p->cEAN = $txt($pr, 'cEAN') ?: 'SEM GTIN';
+        $p->cEANTrib = $txt($pr, 'cEANTrib') ?: $p->cEAN;
+        $nome = $txt($pr, 'xProd');
+        $p->xProd = ($hom && $item === 1) ? HOMOLOG_ITEM : ($nome === HOMOLOG_ITEM && !empty($n['nomes'][$item - 1]) ? textoNota($n['nomes'][$item - 1], 120) : $nome);
+        $p->NCM = $txt($pr, 'NCM');
+        $p->CFOP = cfopDevolucao($txt($pr, 'CFOP'));
+        $p->uCom = $txt($pr, 'uCom');
+        $p->qCom = $txt($pr, 'qCom');
+        $p->vUnCom = $txt($pr, 'vUnCom');
+        $p->vProd = $txt($pr, 'vProd');
+        $p->uTrib = $txt($pr, 'uTrib') ?: $p->uCom;
+        $p->qTrib = $txt($pr, 'qTrib') ?: $p->qCom;
+        $p->vUnTrib = $txt($pr, 'vUnTrib') ?: $p->vUnCom;
+        $p->vDesc = $txt($pr, 'vDesc') ?: null;
+        $p->vOutro = $txt($pr, 'vOutro') ?: null;
+        $p->vFrete = null;
+        $p->vSeg = null;
+        $p->indTot = 1;
+        $mk->tagprod($p);
+        if ($cest = $txt($pr, 'CEST')) {
+            $ce = new stdClass();
+            $ce->item = $item;
+            $ce->CEST = $cest;
+            $mk->tagCEST($ce);
+        }
+        $imp = new stdClass();
+        $imp->item = $item;
+        $imp->vTotTrib = null;
+        $mk->tagimposto($imp);
+        $ic = new stdClass();
+        $ic->item = $item;
+        $ic->orig = (int) ($txt($det, 'orig') ?: 0);
+        $ic->CSOSN = '900';   // Simples Nacional: devolucao = outros (sem destaque de ICMS)
+        $mk->tagICMSSN($ic);
+        $pis = new stdClass();
+        $pis->item = $item;
+        $pis->CST = '99';
+        $pis->vBC = '0.00';
+        $pis->pPIS = '0.0000';
+        $pis->vPIS = '0.00';
+        $mk->tagPIS($pis);
+        $cof = new stdClass();
+        $cof->item = $item;
+        $cof->CST = '99';
+        $cof->vBC = '0.00';
+        $cof->pCOFINS = '0.0000';
+        $cof->vCOFINS = '0.00';
+        $mk->tagCOFINS($cof);
+    }
+    if ($item === 0) throw new RuntimeException('a nota original não tem itens');
+
+    $tr = new stdClass();
+    $tr->modFrete = 9;
+    $mk->tagtransp($tr);
+    $pag = new stdClass();
+    $pag->vTroco = null;
+    $mk->tagpag($pag);
+    $dp = new stdClass();
+    $dp->indPag = null;
+    $dp->tPag = '90';   // sem pagamento (devolucao)
+    $dp->vPag = '0.00';
+    $mk->tagdetPag($dp);
+
+    $ad = new stdClass();
+    $ad->infAdFisco = null;
+    $ad->infCpl = textoNota($n['infCpl'] ?? '', 2000);
+    $mk->taginfAdic($ad);
+    if (!empty($c['respTec']['CNPJ'])) {
+        $rt = new stdClass();
+        $rt->CNPJ = $c['respTec']['CNPJ'];
+        $rt->xContato = textoNota($c['respTec']['xContato'] ?? 'Suporte', 60);
+        $rt->email = $c['respTec']['email'] ?? 'suporte@calutec.com.br';
+        $rt->fone = preg_replace('/\D/', '', $c['respTec']['fone'] ?? '');
+        $mk->taginfRespTec($rt);
+    }
+    try {
+        $xml = $mk->getXML();
+    } catch (\Throwable $t) {
+        $erros = $mk->getErrors();
+        throw new RuntimeException('dados da devolução incompletos: ' . ($erros ? implode('; ', $erros) : $t->getMessage()));
+    }
+    $chave = $mk->getChave();
+    return [$tools->signNFe($xml), $chave];
+}
+
 function semConexao(\Throwable $t): bool
 {
     $m = strtolower($t->getMessage());
@@ -279,6 +508,12 @@ try {
         responder(['ok' => true, 'titular' => $cert->getCompanyName(), 'cnpj' => $cert->getCnpj() ?: null, 'cpf' => $cert->getCpf() ?: null,
             'validade' => $ate ? $ate->format('Y-m-d') : null, 'vencido' => $cert->isExpired()]);
     }
+    if ($acao === 'danfe') {
+        $danfe = new \NFePHP\DA\NFe\Danfe($entrada['xml']);
+        $danfe->debugMode(false);
+        $danfe->creditsIntegratorFooter('GiroStock');
+        responder(['ok' => true, 'pdf_b64' => base64_encode($danfe->render())]);
+    }
     $tools = ferramentas($c);
 
     if ($acao === 'status') {
@@ -300,41 +535,12 @@ try {
         if ($emContingencia) {
             responder(['ok' => true, 'situacao' => 'contingencia', 'cStat' => null, 'motivo' => 'Emitida em contingência offline: será enviada à SEFAZ assim que houver conexão', 'chave' => $chave, 'xml' => $xml, 'qrcode' => $qr, 'url_consulta' => $urlChave]);
         }
-        try {
-            if ($simulador) {
-                if ($simular === 'sem_conexao') throw new RuntimeException('Simulador: falha de comunicação com a SEFAZ (timeout)');
-                $cStat = $simular === 'rejeitar' ? '778' : '100';
-                $motivo = $simular === 'rejeitar' ? 'Rejeicao: Informado NCM inexistente (simulador)' : 'Autorizado o uso da NF-e';
-                $nProt = '141' . date('y') . str_pad((string) random_int(0, 9999999999), 10, '0', STR_PAD_LEFT);
-                $prot = '<protNFe versao="4.00"><infProt><tpAmb>' . (int) $c['tpAmb'] . '</tpAmb><verAplic>SIMULADOR</verAplic><chNFe>' . $chave . '</chNFe><dhRecbto>' . date('c') . '</dhRecbto>'
-                    . ($cStat === '100' ? '<nProt>' . $nProt . '</nProt>' : '') . '<digVal>x</digVal><cStat>' . $cStat . '</cStat><xMotivo>' . $motivo . '</xMotivo></infProt></protNFe>';
-                if ($cStat !== '100') responder(['ok' => false, 'situacao' => 'rejeitada', 'cStat' => $cStat, 'motivo' => $motivo, 'chave' => $chave, 'xml' => $xml]);
-                $autorizado = '<?xml version="1.0" encoding="UTF-8"?><nfeProc versao="4.00" xmlns="http://www.portalfiscal.inf.br/nfe">' . preg_replace('/^<\?xml[^>]*\?>/', '', $xml) . $prot . '</nfeProc>';
-                responder(['ok' => true, 'situacao' => 'autorizada', 'cStat' => '100', 'motivo' => $motivo, 'chave' => $chave, 'protocolo' => $nProt, 'xml' => $autorizado, 'qrcode' => $qr, 'url_consulta' => $urlChave]);
-            }
-            $idLote = str_pad((string) random_int(1, 999999999999999), 15, '0', STR_PAD_LEFT);
-            $resp = $tools->sefazEnviaLote([$xml], $idLote, 1);
-        } catch (\Throwable $t) {
-            if (semConexao($t)) {
-                responder(['ok' => false, 'situacao' => 'sem_conexao', 'motivo' => $t->getMessage(), 'chave' => $chave, 'xml' => $xml]);
-            }
-            throw $t;
-        }
-        $std = (new Standardize())->toStd($resp);
-        $prot = isset($std->protNFe->infProt) ? $std->protNFe->infProt : null;
-        $cStat = $prot ? (string) $prot->cStat : (string) $std->cStat;
-        $motivo = $prot ? (string) $prot->xMotivo : (string) $std->xMotivo;
-        if (in_array($cStat, ['100', '150'], true)) {
-            $autorizado = Complements::toAuthorize($xml, $resp);
-            responder(['ok' => true, 'situacao' => 'autorizada', 'cStat' => $cStat, 'motivo' => $motivo, 'chave' => $chave, 'protocolo' => (string) $prot->nProt, 'xml' => $autorizado, 'qrcode' => $qr, 'url_consulta' => $urlChave]);
-        }
-        if ($cStat === '204' || $cStat === '539') {   // ja autorizada (duplicidade): consulta o protocolo
-            $cons = (new Standardize())->toStd($tools->sefazConsultaChave($chave));
-            if (isset($cons->protNFe->infProt->cStat) && (string) $cons->protNFe->infProt->cStat === '100') {
-                responder(['ok' => true, 'situacao' => 'autorizada', 'cStat' => '100', 'motivo' => (string) $cons->protNFe->infProt->xMotivo, 'chave' => $chave, 'protocolo' => (string) $cons->protNFe->infProt->nProt, 'xml' => Complements::toAuthorize($xml, $tools->sefazConsultaChave($chave)), 'qrcode' => $qr, 'url_consulta' => $urlChave]);
-            }
-        }
-        responder(['ok' => false, 'situacao' => 'rejeitada', 'cStat' => $cStat, 'motivo' => $motivo, 'chave' => $chave, 'xml' => $xml]);
+        responder(enviar($tools, $c, $xml, $chave, $simulador, $simular, ['qrcode' => $qr, 'url_consulta' => $urlChave]));
+    }
+
+    if ($acao === 'devolucao') {
+        [$xml, $chave] = montarDevolucao($tools, $c, $entrada['nota'] ?? []);
+        responder(enviar($tools, $c, $xml, $chave, $simulador, $simular));
     }
 
     if ($acao === 'cancelar') {

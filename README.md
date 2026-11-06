@@ -267,7 +267,7 @@ Menu **Nota fiscal** (vem desligado; o Master liga por empresa). A NFC-e é emit
 (`backend/fiscal`, NFePHP), sem intermediário e sem custo por nota. Cada loja tem a sua configuração (CNPJ/IE, certificado
 A1, CSC, série) e escolhe **Teste (homologação)** ou **Produção**. No PDV, o caixa escolhe **Cupom fiscal (NFC-e)** ou
 **Só cupom** (ou a loja deixa sempre fiscal); o cupom impresso sai como DANFE NFC-e com QR Code. Sem conexão com a SEFAZ a
-nota sai em contingência e é enviada sozinha depois. Abas: *Notas emitidas* (XML, reenviar, cancelar), *Configuração da
+nota sai em contingência e é enviada sozinha depois. Cancelar a venda cancela a nota; fora do prazo, a venda cancela e a nota vai para *Precisam de devolução*, de onde sai a NF-e de devolução (DANFE em PDF). Abas: *Notas emitidas* (XML, reenviar, cancelar), *Configuração da
 loja*, *Produtos (NCM)* e *Perfis fiscais*. Guia completo: `docs/nota-fiscal.md`.
 
 API: `GET/POST /api/eventos`, `GET/PUT /api/eventos/:id`, `POST /api/eventos/:id/abrir|encerrar|cancelar`, `GET /api/evento-em-andamento?location_id=`, `GET /api/eventos/:id/estoque`, `POST /api/eventos/:id/carga|perdas|fechar-estoque`. Teste: `npm run test:e2e:eventos`.

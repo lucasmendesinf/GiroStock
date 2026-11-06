@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import { useConfirm, useToast } from '../context/UiContext.jsx';
 import { Field, Modal, Vazio } from '../components/ui.jsx';
 import { brl, dataHora, FORMA_PAGAMENTO, parseNumero } from '../utils/format';
+import EstoqueEvento from './eventos/EstoqueEvento.jsx';
 
 // Casa de shows e eventos: agenda (lista e calendario), cadastro, abrir/encerrar/cancelar e o resumo de vendas do evento.
 // Enquanto o evento esta aberto, toda venda do setor dele (PDV, comanda de pista, pedido) fica ligada ao evento.
@@ -216,6 +217,7 @@ function DetalheEvento({ id, onClose, onEditar, onMudou }) {
   const [cancelando, setCancelando] = useState(false);
   const [motivo, setMotivo] = useState('');
   const [ocupado, setOcupado] = useState(false);
+  const [aba, setAba] = useState('vendas');
   const carregar = useCallback(() => api.get(`/eventos/${id}`).then(setE).catch((err) => { toast.erro(err); onClose(); }), [id, toast, onClose]);
   useEffect(() => { carregar(); }, [carregar]);
   if (!e) return <Modal titulo="Evento" onClose={onClose}><p className="muted">Carregando…</p></Modal>;
@@ -254,7 +256,16 @@ function DetalheEvento({ id, onClose, onEditar, onMudou }) {
           <div className="es-erro">Para encerrar, feche ou cancele no setor: {[e.pendencias.comandas && `${e.pendencias.comandas} comanda(s) aberta(s)`, e.pendencias.pedidos && `${e.pendencias.pedidos} pedido(s) em aberto`].filter(Boolean).join(' e ')}.</div>
         ) : null}
 
-        {(e.status === 'aberto' || e.status === 'encerrado') && (
+        {e.status !== 'cancelado' && (
+          <div className="ped-bar" role="tablist" style={{ margin: 0 }}>
+            {[['vendas', 'Vendas'], ['estoque', `Estoque do evento${e.status === 'encerrado' && !e.estoque_fechado_em ? ' • contar' : ''}`]].map(([k, n]) => (
+              <button key={k} type="button" role="tab" aria-selected={aba === k} className={`btn-link ${aba === k ? 'ativo' : ''}`} onClick={() => setAba(k)}>{n}</button>
+            ))}
+          </div>
+        )}
+        {aba === 'estoque' && e.status !== 'cancelado' && <EstoqueEvento evento={e} onMudou={() => { carregar(); onMudou(); }} />}
+        {aba === 'vendas' && e.status === 'agendado' && <p className="muted" style={{ margin: 0 }}>As vendas aparecem aqui quando o evento for aberto. Antes disso, já dá para enviar a carga do estoque.</p>}
+        {aba === 'vendas' && (e.status === 'aberto' || e.status === 'encerrado') && (
           <>
             <div className="ped-kpis ev-kpis">
               <div className="ped-kpi hero"><small>Faturamento</small><b>{brl(r.faturamento)}</b><span className="cl-sub">{r.vendas} venda(s)</span></div>

@@ -1785,3 +1785,10 @@ tr.cmd-fechando td { background: var(--warn-soft); }
   .ev-andamento { grid-template-columns: 1fr; }
   .ev-andamento .cl-sub, .ev-andamento-total { grid-column: 1; grid-row: auto; text-align: left; }
 }
+.ev-neg { color: var(--err); font-weight: 700; }
+.ev-estoque td { vertical-align: top; }
+.ev-acoes-estoque { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ev-acoes-estoque button { padding: 10px 18px; border-radius: 10px; border: 1px solid var(--line); background: none; color: var(--ivory); font-weight: 700; font-size: 13px; cursor: pointer; }
+.ev-acoes-estoque button.btn-primario { background: var(--gold); color: var(--btn-text); border-color: var(--gold); text-transform: uppercase; }
+.ev-busca { width: 100%; flex: 0 0 auto; }
+.ev-acoes-estoque .toolbar-espaco { flex: 1; }

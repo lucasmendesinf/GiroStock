@@ -9,6 +9,7 @@ const { filtroLocais, assertLocationAccess } = require('../utils/access');
 const { HttpError } = require('../utils/http');
 const { FUSO } = require('../utils/query');
 const eventos = require('../services/eventos');
+const estoqueEv = require('../services/eventosEstoque');
 
 const router = express.Router();
 const DATA = /^\d{4}-\d{2}-\d{2}$/;
@@ -110,6 +111,25 @@ for (const [rota, fn, acao] of [['abrir', 'abrir', 'abrir_evento'], ['encerrar',
       await logAudit(client, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao, recurso: 'eventos', recursoId: id, detalhes: { nome: e.nome, ...(rota === 'cancelar' ? { motivo: e.motivo_cancelamento } : {}) } });
     });
     res.json(await eventoCompleto(req.user.tenantId, id));
+  });
+}
+
+// ---------- estoque do evento (Fase 2) ----------
+router.get('/eventos/:id/estoque', async (req, res) => {
+  res.json(await estoqueEv.estoque(pool, req.user.tenantId, idValido(req.params.id)));
+});
+
+for (const [rota, fn, acao] of [['carga', 'carga', 'evento_carga'], ['perdas', 'perda', 'evento_perda'], ['fechar-estoque', 'fechar', 'evento_fechar_estoque']]) {
+  router.post(`/eventos/:id/${rota}`, async (req, res) => {
+    const id = idValido(req.params.id);
+    await emTransacao(async (client) => {
+      const atual = await eventos.eventoDaEmpresa(client, req.user.tenantId, id);
+      assertLocationAccess(req.user, atual.location_id, 'mexer no estoque deste evento');
+      const r = await estoqueEv[fn](client, req.user, id, req.body || {});
+      const { evento, ...detalhes } = r;
+      await logAudit(client, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao, recurso: 'eventos', recursoId: id, detalhes });
+    });
+    res.status(rota === 'fechar-estoque' ? 200 : 201).json(await estoqueEv.estoque(pool, req.user.tenantId, id));
   });
 }
 

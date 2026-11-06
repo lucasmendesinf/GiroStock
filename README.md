@@ -249,8 +249,13 @@ Menu **Eventos** (permissão *Eventos*: Administrador e Gerente). Cada evento te
 - **Abrir / encerrar:** só um evento aberto por vez. Enquanto ele está aberto, **toda venda do setor** fica ligada ao evento: PDV, fechamento de comanda de pista e pedido. O PDV e a tela de Comandas mostram a faixa "Evento: ...". Para encerrar, não pode haver comanda aberta nem pedido em aberto no setor.
 - **Cancelar:** só evento agendado, com motivo (sai do site).
 - **Resumo do evento:** faturamento, ticket médio, canceladas, primeira e última venda, por operador, por PDV e por forma de pagamento.
+- **Estoque do evento** (aba *Estoque do evento*): o setor funciona como estoque temporário do evento.
+  - *Enviar carga* leva os produtos do depósito para o setor (antes ou durante o evento; durante, vira *reforço*).
+  - *Lançar perda* durante o evento: quebra, vencido, cortesia, consumo interno, furto/desvio ou outro.
+  - Depois de encerrar, *Fazer a contagem* do que sobrou: a diferença para o sistema vira perda ("diferença na contagem") ou sobra, e o que sobrou volta ao depósito (opcional). O estoque do evento fica fechado.
+  - Relatório produto a produto: enviado, vendido, perdas, contado, diferença, devolvido e quebra (quantidade e R$ a custo), com *Imprimir / PDF* e CSV.
 
-API: `GET/POST /api/eventos`, `GET/PUT /api/eventos/:id`, `POST /api/eventos/:id/abrir|encerrar|cancelar`, `GET /api/evento-em-andamento?location_id=`. Teste: `npm run test:e2e:eventos`.
+API: `GET/POST /api/eventos`, `GET/PUT /api/eventos/:id`, `POST /api/eventos/:id/abrir|encerrar|cancelar`, `GET /api/evento-em-andamento?location_id=`, `GET /api/eventos/:id/estoque`, `POST /api/eventos/:id/carga|perdas|fechar-estoque`. Teste: `npm run test:e2e:eventos`.
 
 ## Financeiro (módulo "Financeiro")
 

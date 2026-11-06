@@ -156,6 +156,50 @@ await api('PATCH', `/master/empresas/${F.id}`, { recursos: { eventos: true } }, 
 check('outra empresa não vê nem mexe no evento (404)', (await api('GET', `/eventos/${ev1.j.id}`, null, F.token)).s === 404 && (await api('POST', `/eventos/${ev2.id}/encerrar`, {}, F.token)).s === 404 && (await api('GET', '/eventos', null, F.token)).j.length === 0);
 check('id inválido -> 404', (await api('GET', '/eventos/abc', null, E.token)).s === 404);
 
+console.log('\n# 8. Estoque do evento: carga, reforço, perdas, contagem e devolução');
+const GELO = await produto('Gelo 5kg', 8, DEP, 50);
+const REFRI = await produto('Refrigerante Lata', 6, DEP, 40);
+const saldoEm = async (pid, loc) => Number(((await prod.query('SELECT saldo FROM stock_balances WHERE product_id = $1 AND location_id = $2', [pid, loc])).rows[0] || { saldo: 0 }).saldo);
+check('carga sem depósito no evento -> 400', (await api('POST', `/eventos/${ev2.id}/carga`, { itens: [{ product_id: GELO, quantidade: 1 }] }, E.token)).s === 400);
+await api('PUT', `/eventos/${ev2.id}`, { deposito_id: DEP }, E.token);
+check('carga vazia -> 400; acima do saldo do depósito -> 400; quantidade fracionada em UN -> 400',
+  (await api('POST', `/eventos/${ev2.id}/carga`, { itens: [] }, E.token)).s === 400
+  && (await api('POST', `/eventos/${ev2.id}/carga`, { itens: [{ product_id: GELO, quantidade: 999 }] }, E.token)).s === 400
+  && (await api('POST', `/eventos/${ev2.id}/carga`, { itens: [{ product_id: GELO, quantidade: 1.5 }] }, E.token)).s === 400);
+const cg = await api('POST', `/eventos/${ev2.id}/carga`, { itens: [{ product_id: GELO, quantidade: 20 }, { product_id: REFRI, quantidade: 30 }] }, GER.token);
+const item = (est, pid) => est.itens.find((i) => i.product_id === pid);
+check('carga: depósito -> setor, aparece como enviado', cg.s === 201 && item(cg.j, GELO).enviado === 20 && item(cg.j, REFRI).enviado === 30 && await saldoEm(REFRI, DEP) === 10 && await saldoEm(REFRI, BAR) === 30, cg.j.itens);
+const rf = await api('POST', `/eventos/${ev2.id}/carga`, { itens: [{ product_id: REFRI, quantidade: 5 }] }, E.token);
+check('reforço soma no enviado (motivo "Reforço")', rf.s === 201 && item(rf.j, REFRI).enviado === 35 && Number((await prod.query(`SELECT COUNT(*) AS n FROM stock_movements WHERE evento_id = $1 AND motivo LIKE 'Reforço%'`, [ev2.id])).rows[0].n) === 1);
+const vr = await api('POST', '/sales', { terminal_id: TBAR, itens: [{ product_id: REFRI, quantidade: 10 }], forma_pagamento: 'pix' }, CX.token);
+const vc = await api('POST', '/sales', { terminal_id: TBAR, itens: [{ product_id: REFRI, quantidade: 2 }], forma_pagamento: 'pix' }, CX.token);
+await api('POST', `/sales/${vc.j.id}/cancel`, { motivo: 'erro de digitação' }, E.token);
+check('perda com tipo inválido -> 400', (await api('POST', `/eventos/${ev2.id}/perdas`, { product_id: REFRI, quantidade: 1, tipo: 'sumiu' }, E.token)).s === 400);
+const pd = await api('POST', `/eventos/${ev2.id}/perdas`, { product_id: REFRI, quantidade: 2, tipo: 'cortesia', observacao: 'banda' }, E.token);
+const est1 = pd.j;
+check('vendido (sem a cancelada) e perda de cortesia', pd.s === 201 && item(est1, REFRI).vendido === 10 && item(est1, REFRI).perdas === 2 && item(est1, REFRI).saldo_setor === 23, item(est1, REFRI));
+const evAg = (await api('POST', '/eventos', { nome: 'Evento Futuro', location_id: BAR, deposito_id: DEP, inicio: '2027-01-10T20:00' }, E.token)).j;
+check('perda em evento ainda agendado -> 409', (await api('POST', `/eventos/${evAg.id}/perdas`, { product_id: REFRI, quantidade: 1, tipo: 'quebra' }, E.token)).s === 409);
+check('fechar estoque com o evento aberto -> 409', (await api('POST', `/eventos/${ev2.id}/fechar-estoque`, { itens: [] }, E.token)).s === 409);
+check('encerra o evento', (await api('POST', `/eventos/${ev2.id}/encerrar`, {}, E.token)).s === 200);
+check('carga depois de encerrado -> 409', (await api('POST', `/eventos/${ev2.id}/carga`, { itens: [{ product_id: GELO, quantidade: 1 }] }, E.token)).s === 409);
+const antesF = (await api('GET', `/eventos/${ev2.id}/estoque`, null, E.token)).j;
+const cervSetor = item(antesF, CERVEJA).saldo_setor;
+check('contagem faltando produto com saldo -> 400', (await api('POST', `/eventos/${ev2.id}/fechar-estoque`, { itens: [{ product_id: REFRI, contado: 21 }] }, E.token)).s === 400);
+const aguaSetor = item(antesF, AGUA) ? item(antesF, AGUA).saldo_setor : 0;
+const contagem = [{ product_id: REFRI, contado: 21 }, { product_id: GELO, contado: 20 }, { product_id: CERVEJA, contado: cervSetor + 1 }, ...(aguaSetor > 0 ? [{ product_id: AGUA, contado: aguaSetor }] : [])];
+const fe = await api('POST', `/eventos/${ev2.id}/fechar-estoque`, { itens: contagem, devolver: true }, GER.token);
+const rr = item(fe.j, REFRI);
+check('fecha: falta de 2 refrigerantes vira diferença na contagem', fe.s === 200 && rr.diferenca === -2 && rr.contado === 21 && rr.saldo_sistema === 23, rr);
+check('quebra total do refrigerante = cortesia 2 + falta 2 (valor a custo)', rr.quebra_total === 4 && Math.abs(rr.valor_quebra - 4 * rr.custo_unitario) < 0.011, rr);
+check('sobra de 1 cerveja na contagem entra como sobra (quebra negativa)', item(fe.j, CERVEJA).diferenca === 1 && item(fe.j, CERVEJA).quebra_total === -1, item(fe.j, CERVEJA));
+check('sobra devolvida ao depósito; setor zerado', rr.devolvido === 21 && await saldoEm(REFRI, DEP) === 26 && await saldoEm(REFRI, BAR) === 0 && await saldoEm(GELO, BAR) === 0 && await saldoEm(GELO, DEP) === 50, { dep: await saldoEm(REFRI, DEP) });
+check('perdas por tipo: cortesia e diferença na contagem', ['cortesia', 'diferenca_contagem'].every((t) => fe.j.perdas_por_tipo.some((p) => p.tipo === t)), fe.j.perdas_por_tipo);
+check('totais em R$ (enviado, vendido, quebra, devolvido)', fe.j.totais.enviado_custo > 0 && fe.j.totais.valor_quebra > 0 && fe.j.totais.devolvido_custo > 0, fe.j.totais);
+check('fechar de novo -> 409; perda depois de fechado -> 409', (await api('POST', `/eventos/${ev2.id}/fechar-estoque`, { itens: contagem }, E.token)).s === 409 && (await api('POST', `/eventos/${ev2.id}/perdas`, { product_id: GELO, quantidade: 1, tipo: 'quebra' }, E.token)).s === 409);
+check('detalhe do evento mostra o estoque fechado', !!(await api('GET', `/eventos/${ev2.id}`, null, E.token)).j.estoque_fechado_em);
+check('outra empresa não vê o estoque do evento (404)', (await api('GET', `/eventos/${ev2.id}/estoque`, null, F.token)).s === 404);
+
 console.log(`\n${pass} ok, ${fail} falha(s)`);
 await prod.end();
 process.exit(fail ? 1 : 0);

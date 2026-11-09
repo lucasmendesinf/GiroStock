@@ -58,6 +58,21 @@ router.get('/reports/sales-summary', requireArea('Relatorios'), async (req, res)
     params
   );
 
+  // Desconto por quantidade (pack/atacado): o que o cliente economizou em relacao ao preco de tabela da loja.
+  const descQtd = await pool.query(
+    `SELECT COALESCE(SUM((si.preco_tabela - si.preco_unitario) * si.quantidade), 0) AS desconto, COUNT(*)::int AS itens
+     FROM sale_items si JOIN sales s ON s.id = si.sale_id
+     WHERE ${where} AND si.preco_tabela IS NOT NULL AND si.faixa_rotulo IS NOT NULL`,
+    params
+  );
+  const porFaixa = await pool.query(
+    `SELECT si.faixa_rotulo AS faixa, COALESCE(SUM(si.quantidade), 0) AS quantidade, COALESCE(SUM((si.preco_tabela - si.preco_unitario) * si.quantidade), 0) AS desconto
+     FROM sale_items si JOIN sales s ON s.id = si.sale_id
+     WHERE ${where} AND si.preco_tabela IS NOT NULL AND si.faixa_rotulo IS NOT NULL
+     GROUP BY si.faixa_rotulo ORDER BY desconto DESC LIMIT 20`,
+    params
+  );
+
   const porForma = await pool.query(
     `SELECT vp.forma AS forma_pagamento, COALESCE(SUM(vp.valor), 0) AS total, COUNT(*)::int AS quantidade
      FROM sales s JOIN v_sale_pagamentos vp ON vp.sale_id = s.id WHERE ${where}
@@ -95,6 +110,9 @@ router.get('/reports/sales-summary', requireArea('Relatorios'), async (req, res)
     numero_vendas: numeroVendas,
     ticket_medio: ticketMedio,
     total_descontos: Number(resumo.rows[0].total_descontos),
+    desconto_por_quantidade: Number(Number(descQtd.rows[0].desconto).toFixed(2)),
+    itens_com_desconto_por_quantidade: descQtd.rows[0].itens,
+    desconto_por_quantidade_por_faixa: porFaixa.rows.map((r) => ({ faixa: r.faixa, quantidade: Number(r.quantidade), desconto: Number(Number(r.desconto).toFixed(2)) })),
     custo_total: custoTotal,
     lucro_bruto: lucroBruto,
     margem_percentual: totalVendido > 0 ? Number(((lucroBruto / totalVendido) * 100).toFixed(1)) : 0,
@@ -398,10 +416,11 @@ router.get('/reports/estoque', requireArea('Relatorios'), async (req, res) => {
   const posicao = (await pool.query(
     `SELECT l.id, l.nome, COUNT(*) FILTER (WHERE sb.saldo > 0)::int AS produtos, COALESCE(SUM(sb.saldo) FILTER (WHERE sb.saldo > 0), 0) AS unidades,
             COALESCE(SUM(sb.saldo * p.preco_custo) FILTER (WHERE sb.saldo > 0), 0) AS valor_custo,
-            COALESCE(SUM(sb.saldo * p.preco_venda) FILTER (WHERE sb.saldo > 0), 0) AS valor_venda,
+            COALESCE(SUM(sb.saldo * COALESCE(pp.preco_venda, p.preco_venda)) FILTER (WHERE sb.saldo > 0), 0) AS valor_venda,
             COUNT(*) FILTER (WHERE sb.estoque_minimo > 0 AND sb.saldo < sb.estoque_minimo)::int AS abaixo_minimo,
             COUNT(*) FILTER (WHERE sb.saldo <= 0 AND sb.estoque_minimo > 0)::int AS zerados
      FROM stock_balances sb JOIN products p ON p.id = sb.product_id JOIN locations l ON l.id = sb.location_id
+     LEFT JOIN produto_precos pp ON pp.product_id = sb.product_id AND pp.location_id = sb.location_id
      WHERE sb.tenant_id = $1 AND p.ativo AND l.ativo ${filtroLoc}
      GROUP BY l.id, l.nome ORDER BY l.nome`, pLoc
   )).rows.map((r) => ({ ...r, unidades: Number(r.unidades), valor_custo: n2(r.valor_custo), valor_venda: n2(r.valor_venda) }));

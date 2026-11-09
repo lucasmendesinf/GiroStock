@@ -23,6 +23,11 @@ const router = express.Router();
 const db = lv.db;
 const texto = (v, max = 120) => String(v === undefined || v === null ? '' : v).trim().slice(0, max);
 const digitos = (v) => String(v || '').replace(/\D/g, '');
+const contextoCodigoTeste = (req, telefone) => ({
+  previsualizacao: req.get('x-loja-previa') === '1',
+  subdominio: req.loja.subdominio,
+  telefone,
+});
 
 // Endereco publico deste servidor (links de imagem e aviso do Mercado Pago).
 const baseUrl = (req) => (process.env.URL_PUBLICA || `${req.get('x-forwarded-proto') || req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
@@ -230,13 +235,19 @@ const hashCodigo = (id, telefone, codigo) => crypto.createHmac('sha256', segredo
 // Pede o codigo (6 digitos, 10 min). A resposta e sempre a mesma exista ou nao a conta.
 router.post('/conta/codigo', limitar('lv-codigo-ip', 10, 3600 * 1000), async (req, res) => {
   const telefone = validarTelefoneBr((req.body || {}).telefone);
+  const contextoTeste = contextoCodigoTeste(req, telefone);
+  const sandboxPreview = codigoLogin.sandboxPreviewAtivo(contextoTeste);
   const tenantId = req.loja.tenant_id;
+  if (sandboxPreview) {
+    const contaSandbox = await db().query(`SELECT 1 FROM lv_contas WHERE tenant_id = $1 AND telefone = $2 AND ativo LIMIT 1`, [tenantId, telefone]);
+    if (contaSandbox.rowCount > 0) throw new HttpError(409, 'este telefone já tem conta; use um telefone de teste sem cadastro para o sandbox');
+  }
   await db().query(`DELETE FROM lv_login_codigos WHERE expira_em < now() - interval '1 day'`);
   const recentes = Number((await db().query(
     `SELECT COUNT(*) AS n FROM lv_login_codigos WHERE tenant_id = $1 AND telefone = $2 AND criado_em > now() - interval '15 minutes'`, [tenantId, telefone]
   )).rows[0].n);
   if (recentes >= 3) throw new HttpError(429, 'muitos códigos pedidos para este telefone: aguarde alguns minutos');
-  const codigo = codigoLogin.codigoTesteAtivo()
+  const codigo = codigoLogin.codigoTesteAtivo(contextoTeste)
     ? codigoLogin.CODIGO_TESTE
     : String(crypto.randomInt(0, 1000000)).padStart(6, '0');
   const id = crypto.randomUUID();
@@ -244,18 +255,18 @@ router.post('/conta/codigo', limitar('lv-codigo-ip', 10, 3600 * 1000), async (re
   await db().query(`UPDATE lv_login_codigos SET usado_em = now() WHERE tenant_id = $1 AND telefone = $2 AND usado_em IS NULL`, [tenantId, telefone]);
   await db().query(
     `INSERT INTO lv_login_codigos (id, tenant_id, telefone, codigo_hash, expira_em, ip, enviado_via) VALUES ($1, $2, $3, $4, now() + interval '${VALIDADE_CODIGO_MIN} minutes', $5, $6)`,
-    [id, tenantId, telefone, hashCodigo(id, telefone, codigo), req.ip, codigoLogin.provedor()]
+    [id, tenantId, telefone, hashCodigo(id, telefone, codigo), req.ip, codigoLogin.provedor(contextoTeste)]
   );
   let enviado;
   try {
-    enviado = await codigoLogin.enviar({ telefone, codigo, loja: req.loja.nome });
+    enviado = await codigoLogin.enviar({ ...contextoTeste, codigo, loja: req.loja.nome });
   } catch (err) {
     // sem envio, o pedido nao conta no limite do telefone
     await db().query(`DELETE FROM lv_login_codigos WHERE id = $1`, [id]);
     throw err;
   }
-  const r = { mensagem: 'enviamos um código de 6 números para o seu celular', validade_min: VALIDADE_CODIGO_MIN, reenviar_em_s: 30 };
-  if (enviado.codigo_teste && process.env.NODE_ENV !== 'production') r.codigo_teste = enviado.codigo_teste;
+  const r = { mensagem: sandboxPreview ? 'código de teste disponível para esta pré-visualização' : 'solicitamos um código para o seu celular', validade_min: VALIDADE_CODIGO_MIN, reenviar_em_s: 30 };
+  if (enviado.codigo_teste && (process.env.NODE_ENV !== 'production' || enviado.sandbox_preview)) r.codigo_teste = enviado.codigo_teste;
   res.status(202).json(r);
 });
 
@@ -263,6 +274,7 @@ router.post('/conta/codigo', limitar('lv-codigo-ip', 10, 3600 * 1000), async (re
 router.post('/conta/entrar', limitar('lv-codigo-entrar', 30, 15 * 60 * 1000), async (req, res) => {
   const b = req.body || {};
   const telefone = validarTelefoneBr(b.telefone);
+  const sandboxPreview = codigoLogin.sandboxPreviewAtivo(contextoCodigoTeste(req, telefone));
   const tenantId = req.loja.tenant_id;
   const invalido = new HttpError(400, 'código inválido ou expirado: peça um novo');
   const cod = (await db().query(
@@ -278,6 +290,13 @@ router.post('/conta/entrar', limitar('lv-codigo-entrar', 30, 15 * 60 * 1000), as
     )).rows[0].tentativas;
     const restantes = Math.max(0, TENTATIVAS_CODIGO - t);
     throw new HttpError(400, restantes > 0 ? `código incorreto: ${restantes} tentativa(s) restante(s)` : 'código incorreto: peça um novo código');
+  }
+  if (sandboxPreview) {
+    const contaSandbox = await db().query(`SELECT 1 FROM lv_contas WHERE tenant_id = $1 AND telefone = $2 AND ativo LIMIT 1`, [tenantId, telefone]);
+    if (contaSandbox.rowCount > 0) {
+      await db().query(`UPDATE lv_login_codigos SET usado_em = now() WHERE id = $1 AND usado_em IS NULL`, [cod.id]);
+      throw new HttpError(409, 'este telefone já tem conta; use um telefone de teste sem cadastro para o sandbox');
+    }
   }
   let conta = (await db().query(
     `SELECT * FROM lv_contas WHERE tenant_id = $1 AND telefone = $2 AND ativo ORDER BY ultimo_login_em DESC NULLS LAST, criado_em DESC LIMIT 1`, [tenantId, telefone]

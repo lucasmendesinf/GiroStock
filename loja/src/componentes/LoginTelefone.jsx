@@ -71,7 +71,7 @@ export default function LoginTelefone({ aoEntrar }) {
   if (etapa === 'telefone') {
     return (
       <form className="cd-login" onSubmit={pedirCodigo}>
-        <p className="cd-login-dica">Informe seu celular. Enviamos um código de 6 números por WhatsApp ou SMS, sem senha.</p>
+        <p className="cd-login-dica">Informe seu celular. Quando disponível, enviamos um código por WhatsApp ou SMS, sem senha.</p>
         <label className="campo"><span>Celular com DDD</span>
           <input data-foco value={tel} onChange={(e) => setTel(mascaraTel(e.target.value))} inputMode="tel" autoComplete="tel" placeholder="(11) 99999-0000" required />
         </label>

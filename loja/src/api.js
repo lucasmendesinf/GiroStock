@@ -23,6 +23,7 @@ export class ErroApi extends Error {
 async function chamar(metodo, caminho, corpo) {
   const headers = { 'Content-Type': 'application/json' };
   if (SUBDOMINIO) headers['X-Loja-Subdominio'] = SUBDOMINIO;
+  if (EH_PREVIA) headers['X-Loja-Previa'] = '1';
   if (token) headers.Authorization = `Bearer ${token}`;
   let res;
   try {

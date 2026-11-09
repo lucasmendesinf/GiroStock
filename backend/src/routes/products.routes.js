@@ -9,6 +9,9 @@ const { logAudit } = require('../utils/audit');
 const { getOwned, getOwnedLocation, isUuid } = require('../utils/tenant');
 const { assertLocationAccess } = require('../utils/access');
 const { HttpError } = require('../utils/http');
+const precos = require('../services/precos');
+const precosCadastro = require('../services/precosCadastro');
+const conversao = require('../services/conversao');
 
 const router = express.Router();
 const UNIDADES = ['UN', 'KG', 'L', 'CX'];
@@ -246,6 +249,7 @@ router.get('/products/search', async (req, res) => {
   if (locationId) assertLocationAccess(req.user, locationId, 'consultar este local');
 
   const params = [req.user.tenantId, locationId];
+  let packFaixa = null;
   let where = 'p.tenant_id = $1 AND p.ativo = true';
   // Sem o modulo Lanchonete, lanche com ficha tecnica nao aparece na busca do PDV/pedidos (nao pode ser vendido).
   if (req.user.modulos && req.user.modulos.lanchonete === false) {
@@ -256,8 +260,15 @@ router.get('/products/search', async (req, res) => {
     params.push(lista);
     where += ` AND p.id = ANY($${params.length}::uuid[])`;
   } else if (barcode) {
-    params.push(barcode);
-    where += ` AND p.barcode = $${params.length}`;
+    // Codigo de barras de PACK (faixa de desconto por quantidade): devolve o produto ja com a quantidade e a faixa do pack.
+    packFaixa = locationId ? await precos.buscarPorEanPack(pool, req.user.tenantId, locationId, barcode) : null;
+    if (packFaixa) {
+      params.push([packFaixa.product_id]);
+      where += ` AND p.id = ANY($${params.length}::uuid[])`;
+    } else {
+      params.push(barcode);
+      where += ` AND p.barcode = $${params.length}`;
+    }
   } else {
     params.push(`%${q || ''}%`);
     where += ` AND p.nome ILIKE $${params.length}`;
@@ -327,12 +338,17 @@ router.get('/products/search', async (req, res) => {
     const reservados = await reservadosDaLoja(pool, req.user.tenantId, locationId);
     disp = (await unidadesDisponiveis(pool, req.user.tenantId, locationId, ids, [], reservados)).produtos;
   }
-  res.json(rows.map((r) => {
+  // Preco da LOJA (e faixas de quantidade): produto que a loja nao vende nao aparece.
+  const infoPreco = locationId ? await precos.infoDePrecoDaLoja(pool, req.user.tenantId, locationId, rows.map((r) => ({ id: r.id, preco_venda: r.preco_venda }))) : null;
+  res.json(rows.filter((r) => !infoPreco || infoPreco.get(r.id).vende).map((r) => {
     const e = extraDe.get(r.id) || {};
     const d = disp && disp.get(r.id);
     const composto = r.tem_ficha_tecnica || e.e_combo;
+    const ip = infoPreco && infoPreco.get(r.id);
     return {
       ...r, e_combo: !!e.e_combo, grupos: e.grupos || [],
+      ...(ip ? { preco_padrao: r.preco_venda, preco_venda: ip.preco_venda, faixas: ip.faixas } : {}),
+      ...(packFaixa && r.id === packFaixa.product_id ? { quantidade_pack: packFaixa.faixa.quantidade_minima, faixa_pack_id: packFaixa.faixa.id } : {}),
       ...(d && d.unidades !== null ? { saldo: d.unidades, insumo_limitante: composto ? d.limitante : r.insumo_limitante } : {}),
       // "preparo": item que pode ter observacao para a cozinha (lanche, combo ou com complementos).
       tem_ficha_tecnica: r.tem_ficha_tecnica || !!e.e_combo || (e.grupos || []).length > 0,
@@ -381,7 +397,9 @@ router.get('/products/:id', async (req, res) => {
      WHERE pg.product_id = $1 AND pg.tenant_id = $2 ORDER BY pg.ordem`,
     [req.params.id, req.user.tenantId]
   );
-  res.json({ ...product, fornecedores: fornecedores.rows, saldos_por_local: saldos.rows, ficha_tecnica: ficha.rows, combo: combo.rows, e_combo: combo.rows.length > 0, grupos: grupos.rows });
+  const precosDoProduto = await precosCadastro.lerPrecos(pool, req.user.tenantId, req.params.id);
+  const conv = await conversao.lerConversao(pool, req.user.tenantId, req.params.id);
+  res.json({ ...product, fornecedores: fornecedores.rows, saldos_por_local: saldos.rows, ficha_tecnica: ficha.rows, combo: combo.rows, e_combo: combo.rows.length > 0, grupos: grupos.rows, precos_lojas: precosDoProduto.precos_lojas, faixas: precosDoProduto.faixas, conversao: conv });
 });
 
 router.post('/products', requireArea('Estoque'), async (req, res) => {
@@ -492,6 +510,15 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
 
     if (comboItems.length > 0) await salvarCombo(client, req.user, product.id, comboItems);
     if (Array.isArray(body.grupos) && body.grupos.length > 0) await salvarGruposDoProduto(client, req.user.tenantId, product.id, body.grupos);
+    // Preco por loja, faixas de quantidade e conversao em insumo: so quem pode editar produtos.
+    let avisosPrecos = [];
+    const temPrecosOuConversao = (Array.isArray(body.precos_lojas) && body.precos_lojas.length > 0) || (Array.isArray(body.faixas) && body.faixas.length > 0) || (body.conversao && typeof body.conversao === 'object');
+    if (temPrecosOuConversao) {
+      if (!(req.user.areas && req.user.areas.EditarProdutos)) throw new HttpError(403, 'Seu usuário não tem acesso à área EditarProdutos (preço por loja, faixas e conversão em insumo)');
+      const g = await precosCadastro.gravarPrecos(client, req.user, product.id, { precos_lojas: body.precos_lojas, faixas: body.faixas });
+      if (g) avisosPrecos = g.avisos;
+      if (body.conversao && typeof body.conversao === 'object') await conversao.gravarConversao(client, req.user, product.id, body.conversao);
+    }
 
     await logAudit(client, {
       tenantId: req.user.tenantId,
@@ -503,7 +530,7 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
     });
 
     await client.query('COMMIT');
-    res.status(201).json({ ...product, fornecedores: fornecedores.ids, ficha_tecnica: ficha });
+    res.status(201).json({ ...product, fornecedores: fornecedores.ids, ficha_tecnica: ficha, avisos_precos: avisosPrecos });
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -581,6 +608,18 @@ router.put('/products/:id', requireArea('Estoque'), requireArea('EditarProdutos'
     if (body.combo !== undefined) await salvarCombo(client, req.user, req.params.id, body.combo);
     if (Array.isArray(body.grupos)) await salvarGruposDoProduto(client, req.user.tenantId, req.params.id, body.grupos);
     if (fornecedores) await sincronizarFornecedores(client, req.user.tenantId, req.params.id, fornecedores.ids);
+    // Preco por loja / faixas / conversao em insumo (o que vier no corpo; o preco padrao novo reconfere as faixas guardadas).
+    let gravouPrecos = null;
+    let gravouConversao = null;
+    if (body.precos_lojas !== undefined || body.faixas !== undefined) {
+      gravouPrecos = await precosCadastro.gravarPrecos(client, req.user, req.params.id, { precos_lojas: body.precos_lojas, faixas: body.faixas });
+    } else if (Number(venda) !== Number(atual.preco_venda)) {
+      gravouPrecos = await precosCadastro.revalidarFaixas(client, req.user, req.params.id);
+    }
+    if (body.conversao !== undefined) gravouConversao = await conversao.gravarConversao(client, req.user, req.params.id, body.conversao);
+    else if (unidade !== atual.unidade && await conversao.lerConversao(client, req.user.tenantId, req.params.id)) {
+      throw new HttpError(400, 'este produto tem conversão em insumo: ajuste ou remova a conversão antes de mudar a unidade');
+    }
     // variacao de grade: o preco promocional do site (% da grade) acompanha o novo preco
     const gradeId = (await client.query(`SELECT grade_id FROM products WHERE id = $1`, [req.params.id])).rows[0].grade_id;
     if (gradeId) await require('../services/grades').sincronizarSite(client, req.user.tenantId, gradeId);
@@ -595,10 +634,12 @@ router.put('/products/:id', requireArea('Estoque'), requireArea('EditarProdutos'
         antes: { nome: atual.nome, barcode: atual.barcode, unidade: atual.unidade, preco_custo: atual.preco_custo, preco_venda: atual.preco_venda },
         depois: { nome, barcode, unidade, preco_custo: custo, preco_venda: venda },
         fornecedores: fornecedores ? fornecedores.ids : undefined,
+        ...(gravouPrecos ? { precos: { antes: { lojas: gravouPrecos.antes.precos_lojas.filter((l) => l.preco_venda !== null || !l.vende), faixas: gravouPrecos.antes.faixas }, depois: { lojas: gravouPrecos.depois.precos_lojas.filter((l) => l.preco_venda !== null || !l.vende), faixas: gravouPrecos.depois.faixas } } } : {}),
+        ...(gravouConversao ? { conversao: gravouConversao } : {}),
       },
     });
     await client.query('COMMIT');
-    res.json(rows[0]);
+    res.json({ ...rows[0], ...(gravouPrecos ? { avisos_precos: gravouPrecos.avisos } : {}) });
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

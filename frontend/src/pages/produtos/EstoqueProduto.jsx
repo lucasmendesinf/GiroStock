@@ -3,7 +3,7 @@ import { api } from '../../api/client';
 import { useToast } from '../../context/UiContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { Field, Modal } from '../../components/ui.jsx';
-import { brl, dataHora, parseNumero, qtd, UNIDADES_INTEIRAS } from '../../utils/format';
+import { brl, brlFino, dataHora, parseNumero, qtd, UNIDADES_INTEIRAS } from '../../utils/format';
 import { lembrarLoja, lojaPadrao, stepDaUnidade } from './comum.jsx';
 import { minimoNaLoja, saldoNaLoja, situacaoNaLoja, situacaoProduto, totalDoProduto } from './estoque.js';
 
@@ -201,6 +201,8 @@ function TelaTransferencia({ produto, locaisAtivos, user, presel, concluir }) {
   const destino0 = (locaisAtivos.find((l) => l.id !== origem0) || {}).id || '';
   const [f, setF] = useState({ o: origem0, d: destino0, q: '', m: '' });
   const [salvando, setSalvando] = useState(false);
+  const [converter, setConverter] = useState(true);
+  const [prev, setPrev] = useState(null);
   const q = parseNumero(f.q);
   const so = saldoNaLoja(produto, f.o);
   const sd = saldoNaLoja(produto, f.d);
@@ -211,12 +213,30 @@ function TelaTransferencia({ produto, locaisAtivos, user, presel, concluir }) {
   else if (q > 0 && UNIDADES_INTEIRAS.includes(un) && !Number.isInteger(q)) erro = `Produtos em ${un} só aceitam quantidade inteira.`;
   const qv = q > 0 ? q : 0;
 
+  // Conversao em insumo: o destino esta marcado no cadastro do produto? (a previa nao grava nada)
+  useEffect(() => {
+    if (!f.d || f.o === f.d) { setPrev(null); return undefined; }
+    let vivo = true;
+    const t = setTimeout(async () => {
+      try {
+        const r = await api.get(`/stock-movements/conversao?product_id=${produto.id}&location_destino_id=${f.d}&quantidade=${qv}`);
+        if (vivo) setPrev(r);
+      } catch { if (vivo) setPrev(null); }
+    }, 200);
+    return () => { vivo = false; clearTimeout(t); };
+  }, [produto.id, f.o, f.d, qv]);
+  const converte = !!(prev && prev.aplica && (prev.modo === 'sempre' || converter));
+
   async function transferir(e) {
     e.preventDefault();
     setSalvando(true);
     try {
-      await api.post('/stock-movements', { product_id: produto.id, tipo: 'transferencia', quantidade: q, location_origem_id: f.o, location_destino_id: f.d, motivo: f.m.trim() });
-      toast.sucesso('Transferência registrada.');
+      const r = await api.post('/stock-movements', {
+        product_id: produto.id, tipo: 'transferencia', quantidade: q, location_origem_id: f.o, location_destino_id: f.d, motivo: f.m.trim(),
+        ...(prev && prev.aplica ? { converter_em_insumo: prev.modo === 'sempre' ? true : converter } : {}),
+      });
+      const c = r && r.convertido_em_insumo;
+      toast.sucesso(c ? `Convertido: ${qtd(q, un)} ${un} viraram ${qtd(c.quantidade, c.unidade)} ${c.unidade} de ${c.ingredient_nome} em ${nome(f.d)}.` : 'Transferência registrada.');
       await concluir();
     } catch (err) { toast.erro(err); setSalvando(false); }
   }
@@ -227,11 +247,26 @@ function TelaTransferencia({ produto, locaisAtivos, user, presel, concluir }) {
       <Field label="Para (destino)"><select value={f.d} onChange={(e) => setF({ ...f, d: e.target.value })}>{locaisAtivos.map((l) => opcaoLoja(produto, l))}</select></Field>
       <Field label={`Quantidade (${un})`}><input type="number" min="0" step={stepDaUnidade(un)} placeholder="0" autoFocus value={f.q} onChange={(e) => setF({ ...f, q: e.target.value })} /></Field>
       <Field label="Motivo"><input placeholder="Ex.: reposição da lanchonete" value={f.m} onChange={(e) => setF({ ...f, m: e.target.value })} /></Field>
-      <div className="full es-resumo">
-        <b>{nome(f.o)}</b>: {qtd(so, un)} → <b>{qtd(so - qv, un)}</b> &nbsp;•&nbsp; <b>{nome(f.d)}</b>: {qtd(sd, un)} → <b>{qtd(sd + qv, un)}</b>
-      </div>
+      {prev && prev.aplica && prev.modo === 'perguntar' && (
+        <label className="full check"><input type="checkbox" checked={converter} onChange={(e) => setConverter(e.target.checked)} /> Converter em insumo neste destino ({prev.ingredient_nome})</label>
+      )}
+      {converte ? (
+        <div className="full es-resumo pr-trbox">
+          <div><b>Conversão em insumo</b> em <b>{nome(f.d)}</b>: <b>{prev.ingredient_nome}</b> (1 {un} = {qtd(prev.fator, prev.unidade)} {prev.unidade})</div>
+          <div className="pr-linha"><span>{nome(f.o)} (produto)</span><b>{qtd(so, un)} → {qtd(so - qv, un)} {un}</b></div>
+          <div className="pr-linha"><span>{nome(f.d)} (insumo)</span><b className="pr-ok">+ {qtd(prev.quantidade_insumo, prev.unidade)} {prev.unidade}</b></div>
+          <div className="pr-linha"><span>Saldo do insumo depois</span><b>{qtd(prev.saldo_insumo_antes, prev.unidade)} → {qtd(prev.saldo_insumo_depois, prev.unidade)} {prev.unidade}</b></div>
+          <div className="pr-linha"><span>Custo do insumo</span><b>{brlFino(prev.custo_unitario_antes)} → {brlFino(prev.custo_unitario_depois)} / {prev.unidade}</b></div>
+          <small className="muted">O produto não chega à {nome(f.d)}: vira insumo lá. Não existe desconverter (correção por balanço).</small>
+        </div>
+      ) : (
+        <div className="full es-resumo">
+          <b>{nome(f.o)}</b>: {qtd(so, un)} → <b>{qtd(so - qv, un)}</b> &nbsp;•&nbsp; <b>{nome(f.d)}</b>: {qtd(sd, un)} → <b>{qtd(sd + qv, un)}</b>
+          {prev && prev.aplica && <div className="muted" style={{ marginTop: 6 }}>Transferência como produto: em {nome(f.d)} ele continua produto.</div>}
+        </div>
+      )}
       {erro && <div className="full es-erro">{erro}</div>}
-      <div className="full"><button type="submit" className="btn-primario" disabled={!(q > 0) || !!erro || f.m.trim().length < 3 || salvando}>Transferir</button></div>
+      <div className="full"><button type="submit" className="btn-primario" disabled={!(q > 0) || !!erro || f.m.trim().length < 3 || salvando}>{converte ? 'Transferir e converter' : 'Transferir'}</button></div>
     </form>
   );
 }

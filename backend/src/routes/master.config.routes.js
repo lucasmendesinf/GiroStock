@@ -140,12 +140,12 @@ router.put('/master/config/smsmais', async (req, res) => {
   const b = req.body || {};
   if (b.ativo !== undefined && typeof b.ativo !== 'boolean') throw new HttpError(400, 'ativo deve ser verdadeiro ou falso');
   const r = await codigoLogin.salvarConfiguracaoSmsMais({ token: b.token, ativo: b.ativo }, req.user.id);
-  await audit(req, 'master_config_smsmais_salvar', 'integracao', 'smsmais', { ativo: r.ativo, token_novo: !!String(b.token || '').trim() });
+  await audit(req, 'master_config_smsmais_salvar', 'integracao', null, { integracao: 'smsmais', ativo: r.ativo, token_novo: !!String(b.token || '').trim() });
   res.json(r);
 });
 router.delete('/master/config/smsmais', async (req, res) => {
   const r = await codigoLogin.removerConfiguracaoSmsMais(req.user.id);
-  await audit(req, 'master_config_smsmais_remover', 'integracao', 'smsmais', null);
+  await audit(req, 'master_config_smsmais_remover', 'integracao', null, { integracao: 'smsmais' });
   res.json(r);
 });
 router.post('/master/config/smsmais/testar', async (req, res) => {

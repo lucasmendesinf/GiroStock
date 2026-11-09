@@ -8,7 +8,9 @@ import ReceitaEditor, { custoDaReceita, insumosSemCusto } from './ReceitaEditor.
 import Categorias from './Categorias.jsx';
 import { CamposIfood, ComboEditor, GruposDoProduto, custoDoCombo } from './ExtrasProduto.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
-import { temModulo } from '../../utils/permissions.js';
+import { temModulo, podeAcessar } from '../../utils/permissions.js';
+import PrecosLoja, { estadoInicialPrecos, payloadDePrecos, validarPrecos } from './PrecosLoja.jsx';
+import ConversaoInsumo, { estadoInicialConversao, payloadDeConversao, validarConversao } from './ConversaoInsumo.jsx';
 
 // Cadastro de produto: so os dados do produto. O saldo nao e cadastrado aqui (depois de salvar,
 // o icone de caixa da lista trata o estoque). Produto controlado por insumos (lanche / receita)
@@ -18,11 +20,14 @@ const textoCustoReceita = (ficha, ingredients) => {
   return sem.length ? `Soma dos insumos (atualiza ao mudar a receita). Sem custo: ${sem.join(', ')} — dê entrada informando o custo.` : 'Soma dos insumos (atualiza ao mudar a receita)';
 };
 
-export default function FormProduto({ categories, suppliers, ingredients, products = [], reload, onClose, onSalvo, lanchonete = true }) {
+export default function FormProduto({ categories, suppliers, ingredients, products = [], locations = [], reload, onClose, onSalvo, lanchonete = true }) {
   const toast = useToast();
   const { user } = useAuth();
   const usaIfood = temModulo(user, 'delivery_apps');
   const [combo, setCombo] = useState(false);
+  const [precos, setPrecos] = useState(estadoInicialPrecos());
+  const [conv, setConv] = useState(estadoInicialConversao());
+  const podePrecos = podeAcessar(user, 'EditarProdutos');
   const [comboItens, setComboItens] = useState([]);
   const [grupos, setGrupos] = useState([]);
   const [ifood, setIfood] = useState({ vende_ifood: false, codigo_ifood: '' });
@@ -41,6 +46,7 @@ export default function FormProduto({ categories, suppliers, ingredients, produc
   const custo = composto ? custoFicha : combo ? custoDoCombo(comboItens, products) : parseNumero(form.preco_custo);
   const venda = parseNumero(form.preco_venda);
   const margem = venda > 0 && custo >= 0 ? ((venda - custo) / venda) * 100 : null;
+  const mostraConversao = podePrecos && lanchonete && !composto && !combo;
 
   function validar() {
     const ean = form.barcode.replace(/\D/g, '');
@@ -51,6 +57,11 @@ export default function FormProduto({ categories, suppliers, ingredients, produc
     if (combo && comboItens.length === 0) return 'Adicione ao menos um produto ao combo.';
     if (!(custo > 0)) return 'Informe o preço de custo (maior que zero).';
     if (!(venda > custo)) return composto || combo ? `O preço de venda precisa ser maior que o custo (${brl(custo)}).` : 'O preço de venda precisa ser maior que o custo.';
+    if (podePrecos) {
+      const ep = validarPrecos(precos, locations, venda);
+      if (ep) return ep;
+      if (mostraConversao) { const ec = validarConversao(conv, form.unidade); if (ec) return ec; }
+    }
     return '';
   }
 
@@ -75,6 +86,8 @@ export default function FormProduto({ categories, suppliers, ingredients, produc
         combo: combo ? comboItens : [],
         grupos,
         ...(usaIfood ? { vende_ifood: ifood.vende_ifood, codigo_ifood: ifood.codigo_ifood } : {}),
+        ...(podePrecos ? payloadDePrecos(precos, locations) : {}),
+        ...(mostraConversao && conv.ativa ? { conversao: payloadDeConversao(conv, false, form.nome) } : {}),
       });
       toast.sucesso(composto || combo
         ? `Produto ${produto.codigo_interno} cadastrado — ${combo ? 'combo' : 'receita'} salvo.`
@@ -150,6 +163,8 @@ export default function FormProduto({ categories, suppliers, ingredients, produc
 
         {composto && <ReceitaEditor ficha={ficha} setFicha={setFicha} ingredients={ingredients} onErro={setErro} />}
         {combo && <ComboEditor itens={comboItens} setItens={setComboItens} produtos={products} />}
+        {podePrecos && <PrecosLoja estado={precos} setEstado={setPrecos} locais={locations} venda={venda} custo={custo} combo={combo} />}
+        {mostraConversao && <ConversaoInsumo estado={conv} setEstado={setConv} unidade={form.unidade} custo={custo} locais={locations} ingredients={ingredients} />}
         <GruposDoProduto selecionados={grupos} setSelecionados={setGrupos} />
         {usaIfood && <CamposIfood valor={ifood} setValor={setIfood} />}
 

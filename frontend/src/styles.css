@@ -1833,3 +1833,64 @@ tr.cmd-fechando td { background: var(--warn-soft); }
 .nf-filtro { margin: 0; }
 .nf-pill-devolucao { display: inline-block; margin-top: 4px; }
 table.tabela-cartoes tr.nf-linha-pendente td:first-child { box-shadow: inset 4px 0 0 var(--warn); }
+
+/* Preco por loja, faixas de quantidade (pack/atacado) e conversao em insumo */
+.pr-sec { border: 1px solid var(--line); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 12px; background: var(--panel-alt); min-width: 0; }
+.pr-sec h4 { margin: 0; font-size: 15px; color: var(--ivory); }
+.pr-sub { margin: 0; font-size: 13px; line-height: 1.5; }
+.pr-sub b { color: var(--gold-light); }
+.pr-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pr-chip { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--ivory); font-size: 13px; cursor: pointer; min-height: 36px; }
+.pr-chip.on { border-color: var(--gold); background: var(--accent-soft); color: var(--gold-light); font-weight: 700; }
+.pr-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
+.pr-dot.off { background: var(--muted-2); }
+.pr-loja { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; align-items: end; }
+.pr-loja .field, .pr-conv .field, .pr-faixa-campos .field { flex: none; min-width: 0; }
+.pr-vende { padding-bottom: 8px; }
+.pr-aviso { grid-column: 1 / -1; font-size: 12.5px; color: var(--warn); background: var(--warn-soft); border-radius: 10px; padding: 8px 12px; }
+.pr-faixas { display: flex; flex-direction: column; gap: 10px; }
+.pr-faixas-topo { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+.pr-faixas-topo .btn-link { margin-left: auto; }
+.pr-faixa { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--panel); display: flex; flex-direction: column; gap: 10px; }
+.pr-faixa-campos { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.pr-faixa-calc { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12.5px; color: var(--muted); }
+.pr-faixa-calc b { color: var(--ivory); }
+.pr-faixa-pe { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.pr-ean { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.pr-ean input { width: 170px; max-width: 100%; }
+.pr-alertas { display: flex; gap: 6px; flex-wrap: wrap; flex: 1 1 200px; }
+.pr-pill { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; border: 1px solid; font-style: normal; }
+.pr-pill.ok { color: var(--ok); background: var(--ok-soft); border-color: var(--ok); }
+.pr-pill.warn { color: var(--warn); background: var(--warn-soft); border-color: var(--warn); }
+.pr-pill.err { color: var(--err); background: var(--err-soft); border-color: var(--err); }
+.pr-x { margin-left: auto; width: 36px; height: 36px; padding: 0; border-radius: 50%; border: 1px solid var(--line); background: none; color: var(--err); font-size: 22px; line-height: 1; cursor: pointer; }
+.pr-vazio { font-size: 13px; padding: 14px; border: 1px dashed var(--line); border-radius: 12px; color: var(--muted); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.pr-resumo { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; font-size: 13px; background: var(--panel); }
+.pr-resumo-cab, .pr-resumo-linha { display: grid; grid-template-columns: 1.1fr .8fr .6fr 2.2fr; gap: 8px; padding: 8px 12px; align-items: center; }
+.pr-resumo-cab { background: var(--panel-alt); font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); font-weight: 700; }
+.pr-resumo-linha { border-top: 1px solid var(--line); }
+.pr-tag { display: inline-block; font-style: normal; font-size: 11.5px; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); border: 1px solid var(--accent-line); color: var(--gold-light); margin: 0 4px 4px 0; }
+.pr-ok { color: var(--ok); }
+.pr-err { color: var(--err); }
+.pr-warn { color: var(--warn); }
+.pr-conv { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; align-items: end; }
+.pr-conv-custo { display: flex; flex-direction: column; gap: 4px; }
+.pr-conv-lojas { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; }
+.pr-conv-lista { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.pr-trbox { display: flex; flex-direction: column; gap: 6px; }
+.pr-linha { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+@media (max-width: 700px) {
+  .pr-resumo-cab { display: none; }
+  .pr-resumo-linha { grid-template-columns: 1fr 1fr; }
+  .pr-resumo-linha > :nth-child(4) { grid-column: 1 / -1; }
+  .pr-faixas-topo .btn-link { margin-left: 0; }
+}
+
+/* PDV: faixas de quantidade (pack/atacado) */
+.pr-riscado { color: var(--muted-2); text-decoration: line-through; font-size: .92em; }
+.pr-pack { display: block; font-size: 12px; font-weight: 700; color: var(--ok); }
+.pr-dica { display: block; font-size: 12px; color: var(--gold-light); }
+.pr-dica .btn-link, .pr-aplicado { font-size: 12px; margin-left: 6px; }
+.pr-aplicado { color: var(--ok); }
+.pr-lista-faixas { display: block; font-size: 11px; font-weight: 500; color: var(--muted); margin-top: 2px; }
+.pr-indica { font-size: 10.5px; font-weight: 700; color: var(--gold-light); text-transform: uppercase; letter-spacing: .4px; }

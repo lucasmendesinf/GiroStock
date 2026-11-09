@@ -7,18 +7,23 @@ import { UNIDADES_PRODUTO, ordenarCategoriasHierarquia, SeletorFornecedores } fr
 import ReceitaEditor, { custoDaReceita, insumosSemCusto } from './ReceitaEditor.jsx';
 import { CamposIfood, ComboEditor, GruposDoProduto, custoDoCombo } from './ExtrasProduto.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
-import { temModulo } from '../../utils/permissions.js';
+import { temModulo, podeAcessar } from '../../utils/permissions.js';
+import PrecosLoja, { estadoInicialPrecos, precosDoServidor, payloadDePrecos, validarPrecos } from './PrecosLoja.jsx';
+import ConversaoInsumo, { estadoInicialConversao, conversaoDoServidor, payloadDeConversao, validarConversao } from './ConversaoInsumo.jsx';
 
 const numeroParaCampo = (n) => String(n).replace('.', ',');
 
 // Edicao do produto: so os dados cadastrais. Produto comum tem o botao "Tratar estoque →";
 // produto controlado por insumos mostra a receita (e abre ja rolado ate ela).
-export default function EditarProduto({ productId, categories, suppliers, ingredients, products = [], reload, onClose, onTratarEstoque, lanchonete = true }) {
+export default function EditarProduto({ productId, categories, suppliers, ingredients, products = [], locations = [], reload, onClose, onTratarEstoque, lanchonete = true }) {
   const toast = useToast();
   const { user } = useAuth();
   const usaIfood = temModulo(user, 'delivery_apps');
   const usaGarcom = temModulo(user, 'garcom');
   const [foraComissao, setForaComissao] = useState(false);
+  const [precos, setPrecos] = useState(estadoInicialPrecos());
+  const [conv, setConv] = useState(estadoInicialConversao());
+  const podePrecos = podeAcessar(user, 'EditarProdutos');
   const [comboItens, setComboItens] = useState([]);
   const [viraCombo, setViraCombo] = useState(false);
   const [grupos, setGrupos] = useState([]);
@@ -47,6 +52,8 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
       setGrupos(d.grupos.map((g) => g.id));
       setIfood({ vende_ifood: !!d.vende_ifood, codigo_ifood: d.codigo_ifood || '' });
       setForaComissao(!!d.fora_da_comissao);
+      setPrecos(precosDoServidor(d));
+      setConv(conversaoDoServidor(d.conversao));
     } catch (err) { toast.erro(err); }
   }, [productId, toast]);
 
@@ -68,6 +75,8 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
   const custo = usaReceita ? custoFicha : usaCombo ? custoDoCombo(comboItens, products) : parseNumero(form.preco_custo);
   const venda = parseNumero(form.preco_venda);
   const margem = venda > 0 && custo >= 0 ? ((venda - custo) / venda) * 100 : null;
+  // conversao em insumo: so produto com estoque proprio, e so com o modulo Lanchonete (sem insumos nao ha para onde converter)
+  const mostraConversao = podePrecos && lanchonete && !usaReceita && !usaCombo;
 
   function validar() {
     const ean = form.barcode.replace(/\D/g, '');
@@ -78,6 +87,11 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
     if (usaCombo && comboItens.length === 0) return 'Adicione ao menos um produto ao combo.';
     if (!(custo > 0)) return 'Informe o preço de custo (maior que zero).';
     if (!(venda > custo)) return usaReceita ? `O preço de venda precisa ser maior que o custo dos insumos (${brl(custo)}).` : 'O preço de venda precisa ser maior que o custo.';
+    if (podePrecos) {
+      const ep = validarPrecos(precos, locations, venda);
+      if (ep) return ep;
+      if (mostraConversao) { const ec = validarConversao(conv, form.unidade); if (ec) return ec; }
+    }
     return '';
   }
 
@@ -88,7 +102,8 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
     if (msg) return;
     setSalvando(true);
     try {
-      await api.put(`/products/${p.id}`, {
+      const conversaoCorpo = mostraConversao ? payloadDeConversao(conv, !!p.conversao, form.nome) : undefined;
+      const resposta = await api.put(`/products/${p.id}`, {
         nome: form.nome.trim(),
         descricao: form.descricao,
         categoria_id: form.categoria_id,
@@ -101,6 +116,8 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
         grupos,
         ...(usaCombo ? { combo: comboItens } : {}),
         ...(usaIfood ? { vende_ifood: ifood.vende_ifood, codigo_ifood: ifood.codigo_ifood } : {}),
+        ...(podePrecos ? payloadDePrecos(precos, locations) : {}),
+        ...(conversaoCorpo !== undefined ? { conversao: conversaoCorpo } : {}),
       });
       if (usaReceita) {
         const original = p.ficha_tecnica;
@@ -115,7 +132,8 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
         for (const o of removidos) await api.del(`/products/${p.id}/ingredients/${o.ingredient_id}`);
       }
       if (usaGarcom && foraComissao !== !!p.fora_da_comissao) await api.patch(`/products/${p.id}`, { fora_da_comissao: foraComissao });
-      toast.sucesso('Produto atualizado.');
+      const avisos = (resposta && resposta.avisos_precos) || [];
+      toast.sucesso(avisos.length ? `Produto atualizado. Atenção: ${avisos.join(' ')}` : 'Produto atualizado.');
       await reload();
       onClose();
     } catch (err) {
@@ -201,6 +219,8 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
 
         {usaReceita && <ReceitaEditor ref={receitaRef} ficha={ficha} setFicha={setFicha} ingredients={ingredients} onErro={setErro} />}
         {usaCombo && <ComboEditor itens={comboItens} setItens={setComboItens} produtos={products} proprioId={p.id} />}
+        {podePrecos && <PrecosLoja estado={precos} setEstado={setPrecos} locais={locations} venda={venda} custo={custo} combo={usaCombo} />}
+        {mostraConversao && <ConversaoInsumo estado={conv} setEstado={setConv} unidade={form.unidade} custo={custo} locais={locations} ingredients={ingredients} />}
         <GruposDoProduto selecionados={grupos} setSelecionados={setGrupos} />
         {usaIfood && <CamposIfood valor={ifood} setValor={setIfood} codigoInterno={p.codigo_interno} />}
         {usaGarcom && (

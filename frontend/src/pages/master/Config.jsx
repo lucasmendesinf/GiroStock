@@ -45,6 +45,63 @@ function Integracoes() {
           </div>
         );
       }) : <p className="muted">Carregando…</p>}
+      <SmsMaisConfig aoSalvar={carregar} />
+    </div>
+  );
+}
+
+function SmsMaisConfig({ aoSalvar }) {
+  const toast = useToast();
+  const [cfg, setCfg] = useState(null);
+  const [token, setToken] = useState('');
+  const [salvando, setSalvando] = useState(false);
+  const [testando, setTestando] = useState(false);
+  const carregar = useCallback(() => api.get('/master/config/smsmais').then(setCfg).catch((e) => toast.erro(e)), [toast]);
+  useEffect(() => { carregar(); }, [carregar]);
+  async function salvar(e) {
+    e.preventDefault(); setSalvando(true);
+    try {
+      const r = await api.put('/master/config/smsmais', { token, ativo: true });
+      setToken(''); setCfg((x) => ({ ...x, ...r })); aoSalvar();
+      toast.sucesso('Credenciais SMSMais salvas com criptografia.');
+    } catch (err) { toast.erro(err); } finally { setSalvando(false); }
+  }
+  async function desativar() {
+    try { const r = await api.put('/master/config/smsmais', { ativo: false }); setCfg((x) => ({ ...x, ...r })); aoSalvar(); toast.sucesso('Envio SMSMais desativado.'); }
+    catch (err) { toast.erro(err); }
+  }
+  async function remover() {
+    if (!window.confirm('Remover as credenciais SMSMais salvas?')) return;
+    try { const r = await api.del('/master/config/smsmais'); setCfg((x) => ({ ...x, ...r })); setToken(''); aoSalvar(); toast.sucesso('Credenciais removidas.'); }
+    catch (err) { toast.erro(err); }
+  }
+  async function testar() {
+    setTestando(true);
+    try { const r = await api.post('/master/config/smsmais/testar'); toast.sucesso(r.mensagem); }
+    catch (err) { toast.erro(err); } finally { setTestando(false); }
+  }
+  return (
+    <div style={{ borderTop: '1px solid var(--line)', marginTop: 12, paddingTop: 12 }}>
+      <h4 style={{ margin: '0 0 6px' }}>SMSMais · códigos de acesso do cardápio</h4>
+      <p className="cl-sub" style={{ margin: '0 0 10px' }}>O token fica criptografado no banco e nunca volta para o navegador. Use um token sbx_ da SMSMais para homologar sem enviar SMS real.</p>
+      {!cfg ? <p className="muted">Carregando…</p> : <>
+        <p className="cl-sub" style={{ margin: '0 0 8px' }}>
+          Estado: <b>{cfg.ativo ? 'ativa' : cfg.configurado ? 'desativada' : 'não configurada'}</b>
+          {!cfg.criptografia_disponivel && <span style={{ color: 'var(--err)' }}> · Configure TOTP_ENC_KEY no servidor antes de salvar o token.</span>}
+          {cfg.erro_criptografia && <span style={{ color: 'var(--err)' }}> · Não foi possível abrir o token salvo. Confira se TOTP_ENC_KEY não foi alterada.</span>}
+        </p>
+        <form onSubmit={salvar} className="form-stack" style={{ maxWidth: 560 }}>
+          <Field label={cfg.configurado ? 'Substituir token Bearer' : 'Token Bearer'} hint={cfg.configurado ? 'Deixe vazio para manter o token salvo.' : 'Gere o token em SMSMais → API & Integrações. O token sbx_ é recomendado para homologação.'}>
+            <input type="password" autoComplete="new-password" value={token} onChange={(e) => setToken(e.target.value)} placeholder={cfg.configurado ? 'Token armazenado com segurança' : 'Cole aqui o token da API'} required={!cfg.configurado} />
+          </Field>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="submit" className="btn-primario" disabled={salvando || !cfg.criptografia_disponivel}>{salvando ? 'Salvando…' : cfg.configurado ? 'Salvar e ativar' : 'Salvar e ativar SMSMais'}</button>
+            {cfg.ativo && <button type="button" className="btn-link" onClick={desativar}>Desativar</button>}
+            {cfg.configurado && <button type="button" className="btn-link perigo" onClick={remover}>Remover credenciais</button>}
+            {cfg.ativo && <button type="button" className="btn-link" disabled={testando} onClick={testar}>{testando ? 'Testando…' : 'Testar conexão'}</button>}
+          </div>
+        </form>
+      </>}
     </div>
   );
 }

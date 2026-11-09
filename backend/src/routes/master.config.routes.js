@@ -115,13 +115,14 @@ async function statusIntegracoes() {
   const pasta = backup.diretorioPronto();
   let testeOk = null;
   if (pool.testeConfigurado()) { try { await pool.teste().query('SELECT 1'); testeOk = true; } catch { testeOk = false; } }
+  const codigoStatus = await codigoLogin.statusAtual();
   return [
     { id: 'banco_teste', nome: 'Banco de teste (modo teste)', status: !pool.testeConfigurado() ? 'nao_configurado' : testeOk ? 'ok' : 'erro', detalhe: !pool.testeConfigurado() ? 'DATABASE_URL_TESTE ausente ou igual à produção' : testeOk ? 'conectado' : 'não respondeu', testavel: pool.testeConfigurado() },
     { id: 'backup_dir', nome: 'Pasta de backups (BACKUP_DIR)', status: pasta.ok ? 'ok' : 'erro', detalhe: pasta.ok ? 'gravável' : pasta.erro, testavel: true },
     { id: 'pg_dump', nome: 'pg_dump no servidor', status: backup.temPgDump() ? 'ok' : 'indisponivel', detalhe: backup.temPgDump() ? 'disponível (backups em formato pg_dump)' : 'não encontrado: os backups usam o formato próprio (JavaScript)', testavel: false },
     { id: 'totp', nome: 'Chave do 2FA (TOTP_ENC_KEY)', status: totp.disponivel() ? 'ok' : 'nao_configurado', detalhe: totp.disponivel() ? 'configurada' : 'ausente: o 2FA fica indisponível', testavel: false },
     { id: 'smtp', nome: 'E-mail (SMTP)', status: process.env.SMTP_HOST ? 'ok' : 'nao_configurado', detalhe: process.env.SMTP_HOST ? 'configurado' : 'não configurado (o sistema ainda não envia e-mails)', testavel: false },
-    { id: 'codigo_login', nome: 'Código de login da loja (WhatsApp/SMS)', status: codigoLogin.status().configurado ? 'ok' : 'nao_configurado', detalhe: `${codigoLogin.status().provedor}: ${codigoLogin.status().detalhe}`, testavel: false },
+    { id: 'codigo_login', nome: 'Código de login da loja (WhatsApp/SMS)', status: codigoStatus.configurado ? 'ok' : 'nao_configurado', detalhe: `${codigoStatus.provedor}: ${codigoStatus.detalhe}`, testavel: false },
     { id: 'whatsapp', nome: 'WhatsApp (API)', status: 'nao_contratado', detalhe: 'não contratado: as mensagens usam o link wa.me', testavel: false },
     { id: 'ifood', nome: 'iFood', status: ifoodApi.configurado() ? 'ok' : 'nao_configurado', detalhe: ifoodApi.configurado() ? `app configurado${process.env.IFOOD_API_URL ? ` (endereço: ${process.env.IFOOD_API_URL})` : ''}: cada loja conecta a sua conta em Lojas & PDVs` : 'IFOOD_CLIENT_ID/IFOOD_CLIENT_SECRET ausentes: cadastre o app no Portal do Desenvolvedor iFood', testavel: false },
     { id: '99food', nome: '99Food', status: food99Api.configurado() ? 'ok' : 'nao_configurado', detalhe: food99Api.configurado() ? `app configurado${process.env.FOOD99_API_URL ? ` (endereço: ${process.env.FOOD99_API_URL})` : ''}: webhook em /api/webhooks/99food; cada loja conecta em Lojas & PDVs` : 'FOOD99_APP_ID/FOOD99_APP_SECRET ausentes: cadastre o app no portal de desenvolvedores da 99Food', testavel: false },
@@ -130,6 +131,25 @@ async function statusIntegracoes() {
 }
 router.get('/master/config/integracoes', async (req, res) => {
   res.json({ integracoes: await statusIntegracoes() });
+});
+router.get('/master/config/smsmais', async (req, res) => {
+  const cfg = await codigoLogin.configuracaoSmsMais();
+  res.json({ configurado: cfg.segredoSalvo, ativo: cfg.ativo && !!cfg.token, erro_criptografia: cfg.segredoSalvo && !cfg.token, criptografia_disponivel: cfg.criptografiaDisponivel });
+});
+router.put('/master/config/smsmais', async (req, res) => {
+  const b = req.body || {};
+  if (b.ativo !== undefined && typeof b.ativo !== 'boolean') throw new HttpError(400, 'ativo deve ser verdadeiro ou falso');
+  const r = await codigoLogin.salvarConfiguracaoSmsMais({ token: b.token, ativo: b.ativo }, req.user.id);
+  await audit(req, 'master_config_smsmais_salvar', 'integracao', 'smsmais', { ativo: r.ativo, token_novo: !!String(b.token || '').trim() });
+  res.json(r);
+});
+router.delete('/master/config/smsmais', async (req, res) => {
+  const r = await codigoLogin.removerConfiguracaoSmsMais(req.user.id);
+  await audit(req, 'master_config_smsmais_remover', 'integracao', 'smsmais', null);
+  res.json(r);
+});
+router.post('/master/config/smsmais/testar', async (req, res) => {
+  res.json(await codigoLogin.testarConexaoSmsMais());
 });
 router.post('/master/config/integracoes/:id/testar', async (req, res) => {
   if (req.params.id === 'banco_teste') {

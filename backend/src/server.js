@@ -12,7 +12,7 @@ backup.iniciarAgendador();
 suporte.iniciarVarredura();
 ifood.iniciarPolling(); // pedidos do iFood a cada 30 s (so com IFOOD_CLIENT_ID/IFOOD_CLIENT_SECRET configurados)
 lojaVirtual.iniciarVarredura(); // loja virtual: confere Pix/cartão pendentes e cancela os não pagos no prazo (a cada 60 s)
-require('./services/codigoLogin').validarInicializacao(); // login por codigo da loja: avisa se nao ha provedor
+require('./services/codigoLogin').validarInicializacao().catch((err) => console.error('login por código (cardápio): não foi possível ler a configuração', err.message)); // login por codigo da loja
 lojaVirtual.iniciarVarreduraEnvios(); // loja virtual: acompanha as etiquetas do Melhor Envio (rastreio e entrega, a cada 15 min)
 app.listen(port, () => {
   console.log(`GiroStock API rodando na porta ${port}`);

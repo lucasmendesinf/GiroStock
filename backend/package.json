@@ -42,6 +42,7 @@
     "test:e2e:cardapio": "node scripts/e2e-cardapio.mjs",
     "test:e2e:eventos": "node scripts/e2e-eventos.mjs",
     "test:unit:precos": "node scripts/teste-precos.mjs",
+    "test:e2e:precos": "node scripts/e2e-precos.mjs",
     "test:e2e:fiscal": "node scripts/e2e-fiscal.mjs"
   },
   "dependencies": {

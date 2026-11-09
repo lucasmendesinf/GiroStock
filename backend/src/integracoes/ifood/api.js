@@ -78,7 +78,14 @@ async function confirmarRecebimento(token, ids) {
 
 // ---------- pedido ----------
 async function pedido(token, id) {
-  return (await chamar('GET', CAMINHOS.pedido(id), { token })).corpo;
+  try {
+    return (await chamar('GET', CAMINHOS.pedido(id), { token })).corpo;
+  } catch (err) {
+    // Pedidos gerados no Portal de Testes podem exigir o contexto de homologação para consultar os detalhes.
+    // Tentamos apenas após 404; pedidos reais seguem no endpoint normal e esta chamada é somente leitura.
+    if (!(err instanceof ErroPlataforma) || err.status !== 404) throw err;
+    return (await chamar('GET', CAMINHOS.pedido(id), { token, headers: { 'x-request-homologation': 'true' } })).corpo;
+  }
 }
 // Acoes respondem 202 (aceito); o resultado chega depois como evento (CFM, RTP, DSP, CAN...).
 const acao = (nome) => (token, id, corpo) => chamar('POST', CAMINHOS.acao(id, nome), { token, json: corpo === undefined ? undefined : corpo });

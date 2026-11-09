@@ -2,11 +2,12 @@ const express = require('express');
 const pool = require('../db/pool');
 const { requireArea } = require('../middleware/permissions');
 const { logAudit } = require('../utils/audit');
-const { getOwned, getOwnedLocation } = require('../utils/tenant');
+const { getOwned, getOwnedLocation, isUuid } = require('../utils/tenant');
 const { assertLocationAccess, filtroLocais } = require('../utils/access');
 const { isQuantidadeValidaParaUnidade } = require('../utils/validators');
 const { HttpError } = require('../utils/http');
 const { filtroPeriodo, paginacao } = require('../utils/query');
+const conversao = require('../services/conversao');
 
 const router = express.Router();
 
@@ -104,13 +105,18 @@ async function prepararMovimento(db, user, dados) {
     documentoFiscal = textoOpcional(dados.documento_fiscal);
   }
 
-  return { product, tipo, qtd, origemId, destinoId, motivo, supplierId, custoUnitario, documentoFiscal };
+  // Transferencia para uma loja em que o produto vira insumo (cadastro do produto): converte ou mantem, conforme o modo.
+  const conv = tipo === 'transferencia' ? await conversao.conversaoDaTransferencia(db, user, product.id, destinoId, dados.converter_em_insumo) : null;
+
+  return { product, tipo, qtd, origemId, destinoId, motivo, supplierId, custoUnitario, documentoFiscal, conv };
 }
 
 // Aplica um movimento ja validado dentro de uma transacao aberta.
 async function aplicarMovimento(client, user, mov) {
-  const { product, tipo, qtd, origemId, destinoId, motivo, supplierId, custoUnitario, documentoFiscal } = mov;
+  const { product, tipo, qtd, origemId, destinoId, motivo, supplierId, custoUnitario, documentoFiscal, conv } = mov;
   const productId = product.id;
+  // Com conversao o produto NAO chega ao destino (vira insumo la): so a origem tem saldo de produto mexido.
+  const destinoProduto = conv ? null : destinoId;
 
   // Ordem de travas igual a da venda (produto -> saldos), evitando deadlock entre as duas.
   const travado = await client.query(
@@ -121,8 +127,8 @@ async function aplicarMovimento(client, user, mov) {
   );
   const atual = travado.rows[0];
 
-  if (destinoId) await ensureBalanceRow(client, user.tenantId, productId, destinoId);
-  const saldos = await lockBalances(client, user.tenantId, productId, [origemId, destinoId].filter(Boolean));
+  if (destinoProduto) await ensureBalanceRow(client, user.tenantId, productId, destinoProduto);
+  const saldos = await lockBalances(client, user.tenantId, productId, [origemId, destinoProduto].filter(Boolean));
 
   if (origemId) {
     const saldoOrigem = saldos.has(origemId) ? saldos.get(origemId) : 0;
@@ -151,10 +157,10 @@ async function aplicarMovimento(client, user, mov) {
       [qtd, productId, origemId, user.tenantId]
     );
   }
-  if (destinoId) {
+  if (destinoProduto) {
     await client.query(
       `UPDATE stock_balances SET saldo = saldo + $1 WHERE product_id = $2 AND location_id = $3 AND tenant_id = $4`,
-      [qtd, productId, destinoId, user.tenantId]
+      [qtd, productId, destinoProduto, user.tenantId]
     );
   }
 
@@ -172,11 +178,17 @@ async function aplicarMovimento(client, user, mov) {
 
   const { rows } = await client.query(
     `INSERT INTO stock_movements (tenant_id, product_id, tipo, quantidade, location_origem_id, location_destino_id, motivo, usuario_id,
-                                  supplier_id, custo_unitario, documento_fiscal)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                                  supplier_id, custo_unitario, documento_fiscal, conversao_ingredient_id, conversao_quantidade)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING id, product_id, tipo, quantidade, location_origem_id, location_destino_id, motivo, supplier_id, custo_unitario, documento_fiscal, criado_em`,
-    [user.tenantId, productId, tipo, qtd, origemId, destinoId, motivo, user.id, supplierId, custoUnitario, documentoFiscal]
+    [user.tenantId, productId, tipo, qtd, origemId, destinoId, motivo, user.id, supplierId, custoUnitario, documentoFiscal,
+      conv ? conv.ingredient_id : null, conv ? Number((qtd * conv.fator).toFixed(3)) : null]
   );
+  // Transferencia com conversao: soma no insumo do destino (mesma transacao) e liga os dois lados pelo id do movimento.
+  let convertido = null;
+  if (conv) {
+    convertido = await conversao.aplicarConversao(client, user, { conv, productId, productNome: product.nome, qtd, destinoId, movimentoId: rows[0].id, custoProduto: atual.preco_custo });
+  }
 
   await logAudit(client, {
     tenantId: user.tenantId,
@@ -188,10 +200,11 @@ async function aplicarMovimento(client, user, mov) {
       product_id: productId, quantidade: qtd, supplier_id: supplierId, custo_unitario: custoUnitario,
       documento_fiscal: documentoFiscal,
       ...(custoMedio !== null ? { preco_custo_anterior: Number(atual.preco_custo), preco_custo_novo: custoMedio } : {}),
+      ...(convertido ? { conversao: { ingredient_id: convertido.ingredient_id, quantidade: convertido.quantidade } } : {}),
     },
   });
 
-  return { ...rows[0], preco_custo_atualizado: custoMedio };
+  return { ...rows[0], preco_custo_atualizado: custoMedio, ...(convertido ? { convertido_em_insumo: convertido } : {}) };
 }
 
 router.post('/stock-movements', requireArea('Estoque'), async (req, res) => {
@@ -208,6 +221,16 @@ router.post('/stock-movements', requireArea('Estoque'), async (req, res) => {
   } finally {
     client.release();
   }
+});
+
+// Previa (nao grava) da transferencia com conversao: o produto vira insumo no destino? quanto entra, saldo e custo do insumo.
+// Query: product_id, location_destino_id, quantidade.
+router.get('/stock-movements/conversao', requireArea('Estoque'), async (req, res) => {
+  const { product_id: produtoId, location_destino_id: destinoId, quantidade } = req.query;
+  if (!isUuid(produtoId) || !isUuid(destinoId)) throw new HttpError(400, 'product_id e location_destino_id são obrigatórios');
+  await getOwned(pool, 'products', produtoId, req.user.tenantId, { columns: 'id' });
+  await getOwnedLocation(pool, destinoId, req.user.tenantId);
+  res.json(await conversao.previaDaConversao(pool, req.user, produtoId, destinoId, quantidade));
 });
 
 // Balanco de produto: substitui o saldo de uma loja pela contagem fisica e guarda a diferenca
@@ -404,20 +427,25 @@ router.get('/stock-movements', requireArea('Estoque'), async (req, res) => {
   const base = `
     WITH m AS (
       SELECT sm.id::text AS id, 'produto' AS origem, sm.product_id::text AS item_id, p.nome AS item_nome, p.unidade,
-             sm.tipo::text AS tipo, sm.quantidade, sm.location_origem_id, sm.location_destino_id, sm.motivo,
+             sm.tipo::text AS tipo, sm.quantidade, sm.location_origem_id, sm.location_destino_id,
+             CASE WHEN sm.conversao_ingredient_id IS NOT NULL
+                  THEN 'Transferência com conversão em insumo (+' || regexp_replace(to_char(sm.conversao_quantidade, 'FM999999990.999'), '[.]$', '') || ' ' || ig.unidade || ' de ' || ig.nome || '): ' || sm.motivo
+                  ELSE sm.motivo END AS motivo,
              sm.usuario_id, sm.supplier_id, sm.custo_unitario, sm.documento_fiscal, sm.sale_id,
              sm.saldo_anterior, sm.saldo_novo, sm.criado_em
       FROM stock_movements sm JOIN products p ON p.id = sm.product_id
+      LEFT JOIN ingredients ig ON ig.id = sm.conversao_ingredient_id
       WHERE sm.tenant_id = $1
       UNION ALL
       SELECT al.id::text, 'insumo', al.recurso_id::text, i.nome, i.unidade,
-             CASE al.acao WHEN 'entrada_estoque' THEN 'entrada' WHEN 'saida_estoque' THEN 'saida'
+             CASE al.acao WHEN 'entrada_estoque' THEN 'entrada' WHEN 'entrada_conversao' THEN 'entrada' WHEN 'saida_estoque' THEN 'saida'
                           WHEN 'transferencia' THEN 'transferencia' ELSE 'balanco' END,
              CASE WHEN al.acao = 'balanco_estoque' THEN abs((al.detalhes->>'diferenca')::numeric)
                   ELSE (al.detalhes->>'quantidade')::numeric END,
              CASE al.acao WHEN 'saida_estoque' THEN NULLIF(al.detalhes->>'location_id', '')::uuid
                           WHEN 'transferencia' THEN NULLIF(al.detalhes->>'location_origem_id', '')::uuid END,
              CASE al.acao WHEN 'entrada_estoque' THEN NULLIF(al.detalhes->>'location_id', '')::uuid
+                          WHEN 'entrada_conversao' THEN NULLIF(al.detalhes->>'location_id', '')::uuid
                           WHEN 'balanco_estoque' THEN NULLIF(al.detalhes->>'location_id', '')::uuid
                           WHEN 'transferencia' THEN NULLIF(al.detalhes->>'location_destino_id', '')::uuid END,
              COALESCE(al.detalhes->>'motivo', CASE al.acao WHEN 'entrada_estoque' THEN 'Entrada de insumo' END),
@@ -428,7 +456,7 @@ router.get('/stock-movements', requireArea('Estoque'), async (req, res) => {
              (al.detalhes->>'saldo_anterior')::numeric, (al.detalhes->>'saldo_novo')::numeric, al.criado_em
       FROM audit_logs al JOIN ingredients i ON i.id = al.recurso_id
       WHERE al.tenant_id = $1 AND al.recurso = 'ingredients'
-        AND al.acao IN ('entrada_estoque', 'saida_estoque', 'transferencia', 'balanco_estoque')
+        AND al.acao IN ('entrada_estoque', 'entrada_conversao', 'saida_estoque', 'transferencia', 'balanco_estoque')
       UNION ALL
       SELECT ic.id::text, 'insumo', ic.ingredient_id::text, i.nome, i.unidade, 'saida', ic.quantidade_consumida,
              ic.location_id, NULL::uuid, 'Consumo em venda', sa.operador_id, NULL::uuid, NULL::numeric, NULL,

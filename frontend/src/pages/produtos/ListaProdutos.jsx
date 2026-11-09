@@ -176,7 +176,13 @@ export default function ListaProdutos(props) {
                     </td>
                     <td className="col-opcional">{p.codigo_interno}</td>
                     <td className="col-opcional">{p.unidade}</td>
-                    <td className="num es-preco">{brl(p.preco_venda)}</td>
+                    <td className="num es-preco">{(() => {
+                      // Com uma loja no filtro: o preco DELA (ou "nao vende"). Sem filtro: o padrao, com aviso quando ha preco por loja ou pack.
+                      const regra = lojaFiltrada ? (p.precos_lojas || []).find((r) => r.location_id === lojaFiltrada.id) : null;
+                      const variam = (p.precos_lojas || []).some((r) => r.preco_venda !== null && Number(r.preco_venda) !== Number(p.preco_venda) || r.vende === false);
+                      if (regra && regra.vende === false) return <><s className="pr-riscado">{brl(p.preco_venda)}</s> <span className="es-pill err">não vende aqui</span></>;
+                      return <>{brl(regra && regra.preco_venda !== null ? regra.preco_venda : p.preco_venda)}{!lojaFiltrada && variam && <small className="pr-indica" title="Este produto tem preço diferente em alguma loja"> preços por loja</small>}{p.tem_faixas && <small className="pr-indica" title="Tem desconto por quantidade (pack/atacado)"> pack</small>}</>;
+                    })()}</td>
                     <td className="num">
                       {p.e_combo
                         ? <span className="es-pill info">combo</span>

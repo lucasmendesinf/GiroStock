@@ -206,6 +206,9 @@ router.get('/products', async (req, res) => {
             COALESCE((SELECT json_agg(json_build_object('product_id', ci.product_id, 'quantidade', ci.quantidade))
                       FROM combo_itens ci WHERE ci.combo_id = p.id), '[]') AS combo,
             COALESCE((SELECT json_agg(pg.grupo_id ORDER BY pg.ordem) FROM produto_grupos pg WHERE pg.product_id = p.id), '[]') AS grupos,
+            COALESCE((SELECT json_agg(json_build_object('location_id', pp.location_id, 'preco_venda', pp.preco_venda, 'vende', pp.vende))
+                      FROM produto_precos pp WHERE pp.product_id = p.id), '[]') AS precos_lojas,
+            EXISTS(SELECT 1 FROM produto_faixas pf WHERE pf.product_id = p.id AND pf.ativo) AS tem_faixas,
             COALESCE(SUM(sb.saldo), 0) AS saldo_total,
             COALESCE(
               json_agg(

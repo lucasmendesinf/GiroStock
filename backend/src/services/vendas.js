@@ -4,6 +4,7 @@ const { logAudit } = require('../utils/audit');
 const { isQuantidadeValidaParaUnidade } = require('../utils/validators');
 const { HttpError } = require('../utils/http');
 const { reservadosDaLoja } = require('../utils/reservas');
+const precos = require('./precos');
 const {
   carregarComposicao, consumoDaLinha, consumoDasLinhas, custoUnitario, validarComplementos, precoDosComplementos,
   idsDeComplementos, saldosDaLoja, faltasDoConsumo,
@@ -50,7 +51,9 @@ async function assertReceitasPermitidas(db, user, productIds) {
 //          comanda_pagamento_id?, recebido_por? }]: varias formas na mesma venda; a soma TEM de fechar com o total; no lugar de
 //          forma_pagamento/valor_recebido), precos_informados (pedido de plataforma: cada item traz preco_unitario, o preco cobrado pela
 //          plataforma, e os complementos ja vem com o preco dela; a regra de minimo/maximo dos grupos nao se aplica),
-//          sem_caixa + location_id (pedido pago no site: a venda nao passa pelo caixa; so com forma 'online') }
+//          sem_caixa + location_id (pedido pago no site: a venda nao passa pelo caixa; so com forma 'online'),
+//          precos_do_pedido (venda que nasce de um pedido/comanda interno: cada item traz o preco ja cobrado, preco_tabela e faixa_rotulo;
+//          sem isso o preco vem de services/precos.js: preco da loja + faixa de quantidade; item pode trazer faixa_id para faixa manual) }
 async function registrarVenda(client, user, dados) {
   const { terminal_id, itens, forma_pagamento, valor_recebido } = dados;
   const descontoInformado = Number(dados.desconto || 0);
@@ -74,8 +77,10 @@ async function registrarVenda(client, user, dados) {
   // Linhas como vieram do PDV (mesmo produto com observacoes ou complementos diferentes vira linhas separadas).
   const linhas = itens.map((i) => ({
     product_id: i.product_id, quantidade: Number(i.quantidade), observacao: String(i.observacao || '').trim().slice(0, 200),
-    garcom_id: isUuid(i.garcom_id) ? i.garcom_id : null,
-    preco_informado: dados.precos_informados && Number.isFinite(Number(i.preco_unitario)) ? Number(i.preco_unitario) : null,
+    garcom_id: isUuid(i.garcom_id) ? i.garcom_id : null, faixa_id: isUuid(i.faixa_id) ? i.faixa_id : null,
+    preco_informado: (dados.precos_informados || dados.precos_do_pedido) && Number.isFinite(Number(i.preco_unitario)) ? Number(i.preco_unitario) : null,
+    preco_tabela_informado: (dados.precos_informados || dados.precos_do_pedido) && i.preco_tabela !== undefined && i.preco_tabela !== null && Number.isFinite(Number(i.preco_tabela)) ? Number(i.preco_tabela) : null,
+    faixa_rotulo_informado: (dados.precos_informados || dados.precos_do_pedido) && i.faixa_rotulo ? String(i.faixa_rotulo) : null,
     complementos_pedidos: Array.isArray(i.complementos) ? i.complementos : [],
   }));
 
@@ -144,11 +149,20 @@ async function registrarVenda(client, user, dados) {
     }
   }
 
-  // Preco: o cadastrado + complementos (ou o informado pela plataforma, que ja inclui os complementos).
+  // Preco: o da LOJA do terminal + faixa de quantidade (services/precos.js) + complementos; ou o informado (plataforma, site, pedido
+  // ou comanda internos: ja inclui os complementos). Produto que a loja nao vende e recusado.
+  const usaInformado = !!(dados.precos_informados || dados.precos_do_pedido);
+  const regras = usaInformado ? null : await precos.precosDosProdutos(client, user.tenantId, locationId, precos.itensParaPreco(linhas));
   const linhasComPreco = linhas.map((l) => {
-    const produto = productMap.get(l.product_id);
-    const preco = l.preco_informado !== null ? l.preco_informado : Number((Number(produto.preco_venda) + precoDosComplementos(l.complementos)).toFixed(2));
-    return { ...l, preco_unitario: preco, custo_unitario: custoUnitario(comp, l.product_id, l.complementos), subtotal: Number((preco * l.quantidade).toFixed(2)) };
+    const compl = precoDosComplementos(l.complementos);
+    const regra = regras ? regras.get(l.product_id) : null;
+    const preco = l.preco_informado !== null ? l.preco_informado : Number((regra.preco_unitario + compl).toFixed(2));
+    const comFaixa = regra && regra.faixa;
+    return {
+      ...l, preco_unitario: preco, custo_unitario: custoUnitario(comp, l.product_id, l.complementos), subtotal: Number((preco * l.quantidade).toFixed(2)),
+      preco_tabela: comFaixa ? Number((regra.preco_tabela + compl).toFixed(2)) : l.preco_tabela_informado,
+      faixa_rotulo: comFaixa ? (regra.faixa.rotulo || `${regra.faixa.quantidade_minima} un`) : l.faixa_rotulo_informado,
+    };
   });
   const subtotalVenda = Number(linhasComPreco.reduce((s, l) => s + l.subtotal, 0).toFixed(2));
   const desconto = Number(descontoInformado.toFixed(2));
@@ -262,10 +276,11 @@ async function registrarVenda(client, user, dados) {
     // Observacao: itens com preparo (consomem insumos) ou com complementos; e os de plataforma.
     const guardaObs = consumo.insumos.size > 0 || item.complementos.length > 0 || comp.combos.has(item.product_id) || dados.precos_informados;
     const saleItem = await client.query(
-      `INSERT INTO sale_items (tenant_id, sale_id, product_id, quantidade, preco_unitario, custo_unitario, subtotal, observacao, complementos, garcom_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+      `INSERT INTO sale_items (tenant_id, sale_id, product_id, quantidade, preco_unitario, custo_unitario, subtotal, observacao, complementos, garcom_id, preco_tabela, faixa_rotulo)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
       [user.tenantId, saleId, item.product_id, item.quantidade, item.preco_unitario, item.custo_unitario, item.subtotal,
-        guardaObs && item.observacao ? item.observacao : null, item.complementos.length ? JSON.stringify(item.complementos) : null, item.garcom_id]
+        guardaObs && item.observacao ? item.observacao : null, item.complementos.length ? JSON.stringify(item.complementos) : null, item.garcom_id,
+        item.preco_tabela, item.faixa_rotulo]
     );
     // Produtos com estoque proprio (o vendido, os componentes do combo, os complementos que sao produto).
     for (const [productId, q] of consumo.produtos) {

@@ -258,7 +258,7 @@ router.post('/orders/:id/status', async (req, res) => {
         if (cx.rows.length === 0) throw new HttpError(400, 'nenhum caixa aberto nesta loja: abra o caixa no PDV para finalizar o pedido');
         terminalId = cx.rows[0].id;
       }
-      const itens = await client.query(`SELECT product_id, quantidade, observacao, preco_unitario, complementos FROM order_items WHERE order_id = $1`, [o.id]);
+      const itens = await client.query(`SELECT product_id, quantidade, observacao, preco_unitario, preco_tabela, faixa_rotulo, complementos FROM order_items WHERE order_id = $1`, [o.id]);
       // pedido de plataforma ou da loja virtual: vale o preco (promocao) e o desconto (cupom) do pedido
       const externo = !!o.origem_externa_id || o.origem === 'loja_virtual';
       let forma = b.forma_pagamento;
@@ -273,12 +273,13 @@ router.post('/orders/:id/status', async (req, res) => {
         terminal_id: terminalId,
         itens: itens.rows.map((i) => ({
           product_id: i.product_id, quantidade: Number(i.quantidade), observacao: i.observacao, complementos: Array.isArray(i.complementos) ? i.complementos : [],
-          ...(externo ? { preco_unitario: Number(i.preco_unitario) } : {}),
+          // o preco do pedido (preco da loja/faixa do momento do pedido, ou o da plataforma/site) e o que se cobra
+          preco_unitario: Number(i.preco_unitario), preco_tabela: i.preco_tabela === null ? null : Number(i.preco_tabela), faixa_rotulo: i.faixa_rotulo,
         })),
         forma_pagamento: forma,
         valor_recebido: (o.pago || externo) && forma === 'dinheiro' && b.valor_recebido === undefined ? (o.valor_recebido === null ? undefined : Number(o.valor_recebido)) : b.valor_recebido,
         desconto: externo ? Number(o.desconto || 0) : 0,
-        precos_informados: externo,
+        precos_informados: externo, precos_do_pedido: !externo,
         taxa_entrega: Number(o.taxa_entrega),
         numero_pedido: o.numero,
         ignorar_pedido_id: o.id,

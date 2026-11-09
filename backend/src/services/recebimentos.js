@@ -162,7 +162,7 @@ async function fecharComanda(client, user, comanda, opcoes) {
   }
 
   const itens = (await client.query(
-    `SELECT oi.product_id, oi.quantidade, oi.observacao, oi.complementos, oi.garcom_id, oi.preco_unitario
+    `SELECT oi.product_id, oi.quantidade, oi.observacao, oi.complementos, oi.garcom_id, oi.preco_unitario, oi.preco_tabela, oi.faixa_rotulo
      FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE o.comanda_id = $1 AND o.status <> 'cancelado' ORDER BY o.rodada, oi.id`, [comanda.id]
   )).rows;
   const pagamentos = [
@@ -172,7 +172,7 @@ async function fecharComanda(client, user, comanda, opcoes) {
   const venda = await registrarVenda(client, user, {
     terminal_id: term.id,
     // Preco de cada item = o do pedido (o que o cliente viu e o que o app ja pode ter cobrado): a conta nao muda se o cadastro mudou.
-    itens: itens.map((i) => ({ product_id: i.product_id, quantidade: Number(i.quantidade), observacao: i.observacao, preco_unitario: Number(i.preco_unitario), complementos: Array.isArray(i.complementos) ? i.complementos : [], garcom_id: i.garcom_id })),
+    itens: itens.map((i) => ({ product_id: i.product_id, quantidade: Number(i.quantidade), observacao: i.observacao, preco_unitario: Number(i.preco_unitario), preco_tabela: i.preco_tabela === null ? null : Number(i.preco_tabela), faixa_rotulo: i.faixa_rotulo, complementos: Array.isArray(i.complementos) ? i.complementos : [], garcom_id: i.garcom_id })),
     precos_informados: true,
     desconto, taxa_servico: dinheiro(taxaApp + taxaRestante), pagamentos,
     numero_pedido: comanda.numero, ignorar_pedidos_ids: rodadas.map((r) => r.id), comanda_id: comanda.id,

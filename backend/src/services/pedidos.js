@@ -7,6 +7,7 @@ const { isQuantidadeValidaParaUnidade } = require('../utils/validators');
 const { HttpError } = require('../utils/http');
 const { reservadosDaLoja } = require('../utils/reservas');
 const { assertReceitasPermitidas } = require('./vendas');
+const precos = require('./precos');
 const {
   carregarComposicao, consumoDaLinha, consumoDasLinhas, validarComplementos, precoDosComplementos, idsDeComplementos, saldosDaLoja, faltasDoConsumo,
 } = require('./consumo');
@@ -64,7 +65,7 @@ async function criarPedido(client, user, b, opcoes = {}) {
     if (!i || !isUuid(i.product_id) || !(Number(i.quantidade) > 0)) throw new HttpError(400, 'cada item precisa de product_id válido e quantidade (>0)');
     const linha = {
       product_id: i.product_id, quantidade: Number(i.quantidade), observacao: String(i.observacao || '').trim().slice(0, 200),
-      complementos_pedidos: Array.isArray(i.complementos) ? i.complementos : [],
+      complementos_pedidos: Array.isArray(i.complementos) ? i.complementos : [], faixa_id: isUuid(i.faixa_id) ? i.faixa_id : null,
     };
     if (precosInformados && i.preco_unitario !== undefined) {
       linha.preco_unitario = Number(i.preco_unitario);
@@ -149,14 +150,20 @@ async function criarPedido(client, user, b, opcoes = {}) {
         loja.fluxo === 'ecommerce' ? 'ecommerce' : 'cardapio']
     );
   }
+  // Preco da LOJA + faixa de quantidade DESTE pedido/rodada (nunca soma entre rodadas). Pedido de plataforma e do site trazem o preco deles.
+  const regras = precosInformados ? null : await precos.precosDosProdutos(client, user.tenantId, locationId, precos.itensParaPreco(linhas));
   for (const l of linhas) {
-    const preco = l.preco_unitario !== undefined ? l.preco_unitario : Number((Number(mapa.get(l.product_id).preco_venda) + precoDosComplementos(l.complementos)).toFixed(2));
+    const regra = regras ? regras.get(l.product_id) : null;
+    const compl = precoDosComplementos(l.complementos);
+    const preco = l.preco_unitario !== undefined ? l.preco_unitario : Number(((regra ? regra.preco_unitario : Number(mapa.get(l.product_id).preco_venda)) + compl).toFixed(2));
+    const tabela = regra && regra.faixa ? Number((regra.preco_tabela + compl).toFixed(2)) : null;
+    const rotulo = regra && regra.faixa ? (regra.faixa.rotulo || `${regra.faixa.quantidade_minima} un`) : null;
     // Observacao: itens com preparo (consomem insumos), com complementos ou combo; de plataforma, em qualquer item.
     const preparo = consumoDaLinha(comp, l).insumos.size > 0 || l.complementos.length > 0 || comp.combos.has(l.product_id);
     const obs = (preparo || externo || loja || opcoes.comanda) && l.observacao ? l.observacao : null;
     await client.query(
-      `INSERT INTO order_items (order_id, product_id, quantidade, preco_unitario, subtotal, observacao, complementos, garcom_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [orderId, l.product_id, l.quantidade, preco, Number((preco * l.quantidade).toFixed(2)), obs, l.complementos.length ? JSON.stringify(l.complementos) : null, opcoes.comanda ? opcoes.comanda.garcomId || null : null]
+      `INSERT INTO order_items (order_id, product_id, quantidade, preco_unitario, subtotal, observacao, complementos, garcom_id, preco_tabela, faixa_rotulo) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [orderId, l.product_id, l.quantidade, preco, Number((preco * l.quantidade).toFixed(2)), obs, l.complementos.length ? JSON.stringify(l.complementos) : null, opcoes.comanda ? opcoes.comanda.garcomId || null : null, tabela, rotulo]
     );
   }
   await client.query(`INSERT INTO order_status_log (order_id, de, para, usuario_id) VALUES ($1, NULL, 'novo', $2)`, [orderId, user.id || null]);

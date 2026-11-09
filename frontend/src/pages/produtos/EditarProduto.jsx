@@ -10,8 +10,12 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import { temModulo, podeAcessar } from '../../utils/permissions.js';
 import PrecosLoja, { estadoInicialPrecos, precosDoServidor, payloadDePrecos, validarPrecos } from './PrecosLoja.jsx';
 import ConversaoInsumo, { estadoInicialConversao, conversaoDoServidor, payloadDeConversao, validarConversao } from './ConversaoInsumo.jsx';
+import { enviarImagem } from '../../utils/imagem';
 
 const numeroParaCampo = (n) => String(n).replace('.', ',');
+function IconeImagem() {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" /></svg>;
+}
 
 // Edicao do produto: so os dados cadastrais. Produto comum tem o botao "Tratar estoque →";
 // produto controlado por insumos mostra a receita (e abre ja rolado ate ela).
@@ -35,6 +39,7 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
   const [viraComposto, setViraComposto] = useState(false);
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
+  const [imagemEnviando, setImagemEnviando] = useState(false);
   const receitaRef = useRef(null);
 
   const carregar = useCallback(async () => {
@@ -158,6 +163,29 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
     } catch (err) { toast.erro(err); }
   }
 
+  async function trocarImagem(e) {
+    const arquivo = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!arquivo) return;
+    setImagemEnviando(true);
+    try {
+      const r = await enviarImagem(arquivo, 800, `/api/products/${p.id}/imagem`);
+      setP((atual) => ({ ...atual, imagem_id: r.id, imagem_url: r.imagem_url }));
+      await reload();
+      toast.sucesso('Imagem do produto atualizada.');
+    } catch (err) { toast.erro(err); }
+    finally { setImagemEnviando(false); }
+  }
+
+  async function removerImagem() {
+    try {
+      await api.del(`/products/${p.id}/imagem`);
+      setP((atual) => ({ ...atual, imagem_id: null, imagem_url: null }));
+      await reload();
+      toast.sucesso('Imagem do produto removida.');
+    } catch (err) { toast.erro(err); }
+  }
+
   return (
     <Modal titulo={<>{p.nome} {!p.ativo && <span className="badge-inativo">inativo</span>}</>}
       subtitulo={`Editar produto · ${p.codigo_interno}${compostoOriginal ? ' · controlado por insumos' : comboOriginal ? ' · combo' : ''}`} onClose={onClose} largura="extra">
@@ -168,6 +196,18 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
             : usaReceita
             ? <>Produto controlado por <b>insumos</b>: aqui você define a receita. O custo é calculado pelos insumos e não existe saldo para cadastrar.</>
             : <>Aqui ficam só os <b>dados do produto</b>. O saldo não é cadastrado aqui: use o botão <b>Tratar estoque</b> (ou o ícone de caixa da lista) para dar entrada, transferir ou ajustar estoque.</>}
+        </div>
+
+        <div className="es-imagem-editor">
+          {p.imagem_url ? <img src={p.imagem_url} alt={`Imagem de ${p.nome}`} /> : <div className="es-foto"><IconeImagem /></div>}
+          <div>
+            <b>Imagem do produto</b>
+            <div className="cl-sub">JPG, PNG ou WebP · até 2 MB. Também aparece na lista de produtos.</div>
+            <label className="btn-link lv-arquivo">{imagemEnviando ? 'Enviando…' : p.imagem_url ? 'Trocar imagem' : 'Adicionar imagem'}
+              <input type="file" accept="image/jpeg,image/png,image/webp" onChange={trocarImagem} disabled={imagemEnviando} />
+            </label>
+            {p.imagem_url && <button type="button" className="btn-link perigo" onClick={removerImagem} disabled={imagemEnviando}>Remover</button>}
+          </div>
         </div>
 
         <div className="form-grid">

@@ -300,8 +300,10 @@ function precoDoProduto(p, hoje = agoraSP().data) {
 const urlImagem = (base, id) => `${base}/api/loja/v1/imagens/${id}`;
 
 const SELECT_PRODUTO = `
-  SELECT p.id, p.nome AS nome_cadastro, p.unidade, p.preco_venda, p.categoria_id, p.grade_id, p.variacao, c.nome AS categoria_nome, c.parent_id AS categoria_pai_id,
-         cp.nome AS categoria_pai_nome, lp.nome_site, lp.descricao, lp.imagens, lp.preco_promocional, lp.promo_inicio::text, lp.promo_fim::text,
+  SELECT p.id, p.nome AS nome_cadastro, p.unidade, p.preco_venda, p.categoria_id, p.grade_id, p.variacao, p.imagem_id, c.nome AS categoria_nome, c.parent_id AS categoria_pai_id,
+         cp.nome AS categoria_pai_nome, lp.nome_site, lp.descricao,
+         CASE WHEN cardinality(lp.imagens) > 0 THEN lp.imagens WHEN p.imagem_id IS NOT NULL THEN ARRAY[p.imagem_id] ELSE '{}'::uuid[] END AS imagens,
+         lp.preco_promocional, lp.promo_inicio::text, lp.promo_fim::text,
          lp.destaque, lp.ordem, lp.maior_idade, lp.so_retirada,
          COALESCE((SELECT json_agg(json_build_object('id', g.id, 'nome', g.nome, 'minimo', g.minimo, 'maximo', g.maximo,
                      'opcoes', (SELECT COALESCE(json_agg(json_build_object('id', o.id, 'nome', o.nome, 'preco', o.preco) ORDER BY o.ordem, o.nome), '[]')

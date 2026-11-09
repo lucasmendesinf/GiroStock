@@ -168,7 +168,7 @@ export default function ListaProdutos(props) {
                 const tip = p.tem_ficha_tecnica ? 'Controlar insumos' : p.e_combo ? 'Produtos do combo' : 'Tratar estoque';
                 return (
                   <tr key={p.id} className={`es-row-${st.cls} ${p.ativo ? '' : 'row-inativa'}`}>
-                    <td><div className="es-foto"><IconeImagem /></div></td>
+                    <td><div className="es-foto">{p.imagem_url ? <img src={p.imagem_url} alt={`Imagem de ${p.nome}`} loading="lazy" /> : <IconeImagem />}</div></td>
                     <td>
                       {podeEditar ? <button type="button" className="es-nome" title="Editar produto" onClick={() => setEditandoId(p.id)}>{p.nome}</button> : <span className="es-nome" style={{ cursor: 'default' }}>{p.nome}</span>}
                       {!p.ativo && <> <span className="badge-inativo">inativo</span></>}

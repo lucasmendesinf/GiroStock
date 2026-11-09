@@ -198,7 +198,7 @@ router.get('/products', async (req, res) => {
     filtro = ` AND p.ativo = $${params.length}`;
   }
   const { rows } = await pool.query(
-    `SELECT p.id, p.codigo_interno, p.nome, p.categoria_id, c.nome AS categoria_nome,
+    `SELECT p.id, p.codigo_interno, p.nome, p.categoria_id, c.nome AS categoria_nome, p.imagem_id,
             p.supplier_id, s.nome AS supplier_nome, p.barcode,
             p.unidade, p.preco_custo, p.preco_venda, p.ativo, p.vende_ifood, p.codigo_ifood, p.fora_da_comissao,
             p.grade_id, p.variacao, (SELECT g.nome FROM produto_grades g WHERE g.id = p.grade_id) AS grade_nome,
@@ -232,7 +232,47 @@ router.get('/products', async (req, res) => {
      ORDER BY p.ativo DESC, p.nome`,
     params
   );
-  res.json(rows.map((r) => ({ ...r, e_combo: r.combo.length > 0 })));
+  res.json(rows.map((r) => ({ ...r, imagem_url: r.imagem_id ? `/api/loja/v1/imagens/${r.imagem_id}` : null, e_combo: r.combo.length > 0 })));
+});
+
+function tipoDaImagem(buf) {
+  if (buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+  if (buf.length >= 8 && buf.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (buf.length >= 12 && buf.slice(0, 4).toString('ascii') === 'RIFF' && buf.slice(8, 12).toString('ascii') === 'WEBP') return 'image/webp';
+  return null;
+}
+
+router.post('/products/:id/imagem', requireArea('Estoque'), requireArea('EditarProdutos'), async (req, res) => {
+  const buf = Buffer.isBuffer(req.body) ? req.body : null;
+  if (!buf || !buf.length) throw new HttpError(400, 'selecione uma imagem JPG, PNG ou WebP');
+  if (buf.length > 2 * 1024 * 1024) throw new HttpError(413, 'imagem grande demais (máximo 2 MB)');
+  const mime = tipoDaImagem(buf);
+  if (!mime) throw new HttpError(400, 'formato não suportado: use JPG, PNG ou WebP');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const produto = await getOwned(client, 'products', req.params.id, req.user.tenantId, { columns: 'id, nome, imagem_id' });
+    const imagem = (await client.query(
+      `INSERT INTO lv_imagens (tenant_id, mime, dados, tamanho) VALUES ($1, $2, $3, $4) RETURNING id`,
+      [req.user.tenantId, mime, buf, buf.length]
+    )).rows[0];
+    await client.query(`UPDATE products SET imagem_id = $1 WHERE id = $2 AND tenant_id = $3`, [imagem.id, produto.id, req.user.tenantId]);
+    await logAudit(client, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'produto_imagem_atualizar', recurso: 'products', recursoId: produto.id, detalhes: { nome: produto.nome, substituiu_imagem: !!produto.imagem_id } });
+    await client.query('COMMIT');
+    res.status(201).json({ id: imagem.id, imagem_url: `/api/loja/v1/imagens/${imagem.id}` });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally { client.release(); }
+});
+
+router.delete('/products/:id/imagem', requireArea('Estoque'), requireArea('EditarProdutos'), async (req, res) => {
+  const produto = await getOwned(pool, 'products', req.params.id, req.user.tenantId, { columns: 'id, nome, imagem_id' });
+  if (produto.imagem_id) {
+    await pool.query(`UPDATE products SET imagem_id = NULL WHERE id = $1 AND tenant_id = $2`, [produto.id, req.user.tenantId]);
+    await logAudit(pool, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'produto_imagem_remover', recurso: 'products', recursoId: produto.id, detalhes: { nome: produto.nome } });
+  }
+  res.status(204).end();
 });
 
 // Busca do PDV. Com terminal_id (ou location_id) retorna o saldo daquele local:
@@ -361,7 +401,7 @@ router.get('/products/search', async (req, res) => {
 
 router.get('/products/:id', async (req, res) => {
   const product = await getOwned(pool, 'products', req.params.id, req.user.tenantId, {
-    columns: 'id, codigo_interno, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, ativo, vende_ifood, codigo_ifood, fora_da_comissao, descricao',
+    columns: 'id, codigo_interno, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, ativo, vende_ifood, codigo_ifood, fora_da_comissao, descricao, imagem_id',
   });
 
   const fornecedores = await pool.query(
@@ -402,7 +442,7 @@ router.get('/products/:id', async (req, res) => {
   );
   const precosDoProduto = await precosCadastro.lerPrecos(pool, req.user.tenantId, req.params.id);
   const conv = await conversao.lerConversao(pool, req.user.tenantId, req.params.id);
-  res.json({ ...product, fornecedores: fornecedores.rows, saldos_por_local: saldos.rows, ficha_tecnica: ficha.rows, combo: combo.rows, e_combo: combo.rows.length > 0, grupos: grupos.rows, precos_lojas: precosDoProduto.precos_lojas, faixas: precosDoProduto.faixas, conversao: conv });
+  res.json({ ...product, imagem_url: product.imagem_id ? `/api/loja/v1/imagens/${product.imagem_id}` : null, fornecedores: fornecedores.rows, saldos_por_local: saldos.rows, ficha_tecnica: ficha.rows, combo: combo.rows, e_combo: combo.rows.length > 0, grupos: grupos.rows, precos_lojas: precosDoProduto.precos_lojas, faixas: precosDoProduto.faixas, conversao: conv });
 });
 
 router.post('/products', requireArea('Estoque'), async (req, res) => {

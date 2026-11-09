@@ -53,6 +53,7 @@ app.use('/api/webhooks', webhooksRoutes);
 // Fotos da loja virtual: corpo binario (a tela ja reduz a imagem); o limite real (2 MB) e conferido na rota.
 app.use('/api/loja-virtual/imagens', express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: '3mb' }));
 app.use('/api/eventos-imagens', express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: '3mb' }));
+app.use('/api/products/:id/imagem', express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: '3mb' }));
 app.use(express.json());
 app.use('/api', monitoramento.contarRequisicao);
 

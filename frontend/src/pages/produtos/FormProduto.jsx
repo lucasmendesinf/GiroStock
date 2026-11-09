@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../../api/client';
 import { useToast } from '../../context/UiContext.jsx';
 import { Field, Modal } from '../../components/ui.jsx';
@@ -11,6 +11,7 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import { temModulo, podeAcessar } from '../../utils/permissions.js';
 import PrecosLoja, { estadoInicialPrecos, payloadDePrecos, validarPrecos } from './PrecosLoja.jsx';
 import ConversaoInsumo, { estadoInicialConversao, payloadDeConversao, validarConversao } from './ConversaoInsumo.jsx';
+import { enviarImagem } from '../../utils/imagem';
 
 // Cadastro de produto: so os dados do produto. O saldo nao e cadastrado aqui (depois de salvar,
 // o icone de caixa da lista trata o estoque). Produto controlado por insumos (lanche / receita)
@@ -40,7 +41,16 @@ export default function FormProduto({ categories, suppliers, ingredients, produc
   const [erro, setErro] = useState('');
   const [categoriasAberto, setCategoriasAberto] = useState(false);
   const [salvando, setSalvando] = useState(false);
+  const [foto, setFoto] = useState(null);
+  const [fotoPreview, setFotoPreview] = useState('');
   const arvore = ordenarCategoriasHierarquia(categories);
+
+  useEffect(() => {
+    if (!foto) { setFotoPreview(''); return undefined; }
+    const url = URL.createObjectURL(foto);
+    setFotoPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [foto]);
 
   const custoFicha = custoDaReceita(ficha, ingredients);
   const custo = composto ? custoFicha : combo ? custoDoCombo(comboItens, products) : parseNumero(form.preco_custo);
@@ -89,9 +99,14 @@ export default function FormProduto({ categories, suppliers, ingredients, produc
         ...(podePrecos ? payloadDePrecos(precos, locations) : {}),
         ...(mostraConversao && conv.ativa ? { conversao: payloadDeConversao(conv, false, form.nome) } : {}),
       });
+      let avisoFoto = '';
+      if (foto) {
+        try { await enviarImagem(foto, 800, `/api/products/${produto.id}/imagem`); }
+        catch (err) { avisoFoto = ` O produto foi salvo, mas a imagem não foi enviada: ${err.message}`; }
+      }
       toast.sucesso(composto || combo
-        ? `Produto ${produto.codigo_interno} cadastrado — ${combo ? 'combo' : 'receita'} salvo.`
-        : `Produto ${produto.codigo_interno} cadastrado — agora use o ícone de caixa para lançar o estoque.`);
+        ? `Produto ${produto.codigo_interno} cadastrado — ${combo ? 'combo' : 'receita'} salvo.${avisoFoto}`
+        : `Produto ${produto.codigo_interno} cadastrado — agora use o ícone de caixa para lançar o estoque.${avisoFoto}`);
       await reload();
       onSalvo(produto.id);
     } catch (err) {
@@ -120,6 +135,13 @@ export default function FormProduto({ categories, suppliers, ingredients, produc
           <Field label="Descrição (opcional)" style={{ flexBasis: '100%' }}>
             <textarea rows={2} maxLength={1000} value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} placeholder="Detalhes do produto (aparece no detalhe e no site)" />
           </Field>
+          {podePrecos && <Field label="Imagem do produto" hint="JPG, PNG ou WebP. Até 2 MB; aparece na lista de produtos.">
+            <label className="btn-link lv-arquivo">{foto ? 'Trocar imagem' : 'Escolher imagem'}
+              <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => setFoto(e.target.files && e.target.files[0] || null)} />
+            </label>
+            {foto && <button type="button" className="btn-link perigo" onClick={() => setFoto(null)}>Remover seleção</button>}
+            {fotoPreview && <img className="es-imagem-preview" src={fotoPreview} alt="Prévia da imagem do produto" />}
+          </Field>}
           <Field label="Categoria *">
             <select value={form.categoria_id} onChange={(e) => setForm({ ...form, categoria_id: e.target.value })}>
               <option value="">Escolha...</option>

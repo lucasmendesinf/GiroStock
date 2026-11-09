@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useConfirm, useToast } from '../context/UiContext.jsx';
 import { Field, Modal } from '../components/ui.jsx';
 import EscolherComplementos, { assinatura, precoComplementos, textoComplementos } from '../components/EscolherComplementos.jsx';
+import { precoComFaixa, totaisPorProduto } from '../utils/faixas.js';
 import { brl } from '../utils/format';
 
 // App do garcom (celular): minhas comandas, nova comanda (mesa/pista), comanda com rodadas e extrato.
@@ -291,7 +292,7 @@ function Comanda() {
       const ass = assinatura(complementos);
       const ix = r.itens.findIndex((i) => i.product_id === p.id && !i.observacao && assinatura(i.complementos) === ass);
       const itens = ix >= 0 ? r.itens.map((i, k) => (k === ix ? { ...i, quantidade: i.quantidade + 1 } : i))
-        : [...r.itens, { key: `${Date.now()}-${Math.random()}`, product_id: p.id, nome: p.nome, preco, quantidade: 1, observacao: '', complementos }];
+        : [...r.itens, { key: `${Date.now()}-${Math.random()}`, product_id: p.id, nome: p.nome, preco, faixas: p.faixas || [], quantidade: 1, observacao: '', complementos }];
       return { ...r, itens };
     });
   }
@@ -302,7 +303,10 @@ function Comanda() {
   const mudarQtd = (key, d) => mudarRascunho((r) => ({ ...r, itens: r.itens.map((i) => (i.key === key ? { ...i, quantidade: i.quantidade + d } : i)).filter((i) => i.quantidade > 0) }));
   const mudarObs = (key, obs) => mudarRascunho((r) => ({ ...r, itens: r.itens.map((i) => (i.key === key ? { ...i, observacao: obs } : i)) }));
 
-  const totalRascunho = rasc.itens.reduce((s, i) => s + i.preco * i.quantidade, 0);
+  // Preco da loja + faixa de quantidade DESTA rodada (nunca soma entre rodadas): previa; o servidor recalcula.
+  const totaisRodada = totaisPorProduto(rasc.itens);
+  const calcItem = (i) => precoComFaixa(i, totaisRodada);
+  const totalRascunho = rasc.itens.reduce((s, i) => s + calcItem(i).unit * i.quantidade, 0);
   const qtdRascunho = rasc.itens.reduce((s, i) => s + i.quantidade, 0);
 
   async function enviar(repetir = false) {
@@ -419,8 +423,9 @@ function Comanda() {
             {rasc.itens.map((i) => (
               <div key={i.key} className="gc-item gc-item-col">
                 <div className="gc-item-top">
-                  <div className="gc-item-l"><span className="gc-nome">{i.nome}</span>{i.complementos.length > 0 && <span className="gc-sub">{textoComplementos(i.complementos)}</span>}</div>
-                  <b className="gc-item-v">{brl(i.preco * i.quantidade)}</b>
+                  <div className="gc-item-l"><span className="gc-nome">{i.nome}</span>{i.complementos.length > 0 && <span className="gc-sub">{textoComplementos(i.complementos)}</span>}
+                    {calcItem(i).faixa && <span className="gc-sub pr-pack">{calcItem(i).faixa.rotulo || `Pack ${calcItem(i).faixa.quantidade_minima}`}: {brl(calcItem(i).unit)} cada em vez de {brl(calcItem(i).tabela)}</span>}</div>
+                  <b className="gc-item-v">{brl(calcItem(i).unit * i.quantidade)}</b>
                 </div>
                 <div className="gc-item-bot">
                   <input value={i.observacao} onChange={(e) => mudarObs(i.key, e.target.value)} placeholder="Observação (ex.: sem gelo)" maxLength={200} aria-label={`Observação de ${i.nome}`} />

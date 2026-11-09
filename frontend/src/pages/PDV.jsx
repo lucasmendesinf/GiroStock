@@ -93,6 +93,8 @@ export default function PDV() {
   }, [toast]);
 
   const [cart, setCart] = useState([]);
+  const [faixaManual, setFaixaManual] = useState({}); // product_id -> faixa que o operador escolheu aplicar (so as 'Só se escolher')
+  useEffect(() => { if (cart.length === 0) setFaixaManual({}); }, [cart.length]);
   const [escolhendo, setEscolhendo] = useState(null); // { product, quantidade }: escolha dos complementos antes de entrar no carrinho
   useEffect(() => {
     // O carrinho e validado contra o estoque da loja do terminal: trocar de terminal limpa o carrinho.
@@ -242,6 +244,7 @@ export default function PDV() {
       }
       return [...prev, {
         key: chave, id: product.id, nome: product.nome, unidade: product.unidade, preco_venda: Number(product.preco_venda) + precoComplementos(comps),
+        preco_base: Number(product.preco_venda), faixas: product.faixas || [],
         quantidade, limite, tem_ficha_tecnica: product.tem_ficha_tecnica, insumo_limitante: product.insumo_limitante, observacao: '', complementos: comps,
       }];
     });
@@ -302,7 +305,16 @@ export default function PDV() {
       try {
         const rows = await api.get(`/products/search?barcode=${encodeURIComponent(termo)}&terminal_id=${terminalId}`);
         if (rows.length === 0) toast.erro(`Código ${termo} não encontrado (ou produto inativo).`);
-        else adicionou = addToCart(rows[0], quantidade);
+        else if (rows[0].quantidade_pack) {
+          // Codigo de barras do PACK: lanca a quantidade da faixa (ex.: fardo com 6). Faixa 'so se escolher' fica aplicada pelo pack.
+          const total = rows[0].quantidade_pack * (quantidade || 1);
+          adicionou = addToCart(rows[0], total);
+          if (adicionou) {
+            const fx = (rows[0].faixas || []).find((f) => f.id === rows[0].faixa_pack_id);
+            if (fx && !fx.automatica) setFaixaManual((m) => ({ ...m, [rows[0].id]: fx.id }));
+            toast.sucesso(`Pack lido: ${total} un de ${rows[0].nome}`);
+          }
+        } else adicionou = addToCart(rows[0], quantidade);
       } catch (err) { toast.erro(err); }
     } else if (results.length > 0) {
       adicionou = addToCart(results[Math.min(selecionado, results.length - 1)], quantidade);
@@ -374,7 +386,32 @@ export default function PDV() {
   const categorias = toque && listaAtual.current !== null ? [...new Set(results.map((p) => p.categoria).filter(Boolean))].sort() : [];
   const categoriaAtiva = categoria && categorias.includes(categoria) ? categoria : null;
   const visiveis = categoriaAtiva ? results.filter((p) => p.categoria === categoriaAtiva) : results;
-  const subtotal = Number(cart.reduce((acc, i) => acc + i.preco_venda * i.quantidade, 0).toFixed(2));
+  // Preco de cada linha: preco da LOJA + faixa de quantidade do MESMO produto (soma das linhas) + complementos. O servidor recalcula e e a verdade.
+  const totalDoProduto = cart.reduce((m, i) => { m[i.id] = (m[i.id] || 0) + i.quantidade; return m; }, {});
+  function faixaVale(i) {
+    const fx = i.faixas || [];
+    if (fx.length === 0) return null;
+    const q = totalDoProduto[i.id] || 0;
+    let auto = null;
+    for (const f of fx) if (f.automatica && q >= f.quantidade_minima && (!auto || f.quantidade_minima > auto.quantidade_minima)) auto = f;
+    const manual = faixaManual[i.id] ? fx.find((f) => f.id === faixaManual[i.id] && q >= f.quantidade_minima) : null;
+    if (auto && manual) return manual.preco_unitario < auto.preco_unitario ? manual : auto;
+    return manual || auto || null;
+  }
+  function calcLinha(i) {
+    const f = faixaVale(i);
+    const base = i.preco_base !== undefined ? Number(i.preco_base) : Number(i.preco_venda) - precoComplementos(i.complementos);
+    const compl = precoComplementos(i.complementos);
+    return { unit: Number(((f ? f.preco_unitario : base) + compl).toFixed(2)), tabela: Number((base + compl).toFixed(2)), faixa: f };
+  }
+  // Proxima faixa automatica ainda nao atingida (dica "faltam N un") e faixas manuais ja liberadas pela quantidade.
+  function proximaFaixa(i) {
+    const q = totalDoProduto[i.id] || 0;
+    return (i.faixas || []).filter((f) => f.automatica && f.quantidade_minima > q).sort((a, b) => a.quantidade_minima - b.quantidade_minima)[0] || null;
+  }
+  const manuaisLiberadas = (i) => (i.faixas || []).filter((f) => !f.automatica && (totalDoProduto[i.id] || 0) >= f.quantidade_minima);
+  const faixaParaEnviar = (i) => (faixaManual[i.id] && (i.faixas || []).some((f) => f.id === faixaManual[i.id] && (totalDoProduto[i.id] || 0) >= f.quantidade_minima) ? faixaManual[i.id] : undefined);
+  const subtotal = Number(cart.reduce((acc, i) => acc + calcLinha(i).unit * i.quantidade, 0).toFixed(2));
 
   // ---------- pedido (lanchonete): o carrinho vira pedido em vez de venda imediata ----------
   const [lojas, setLojas] = useState([]);
@@ -438,6 +475,7 @@ export default function PDV() {
             // Repete os complementos com o preco de hoje (os que sairam do cadastro ficam de fora).
             complementos: (i.complementos || []).map((c) => { const o = (p.grupos || []).flatMap((g) => g.opcoes).find((x) => x.id === c.id); return o ? { id: o.id, nome: o.nome, quantidade: Number(c.quantidade), preco: Number(o.preco) } : null; }).filter(Boolean),
             limite: disp, tem_ficha_tecnica: p.tem_ficha_tecnica, insumo_limitante: p.insumo_limitante, observacao: i.observacao || '',
+            preco_base: Number(p.preco_venda), faixas: p.faixas || [],
           });
         });
         setCart(linhas.map((l) => ({ ...l, preco_venda: Number(prods.find((x) => x.id === l.id).preco_venda) + precoComplementos(l.complementos) })));
@@ -485,7 +523,7 @@ export default function PDV() {
         taxa_entrega: destinoRapido === 'entrega' ? Math.max(0, parseNumero(taxaRapida) || 0) : 0, cadastrar_cliente: cadastrarCliente,
         cliente_nome: nomeChamar.trim() || (clienteInfo ? clienteInfo.nome : ''), cliente_telefone: clienteInfo ? clienteInfo.telefone : clienteTel.replace(/\D/g, ''),
         forma_pagamento_prevista: formaPed, pago: jaPagoPed, valor_recebido: jaPagoPed && formaPed === 'dinheiro' ? recebidoNum : undefined,
-        itens: cart.map((i) => ({ product_id: i.id, quantidade: i.quantidade, observacao: i.tem_ficha_tecnica ? (i.observacao || '').trim() : '', complementos: (i.complementos || []).map((c) => ({ id: c.id, quantidade: c.quantidade })) })),
+        itens: cart.map((i) => ({ product_id: i.id, quantidade: i.quantidade, faixa_id: faixaParaEnviar(i), observacao: i.tem_ficha_tecnica ? (i.observacao || '').trim() : '', complementos: (i.complementos || []).map((c) => ({ id: c.id, quantidade: c.quantidade })) })),
       });
       await pedidoCriado(pedido);
     } catch (err) { toast.erro(err); } finally { setGerando(false); }
@@ -576,7 +614,7 @@ export default function PDV() {
     try {
       const payload = {
         terminal_id: terminalId,
-        itens: cart.map((i) => ({ product_id: i.id, quantidade: i.quantidade, observacao: i.tem_ficha_tecnica ? (i.observacao || '').trim() : undefined, complementos: (i.complementos || []).map((c) => ({ id: c.id, quantidade: c.quantidade })) })),
+        itens: cart.map((i) => ({ product_id: i.id, quantidade: i.quantidade, faixa_id: faixaParaEnviar(i), observacao: i.tem_ficha_tecnica ? (i.observacao || '').trim() : undefined, complementos: (i.complementos || []).map((c) => ({ id: c.id, quantidade: c.quantidade })) })),
         forma_pagamento: formaPagamento,
         desconto,
       };
@@ -829,7 +867,8 @@ export default function PDV() {
                       className={`${i === selecionado ? 'selecionado' : ''} ${semEstoque ? 'sem-estoque' : ''}`}
                       onMouseMove={() => { if (i !== selecionado) setSelecionado(i); }} onClick={() => { if (addToCart(p) && !toque) { setBusca(''); setResults([]); } }}>
                       <span className="resultado-seta">{i === selecionado ? '▶' : ''}</span>
-                      <span className="resultado-nome">{p.nome}{noCarrinho > 0 && <span className="no-carrinho" aria-label={`${qtd(noCarrinho, p.unidade)} no carrinho`}>{qtd(noCarrinho, p.unidade)}</span>}</span>
+                      <span className="resultado-nome">{p.nome}{noCarrinho > 0 && <span className="no-carrinho" aria-label={`${qtd(noCarrinho, p.unidade)} no carrinho`}>{qtd(noCarrinho, p.unidade)}</span>}
+                        {p.faixas && p.faixas.length > 0 && <small className="pr-lista-faixas">{p.faixas.map((f) => `${f.rotulo || `Pack ${f.quantidade_minima}`}: ${f.quantidade_minima} × ${brl(f.preco_unitario)}${f.automatica ? '' : ' (manual)'}`).join(' · ')}</small>}</span>
                       <span className="resultado-codigo">{p.codigo_interno}<small>{p.barcode}</small></span>
                       <span className="resultado-cat">{p.categoria || '—'}</span>
                       <span className="saldo-pdv num">{semEstoque ? (p.tem_ficha_tecnica ? `sem estoque: falta ${p.insumo_limitante || 'insumo'}` : `sem estoque${p.em_outras_lojas ? ' (há em outra loja)' : ''}`) : p.tem_ficha_tecnica ? `dá para ${p.saldo} un.` : qtd(p.saldo, p.unidade)}</span>
@@ -869,7 +908,26 @@ export default function PDV() {
                 <div className="carrinho-info">
                   <span className="carrinho-nome">{i.nome}</span>
                   {i.complementos && i.complementos.length > 0 && <span className="carrinho-comps">{textoComplementos(i.complementos)}</span>}
-                  <span className="muted">{qtd(i.quantidade, i.unidade)} {i.unidade} × {brl(i.preco_venda)}</span>
+                  <span className="muted">{qtd(i.quantidade, i.unidade)} {i.unidade} × {calcLinha(i).faixa && <s className="pr-riscado">{brl(calcLinha(i).tabela)}</s>} {brl(calcLinha(i).unit)}</span>
+                  {calcLinha(i).faixa && (
+                    <span className="pr-pack">{calcLinha(i).faixa.rotulo || `Pack ${calcLinha(i).faixa.quantidade_minima}`}: cada unidade sai por {brl(calcLinha(i).unit)} em vez de {brl(calcLinha(i).tabela)} · economia {brl((calcLinha(i).tabela - calcLinha(i).unit) * i.quantidade)}</span>
+                  )}
+                  {cart.findIndex((c) => c.id === i.id) === cart.indexOf(i) && (() => {
+                    const prox = proximaFaixa(i);
+                    const manuais = manuaisLiberadas(i);
+                    const falta = prox ? prox.quantidade_minima - (totalDoProduto[i.id] || 0) : 0;
+                    return (
+                      <>
+                        {prox && falta > 0 && UNIDADES_INTEIRAS.includes(i.unidade) && (
+                          <span className="pr-dica">Faltam {falta} un para o {prox.rotulo || `Pack ${prox.quantidade_minima}`} ({brl(prox.preco_unitario)} cada)
+                            <button type="button" className="btn-link" onClick={() => setQuantidade(i, i.quantidade + falta)}>+{falta}</button></span>
+                        )}
+                        {manuais.map((f) => (faixaManual[i.id] === f.id
+                          ? <button key={f.id} type="button" className="btn-link pr-aplicado" onClick={() => setFaixaManual((m) => { const c = { ...m }; delete c[i.id]; return c; })}>✓ {f.rotulo || `Atacado ${f.quantidade_minima}`} aplicado · remover</button>
+                          : <button key={f.id} type="button" className="btn-link" onClick={() => setFaixaManual((m) => ({ ...m, [i.id]: f.id }))}>Aplicar {f.rotulo || `Atacado ${f.quantidade_minima}`} ({brl(f.preco_unitario)} cada)</button>))}
+                      </>
+                    );
+                  })()}
                 </div>
                 <div className="carrinho-qtd">
                   <button type="button" aria-label="Diminuir" onClick={() => changeQty(i, -1)} disabled={!UNIDADES_INTEIRAS.includes(i.unidade) && i.quantidade <= 1}>−</button>
@@ -885,7 +943,7 @@ export default function PDV() {
                   />
                   <button type="button" aria-label="Aumentar" onClick={() => changeQty(i, 1)}>+</button>
                 </div>
-                <span className="carrinho-subtotal">{brl(i.preco_venda * i.quantidade)}</span>
+                <span className="carrinho-subtotal">{brl(calcLinha(i).unit * i.quantidade)}</span>
                 <button type="button" className="carrinho-remover" aria-label={`Remover ${i.nome}`} onClick={() => removeItem(i.key)}>×</button>
                 {i.tem_ficha_tecnica && (
                   <div className="carrinho-obs">
@@ -983,7 +1041,7 @@ export default function PDV() {
       {pedidoModal && terminal && (
         <PedidoForm lojaId={terminal.location_id} origemInicial={origemPdv} titulo="Gerar pedido" telefoneInicial={clienteTel} nomeInicial={nomeChamar.trim() || (clienteInfo ? clienteInfo.nome : '')}
           tipoInicial={destinoRapido} enderecoInicial={destinoRapido === 'entrega' ? enderecoRapido : ''} taxaInicial={taxaRapida} mesaInicial={mesaRapida} cadastrarInicial={cadastrarCliente} onClose={() => setPedidoModal(false)} onCriado={pedidoCriado}
-          itensIniciais={cart.map((i) => ({ key: i.key, product_id: i.id, nome: i.nome, unidade: i.unidade, preco: i.preco_venda, quantidade: i.quantidade, observacao: i.tem_ficha_tecnica ? (i.observacao || '').trim() : '', tem_ficha: !!i.tem_ficha_tecnica, limite: i.limite, complementos: i.complementos || [] }))} />
+          itensIniciais={cart.map((i) => ({ key: i.key, product_id: i.id, nome: i.nome, unidade: i.unidade, preco: calcLinha(i).unit, faixa_id: faixaParaEnviar(i), quantidade: i.quantidade, observacao: i.tem_ficha_tecnica ? (i.observacao || '').trim() : '', tem_ficha: !!i.tem_ficha_tecnica, limite: i.limite, complementos: i.complementos || [] }))} />
       )}
 
       {comanda && (

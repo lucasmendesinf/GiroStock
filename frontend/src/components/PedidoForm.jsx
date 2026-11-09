@@ -5,6 +5,7 @@ import { Modal } from './ui.jsx';
 import ClienteTelefone from './ClienteTelefone.jsx';
 import { brl, parseNumero, qtd } from '../utils/format';
 import EscolherComplementos, { assinatura, precoComplementos, textoComplementos } from './EscolherComplementos.jsx';
+import { precoComFaixa, totaisPorProduto } from '../utils/faixas.js';
 
 const LOTE = 30;
 
@@ -74,7 +75,10 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
   const telefoneNovo = telefone.replace(/\D/g, '').length >= 10 && !cadastrado;
 
   const taxa = tipo === 'entrega' ? Math.max(0, parseNumero(taxaTxt) || 0) : 0;
-  const subtotal = itens.reduce((s, i) => s + i.preco * i.quantidade, 0);
+  // preco da loja + faixa de quantidade deste pedido (previa; o servidor recalcula)
+  const totaisProd = totaisPorProduto(itens);
+  const calc = (i) => precoComFaixa(i, totaisProd);
+  const subtotal = itens.reduce((s, i) => s + calc(i).unit * i.quantidade, 0);
   const recebido = parseNumero(recebidoTxt);
   const troco = Number.isFinite(recebido) ? recebido - (subtotal + taxa) : null;
 
@@ -134,7 +138,7 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
     const existente = itens.find((i) => i.product_id === p.id && !i.observacao && assinatura(i.complementos) === assinatura(comps));
     if (doProduto + 1 > disponivel) { toast.erro(`Sem estoque disponível de ${p.nome}`); return; }
     if (existente) setItens(itens.map((i) => (i.key === existente.key ? { ...i, quantidade: i.quantidade + 1 } : i)));
-    else setItens([...itens, { key: `${p.id}#n${proxLinha.current++}`, product_id: p.id, nome: p.nome, unidade: p.unidade, preco: Number(p.preco_venda) + precoComplementos(comps), quantidade: 1, observacao: '', tem_ficha: !!p.tem_ficha_tecnica, limite: disponivel, complementos: comps }]);
+    else setItens([...itens, { key: `${p.id}#n${proxLinha.current++}`, product_id: p.id, nome: p.nome, unidade: p.unidade, preco: Number(p.preco_venda) + precoComplementos(comps), faixas: p.faixas || [], quantidade: 1, observacao: '', tem_ficha: !!p.tem_ficha_tecnica, limite: disponivel, complementos: comps }]);
     // Navegando pela lista completa (*), mantem a lista aberta para adicionar varios itens.
     if (!modoLista) { setBusca(''); setAchados([]); }
   }
@@ -161,7 +165,7 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
       const pedido = await api.post('/orders', {
         location_id: lojaId, origem, cliente_nome: cliente, cliente_telefone: telefone.replace(/\D/g, ''), cadastrar_cliente: cadastrar, tipo, endereco: tipo === 'mesa' ? `Mesa ${mesa.trim().replace(/^mesa\s*/i, '')}` : endereco, taxa_entrega: taxa,
         observacao, forma_pagamento_prevista: pag.forma, pago: jaPago, valor_recebido: jaPago && pag.forma === 'dinheiro' ? recebido : undefined,
-        itens: itens.map((i) => ({ product_id: i.product_id, quantidade: i.quantidade, observacao: i.observacao || '', complementos: (i.complementos || []).map((c) => ({ id: c.id, quantidade: c.quantidade })) })),
+        itens: itens.map((i) => ({ product_id: i.product_id, quantidade: i.quantidade, faixa_id: i.faixa_id || undefined, observacao: i.observacao || '', complementos: (i.complementos || []).map((c) => ({ id: c.id, quantidade: c.quantidade })) })),
       });
       onCriado(pedido);
     } catch (err) { toast.erro(err); } finally { setSalvando(false); }
@@ -235,8 +239,8 @@ export default function PedidoForm({ lojaId, origemInicial = 'balcao', itensInic
                     <b>{i.quantidade}</b>
                     <button type="button" onClick={() => mudarQtd(i.key, 1)}>+</button>
                   </span>
-                ) : <span>{qtd(i.quantidade, i.unidade)}× {brl(i.preco)}</span>}
-                <span className="ped-item-valor">{brl(i.preco * i.quantidade)}</span>
+                ) : <span>{qtd(i.quantidade, i.unidade)}× {brl(calc(i).unit)}</span>}
+                <span className="ped-item-valor">{brl(calc(i).unit * i.quantidade)}</span>
               </div>
               {permitirBusca && i.tem_ficha && (
                 <input className="ped-item-obs" maxLength={200} value={i.observacao || ''} placeholder="Observação (ex.: sem milho)"

@@ -236,7 +236,9 @@ router.post('/conta/codigo', limitar('lv-codigo-ip', 10, 3600 * 1000), async (re
     `SELECT COUNT(*) AS n FROM lv_login_codigos WHERE tenant_id = $1 AND telefone = $2 AND criado_em > now() - interval '15 minutes'`, [tenantId, telefone]
   )).rows[0].n);
   if (recentes >= 3) throw new HttpError(429, 'muitos códigos pedidos para este telefone: aguarde alguns minutos');
-  const codigo = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+  const codigo = codigoLogin.codigoTesteAtivo()
+    ? codigoLogin.CODIGO_TESTE
+    : String(crypto.randomInt(0, 1000000)).padStart(6, '0');
   const id = crypto.randomUUID();
   // so o ultimo codigo vale
   await db().query(`UPDATE lv_login_codigos SET usado_em = now() WHERE tenant_id = $1 AND telefone = $2 AND usado_em IS NULL`, [tenantId, telefone]);
@@ -267,7 +269,8 @@ router.post('/conta/entrar', limitar('lv-codigo-entrar', 30, 15 * 60 * 1000), as
     `SELECT * FROM lv_login_codigos WHERE tenant_id = $1 AND telefone = $2 AND usado_em IS NULL AND expira_em > now() ORDER BY criado_em DESC LIMIT 1`, [tenantId, telefone]
   )).rows[0];
   if (!cod || cod.tentativas >= TENTATIVAS_CODIGO) throw invalido;
-  const informado = Buffer.from(hashCodigo(cod.id, telefone, digitos(b.codigo).slice(0, 6)));
+  const codigoInformado = digitos(b.codigo);
+  const informado = Buffer.from(hashCodigo(cod.id, telefone, codigoInformado));
   const certo = Buffer.from(cod.codigo_hash);
   if (informado.length !== certo.length || !crypto.timingSafeEqual(informado, certo)) {
     const t = (await db().query(

@@ -14,6 +14,7 @@ export default function LoginTelefone({ aoEntrar }) {
   const [aceita, setAceita] = useState(false);
   const [espera, setEspera] = useState(0);
   const [teste, setTeste] = useState(null);
+  const [tamanhoCodigo, setTamanhoCodigo] = useState(6);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState(null);
   const campoCodigo = useRef(null);
@@ -31,6 +32,7 @@ export default function LoginTelefone({ aoEntrar }) {
     try {
       const r = await api.post('/conta/codigo', { telefone: soDigitos(tel) });
       setTeste(r.codigo_teste || null);
+      setTamanhoCodigo(r.codigo_teste ? r.codigo_teste.length : 6);
       setEspera(r.reenviar_em_s || 30);
       setCodigo('');
       setEtapa('codigo');
@@ -61,9 +63,9 @@ export default function LoginTelefone({ aoEntrar }) {
   }
 
   function mudarCodigo(v) {
-    const c = soDigitos(v).slice(0, 6);
+    const c = soDigitos(v).slice(0, tamanhoCodigo);
     setCodigo(c);
-    if (c.length === 6 && !enviando) confirmar(c);
+    if (c.length === tamanhoCodigo && !enviando) confirmar(c);
   }
 
   if (etapa === 'telefone') {
@@ -95,11 +97,11 @@ export default function LoginTelefone({ aoEntrar }) {
 
   return (
     <div className="cd-login">
-      <p className="cd-login-dica">Digite o código enviado para <b>{tel}</b>.</p>
-      <label className="campo"><span>Código de 6 números</span>
-        <input ref={campoCodigo} data-foco className="cd-codigo" value={codigo} onChange={(e) => mudarCodigo(e.target.value)} inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="000000" aria-label="Código de 6 números" />
+      <p className="cd-login-dica">{teste ? 'Digite o código de teste' : 'Digite o código enviado'} para <b>{tel}</b>.</p>
+      <label className="campo"><span>Código de {tamanhoCodigo} números</span>
+        <input ref={campoCodigo} data-foco className="cd-codigo" value={codigo} onChange={(e) => mudarCodigo(e.target.value)} inputMode="numeric" autoComplete="one-time-code" maxLength={tamanhoCodigo} placeholder={'0'.repeat(tamanhoCodigo)} aria-label={`Código de ${tamanhoCodigo} números`} />
       </label>
-      {teste && <p className="dica">Ambiente de teste: o código é {teste}</p>}
+      {teste && <p className="dica">Ambiente de teste: use o código {teste}</p>}
       {erro && <p className="erro-texto" role="alert">{erro}</p>}
       <div className="cd-login-acoes">
         <button type="button" className="link" onClick={() => pedirCodigo()} disabled={espera > 0 || enviando}>{espera > 0 ? `Reenviar em ${espera}s` : 'Reenviar código'}</button>

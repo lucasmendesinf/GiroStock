@@ -181,7 +181,7 @@ const ipA = { 'x-teste-ip': `e2e-A-${sufixo}` };
 const ipB = { 'x-teste-ip': `e2e-B-${sufixo}` };
 check('telefone invalido -> 400', (await loja('POST', '/conta/codigo', { telefone: '123' })).s === 400 && (await loja('POST', '/conta/codigo', { telefone: '1188887777' })).s !== 500);
 const cod1 = await loja('POST', '/conta/codigo', { telefone: tel1 }, null, IP());
-check('pede o codigo: 202, 6 digitos (teste), validade 10 min', cod1.s === 202 && /^\d{6}$/.test(cod1.j.codigo_teste) && cod1.j.validade_min === 10 && cod1.j.reenviar_em_s === 30, cod1);
+check('pede o codigo: 202, codigo fixo 12345678 (teste), validade 10 min', cod1.s === 202 && cod1.j.codigo_teste === '12345678' && cod1.j.validade_min === 10 && cod1.j.reenviar_em_s === 30, cod1);
 const hashNoBanco = (await prod.query(`SELECT codigo_hash, enviado_via FROM lv_login_codigos WHERE tenant_id = $1 AND telefone = $2 ORDER BY criado_em DESC LIMIT 1`, [empresa, tel1])).rows[0];
 check('no banco fica so o hash do codigo', hashNoBanco && hashNoBanco.codigo_hash.length === 64 && !hashNoBanco.codigo_hash.includes(cod1.j.codigo_teste) && hashNoBanco.enviado_via === 'simulado');
 const sem = await loja('POST', '/conta/entrar', { telefone: tel1, codigo: cod1.j.codigo_teste }, null, IP());
@@ -200,7 +200,7 @@ const existente = await loja('POST', '/conta/entrar', { telefone: tel1, codigo: 
 check('cliente que ja tem conta entra direto (200, sem criar outra)', existente.s === 200 && existente.j.nova === false && existente.j.conta.id === novo.j.conta.id && (await prod.query(`SELECT COUNT(*)::int AS n FROM lv_contas WHERE tenant_id = $1 AND telefone = $2`, [empresa, tel1])).rows[0].n === 1, existente);
 // 3 tentativas erradas invalidam o codigo (mesmo o certo depois)
 const cod3 = await loja('POST', '/conta/codigo', { telefone: tel1 }, null, IP());
-const ruim = cod3.j.codigo_teste === '123456' ? '654321' : '123456';
+const ruim = cod3.j.codigo_teste === '12345678' ? '87654321' : '123456';
 for (let i = 0; i < 3; i++) await loja('POST', '/conta/entrar', { telefone: tel1, codigo: ruim }, null, IP());
 check('3 erros invalidam o codigo: nem o certo entra mais', (await loja('POST', '/conta/entrar', { telefone: tel1, codigo: cod3.j.codigo_teste }, null, IP())).s === 400);
 // expirado

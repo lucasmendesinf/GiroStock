@@ -1,7 +1,7 @@
-// Envio do codigo de login (6 digitos) do cardapio digital por WhatsApp/SMS. Nao ha provedor fixo: a escolha e do lojista/plataforma
+// Envio do codigo de login do cardapio digital por WhatsApp/SMS. Nao ha provedor fixo: a escolha e do lojista/plataforma
 // e vem de variaveis de ambiente (segredos nunca vao para o codigo, log ou resposta).
 //   CODIGO_LOGIN_PROVEDOR = simulado | http
-//     simulado: nao envia nada; fora da producao o codigo volta na resposta/console (para testes). Em PRODUCAO e recusado.
+//     simulado: nao envia nada; apenas em development/test, devolve o codigo fixo de teste.
 //     http:     chama uma API de WhatsApp/SMS contratada, configurada so por ambiente:
 //       CODIGO_LOGIN_HTTP_URL     endereco (https://...)
 //       CODIGO_LOGIN_HTTP_METODO  POST (padrao) ou GET
@@ -11,22 +11,34 @@
 //       CODIGO_LOGIN_MENSAGEM        texto; usa {loja} e {codigo}
 const { HttpError } = require('../utils/http');
 
-const producao = () => process.env.NODE_ENV === 'production';
+const ambienteTeste = () => ['development', 'test'].includes(String(process.env.NODE_ENV || '').trim().toLowerCase());
+const CODIGO_TESTE = '12345678';
 const MENSAGEM_PADRAO = 'Seu código de acesso à *{loja}* é *{codigo}*. Vale por 10 minutos.';
 
 function provedor() {
   const p = String(process.env.CODIGO_LOGIN_PROVEDOR || '').trim().toLowerCase();
-  if (p === 'http' || p === 'simulado') return p;
-  return producao() ? 'nenhum' : 'simulado';
+  if (p === 'http') {
+    const urlConfigurada = /^https?:\/\//i.test(process.env.CODIGO_LOGIN_HTTP_URL || '');
+    // Uma seleção HTTP sem URL não é um provedor disponível; em dev/test, usa o fluxo local sem envio.
+    if (ambienteTeste() && !urlConfigurada) return 'simulado';
+    return 'http';
+  }
+  if (p === 'simulado') return p;
+  return ambienteTeste() ? 'simulado' : 'nenhum';
+}
+
+// Código fixo apenas no modo simulado e quando o ambiente foi explicitamente marcado como dev/test.
+function codigoTesteAtivo() {
+  return ambienteTeste() && provedor() === 'simulado';
 }
 
 // Status para o painel Master (sem segredos).
 function status() {
   const p = provedor();
   if (p === 'simulado') {
-    return producao()
-      ? { provedor: p, configurado: false, detalhe: 'o provedor simulado é recusado em produção: configure CODIGO_LOGIN_PROVEDOR=http' }
-      : { provedor: p, configurado: true, detalhe: 'simulado (desenvolvimento): o código aparece no console e na resposta da API, nada é enviado' };
+    return codigoTesteAtivo()
+      ? { provedor: p, configurado: true, detalhe: 'simulado (desenvolvimento/teste): código fixo disponível, nada é enviado' }
+      : { provedor: p, configurado: false, detalhe: 'o provedor simulado só funciona com NODE_ENV=development ou test; configure CODIGO_LOGIN_PROVEDOR=http fora desses ambientes' };
   }
   if (p === 'http') {
     const ok = /^https?:\/\//i.test(process.env.CODIGO_LOGIN_HTTP_URL || '');
@@ -45,14 +57,15 @@ const trocar = (modelo, vars) => String(modelo).replace(/\{(\w+)\}/g, (m, k) => 
 // Valor dentro de um JSON: escapa para nao quebrar o corpo.
 const jsonStr = (v) => JSON.stringify(String(v)).slice(1, -1);
 
-// Envia o codigo. Devolve { via, codigo_teste? } (codigo_teste so no simulado e fora da producao).
+// Envia o codigo. Devolve { via, codigo_teste? } (codigo_teste so no simulado em development/test).
 async function enviar({ telefone, codigo, loja }) {
   const s = status();
   if (!s.configurado) throw new HttpError(503, 'o login por telefone está indisponível no momento: fale com a loja');
+  if (s.provedor === 'simulado' && !codigoTesteAtivo()) throw new HttpError(503, 'o provedor simulado só funciona em desenvolvimento ou teste');
   const mensagem = trocar(process.env.CODIGO_LOGIN_MENSAGEM || MENSAGEM_PADRAO, { loja: String(loja || 'Loja'), codigo });
   if (s.provedor === 'simulado') {
-    console.log(`[codigo-login simulado] ${telefone}: ${codigo}`);
-    return { via: 'simulado', codigo_teste: codigo };
+    console.log(`[codigo-login simulado] ${telefone}: ${CODIGO_TESTE}`);
+    return { via: 'simulado', codigo_teste: CODIGO_TESTE };
   }
   const destino = `55${telefone}`;
   const metodo = String(process.env.CODIGO_LOGIN_HTTP_METODO || 'POST').toUpperCase() === 'GET' ? 'GET' : 'POST';
@@ -78,4 +91,4 @@ async function enviar({ telefone, codigo, loja }) {
   }
 }
 
-module.exports = { provedor, status, enviar, validarInicializacao };
+module.exports = { provedor, status, enviar, validarInicializacao, codigoTesteAtivo, CODIGO_TESTE };

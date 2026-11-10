@@ -133,8 +133,22 @@ export default function SegurancaModal({ onClose }) {
   const [form, setForm] = useState({ senha: '', codigo: '' });
   const [erro, setErro] = useState(null);
   const [novosCodigos, setNovosCodigos] = useState(null);
+  const [prepR, setPrepR] = useState(null); // troca de celular: QR/chave novos + token da troca (o segredo antigo segue valendo ate confirmar)
+  const [codigoNovo, setCodigoNovo] = useState('');
+  const [enviandoR, setEnviandoR] = useState(false);
 
-  function abrir(m) { setForm({ senha: '', codigo: '' }); setErro(null); setModo(m); }
+  function abrir(m) { setForm({ senha: '', codigo: '' }); setErro(null); setPrepR(null); setCodigoNovo(''); setModo(m); }
+
+  async function confirmarTroca(c) {
+    if (enviandoR || !prepR) return;
+    setErro(null); setEnviandoR(true);
+    try {
+      const d = await api.post('/auth/2fa/reconfigurar/confirmar', { token_reconfigurar: prepR.token_reconfigurar, codigo: c });
+      setNovosCodigos(d.codigos_recuperacao);
+      setModo('mostrar');
+      toast.sucesso('App autenticador trocado. Guarde os novos códigos de recuperação.');
+    } catch (err) { setErro(err.message); setCodigoNovo(''); } finally { setEnviandoR(false); }
+  }
 
   async function enviar(e, rota, aoOk) {
     e.preventDefault();
@@ -163,6 +177,34 @@ export default function SegurancaModal({ onClose }) {
         <div className="modal-actions"><button type="button" onClick={() => setModo('inicio')}>Voltar</button><button type="submit" disabled={form.codigo.length !== 6}>Desativar</button></div>
       </form>
     );
+  } else if (modo === 'reconfigurar' && !prepR) {
+    corpo = (
+      <form className="form-stack" onSubmit={(e) => enviar(e, '/auth/2fa/reconfigurar/preparar', (d) => { setPrepR(d); setErro(null); })}>
+        <p>Para trocar de celular ou refazer a configuração do app, confirme sua senha e um código <b>atual</b> do app que você usa hoje. O app antigo só deixa de valer depois que o novo for confirmado.</p>
+        {campos}
+        <div className="modal-actions"><button type="button" onClick={() => setModo('inicio')}>Voltar</button><button type="submit" disabled={form.codigo.length !== 6}>Continuar</button></div>
+      </form>
+    );
+  } else if (modo === 'reconfigurar') {
+    corpo = (
+      <div className="form-stack">
+        <ol className="passos-2fa">
+          <li>No celular novo, abra o app autenticador e adicione uma conta.</li>
+          <li>Escaneie o QR code abaixo ou digite a chave manualmente.</li>
+          <li>Digite o código de 6 dígitos que o app novo mostrar.</li>
+        </ol>
+        <div className="qr-2fa">
+          <img src={prepR.qr} alt="QR code do novo app autenticador" width="200" height="200" />
+          <div className="chave-2fa"><span>Chave manual</span><code>{prepR.chave}</code></div>
+        </div>
+        <Field label="Código do app novo"><CampoCodigo valor={codigoNovo} onChange={setCodigoNovo} onCompleto={confirmarTroca} autoFocus={false} disabled={enviandoR} /></Field>
+        {erro && <p className="error" role="alert">{erro}</p>}
+        <div className="modal-actions">
+          <button type="button" onClick={() => abrir('inicio')}>Cancelar</button>
+          <button type="button" disabled={codigoNovo.length !== 6 || enviandoR} onClick={() => confirmarTroca(codigoNovo)}>{enviandoR ? 'Verificando…' : 'Confirmar troca'}</button>
+        </div>
+      </div>
+    );
   } else if (modo === 'codigos') {
     corpo = (
       <form className="form-stack" onSubmit={(e) => enviar(e, '/auth/2fa/codigos-recuperacao', (d) => { setNovosCodigos(d.codigos_recuperacao); setModo('mostrar'); })}>
@@ -177,9 +219,10 @@ export default function SegurancaModal({ onClose }) {
         <p>Situação: {df.ativo ? <span className="badge selo-ok">Ativa</span> : <span className="badge-inativo">Não ativa</span>}{obrigatorio && <span className="badge" style={{ marginLeft: 6 }}>Obrigatória</span>}</p>
         {df.ativo && <p className="muted">Códigos de recuperação restantes: {df.codigosRestantes}</p>}
         {!df.ativo && <p>Com a verificação em duas etapas, além da senha é preciso um código do app autenticador do seu celular para entrar.</p>}
-        {df.ativo && obrigatorio && <p className="muted">Esta conta precisa manter a verificação ativa. Para trocar de celular, peça a um administrador para resetá-la.</p>}
+        {df.ativo && obrigatorio && <p className="muted">Esta conta precisa manter a verificação ativa. Para trocar de celular, use "Trocar de celular / reconfigurar".</p>}
         {df.ativo && (
           <div className="row-actions">
+            <button type="button" className="btn-link" onClick={() => abrir('reconfigurar')}>Trocar de celular / reconfigurar</button>
             <button type="button" className="btn-link" onClick={() => abrir('codigos')}>Gerar novos códigos de recuperação</button>
             {!obrigatorio && <button type="button" className="btn-link perigo" onClick={() => abrir('desativar')}>Desativar</button>}
           </div>

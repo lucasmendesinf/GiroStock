@@ -203,6 +203,39 @@ await liberaReuso(gId);
 check('exigido nao consegue desativar (403)', (await api('POST', '/auth/2fa/desativar', { senha: SENHA_G, codigo: totpIndependente(prepEx.j.chave) }, ativEx.j.token)).s === 403);
 check('lista de usuarios mostra 2FA ativo/exigido', (await api('GET', '/users', null, ADM)).j.find((u) => u.id === gId).totp_ativo === true);
 
+// ---- trocar de celular (reconfigurar): vale tambem para conta obrigatoria, que nao pode desativar ----
+console.log('\n# Reconfigurar o app autenticador (trocar de celular)');
+const TEX = ativEx.j.token;
+const CHAVE_EX = prepEx.j.chave;
+const segredoAntes = (await prod.query(`SELECT totp_segredo_cript FROM users WHERE id = $1`, [gId])).rows[0].totp_segredo_cript;
+check('reconfigurar sem token -> 401', (await api('POST', '/auth/2fa/reconfigurar/preparar', {}, null)).s === 401);
+check('reconfigurar sem senha/codigo -> 400', (await api('POST', '/auth/2fa/reconfigurar/preparar', {}, TEX)).s === 400);
+await liberaReuso(gId);
+check('senha errada -> 400 e nada muda', (await api('POST', '/auth/2fa/reconfigurar/preparar', { senha: 'errada-' + SUF, codigo: totpIndependente(CHAVE_EX) }, TEX)).s === 400);
+await liberaReuso(gId);
+const rp = await api('POST', '/auth/2fa/reconfigurar/preparar', { senha: SENHA_G, codigo: totpIndependente(CHAVE_EX) }, TEX);
+check('conta OBRIGATORIA consegue iniciar a troca: QR, chave nova (diferente) e token de 10 min', rp.s === 200 && /^data:image/.test(rp.j.qr) && rp.j.chave && rp.j.chave !== CHAVE_EX && !!rp.j.token_reconfigurar, rp.j);
+check('antes de confirmar, o segredo antigo continua valendo (nunca fica sem 2FA)', (await prod.query(`SELECT totp_segredo_cript, totp_ativo FROM users WHERE id = $1`, [gId])).rows[0].totp_segredo_cript === segredoAntes);
+check('confirmar com codigo do app ANTIGO -> 400 e o segredo nao troca', (await api('POST', '/auth/2fa/reconfigurar/confirmar', { token_reconfigurar: rp.j.token_reconfigurar, codigo: totpIndependente(CHAVE_EX, 1) }, TEX)).s === 400
+  && (await prod.query(`SELECT totp_segredo_cript FROM users WHERE id = $1`, [gId])).rows[0].totp_segredo_cript === segredoAntes);
+check('token de troca invalido/adulterado -> 400', (await api('POST', '/auth/2fa/reconfigurar/confirmar', { token_reconfigurar: rp.j.token_reconfigurar + 'x', codigo: totpIndependente(rp.j.chave) }, TEX)).s === 400);
+check('o token de troca de um usuario nao vale para outro (Administrador) -> 400', (await api('POST', '/auth/2fa/reconfigurar/confirmar', { token_reconfigurar: rp.j.token_reconfigurar, codigo: totpIndependente(rp.j.chave) }, ADM)).s === 400);
+const antigosCodigos = (await prod.query(`SELECT codigo_hash FROM user_recovery_codes WHERE user_id = $1 ORDER BY codigo_hash`, [gId])).rows.map((r) => r.codigo_hash);
+const rc = await api('POST', '/auth/2fa/reconfigurar/confirmar', { token_reconfigurar: rp.j.token_reconfigurar, codigo: totpIndependente(rp.j.chave) }, TEX);
+check('confirmar com o codigo do app NOVO: 200 e 10 novos codigos de recuperacao', rc.s === 200 && rc.j.ativo === true && rc.j.codigos_recuperacao.length === 10, rc);
+const novosCodigos = (await prod.query(`SELECT codigo_hash FROM user_recovery_codes WHERE user_id = $1 ORDER BY codigo_hash`, [gId])).rows.map((r) => r.codigo_hash);
+check('os codigos de recuperacao antigos deixam de valer (todos trocados)', novosCodigos.length === 10 && novosCodigos.every((h) => !antigosCodigos.includes(h)));
+check('o segredo foi trocado e o 2FA segue ativo e obrigatorio', (await prod.query(`SELECT totp_segredo_cript, totp_ativo, totp_exigido FROM users WHERE id = $1`, [gId])).rows.every((r) => r.totp_segredo_cript !== segredoAntes && r.totp_ativo && r.totp_exigido));
+const lgNovo = await login(email('ger'), SENHA_G);
+check('login pede o codigo (mfa pendente)', lgNovo.j.mfa === 'pendente', lgNovo.j);
+await liberaReuso(gId);
+check('o codigo do app ANTIGO nao entra mais', (await api('POST', '/auth/2fa/verificar', { token_mfa: lgNovo.j.token_mfa, codigo: totpIndependente(CHAVE_EX) })).s === 400);
+await liberaReuso(gId);
+const okNovo = await api('POST', '/auth/2fa/verificar', { token_mfa: lgNovo.j.token_mfa, codigo: totpIndependente(rp.j.chave) });
+check('o codigo do app NOVO entra', okNovo.s === 200 && !!okNovo.j.token, okNovo.s);
+check('a troca fica na auditoria', Number((await prod.query(`SELECT count(*) AS n FROM audit_logs WHERE acao = 'reconfigurar_2fa' AND recurso_id = $1`, [gId])).rows[0].n) === 1);
+await liberaReuso(gId);
+
 const rAdm = await api('POST', `/users/${gId}/2fa/resetar`, null, ADM);
 check('Administrador reseta o 2FA de usuario da propria empresa', rAdm.s === 200 && (await prod.query(`SELECT totp_ativo, totp_segredo_cript FROM users WHERE id = $1`, [gId])).rows[0].totp_ativo === false);
 check('Administrador NAO reseta o Master (403)', (await api('POST', `/users/${masterId}/2fa/resetar`, null, ADM)).s === 403);

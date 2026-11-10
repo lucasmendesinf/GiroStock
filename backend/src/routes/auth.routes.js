@@ -408,6 +408,40 @@ router.post('/2fa/desativar', authRequired, async (req, res) => {
   res.json({ ativo: false });
 });
 
+// Trocar de celular / reconfigurar o app autenticador. Vale tambem para conta OBRIGATORIA (Master, 2FA exigido), que nao pode
+// desativar: ela nunca fica sem 2FA, porque o segredo novo so substitui o antigo depois de confirmado com um codigo do app novo.
+// Passo 1 (senha + codigo atual) devolve QR/chave novos e um token curto (10 min, sem estado no banco) com o segredo novo cifrado.
+router.post('/2fa/reconfigurar/preparar', authRequired, async (req, res) => {
+  const user = await conferirSenhaECodigo(req);
+  const segredo = totp.gerarSegredo();
+  const uri = totp.uriOtpauth(user.email, segredo);
+  const token = jwt.sign({ sub: user.id, tenantId: user.tenant_id, mfa: 'reconfigurar', seg: totp.cifrar(segredo) }, process.env.JWT_SECRET, { expiresIn: '10m' });
+  res.json({ qr: await totp.qrDataUrl(uri), chave: segredo, uri, token_reconfigurar: token });
+});
+
+// Passo 2: confirma com um codigo do app NOVO; troca o segredo, gera novos codigos de recuperacao (os antigos deixam de valer).
+router.post('/2fa/reconfigurar/confirmar', authRequired, async (req, res) => {
+  exigir2faDisponivel();
+  const { token_reconfigurar: tokenNovo, codigo } = req.body || {};
+  let p;
+  try {
+    p = jwt.verify(String(tokenNovo || ''), process.env.JWT_SECRET);
+    if (p.mfa !== 'reconfigurar' || p.sub !== req.user.id || !p.seg) throw new Error('token');
+  } catch { throw new HttpError(400, 'A troca expirou ou é inválida: comece de novo.'); }
+  const user = await carregarUsuario2fa(req.user.id);
+  if (!user || !user.totp_ativo) throw new HttpError(409, 'a verificação em duas etapas não está ativa');
+  bloqueado(user);
+  const passo = totp.verificar(totp.decifrar(p.seg), codigo, null);
+  if (passo === null) await falhaCodigo(user);
+  await db.query(
+    `UPDATE users SET totp_segredo_cript = $1, totp_ultimo_passo = $2, totp_ativado_em = now(), totp_falhas = 0, totp_bloqueado_ate = NULL WHERE id = $3`,
+    [p.seg, passo, user.id]
+  );
+  const codigos = await novosCodigosRecuperacao(user.id);
+  await logAudit(db, { tenantId: user.tenant_id, usuarioId: user.id, acao: 'reconfigurar_2fa', recurso: 'users', recursoId: user.id });
+  res.json({ ativo: true, codigos_recuperacao: codigos });
+});
+
 router.post('/2fa/codigos-recuperacao', authRequired, async (req, res) => {
   const user = await conferirSenhaECodigo(req);
   const codigos = await novosCodigosRecuperacao(user.id);

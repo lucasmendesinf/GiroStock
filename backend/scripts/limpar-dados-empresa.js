@@ -39,6 +39,10 @@ async function run() {
     const comTenant = new Set((await c.query(`SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='tenant_id'`)).rows.map((r) => r.table_name));
     await c.query('BEGIN');
     const total = {};
+    // Itens e rodadas apontam para produtos/pedidos sem tenant_id proprio: saem primeiro, senao a exclusao de produtos falha.
+    await c.query('DELETE FROM comanda_pagamento_rodadas WHERE order_id IN (SELECT id FROM orders WHERE tenant_id = $1)', [tenant]);
+    const oi = await c.query('DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE tenant_id = $1)', [tenant]);
+    if (oi.rowCount > 0) total.order_items = oi.rowCount;
     for (const t of ordem) {
       if (MANTER.has(t) || !comTenant.has(t)) continue; // tabelas sem tenant_id saem em cascata dos pais
       const r = await c.query(`DELETE FROM "${t}" WHERE tenant_id = $1`, [tenant]);

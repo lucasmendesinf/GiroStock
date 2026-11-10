@@ -86,6 +86,27 @@ Em aparelho de toque o PDV se adapta sozinho:
 
 - Numera as vendas existentes por empresa, na ordem em que foram feitas, e cria os campos de subtotal e desconto.
 
+## Painel Master no admin da Calutec
+
+O painel Master pode ficar no **admin da Calutec** (repositório `lucasmendesinf/dg`), junto com hospedagens e financeiro.
+O admin usa o mesmo banco, o mesmo `JWT_SECRET` e o mesmo usuário Master (senha e verificação em duas etapas).
+
+Para ligar, defina no `backend/.env` do GiroStock:
+
+```
+ADMIN_URL=https://admin.calutec.com.br
+```
+
+Com `ADMIN_URL` definido:
+
+- O Master **não entra** pelo login do GiroStock (recebe "Credenciais inválidas", como senha errada). Os demais usuários entram normalmente.
+- O item e a rota `/master` levam para o admin.
+- "Entrar como suporte" e "Ligar modo teste" são feitos no admin, que abre o GiroStock em `/entrar-admin#token=...`.
+  O token vem no fragmento da URL (não vai para o servidor nem para os logs) e é conferido pelo servidor a cada requisição, como sempre.
+- Ao encerrar o suporte (botão ou fim dos 30 minutos) ou ao voltar do modo teste, a sessão é encerrada aqui e a tela volta para o admin.
+
+Sem `ADMIN_URL`, tudo funciona como antes, com o painel Master dentro do GiroStock. Por isso dá para publicar esta versão antes do admin estar no ar.
+
 ## Módulos por plano e por empresa (painel Master)
 
 Cada cliente usa só os módulos (segmentos) que contratou. O Master define isso no **plano** (Configurações → Planos) e pode ajustar empresa por empresa (Empresas → ficha → Módulos liberados), inclusive já na criação da empresa.

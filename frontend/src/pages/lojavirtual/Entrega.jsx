@@ -4,6 +4,7 @@ import { useConfirm, useToast } from '../../context/UiContext.jsx';
 import { Field, Modal, Vazio } from '../../components/ui.jsx';
 import { brl, parseNumero } from '../../utils/format';
 import EnvioTransportadora from './EnvioTransportadora.jsx';
+import EntregaRaio from './EntregaRaio.jsx';
 
 const valor = (v) => (v === null || v === undefined ? '' : String(v).replace('.', ','));
 
@@ -16,6 +17,19 @@ export default function Entrega({ config, onMudou }) {
   const [outros, setOutros] = useState({ ligado: config.taxa_outros_bairros !== null, taxa: valor(config.taxa_outros_bairros) });
   const carregar = useCallback(() => api.get('/loja-virtual/regioes').then(setLista).catch((err) => toast.erro(err)), [toast]);
   useEffect(() => { carregar(); }, [carregar]);
+  // Como a loja entrega: por bairro (padrao das lojas existentes) ou por raio (mapa e faixas de taxa por distancia)
+  const [raioDados, setRaioDados] = useState(null);
+  const [aba, setAba] = useState(null);
+  const [versaoRaio, setVersaoRaio] = useState(0);
+  useEffect(() => { api.get('/loja-virtual/raio').then((r) => { setRaioDados(r); setAba(r.modo); }).catch((err) => toast.erro(err)); }, [toast]);
+  async function recarregarRaio() {
+    const r = await api.get('/loja-virtual/raio');
+    setRaioDados(r); setVersaoRaio((v) => v + 1);
+    await onMudou();
+  }
+  async function voltarParaBairro() {
+    try { await api.put('/loja-virtual/raio', { entrega_modo: 'bairro' }); toast.sucesso('A loja volta a entregar por bairro.'); await recarregarRaio(); } catch (err) { toast.erro(err); }
+  }
 
   async function salvarOutros(e) {
     e.preventDefault();
@@ -34,6 +48,18 @@ export default function Entrega({ config, onMudou }) {
     <div className="form-stack">
       {config.tipo !== 'cardapio' && <EnvioTransportadora config={config} onMudou={onMudou} />}
       {!config.aceita_entrega && <div className="ped-nota">A entrega da loja (motoboy, pelos bairros) está desligada em <b>Visão geral → Funcionamento</b>.</div>}
+      {raioDados && (
+        <div className="card form-stack">
+          <h3 style={{ margin: 0 }}>Como a loja entrega</h3>
+          <div className="rz-seg" role="group" aria-label="Modo de entrega">
+            <button type="button" className={aba === 'bairro' ? 'on' : ''} onClick={() => setAba('bairro')}>Por bairro (atual)</button>
+            <button type="button" className={aba === 'raio' ? 'on' : ''} onClick={() => setAba('raio')}>Por raio</button>
+          </div>
+          <p className="form-hint" style={{ margin: 0 }}>Ativo no site: <b>{raioDados.modo === 'raio' ? 'entrega por raio' : 'entrega por bairro'}</b>. Os dois modos não se misturam: cada loja usa um deles.{aba === 'bairro' && raioDados.modo === 'raio' && <> <button type="button" className="btn-link" onClick={voltarParaBairro}>Voltar a entregar por bairro</button></>}</p>
+        </div>
+      )}
+      {aba === 'raio' && raioDados && <EntregaRaio key={versaoRaio} config={config} dados={raioDados} onMudou={recarregarRaio} />}
+      {aba !== 'raio' && (<>
       <div className="card">
         <div className="ped-head" style={{ marginBottom: 6 }}>
           <h3 style={{ margin: 0 }}>{config.tipo !== 'cardapio' ? 'Entrega da loja: bairros e taxas' : 'Bairros e taxas de entrega'}</h3>
@@ -70,6 +96,7 @@ export default function Entrega({ config, onMudou }) {
         <div><button type="submit">Salvar</button></div>
       </form>
       {editando && <RegiaoModal r={editando} onClose={() => setEditando(null)} onSalvo={async () => { setEditando(null); await carregar(); await onMudou(); }} />}
+      </>)}
     </div>
   );
 }

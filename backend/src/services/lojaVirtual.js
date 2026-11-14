@@ -21,6 +21,8 @@ const {
 } = require('./consumo');
 const { cifrar, decifrar } = require('./totp');
 const mp = require('../integracoes/mercadopago');
+const raioSvc = require('./raio');
+const geocodificacao = require('./geocodificacao');
 const frete = require('./frete');
 const meApi = require('../integracoes/melhorenvio');
 
@@ -480,6 +482,9 @@ async function dadosPublicos(loja, base) {
   const regioes = (await db().query(`SELECT id, nome, taxa, tempo_extra_min, pedido_minimo FROM lv_regioes WHERE tenant_id = $1 AND ativo ORDER BY nome`, [loja.tenant_id])).rows;
   const pag = loja.pagamentos || {};
   const mpOk = !!(loja.mp_access_token_cript && loja.mp_public_key);
+  const modoRaio = loja.entrega_modo === 'raio' && loja.loja_lat !== null && loja.loja_lng !== null && Number(loja.raio_km) > 0;
+  const faixasRaio = modoRaio ? await faixasDoRaio(db(), loja.tenant_id) : [];
+  const baseTempo = loja.tempo_preparo_min + loja.tempo_entrega_min;
   return {
     id: loja.id,
     nome: loja.nome,
@@ -507,8 +512,18 @@ async function dadosPublicos(loja, base) {
         cidade_entrega_local: loja.aceita_entrega ? (loja.envio_remetente || {}).cidade || null : null,
       } : null,
       tempo_estimado_min: loja.tempo_preparo_min + loja.tempo_entrega_min,
-      bairros: regioes.map((r) => ({ id: r.id, nome: r.nome, taxa: n2(r.taxa), tempo_estimado_min: loja.tempo_preparo_min + loja.tempo_entrega_min + r.tempo_extra_min, pedido_minimo: r.pedido_minimo === null ? null : n2(r.pedido_minimo) })),
-      outros_bairros: loja.taxa_outros_bairros === null ? null : { taxa: n2(loja.taxa_outros_bairros) },
+      modo: modoRaio ? 'raio' : 'bairro',
+      ...(modoRaio ? {
+        raio_km: Number(loja.raio_km),
+        usa_faixas: loja.raio_usa_faixas !== false,
+        taxa_unica: n2(loja.raio_taxa_unica),
+        faixas: loja.raio_usa_faixas !== false ? faixasRaio.map((f) => ({ ate_km: f.ate_km, taxa: f.taxa, tempo_estimado_min: baseTempo + f.tempo_extra_min })) : [],
+        margem_pino_m: loja.raio_margem_pino_m,
+        loja: { lat: Number(loja.loja_lat), lng: Number(loja.loja_lng) },
+        mapa: geocodificacao.configMapa(),
+      } : {}),
+      bairros: modoRaio ? [] : regioes.map((r) => ({ id: r.id, nome: r.nome, taxa: n2(r.taxa), tempo_estimado_min: loja.tempo_preparo_min + loja.tempo_entrega_min + r.tempo_extra_min, pedido_minimo: r.pedido_minimo === null ? null : n2(r.pedido_minimo) })),
+      outros_bairros: modoRaio || loja.taxa_outros_bairros === null ? null : { taxa: n2(loja.taxa_outros_bairros) },
     },
     pedido_minimo: n2(loja.pedido_minimo),
     pagamentos: {
@@ -573,6 +588,16 @@ async function cardapio(loja, base) {
 const semAcento = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
 // Taxa e prazo da entrega pelo bairro (lista da loja; fora dela, a taxa de "outros bairros" se houver).
+async function faixasDoRaio(dbc, tenantId) {
+  const { rows } = await dbc.query(`SELECT ate_km, taxa, tempo_extra_min FROM lv_raio_faixas WHERE tenant_id = $1 ORDER BY ate_km`, [tenantId]);
+  return rows.map((f) => ({ ate_km: Number(f.ate_km), taxa: n2(f.taxa), tempo_extra_min: f.tempo_extra_min }));
+}
+
+// Decisao da entrega por raio para um ponto { lat, lng, origem } (sem lat/lng = nao localizado). Mesma funcao do simulador da gestao.
+async function decidirRaio(dbc, loja, ponto) {
+  return raioSvc.avaliarRaio(loja, await faixasDoRaio(dbc, loja.tenant_id), ponto);
+}
+
 async function entregaDoBairro(dbc, loja, bairro) {
   const alvo = semAcento(bairro);
   if (!alvo) throw new HttpError(400, 'informe o bairro da entrega');
@@ -625,7 +650,7 @@ function descontoDoCupom(c, subtotal, taxa) {
 // modo 'previa': problemas de cupom/minimo/estoque viram avisos (o site mostra); modo 'pedido': lanca erro.
 async function calcularCarrinho(dbc, loja, conta, b, modo = 'previa') {
   const avisos = [];
-  const falha = (status, msg) => { if (modo === 'pedido') throw new HttpError(status, msg); avisos.push(msg); };
+  const falha = (status, msg, extra) => { if (modo === 'pedido') throw new HttpError(status, msg, extra); avisos.push(msg); };
   if (!Array.isArray(b.itens) || b.itens.length === 0) throw new HttpError(400, 'o carrinho está vazio');
   if (b.itens.length > 60) throw new HttpError(400, 'carrinho com itens demais');
   const tipo = b.tipo === 'entrega' ? 'entrega' : 'retirada';
@@ -690,10 +715,32 @@ async function calcularCarrinho(dbc, loja, conta, b, modo = 'previa') {
   let entrega = { tipo, taxa: 0, bairro: null, regiao_id: null, tempo_estimado_min: loja.tempo_preparo_min, servico: null };
   let minimo = n2(loja.pedido_minimo);
   let opcoesEnvio = null; // transportadoras (Melhor Envio) para o CEP
-  let local = null; // entrega da propria loja pelo bairro
+  let local = null; // entrega da propria loja pelo bairro (ou pelo raio)
+  let raioInfo = null; // entrega por raio: decisao, coordenadas e origem (gravados no pedido)
+  const modoRaio = loja.entrega_modo === 'raio';
   let freteInterno = null; // custo e pacotes da cotacao (vao para o pedido/etiqueta; nao para o site)
   if (tipo === 'entrega') {
-    if (loja.aceita_entrega && b.bairro) {
+    if (loja.aceita_entrega && modoRaio) {
+      // O raio define a area (sem filtro de cidade). O servidor recalcula tudo a partir das coordenadas: taxa/faixa/distancia vindas do cliente sao ignoradas.
+      const e = b.entrega && typeof b.entrega === 'object' ? b.entrega : null;
+      let ponto = null;
+      if (e && e.lat !== undefined && e.lat !== null && e.lat !== '') ponto = { lat: e.lat, lng: e.lng, origem: ['cep', 'endereco', 'pino'].includes(e.origem) ? e.origem : 'endereco' };
+      else if (b.endereco_coord && b.endereco_coord.lat !== null && b.endereco_coord.lat !== undefined) ponto = b.endereco_coord;
+      if (ponto || b.bairro || b.cep || b.endereco_id) {
+        const av = await decidirRaio(dbc, loja, ponto);
+        raioInfo = { status: av.status, distancia_km: av.distancia_m === null ? null : Number((av.distancia_m / 1000).toFixed(2)), faixa_ate_km: av.faixa_ate_km, taxa: av.taxa, tempo_extra_min: av.tempo_extra_min, lat: ponto ? Number(ponto.lat) : null, lng: ponto ? Number(ponto.lng) : null, origem: ponto ? ponto.origem : null };
+        if (av.status === 'atende') {
+          local = { disponivel: true, bairro: b.bairro || null, regiao_id: null, taxa: av.taxa, pedido_minimo: null, tempo_estimado_min: loja.tempo_preparo_min + loja.tempo_entrega_min + av.tempo_extra_min };
+        } else {
+          const motivo = {
+            fora: `fora da área de entrega (${raioInfo.distancia_km.toLocaleString('pt-BR')} km da loja): escolha retirar na loja`,
+            confirmar_pino: 'confirme o local da entrega no mapa (o endereço está perto do limite da área)',
+            pedir_pino: 'não localizamos o endereço: marque o local da entrega no mapa',
+          }[av.status];
+          local = { disponivel: false, status: av.status, motivo };
+        }
+      }
+    } else if (loja.aceita_entrega && b.bairro) {
       if (!frete.entregaLocalNaCidade(loja, b.cidade)) {
         local = { disponivel: false, motivo: `a entrega da loja é só em ${(loja.envio_remetente || {}).cidade}` };
       } else {
@@ -727,7 +774,9 @@ async function calcularCarrinho(dbc, loja, conta, b, modo = 'previa') {
     } else if (local && local.disponivel) {
       entrega = { tipo, taxa: local.taxa, bairro: local.bairro, regiao_id: local.regiao_id, tempo_estimado_min: local.tempo_estimado_min, servico: null };
       if (local.pedido_minimo !== null) minimo = local.pedido_minimo;
-    } else if (!b.bairro && !b.cep) {
+    } else if (modoRaio && local && !local.disponivel && !(opcoesEnvio && opcoesEnvio.length)) {
+      falha(422, local.motivo, { status: local.status });
+    } else if (!b.bairro && !b.cep && !(modoRaio && (b.endereco_id || b.entrega || b.endereco_coord))) {
       if (modo === 'pedido') throw new HttpError(400, 'informe o endereço da entrega');
       entrega.tempo_estimado_min = loja.tempo_preparo_min + loja.tempo_entrega_min;
     } else if (opcoesEnvio && opcoesEnvio.length) {
@@ -759,10 +808,10 @@ async function calcularCarrinho(dbc, loja, conta, b, modo = 'previa') {
   const envioSite = tipo === 'entrega' && (envio || local) ? {
     transportadora: envio,
     opcoes: opcoesEnvio ? opcoesEnvio.map(({ id, nome, servico, transportadora, logo, preco, prazo_dias, gratis }) => ({ id, nome, servico, transportadora, logo, preco, prazo_dias, gratis })) : null,
-    local: local ? { disponivel: local.disponivel, bairro: local.bairro || null, taxa: local.disponivel ? local.taxa : null, tempo_estimado_min: local.tempo_estimado_min || null, motivo: local.motivo || null } : null,
+    local: local ? { disponivel: local.disponivel, bairro: local.bairro || null, taxa: local.disponivel ? local.taxa : null, tempo_estimado_min: local.tempo_estimado_min || null, motivo: local.motivo || null, ...(raioInfo ? { status: raioInfo.status, distancia_km: raioInfo.distancia_km, faixa_ate_km: raioInfo.faixa_ate_km } : {}) } : null,
   } : null;
   return {
-    itens, linhas, frete_interno: freteInterno, subtotal, taxa_entrega: entrega.taxa, desconto, total, cupom, entrega, envio: envioSite, pedido_minimo: minimo,
+    itens, linhas, frete_interno: freteInterno, raio: raioInfo, subtotal, taxa_entrega: entrega.taxa, desconto, total, cupom, entrega, envio: envioSite, pedido_minimo: minimo,
     // pix: desconto se pagar com Pix pelo site (aplicado no total quando b.pagamento = 'pix'); total_pix: o total pagando com Pix
     pix: descontoPix > 0 ? { percentual: pctPix, desconto: descontoPix, aplicado: comPix, total_pix: n2(subtotal + entrega.taxa - desconto - descontoPix) } : null,
     so_retirada: soRetirada.length > 0, maior_idade: maiorIdade,
@@ -1092,10 +1141,14 @@ function iniciarVarredura() {
   if (varredura || process.env.LOJA_VARREDURA === 'desligado') return;
   const seg = Math.max(Number(process.env.LOJA_VARREDURA_SEGUNDOS) || 60, 2);
   let rodando = false;
+  let ultimaLimpezaGeo = 0;
   varredura = setInterval(async () => {
     if (rodando) return;
     rodando = true;
-    try { await varrerPagamentos(); } catch (err) { console.error('loja virtual: varredura', err.message); } finally { rodando = false; }
+    try {
+      if (Date.now() - ultimaLimpezaGeo > 6 * 3600 * 1000) { ultimaLimpezaGeo = Date.now(); await geocodificacao.limparCache(db()).catch(() => {}); }
+      await varrerPagamentos();
+    } catch (err) { console.error('loja virtual: varredura', err.message); } finally { rodando = false; }
   }, seg * 1000);
   varredura.unref();
 }
@@ -1104,7 +1157,7 @@ module.exports = {
   cardapio, FORMAS_ENTREGA, formasNaEntrega,
   db, gerarChave, hashChave, moduloLigado, lojaPorChave, lojaPorHost, lojaPorSubdominio, lojaIdDoHost, limparCacheHost, dominioBase,
   lojaDaEmpresa, dominiosDaLoja, normalizarSubdominio, sugerirSubdominio, normalizarDominio, enderecosDaLoja, temaEfetivo, normalizarTema, TEMA_PADRAO, MODELOS, tipoValido, fluxoDaLoja, FONTES, BLOCOS, agoraSP, normalizarHorarios, situacaoHorario, recebendoPedidos, precoDoProduto,
-  catalogo, produto, categorias, dadosPublicos, urlImagem, calcularCarrinho, entregaDoBairro, validarCupom, descontoDoCupom, semAcento,
+  faixasDoRaio, decidirRaio, catalogo, produto, categorias, dadosPublicos, urlImagem, calcularCarrinho, entregaDoBairro, validarCupom, descontoDoCupom, semAcento,
   guardarCredenciaisMp, tokenMp, cobrar, pagamentoPublico, aplicarPagamentoMp, estornarPedido, receberAvisoMp, varrerPagamentos, cancelarPedido,
   iniciarVarredura, iniciarVarreduraEnvios, varrerEnvios, SITUACAO_MP, n2,
 };

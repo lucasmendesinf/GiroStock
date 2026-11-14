@@ -1,9 +1,10 @@
 // Erro com status HTTP: pode ser lancado de qualquer rota (inclusive dentro de
 // transacoes) e o handler de erros do app.js responde com { erro: message }.
 class HttpError extends Error {
-  constructor(status, message) {
+  constructor(status, message, extra) {
     super(message);
     this.status = status;
+    if (extra) this.extra = extra; // campos adicionais da resposta (ex.: { status: 'confirmar_pino' })
   }
 }
 

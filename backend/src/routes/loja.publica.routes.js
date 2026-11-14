@@ -18,6 +18,8 @@ const { HttpError } = require('../utils/http');
 const { isUuid } = require('../utils/tenant');
 const { limitar } = require('../utils/limitador');
 const codigoLogin = require('../services/codigoLogin');
+const raio = require('../services/raio');
+const geocodificacao = require('../services/geocodificacao');
 
 const router = express.Router();
 const db = lv.db;
@@ -158,14 +160,32 @@ router.post('/carrinho', async (req, res) => {
   const b = req.body || {};
   let local = { bairro: b.bairro || null, cidade: b.cidade || null, cep: b.cep || null };
   if (b.endereco_id && conta) {
-    const e = (await db().query(`SELECT bairro, cidade, cep FROM lv_enderecos WHERE id = $1 AND conta_id = $2`, [b.endereco_id, conta.id])).rows[0];
-    if (e) local = { bairro: e.bairro, cidade: e.cidade, cep: e.cep || null };
+    const e = (await db().query(`SELECT bairro, cidade, cep, lat, lng, coord_origem FROM lv_enderecos WHERE id = $1 AND conta_id = $2`, [b.endereco_id, conta.id])).rows[0];
+    if (e) local = { bairro: e.bairro, cidade: e.cidade, cep: e.cep || null, endereco_coord: e.lat === null ? null : { lat: Number(e.lat), lng: Number(e.lng), origem: e.coord_origem || 'endereco' } };
   }
   const r = await lv.calcularCarrinho(db(), req.loja, conta, { ...b, ...local }, 'previa');
   const situacao = lv.recebendoPedidos(req.loja);
   if (!situacao.ok) { r.avisos.unshift(situacao.motivo); r.pode_finalizar = false; }
   const { linhas, frete_interno: fi, ...resto } = r; // eslint-disable-line no-unused-vars
   res.json(resto);
+});
+
+// Entrega por raio: localiza o endereco (CEP/rua) e ja responde se atende, a taxa e o tempo. Limite por IP; o geocodificador
+// (cache, 1 req/s) nunca derruba a resposta: nao localizado => status 'pedir_pino'.
+router.post('/entrega/localizar', limitar('lv-localizar', 40, 5 * 60 * 1000), async (req, res) => {
+  const loja = req.loja;
+  if (loja.entrega_modo !== 'raio' || !loja.aceita_entrega) throw new HttpError(409, 'esta loja não usa entrega por raio');
+  const b = req.body || {};
+  const cep = digitos(b.cep);
+  if (cep.length !== 8 && !(texto(b.logradouro, 150) && texto(b.cidade, 80))) throw new HttpError(400, 'informe o CEP (8 dígitos)');
+  const g = await geocodificacao.geocodificar(db(), { cep, numero: b.numero, logradouro: b.logradouro, bairro: b.bairro, cidade: b.cidade, uf: b.uf });
+  if (!g.localizado) return res.json({ localizado: false, lat: null, lng: null, origem: null, status: 'pedir_pino', distancia_km: null, taxa: null, tempo_extra_min: null, faixa_ate_km: null });
+  const av = await lv.decidirRaio(db(), loja, { lat: g.lat, lng: g.lng, origem: g.origem });
+  res.json({
+    localizado: true, lat: g.lat, lng: g.lng, origem: g.origem, status: av.status, distancia_km: av.distancia_m === null ? null : Number((av.distancia_m / 1000).toFixed(2)),
+    taxa: av.taxa, tempo_extra_min: av.tempo_extra_min, faixa_ate_km: av.faixa_ate_km,
+    tempo_estimado_min: av.tempo_extra_min === null ? null : loja.tempo_preparo_min + loja.tempo_entrega_min + av.tempo_extra_min,
+  });
 });
 
 // Calcular o frete pelo CEP (pagina do produto e carrinho, antes do checkout): transportadoras e entrega da loja.
@@ -445,6 +465,19 @@ function dadosEndereco(b, atual = {}) {
   if (e.cep && e.cep.length !== 8) throw new HttpError(400, 'CEP inválido');
   return e;
 }
+// Coordenadas do endereco salvo: o pino marcado pelo cliente (validado) ou a geocodificacao do servidor (so no modo raio).
+// Endereco editado => recalcula; sem mudanca de endereco, mantem.
+async function coordenadasDoEndereco(loja, e, b, atual) {
+  if (b.lat !== undefined && b.lat !== null && b.coord_origem === 'pino') {
+    const c = raio.validarCoordenadas(b.lat, b.lng);
+    return { lat: Number(c.lat.toFixed(6)), lng: Number(c.lng.toFixed(6)), coord_origem: 'pino' };
+  }
+  const mudou = !atual || ['cep', 'logradouro', 'numero', 'bairro', 'cidade', 'uf'].some((k) => String(atual[k] || '') !== String(e[k] || ''));
+  if (!mudou) return { lat: atual.lat, lng: atual.lng, coord_origem: atual.coord_origem };
+  if (loja.entrega_modo !== 'raio') return { lat: null, lng: null, coord_origem: null };
+  const g = await geocodificacao.geocodificar(db(), e);
+  return g.localizado ? { lat: Number(g.lat.toFixed(6)), lng: Number(g.lng.toFixed(6)), coord_origem: g.origem } : { lat: null, lng: null, coord_origem: null };
+}
 const enderecoTexto = (e) => `${e.logradouro}, ${e.numero}${e.complemento ? ` - ${e.complemento}` : ''} - ${e.bairro}${e.cidade ? `, ${e.cidade}${e.uf ? `/${e.uf}` : ''}` : ''}${e.referencia ? ` (Ref.: ${e.referencia})` : ''}`;
 
 async function listarEnderecos(contaId) {
@@ -461,10 +494,11 @@ router.post('/conta/enderecos', comConta, async (req, res) => {
   if (qtd >= 20) throw new HttpError(400, 'limite de 20 endereços');
   const padrao = qtd === 0 || !!(req.body || {}).padrao;
   if (padrao) await db().query(`UPDATE lv_enderecos SET padrao = false WHERE conta_id = $1`, [req.conta.id]);
+  const co = await coordenadasDoEndereco(req.loja, e, req.body || {}, null);
   const { rows } = await db().query(
-    `INSERT INTO lv_enderecos (conta_id, rotulo, cep, logradouro, numero, complemento, bairro, cidade, uf, referencia, padrao)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
-    [req.conta.id, e.rotulo, e.cep, e.logradouro, e.numero, e.complemento, e.bairro, e.cidade, e.uf, e.referencia, padrao]
+    `INSERT INTO lv_enderecos (conta_id, rotulo, cep, logradouro, numero, complemento, bairro, cidade, uf, referencia, padrao, lat, lng, coord_origem)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *`,
+    [req.conta.id, e.rotulo, e.cep, e.logradouro, e.numero, e.complemento, e.bairro, e.cidade, e.uf, e.referencia, padrao, co.lat, co.lng, co.coord_origem]
   );
   res.status(201).json(rows[0]);
 });
@@ -479,11 +513,12 @@ async function enderecoDaConta(contaId, id) {
 router.put('/conta/enderecos/:id', comConta, async (req, res) => {
   const atual = await enderecoDaConta(req.conta.id, req.params.id);
   const e = dadosEndereco(req.body || {}, atual);
+  const co = await coordenadasDoEndereco(req.loja, e, req.body || {}, atual);
   if ((req.body || {}).padrao === true) await db().query(`UPDATE lv_enderecos SET padrao = false WHERE conta_id = $1`, [req.conta.id]);
   const { rows } = await db().query(
     `UPDATE lv_enderecos SET rotulo = $2, cep = $3, logradouro = $4, numero = $5, complemento = $6, bairro = $7, cidade = $8, uf = $9, referencia = $10,
-            padrao = CASE WHEN $11 THEN true ELSE padrao END WHERE id = $1 RETURNING *`,
-    [atual.id, e.rotulo, e.cep, e.logradouro, e.numero, e.complemento, e.bairro, e.cidade, e.uf, e.referencia, (req.body || {}).padrao === true]
+            padrao = CASE WHEN $11 THEN true ELSE padrao END, lat = $12, lng = $13, coord_origem = $14 WHERE id = $1 RETURNING *`,
+    [atual.id, e.rotulo, e.cep, e.logradouro, e.numero, e.complemento, e.bairro, e.cidade, e.uf, e.referencia, (req.body || {}).padrao === true, co.lat, co.lng, co.coord_origem]
   );
   res.json(rows[0]);
 });
@@ -522,6 +557,32 @@ function etapa(o) {
   if (o.status === 'pronto') return o.tipo === 'entrega' ? 'pronto' : 'pronto_retirada';
   if (o.status === 'finalizado') return o.tipo === 'entrega' ? 'entregue' : 'retirado';
   return o.status;
+}
+
+// Ponto de entrega do pedido por raio. O SERVIDOR decide a origem: coordenadas enviadas como 'cep'/'endereco' so valem se baterem com a
+// geocodificacao do endereco (ate 300 m); senao viram 'pino' (o cliente marcou). Sem coordenadas do cliente, usa as do endereco salvo
+// (ou geocodifica agora). 'aviso' quando o pino fica a mais de 3 km do endereco informado (aceita, mas o operador ve em Pedidos).
+async function pontoDeEntrega(loja, endereco, entregaBody) {
+  const e = entregaBody && typeof entregaBody === 'object' && entregaBody.lat !== undefined && entregaBody.lat !== null && entregaBody.lat !== '' ? entregaBody : null;
+  let ref = null; // coordenadas geocodificadas do endereco informado (nao as de um pino)
+  if (endereco.lat !== null && endereco.lat !== undefined && endereco.coord_origem && endereco.coord_origem !== 'pino') ref = { lat: Number(endereco.lat), lng: Number(endereco.lng), origem: endereco.coord_origem };
+  else if (!(endereco.lat !== null && endereco.lat !== undefined) || endereco.coord_origem === 'pino') {
+    const g = await geocodificacao.geocodificar(db(), endereco);
+    if (g.localizado) ref = { lat: g.lat, lng: g.lng, origem: g.origem };
+  }
+  if (!e) {
+    if (endereco.lat !== null && endereco.lat !== undefined) return { ponto: { lat: Number(endereco.lat), lng: Number(endereco.lng), origem: endereco.coord_origem || 'endereco' }, aviso: null, gravarNoEndereco: false };
+    return { ponto: ref, aviso: null, gravarNoEndereco: false };
+  }
+  const c = raio.validarCoordenadas(e.lat, e.lng);
+  const pt = { lat: c.lat, lng: c.lng };
+  let origem = ['cep', 'endereco'].includes(e.origem) && ref && raio.distanciaMetros(pt, ref) <= 300 ? e.origem : 'pino';
+  let aviso = null;
+  if (origem === 'pino' && ref) {
+    const d = raio.distanciaMetros(pt, ref);
+    if (d > 3000) aviso = `pino distante do endereço informado (${(d / 1000).toFixed(1).replace('.', ',')} km)`;
+  }
+  return { ponto: { ...pt, origem }, aviso, gravarNoEndereco: origem === 'pino' };
 }
 
 async function pedidoPublico(loja, orderId, contaId, base) {
@@ -611,13 +672,16 @@ router.post('/pedidos', comConta, limitar('lv-pedido', 30, 10 * 60 * 1000), asyn
     endereco = await enderecoDaConta(conta.id, b.endereco_id);
   }
 
+  // Entrega por raio: ponto decidido pelo servidor (antes da transacao: a geocodificacao pode demorar).
+  let ponto = null;
+  if (tipo === 'entrega' && loja.entrega_modo === 'raio' && loja.aceita_entrega) ponto = await pontoDeEntrega(loja, endereco, b.entrega);
   const client = await db().connect();
   let pedido;
   try {
     await client.query('BEGIN');
     const c = await lv.calcularCarrinho(client, loja, conta, {
       ...b, tipo, bairro: endereco ? endereco.bairro : null, cidade: endereco ? endereco.cidade : null, cep: endereco ? endereco.cep || null : null,
-      pagamento: metodo,
+      pagamento: metodo, entrega: ponto && ponto.ponto ? ponto.ponto : null, endereco_coord: null, endereco_id: endereco ? endereco.id : null,
     }, 'pedido');
     if (c.maior_idade && b.maior_idade !== true) throw new HttpError(422, 'há produto para maiores de 18 anos: confirme que você tem 18 anos ou mais');
     const descontoPix = c.pix && c.pix.aplicado ? c.pix.desconto : 0;
@@ -643,6 +707,15 @@ router.post('/pedidos', comConta, limitar('lv-pedido', 30, 10 * 60 * 1000), asyn
     });
     if (descontoPix || c.maior_idade) {
       await client.query(`UPDATE orders SET desconto_pix = $2, maior_idade_declarada_em = CASE WHEN $3 THEN now() END WHERE id = $1`, [r.orderId, descontoPix, !!c.maior_idade]);
+    }
+    // Entrega por raio: distancia, faixa e origem das coordenadas ficam no pedido (o operador ve em Pedidos).
+    if (c.raio && c.raio.status === 'atende' && !c.entrega.servico) {
+      await client.query(
+        `UPDATE orders SET entrega_lat = $2, entrega_lng = $3, entrega_distancia_km = $4, entrega_faixa_ate_km = $5, entrega_coord_origem = $6, entrega_aviso = $7 WHERE id = $1`,
+        [r.orderId, c.raio.lat, c.raio.lng, c.raio.distancia_km, c.raio.faixa_ate_km, c.raio.origem, ponto ? ponto.aviso : null]
+      );
+      // o pino confirmado vira a localizacao do endereco salvo (cliente recorrente nao marca de novo)
+      if (ponto && ponto.gravarNoEndereco && endereco) await client.query(`UPDATE lv_enderecos SET lat = $2, lng = $3, coord_origem = 'pino' WHERE id = $1`, [endereco.id, c.raio.lat, c.raio.lng]);
     }
     // Envio por transportadora: servico, prazo, cotacao e o destinatario em campos (para a etiqueta).
     if (c.entrega.servico) {

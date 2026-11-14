@@ -134,7 +134,7 @@ function tratarErros(err, req, res, next) {
   if (err.status && err.status < 500) {
     // HttpError das rotas ou JSON malformado no corpo (body-parser)
     const erro = err.type === 'entity.parse.failed' ? 'corpo da requisicao nao e um JSON valido' : err.message;
-    return res.status(err.status).json({ erro });
+    return res.status(err.status).json({ erro, ...(err.extra || {}) });
   }
   // 502/503 de proposito (plataforma de delivery recusou, servico nao configurado): a mensagem explica o que houve.
   if (err instanceof HttpError && (err.status === 502 || err.status === 503)) return res.status(err.status).json({ erro: err.message });

@@ -5,7 +5,7 @@ import { Field, Modal } from '../../components/ui.jsx';
 import { brl, parseNumero, pct } from '../../utils/format';
 import { UNIDADES_PRODUTO, ordenarCategoriasHierarquia, SeletorFornecedores } from './comum.jsx';
 import ReceitaEditor, { custoDaReceita, insumosSemCusto } from './ReceitaEditor.jsx';
-import { CamposIfood, ComboEditor, GruposDoProduto, custoDoCombo } from './ExtrasProduto.jsx';
+import { CamposIfood, CodigoCombo, ComboEditor, GruposDoProduto, PrecoCombo, avulsoDoComboCent, custoDoCombo, useCombosEmpresa } from './ExtrasProduto.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { temModulo, podeAcessar } from '../../utils/permissions.js';
 import PrecosLoja, { estadoInicialPrecos, precosDoServidor, payloadDePrecos, validarPrecos } from './PrecosLoja.jsx';
@@ -29,6 +29,9 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
   const [conv, setConv] = useState(estadoInicialConversao());
   const podePrecos = podeAcessar(user, 'EditarProdutos');
   const [comboItens, setComboItens] = useState([]);
+  const empresaCombos = useCombosEmpresa();
+  const [pcbEdit, setPcbEdit] = useState(null); // no combo ja salvo o preco comeca MANUAL (auto = false); "Usar o sugerido" religa
+  const pcb = { margem: pcbEdit?.margem ?? String(empresaCombos.margem).replace('.', ','), final90: pcbEdit?.final90 ?? empresaCombos.final90, auto: pcbEdit?.auto ?? false };
   const [viraCombo, setViraCombo] = useState(false);
   const [grupos, setGrupos] = useState([]);
   const [ifood, setIfood] = useState({ vende_ifood: false, codigo_ifood: '' });
@@ -227,9 +230,11 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
               {UNIDADES_PRODUTO.map((u) => <option key={u} value={u}>{u}</option>)}
             </select>
           </Field>
-          <Field label="Código de barras / EAN *">
-            <input inputMode="numeric" value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value })} />
-          </Field>
+          {comboOriginal
+            ? <CodigoCombo valor={form.barcode} setValor={(v) => setForm((f) => ({ ...f, barcode: v }))} automatico={false} setAutomatico={() => {}} editando podeTrocar={podeAcessar(user, 'EditarProdutos')} />
+            : <Field label="Código de barras / EAN *">
+              <input inputMode="numeric" value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value })} />
+            </Field>}
         </div>
 
         <div className="es-form" style={{ alignItems: 'start' }}>
@@ -237,9 +242,9 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
             <input inputMode="decimal" readOnly={usaReceita || usaCombo} value={usaReceita || usaCombo ? custo.toFixed(2).replace('.', ',') : form.preco_custo}
               onChange={(e) => setForm({ ...form, preco_custo: e.target.value })} />
           </Field>
-          <Field label="Preço de venda (R$) *" hint={margem !== null && Number.isFinite(margem) ? `Margem: ${pct(margem.toFixed(1))}` : undefined}>
+          {!usaCombo && <Field label="Preço de venda (R$) *" hint={margem !== null && Number.isFinite(margem) ? `Margem: ${pct(margem.toFixed(1))}` : undefined}>
             <input inputMode="decimal" value={form.preco_venda} onChange={(e) => setForm({ ...form, preco_venda: e.target.value })} />
-          </Field>
+          </Field>}
           <Field label="Fornecedores" className="full">
             <SeletorFornecedores suppliers={suppliers} principal={form.supplier_id} extras={form.supplier_ids}
               onChange={(principal, extras) => setForm({ ...form, supplier_id: principal, supplier_ids: principal ? extras : [] })} />
@@ -259,6 +264,8 @@ export default function EditarProduto({ productId, categories, suppliers, ingred
 
         {usaReceita && <ReceitaEditor ref={receitaRef} ficha={ficha} setFicha={setFicha} ingredients={ingredients} onErro={setErro} />}
         {usaCombo && <ComboEditor itens={comboItens} setItens={setComboItens} produtos={products} proprioId={p.id} />}
+        {usaCombo && <PrecoCombo custoCent={Math.round(custo * 100)} avulsoCent={avulsoDoComboCent(comboItens, products)} estado={pcb} setEstado={setPcbEdit}
+          vendaTexto={form.preco_venda} setVendaTexto={(t) => setForm((f) => ({ ...f, preco_venda: t }))} />}
         {podePrecos && <PrecosLoja estado={precos} setEstado={setPrecos} locais={locations} venda={venda} custo={custo} combo={usaCombo} />}
         {mostraConversao && <ConversaoInsumo estado={conv} setEstado={setConv} unidade={form.unidade} custo={custo} locais={locations} ingredients={ingredients} />}
         <GruposDoProduto selecionados={grupos} setSelecionados={setGrupos} />

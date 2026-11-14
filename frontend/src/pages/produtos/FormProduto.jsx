@@ -6,7 +6,7 @@ import { brl, parseNumero, pct } from '../../utils/format';
 import { UNIDADES_PRODUTO, ordenarCategoriasHierarquia, SeletorFornecedores } from './comum.jsx';
 import ReceitaEditor, { custoDaReceita, insumosSemCusto } from './ReceitaEditor.jsx';
 import Categorias from './Categorias.jsx';
-import { CamposIfood, ComboEditor, GruposDoProduto, custoDoCombo } from './ExtrasProduto.jsx';
+import { CamposIfood, CodigoCombo, ComboEditor, GruposDoProduto, PrecoCombo, avulsoDoComboCent, custoDoCombo, useCombosEmpresa } from './ExtrasProduto.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { temModulo, podeAcessar } from '../../utils/permissions.js';
 import PrecosLoja, { estadoInicialPrecos, payloadDePrecos, validarPrecos } from './PrecosLoja.jsx';
@@ -30,6 +30,10 @@ export default function FormProduto({ categories, suppliers, ingredients, produc
   const [conv, setConv] = useState(estadoInicialConversao());
   const podePrecos = podeAcessar(user, 'EditarProdutos');
   const [comboItens, setComboItens] = useState([]);
+  const empresaCombos = useCombosEmpresa();
+  const [pcbEdit, setPcbEdit] = useState(null); // margem/,90/auto escolhidos neste combo; sem isso vale o padrao da empresa
+  const pcb = { margem: pcbEdit?.margem ?? String(empresaCombos.margem).replace('.', ','), final90: pcbEdit?.final90 ?? empresaCombos.final90, auto: pcbEdit?.auto ?? true };
+  const [codigoAuto, setCodigoAuto] = useState(false);
   const [grupos, setGrupos] = useState([]);
   const [ifood, setIfood] = useState({ vende_ifood: false, codigo_ifood: '' });
   const [form, setForm] = useState({
@@ -154,9 +158,11 @@ export default function FormProduto({ categories, suppliers, ingredients, produc
               {UNIDADES_PRODUTO.map((u) => <option key={u} value={u}>{u}</option>)}
             </select>
           </Field>
-          <Field label="Código de barras / EAN *" hint="8 a 14 dígitos. Pode usar o leitor.">
-            <input inputMode="numeric" value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value })} placeholder="8 a 14 dígitos" />
-          </Field>
+          {combo
+            ? <CodigoCombo valor={form.barcode} setValor={(v) => setForm((f) => ({ ...f, barcode: v }))} automatico={codigoAuto} setAutomatico={setCodigoAuto} editando={false} />
+            : <Field label="Código de barras / EAN *" hint="8 a 14 dígitos. Pode usar o leitor.">
+              <input inputMode="numeric" value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value })} placeholder="8 a 14 dígitos" />
+            </Field>}
         </div>
 
         <div className="es-form" style={{ alignItems: 'start' }}>
@@ -165,9 +171,9 @@ export default function FormProduto({ categories, suppliers, ingredients, produc
               value={composto || combo ? custo.toFixed(2).replace('.', ',') : form.preco_custo}
               onChange={(e) => setForm({ ...form, preco_custo: e.target.value })} />
           </Field>
-          <Field label="Preço de venda (R$) *" hint={margem !== null && Number.isFinite(margem) ? `Margem: ${pct(margem.toFixed(1))}` : undefined}>
+          {!combo && <Field label="Preço de venda (R$) *" hint={margem !== null && Number.isFinite(margem) ? `Margem: ${pct(margem.toFixed(1))}` : undefined}>
             <input inputMode="decimal" value={form.preco_venda} onChange={(e) => setForm({ ...form, preco_venda: e.target.value })} placeholder="0,00" />
-          </Field>
+          </Field>}
           <Field label="Fornecedor principal" className="full">
             <SeletorFornecedores suppliers={suppliers} principal={form.supplier_id} extras={form.supplier_ids}
               onChange={(principal, extras) => setForm({ ...form, supplier_id: principal, supplier_ids: principal ? extras : [] })} />
@@ -180,11 +186,13 @@ export default function FormProduto({ categories, suppliers, ingredients, produc
           </label>
         )}
         <label className="check">
-          <input type="checkbox" checked={combo} onChange={(e) => { setCombo(e.target.checked); if (e.target.checked) setComposto(false); }} /> Combo (feito de outros produtos, ex.: lanche + batata + bebida)
+          <input type="checkbox" checked={combo} onChange={(e) => { setCombo(e.target.checked); if (e.target.checked) setComposto(false); else if (codigoAuto) { setForm((f) => ({ ...f, barcode: '' })); setCodigoAuto(false); } }} /> Combo (feito de outros produtos, ex.: lanche + batata + bebida)
         </label>
 
         {composto && <ReceitaEditor ficha={ficha} setFicha={setFicha} ingredients={ingredients} onErro={setErro} />}
         {combo && <ComboEditor itens={comboItens} setItens={setComboItens} produtos={products} />}
+        {combo && <PrecoCombo custoCent={Math.round(custo * 100)} avulsoCent={avulsoDoComboCent(comboItens, products)} estado={pcb} setEstado={setPcbEdit}
+          vendaTexto={form.preco_venda} setVendaTexto={(t) => setForm((f) => ({ ...f, preco_venda: t }))} />}
         {podePrecos && <PrecosLoja estado={precos} setEstado={setPrecos} locais={locations} venda={venda} custo={custo} combo={combo} />}
         {mostraConversao && <ConversaoInsumo estado={conv} setEstado={setConv} unidade={form.unidade} custo={custo} locais={locations} ingredients={ingredients} />}
         <GruposDoProduto selecionados={grupos} setSelecionados={setGrupos} />

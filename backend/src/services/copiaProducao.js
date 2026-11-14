@@ -13,7 +13,7 @@ const modoTeste = require('./modoTeste');
 const pipeline = promisify(stream.pipeline);
 const LOCK_CHAVE = 727001; // advisory lock: impede duas copias simultaneas (mesmo entre processos)
 // Tabelas de controle de cada banco: nunca copiadas nem truncadas (registro de backups e erros pertencem a cada banco).
-const FORA_DA_COPIA = ['schema_migrations', 'teste_copias', 'backups', 'erros_sistema'];
+const FORA_DA_COPIA = ['schema_migrations', 'teste_copias', 'backups', 'erros_sistema', 'geo_cache'];
 // Tabelas truncadas no teste mas NUNCA copiadas (segredos de 2FA ficam so na producao).
 const SEM_DADOS = ['user_recovery_codes'];
 // Colunas que viram valor neutro na copia: nenhum segredo TOTP chega ao banco de teste.

@@ -15,6 +15,7 @@ const { modulosDoPlano } = require('../utils/limites');
 const { CHAVES, conflitoDeDependencia } = require('../config/modulos');
 const ifoodApi = require('../integracoes/ifood/api');
 const codigoLogin = require('../services/codigoLogin');
+const geocodificacao = require('../services/geocodificacao');
 const food99Api = require('../integracoes/food99/api');
 
 // Painel Master, fase 3: backups e dados, manutencao segura, configuracoes globais (aviso, manutencao, parametros, planos).
@@ -116,6 +117,8 @@ async function statusIntegracoes() {
   let testeOk = null;
   if (pool.testeConfigurado()) { try { await pool.teste().query('SELECT 1'); testeOk = true; } catch { testeOk = false; } }
   const codigoStatus = await codigoLogin.statusAtual();
+  const geo = geocodificacao.status();
+  const mapa = geocodificacao.configMapa();
   return [
     { id: 'banco_teste', nome: 'Banco de teste (modo teste)', status: !pool.testeConfigurado() ? 'nao_configurado' : testeOk ? 'ok' : 'erro', detalhe: !pool.testeConfigurado() ? 'DATABASE_URL_TESTE ausente ou igual à produção' : testeOk ? 'conectado' : 'não respondeu', testavel: pool.testeConfigurado() },
     { id: 'backup_dir', nome: 'Pasta de backups (BACKUP_DIR)', status: pasta.ok ? 'ok' : 'erro', detalhe: pasta.ok ? 'gravável' : pasta.erro, testavel: true },
@@ -123,6 +126,8 @@ async function statusIntegracoes() {
     { id: 'totp', nome: 'Chave do 2FA (TOTP_ENC_KEY)', status: totp.disponivel() ? 'ok' : 'nao_configurado', detalhe: totp.disponivel() ? 'configurada' : 'ausente: o 2FA fica indisponível', testavel: false },
     { id: 'smtp', nome: 'E-mail (SMTP)', status: process.env.SMTP_HOST ? 'ok' : 'nao_configurado', detalhe: process.env.SMTP_HOST ? 'configurado' : 'não configurado (o sistema ainda não envia e-mails)', testavel: false },
     { id: 'codigo_login', nome: 'Código de login da loja (WhatsApp/SMS)', status: codigoStatus.configurado ? 'ok' : 'nao_configurado', detalhe: `${codigoStatus.provedor}: ${codigoStatus.detalhe}`, testavel: false },
+    { id: 'geocodificacao', nome: 'Geocodificação de endereços (entrega por raio)', status: geo.configurado ? 'ok' : 'nao_configurado', detalhe: `${geo.provedor}: ${geo.motivo}`, testavel: false },
+    { id: 'mapa_tiles', nome: 'Mapa de fundo (tiles)', status: mapa.padrao ? 'indisponivel' : 'ok', detalhe: mapa.padrao ? 'usando o mapa padrão do OpenStreetMap: a política dele não permite uso pesado; em produção com tráfego real configure MAPA_TILES_URL e MAPA_ATRIBUICAO (MapTiler, Mapbox, Stadia…)' : 'provedor de mapas configurado (MAPA_TILES_URL)', testavel: false },
     { id: 'whatsapp', nome: 'WhatsApp (API)', status: 'nao_contratado', detalhe: 'não contratado: as mensagens usam o link wa.me', testavel: false },
     { id: 'ifood', nome: 'iFood', status: ifoodApi.configurado() ? 'ok' : 'nao_configurado', detalhe: ifoodApi.configurado() ? `app configurado${process.env.IFOOD_API_URL ? ` (endereço: ${process.env.IFOOD_API_URL})` : ''}: cada loja conecta a sua conta em Lojas & PDVs` : 'IFOOD_CLIENT_ID/IFOOD_CLIENT_SECRET ausentes: cadastre o app no Portal do Desenvolvedor iFood', testavel: false },
     { id: '99food', nome: '99Food', status: food99Api.configurado() ? 'ok' : 'nao_configurado', detalhe: food99Api.configurado() ? `app configurado${process.env.FOOD99_API_URL ? ` (endereço: ${process.env.FOOD99_API_URL})` : ''}: webhook em /api/webhooks/99food; cada loja conecta em Lojas & PDVs` : 'FOOD99_APP_ID/FOOD99_APP_SECRET ausentes: cadastre o app no portal de desenvolvedores da 99Food', testavel: false },

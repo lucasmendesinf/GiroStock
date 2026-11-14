@@ -15,7 +15,7 @@ const backup = require('../src/services/backup');
 const MANTER = new Set([
   'users', 'user_locations', 'locations', 'terminals', 'cash_registers', 'ingredients', 'ingredient_balances', 'audit_logs', 'avisos_empresa', 'couriers',
   'fin_categorias', 'fin_contas', 'fin_formas_recebimento', 'comissao_regras', 'integracoes_delivery', 'lv_lojas', 'lv_regioes',
-  'lv_cupons', 'sessoes_suporte', 'tenants',
+  'lv_cupons', 'lv_raio_faixas', 'sessoes_suporte', 'tenants',
 ]);
 
 async function run() {

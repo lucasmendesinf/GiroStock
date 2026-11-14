@@ -46,7 +46,9 @@ const app = express();
 
 // CSP desabilitado: o frontend carrega a fonte do Google Fonts (cross-origin)
 // e este e um sistema interno, nao uma pagina publica renderizando conteudo de terceiros.
-app.use(helmet({ contentSecurityPolicy: false }));
+// Mapas (entrega por raio): os tiles vem de outro dominio. COEP require-corp bloquearia as imagens e o Referrer-Policy no-referrer
+// faria o servidor de tiles (OpenStreetMap) recusar o pedido (a politica de uso exige o Referer); por isso estes dois ficam mais brandos.
+app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false, referrerPolicy: { policy: 'strict-origin-when-cross-origin' } }));
 app.use(cors());
 // Webhooks antes do express.json: a assinatura e conferida sobre o corpo bruto.
 app.use('/api/webhooks', webhooksRoutes);

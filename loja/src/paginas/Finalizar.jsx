@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useLoja } from '../estado.jsx';
 import FormEndereco from '../componentes/Endereco.jsx';
+import { FolhaPino, StatusRaio } from '../componentes/EntregaRaio.jsx';
 import CartaoMercadoPago from '../componentes/CartaoMercadoPago.jsx';
 import { itensParaApi } from './Carrinho.jsx';
 import { brl, parseValor } from '../util';
@@ -33,6 +34,10 @@ export default function Finalizar() {
   const [enderecos, setEnderecos] = useState(null);
   const [enderecoId, setEnderecoId] = useState(null);
   const [novoEndereco, setNovoEndereco] = useState(false);
+  // Entrega por raio: pino marcado pelo cliente para o endereco escolhido (o servidor recalcula tudo e decide)
+  const modoRaio = loja.entrega.modo === 'raio' && loja.entrega.local;
+  const [pinoCliente, setPinoCliente] = useState(null);
+  const [mapaAberto, setMapaAberto] = useState(false);
   const formas = [
     ...(pag.pix_online ? [['pix', pag.pix_desconto_pct > 0 ? `Pix (pague agora) · ${String(pag.pix_desconto_pct).replace('.', ',')}% de desconto` : 'Pix (pague agora)']] : []),
     ...(pag.cartao_online ? [['cartao', 'Cartão de crédito (pague agora)']] : []),
@@ -58,16 +63,19 @@ export default function Finalizar() {
   }, [conta]);
   const servico = servicoAtual || undefined;
   useEffect(() => { if (metodo === 'na_entrega' && servicoAtual && formas[0]) setMetodo(formas[0][0]); }, [servicoAtual]); // eslint-disable-line react-hooks/exhaustive-deps
+  const reqPrevia = useRef(0); // respostas fora de ordem (endereco carregando) nao podem sobrescrever a mais recente
   const atualizarPrevia = useCallback(() => {
     if (carrinho.length === 0) return;
-    api.post('/carrinho', { itens: itensParaApi(carrinho), tipo, endereco_id: tipo === 'entrega' ? enderecoId || undefined : undefined, cupom, frete_servico: servico, pagamento: metodo })
-      .then(setPrevia).catch((e) => setErro(e.message));
-  }, [carrinho, tipo, enderecoId, cupom, servico, metodo]);
+    const meu = ++reqPrevia.current;
+    const entrega = modoRaio && tipo === 'entrega' && pinoCliente ? { lat: pinoCliente.lat, lng: pinoCliente.lng, origem: 'pino' } : undefined;
+    api.post('/carrinho', { itens: itensParaApi(carrinho), tipo, endereco_id: tipo === 'entrega' ? enderecoId || undefined : undefined, cupom, frete_servico: servico, pagamento: metodo, entrega })
+      .then((r) => { if (meu === reqPrevia.current) setPrevia(r); }).catch((e) => { if (meu === reqPrevia.current) setErro(e.message); });
+  }, [carrinho, tipo, enderecoId, cupom, servico, metodo, modoRaio, pinoCliente]);
   // Produto so de retirada no carrinho: a entrega sai das opcoes.
   const soRetirada = !!(previa && previa.so_retirada);
   useEffect(() => { if (soRetirada && tipo === 'entrega' && loja.retirada.aceita) setTipo('retirada'); }, [soRetirada, tipo, loja.retirada.aceita]);
   useEffect(() => { atualizarPrevia(); }, [atualizarPrevia]);
-  useEffect(() => { setFrete(null); }, [enderecoId]);
+  useEffect(() => { setFrete(null); setPinoCliente(null); }, [enderecoId]);
   // Escolha do frete: mantem a do cliente se ainda vale; senao, a entrega da loja ou a transportadora mais barata.
   const envio = previa && previa.envio;
   useEffect(() => {
@@ -86,7 +94,8 @@ export default function Finalizar() {
 
   const semEndereco = tipo === 'entrega' && !enderecoId;
   const escolhendo = tipo === 'entrega' && !!loja.entrega.transportadora && envio && frete === null && ((envio.opcoes || []).length > 0 || (envio.local && envio.local.disponivel));
-  const avisos = previa ? previa.avisos.filter((a) => !(semEndereco && /bairro|endereço/.test(a)) && !(escolhendo && /escolha uma opção de frete/.test(a))) : [];
+  const raio = modoRaio && tipo === 'entrega' && previa ? previa.raio : null;
+  const avisos = previa ? previa.avisos.filter((a) => !(semEndereco && /bairro|endereço/.test(a)) && !(escolhendo && /escolha uma opção de frete/.test(a)) && !(raio && raio.status !== 'atende' && /área de entrega|confirme o local|marque o local/.test(a))) : [];
   const transp = loja.entrega.transportadora;
   const enderecoSel = enderecos && enderecos.find((e) => e.id === enderecoId);
   const trocoNum = metodo === 'na_entrega' && formaEntrega === 'dinheiro' && troco.trim() ? parseValor(troco) : null;
@@ -101,7 +110,7 @@ export default function Finalizar() {
       const pagamento = metodo === 'na_entrega'
         ? { quando: 'entrega', forma: formaEntrega, troco_para: formaEntrega === 'dinheiro' && troco.trim() ? parseValor(troco) : undefined }
         : { quando: 'online', forma: metodo === 'pix' ? 'pix' : 'cartao_credito', cartao };
-      const p = await api.post('/pedidos', { itens: itensParaApi(carrinho), tipo, endereco_id: tipo === 'entrega' ? enderecoId : undefined, frete_servico: servico, cupom, observacao: obs.trim() || undefined, pagamento, maior_idade: previa && previa.maior_idade ? maiorIdade : undefined });
+      const p = await api.post('/pedidos', { itens: itensParaApi(carrinho), tipo, endereco_id: tipo === 'entrega' ? enderecoId : undefined, entrega: modoRaio && tipo === 'entrega' && pinoCliente ? { lat: pinoCliente.lat, lng: pinoCliente.lng, origem: 'pino' } : undefined, frete_servico: servico, cupom, observacao: obs.trim() || undefined, pagamento, maior_idade: previa && previa.maior_idade ? maiorIdade : undefined });
       esvaziar();
       try { sessionStorage.removeItem('lv_cupom'); } catch { /* */ }
       navegar(`/pedidos/${p.id}`, { replace: true });
@@ -146,6 +155,9 @@ export default function Finalizar() {
               ) : <button type="button" className="link" onClick={() => setNovoEndereco(true)}>+ Novo endereço</button>}
             </>
           )}
+          {raio && <StatusRaio r={raio} aoPino={() => setMapaAberto(true)} aoRetirada={() => setTipo('retirada')} retiradaAceita={loja.retirada.aceita} tempoBase={loja.entrega.tempo_estimado_min} />}
+          {modoRaio && enderecoSel && !raio && previa && <button type="button" className="link" onClick={() => setMapaAberto(true)}>Ajustar o local no mapa</button>}
+          {mapaAberto && <FolhaPino inicial={pinoCliente || (enderecoSel && enderecoSel.lat !== null && enderecoSel.lat !== undefined ? { lat: Number(enderecoSel.lat), lng: Number(enderecoSel.lng) } : null)} loja={loja.entrega.loja} raioKm={loja.entrega.raio_km} mapa={loja.entrega.mapa} aoFechar={() => setMapaAberto(false)} aoConfirmar={(lat, lng) => { setPinoCliente({ lat, lng }); setMapaAberto(false); }} />}
           {transp && enderecoSel && !enderecoSel.cep && <p className="erro-texto">Este endereço está sem CEP: cadastre um endereço com CEP para calcular o frete.</p>}
         </div>
       ) : null}

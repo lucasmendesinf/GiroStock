@@ -51,7 +51,7 @@ export default function EntregaRaio({ config, dados, onMudou }) {
     if (!mapaRef.current || mapa.current) return undefined;
     const centro = e.lat !== null ? [e.lat, e.lng] : CENTRO_PADRAO;
     const m = L.map(mapaRef.current, { zoomControl: true }).setView(centro, 12);
-    L.tileLayer(d.mapa.tiles_url, { maxZoom: 19, attribution: d.mapa.atribuicao }).addTo(m);
+    L.tileLayer(d.mapa.tiles_url, { maxZoom: 19, attribution: d.mapa.atribuicao, referrerPolicy: 'origin' }).addTo(m);
     mapa.current = m;
     camadas.current.grupo = L.layerGroup().addTo(m);
     const t = setTimeout(() => { try { m.invalidateSize(); } catch { /* mapa ja removido */ } }, 50);

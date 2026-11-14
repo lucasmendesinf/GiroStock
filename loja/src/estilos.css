@@ -507,3 +507,18 @@ body:not(.modelo-cardapio) .produto-info .preco .preco-pix b { font-size: 1.15re
 @media (max-width: 380px) { .cd-foto { width: 80px; height: 80px; } .cd-acoes button { min-width: 56px; } }
 @media (prefers-reduced-motion: reduce) { .cd-folha { animation: none; } html { scroll-behavior: auto; } }
 :focus-visible { outline: 3px solid var(--primaria); outline-offset: 2px; }
+
+/* ---- Entrega por raio: resultado da localizacao e folha do pino ---- */
+.raio-status { margin: 8px 0; padding: 10px 12px; border-radius: var(--raio); border: 1px solid var(--linha); background: var(--painel); font-size: .92rem; line-height: 1.45; }
+.raio-status p { margin: 0 0 8px; }
+.raio-status p:last-child { margin-bottom: 0; }
+.raio-status.ok { border-color: var(--sucesso, #2e9e62); color: var(--texto); }
+.raio-status.aviso { border-color: #d98a2b; }
+.raio-status.erro { border-color: var(--erro); }
+.raio-status .botao, .raio-status .link { margin-right: 8px; }
+.pino-mapa { width: 100%; height: min(52vh, 380px); border-radius: var(--raio); border: 1px solid var(--linha); overflow: hidden; z-index: 0; }
+.pino-entrega { background: none; border: none; }
+.pino-entrega span { display: block; font-size: 30px; line-height: 1; text-align: center; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .5)); }
+.pino-ajuste { display: flex; gap: 8px; }
+.pino-ajuste .botao { flex: 1; padding: 8px 0; min-height: 44px; }
+.visualmente-oculto { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }

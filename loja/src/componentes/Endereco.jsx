@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { soDigitos } from '../util';
+import { useLoja } from '../estado.jsx';
+import { FolhaPino, StatusRaio } from './EntregaRaio.jsx';
 
 // Formulario de endereco. O CEP preenche rua/bairro/cidade (ViaCEP, consulta publica); se falhar, digita a mao.
 export default function FormEndereco({ inicial, onSalvo, onCancelar }) {
@@ -10,6 +12,23 @@ export default function FormEndereco({ inicial, onSalvo, onCancelar }) {
   const [buscando, setBuscando] = useState(false);
   const [erro, setErro] = useState(null);
   const [enviando, setEnviando] = useState(false);
+  // Entrega por raio: ao completar CEP e numero o servidor localiza e diz se atende (taxa/tempo), esta fora ou pede o pino.
+  const { loja } = useLoja();
+  const raio = loja && loja.entrega && loja.entrega.modo === 'raio' && loja.entrega.local;
+  const [loc, setLoc] = useState(null);
+  const [pino, setPino] = useState(null);
+  const [mapaAberto, setMapaAberto] = useState(false);
+  useEffect(() => {
+    if (!raio) return undefined;
+    const cep = soDigitos(f.cep);
+    if (cep.length !== 8 || !String(f.numero).trim()) { setLoc(null); return undefined; }
+    let vivo = true;
+    const t = setTimeout(() => {
+      api.post('/entrega/localizar', { cep, numero: f.numero, logradouro: f.logradouro, bairro: f.bairro, cidade: f.cidade, uf: f.uf })
+        .then((r) => { if (vivo) setLoc(r); }).catch(() => { if (vivo) setLoc({ status: 'pedir_pino', localizado: false }); });
+    }, 500);
+    return () => { vivo = false; clearTimeout(t); };
+  }, [raio, f.cep, f.numero]); // eslint-disable-line react-hooks/exhaustive-deps
   const mudar = (k) => (e) => setF({ ...f, [k]: e.target.value });
   async function buscarCep(valor) {
     const cep = soDigitos(valor);
@@ -25,7 +44,7 @@ export default function FormEndereco({ inicial, onSalvo, onCancelar }) {
     setErro(null);
     setEnviando(true);
     try {
-      const corpo = { ...f, cep: soDigitos(f.cep) };
+      const corpo = { ...f, cep: soDigitos(f.cep), ...(pino ? { lat: pino.lat, lng: pino.lng, coord_origem: 'pino' } : {}) };
       const r = inicial && inicial.id ? await api.put(`/conta/enderecos/${inicial.id}`, corpo) : await api.post('/conta/enderecos', corpo);
       onSalvo(r);
     } catch (err) { setErro(err.message); } finally { setEnviando(false); }
@@ -46,8 +65,12 @@ export default function FormEndereco({ inicial, onSalvo, onCancelar }) {
         <label className="campo"><span>Cidade</span><input value={f.cidade} onChange={mudar('cidade')} autoComplete="address-level2" /></label>
         <label className="campo"><span>UF</span><input value={f.uf} onChange={(e) => setF({ ...f, uf: e.target.value.toUpperCase().slice(0, 2) })} autoComplete="address-level1" /></label>
       </div>
+      {raio && !pino && <StatusRaio r={loc} aoPino={() => setMapaAberto(true)} aoRetirada={null} retiradaAceita={false} tempoBase={loja.entrega.tempo_estimado_min} />}
+      {raio && pino && <p className="raio-status ok" role="status">📍 Local marcado no mapa. <button type="button" className="link" onClick={() => setMapaAberto(true)}>Alterar</button></p>}
+      {raio && !loc && !pino && <button type="button" className="link" onClick={() => setMapaAberto(true)}>Marcar o local no mapa</button>}
       <label className="campo"><span>Ponto de referência</span><input value={f.referencia} onChange={mudar('referencia')} maxLength={150} /></label>
       {erro && <p className="erro-texto">{erro}</p>}
+      {mapaAberto && <FolhaPino inicial={pino || (loc && loc.localizado ? { lat: loc.lat, lng: loc.lng } : null)} loja={loja.entrega.loja} raioKm={loja.entrega.raio_km} mapa={loja.entrega.mapa} aoFechar={() => setMapaAberto(false)} aoConfirmar={(lat, lng) => { setPino({ lat, lng }); setMapaAberto(false); }} />}
       <div className="botoes">
         {onCancelar && <button type="button" className="botao botao-claro" onClick={onCancelar}>Cancelar</button>}
         <button type="submit" className="botao" disabled={enviando}>{enviando ? 'Salvando…' : 'Salvar endereço'}</button>

@@ -89,6 +89,14 @@ export default function SacolaFolha({ tipo, setTipo, bairro, setBairro, aoFechar
         </label>
       )}
 
+      {tipo === 'entrega' && loja.entrega.modo === 'raio' && (() => {
+        const e = loja.entrega;
+        const taxas = e.usa_faixas ? e.faixas.map((f) => f.taxa) : [e.taxa_unica];
+        const mn = Math.min(...taxas);
+        const mx = Math.max(...taxas);
+        return <p className="dica">🛵 Entregamos até {String(e.raio_km).replace('.', ',')} km da loja. A taxa depende da distância ({mn === mx ? (mn > 0 ? brl(mn) : 'grátis') : `de ${mn > 0 ? brl(mn) : 'grátis'} a ${brl(mx)}`}) e é calculada pelo seu endereço ao finalizar.</p>;
+      })()}
+
       {erro && <p className="erro-texto">{erro}</p>}
       {avisos.map((a) => <p key={a} className="erro-texto">⚠ {a}</p>)}
       {previa && (

@@ -14,9 +14,10 @@ export function definirSessao(t, callbackExpirou) {
 }
 
 export class ErroApi extends Error {
-  constructor(status, mensagem) {
+  constructor(status, mensagem, dados) {
     super(mensagem);
     this.status = status;
+    this.dados = dados || null; // resposta completa (ex.: { status: 'confirmar_pino' } na entrega por raio)
   }
 }
 
@@ -35,7 +36,7 @@ async function chamar(metodo, caminho, corpo) {
   const dados = await res.json().catch(() => null);
   if (!res.ok) {
     if (res.status === 401 && token && !caminho.startsWith('/conta/login')) aoExpirar();
-    throw new ErroApi(res.status, (dados && dados.erro) || `Erro ${res.status}`);
+    throw new ErroApi(res.status, (dados && dados.erro) || `Erro ${res.status}`, dados);
   }
   return dados;
 }

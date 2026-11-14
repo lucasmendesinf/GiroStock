@@ -733,7 +733,7 @@ async function calcularCarrinho(dbc, loja, conta, b, modo = 'previa') {
           local = { disponivel: true, bairro: b.bairro || null, regiao_id: null, taxa: av.taxa, pedido_minimo: null, tempo_estimado_min: loja.tempo_preparo_min + loja.tempo_entrega_min + av.tempo_extra_min };
         } else {
           const motivo = {
-            fora: `fora da área de entrega (${raioInfo.distancia_km.toLocaleString('pt-BR')} km da loja): escolha retirar na loja`,
+            fora: `fora da área de entrega (${String(raioInfo.distancia_km).replace('.', ',')} km da loja): escolha retirar na loja`,
             confirmar_pino: 'confirme o local da entrega no mapa (o endereço está perto do limite da área)',
             pedir_pino: 'não localizamos o endereço: marque o local da entrega no mapa',
           }[av.status];

@@ -34,6 +34,7 @@ const SELECT_PEDIDO = `
          o.entregador_id, c.nome AS entregador_nome, o.sale_id, o.criado_por, u.nome AS criado_por_nome, o.customer_id, o.valor_recebido,
          o.criado_em, o.atualizado_em, o.finalizado_em, o.cancelado_em, o.motivo_cancelamento,
          o.cupom_codigo, o.troco_para, o.pagamento_online, o.pagamento_status,
+         o.entrega_lat, o.entrega_lng, o.entrega_distancia_km, o.entrega_faixa_ate_km, o.entrega_coord_origem, o.entrega_aviso,
          COALESCE((SELECT SUM(oi.subtotal) FROM order_items oi WHERE oi.order_id = o.id), 0) + o.taxa_entrega - o.desconto AS total,
          (SELECT json_build_object('id', pe.id, 'plataforma', pe.plataforma, 'confirmado', pe.confirmado, 'status_externo', pe.status_externo,
                  'entrega_pela_plataforma', pe.entrega_pela_plataforma, 'faltas_estoque', pe.faltas_estoque, 'disputa', pe.disputa)

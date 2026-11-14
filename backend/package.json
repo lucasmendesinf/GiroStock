@@ -45,6 +45,7 @@
     "test:unit:precos": "node scripts/teste-precos.mjs",
     "test:e2e:precos": "node scripts/e2e-precos.mjs",
     "test:e2e:combo-codigo": "node scripts/e2e-combo-codigo-preco.mjs",
+    "test:e2e:raio": "node scripts/e2e-raio-entrega.mjs",
     "test:e2e:fiscal": "node scripts/e2e-fiscal.mjs"
   },
   "dependencies": {

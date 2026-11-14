@@ -25,6 +25,11 @@ const SIMULADO_CEPS = {
   '05001000': { lat: -23.5275, lng: -46.6788 }, // Perdizes/Barra Funda
   '03047000': { lat: -23.5444, lng: -46.6071 }, // Bras
   '20040020': { lat: -22.9035, lng: -43.1729 }, // Centro do Rio (bem longe)
+  // pontos de teste ao norte da Praca da Se (loja de teste): 1 km, 4,8 km, 5,3 km e 8 km em linha reta
+  '01002000': { lat: -23.54153, lng: -46.633308 },
+  '02001000': { lat: -23.50735, lng: -46.633308 },
+  '02002000': { lat: -23.50286, lng: -46.633308 },
+  '02003000': { lat: -23.47857, lng: -46.633308 },
 };
 const SIMULADO_ENDERECOS = {
   'rua teste|sao paulo': { lat: -23.5489, lng: -46.6388 },
@@ -162,7 +167,7 @@ async function geocodificar(db, entrada) {
   const chave = crypto.createHash('sha256').update(`${st.provedor}:${consulta}`).digest('hex');
   try {
     const c = (await db.query(
-      `SELECT lat, lng, precisao, criado_em FROM geo_cache WHERE chave_hash = $1 AND criado_em > now() - make_interval(hours => CASE WHEN lat IS NULL THEN $2 ELSE $3 END)`,
+      `SELECT lat, lng, precisao, criado_em FROM geo_cache WHERE chave_hash = $1 AND criado_em > now() - make_interval(hours => CASE WHEN lat IS NULL THEN $2::int ELSE $3::int END)`,
       [chave, HORAS_CACHE_NEGATIVO, DIAS_CACHE * 24]
     )).rows[0];
     if (c) return c.lat === null ? { ...nao, cache: true } : { localizado: true, lat: Number(c.lat), lng: Number(c.lng), origem: c.precisao === 'cep' ? 'cep' : 'endereco', precisao: c.precisao, cache: true };
@@ -181,7 +186,7 @@ async function geocodificar(db, entrada) {
 
 // Limpa o cache vencido (chamada periodica barata; nao ha dados pessoais alem do texto do endereco).
 async function limparCache(db) {
-  const r = await db.query(`DELETE FROM geo_cache WHERE (lat IS NOT NULL AND criado_em < now() - make_interval(days => $1)) OR (lat IS NULL AND criado_em < now() - make_interval(hours => $2))`, [DIAS_CACHE, HORAS_CACHE_NEGATIVO]);
+  const r = await db.query(`DELETE FROM geo_cache WHERE (lat IS NOT NULL AND criado_em < now() - make_interval(days => $1::int)) OR (lat IS NULL AND criado_em < now() - make_interval(hours => $2::int))`, [DIAS_CACHE, HORAS_CACHE_NEGATIVO]);
   return r.rowCount;
 }
 

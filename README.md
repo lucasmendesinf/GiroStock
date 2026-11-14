@@ -150,6 +150,22 @@ Na loja virtual, a grade aparece como **um produto só** (Produtos no site → *
 
 ## iFood (módulo "iFood e 99Food")
 
+### Aviso de pedido novo (em qualquer tela)
+
+Pedido que chega sozinho (iFood, 99Food, cardápio digital e loja online) aparece num **cartão na lateral**, como mensagem
+chegando no WhatsApp, em qualquer tela do sistema (PDV, Produtos, Relatórios…), para quem tem acesso a Pedidos ou à Loja
+virtual. O cartão mostra a origem (cor e ícone), o número, o cliente, os itens, o valor, entrega/retirada e a loja;
+*Abrir pedido* vai direto para o pedido (Pedidos, ou Loja virtual → Pedidos do site).
+- **Som diferente por origem**: loja virtual = campainha (plim-plom); iFood = três bipes agudos; 99Food = "tu-dú tu-dú".
+  O som **repete a cada 30 s** enquanto houver pedido novo não aceito; para quando o pedido é aceito ou o cartão é aberto
+  ou fechado. Pedido pago no site só avisa depois do pagamento aprovado.
+- **Sem atualizar a página**: o sistema confere a cada 10 s (também com a aba em segundo plano) e, quando chega pedido, as
+  telas Pedidos e Pedidos do site se atualizam na hora.
+- **Som dos pedidos** (botão nas telas de pedidos): ligar/desligar o som neste aparelho, testar o som de cada origem e
+  ligar o aviso do navegador com a aba minimizada. O navegador só libera som depois do primeiro clique na página; até lá
+  aparece "Clique aqui para ativar o som dos pedidos".
+- API: `GET /api/avisos/pedidos`. Teste: `npm run test:e2e:avisos`.
+
 Os pedidos do iFood entram sozinhos na tela **Pedidos**, reservam o estoque e ficam sincronizados com o iFood.
 
 - **Conectar a loja** (Lojas & PDVs → "Receber pedidos do iFood" → *Conectar iFood*). O GiroStock gera um **código de vínculo**; a loja abre o Portal do Parceiro iFood, informa o código, autoriza o app e cola de volta o **código de autorização**. Conta com várias lojas no iFood: escolhe-se qual é esta.

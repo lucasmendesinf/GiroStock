@@ -36,6 +36,7 @@ import Master from './pages/Master.jsx';
 import EntrarAdmin from './pages/EntrarAdmin.jsx';
 import TrocaObrigatoria from './pages/TrocaObrigatoria.jsx';
 import ModoTesteModal from './components/ModoTesteModal.jsx';
+import AvisoPedidos from './components/AvisoPedidos.jsx';
 
 // Tela protegida: exige login e, se informada, acesso a area do perfil.
 function Private({ area, algumaArea, modulo, children }) {
@@ -228,6 +229,8 @@ function Inicial() {
 
 export default function App() {
   return (
+    <>
+    <AvisoPedidos />
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/manutencao" element={<Manutencao />} />
@@ -252,5 +255,6 @@ export default function App() {
       <Route path="/loja-virtual/*" element={<Private area="LojaVirtual"><LojaVirtual /></Private>} />
       <Route path="*" element={<Inicial />} />
     </Routes>
+    </>
   );
 }

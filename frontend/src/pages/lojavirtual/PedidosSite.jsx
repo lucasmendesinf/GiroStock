@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
 import { useToast } from '../../context/UiContext.jsx';
 import { Field, Modal, Vazio } from '../../components/ui.jsx';
 import { brl, dataHora, fmtTel, qtd } from '../../utils/format';
+import SomPedidosControle from '../../components/SomPedidosControle.jsx';
 
 // Pedidos do site da loja online (varejo): separar, embalar, enviar com rastreio e entregar, sem a tela de Pedidos.
 // Pedido pago no site vira venda quando sai (enviado ou retirado), sem caixa; a pagar na loja, ao finalizar, no caixa aberto.
@@ -36,12 +38,27 @@ export default function PedidosSite({ config, onMudou }) {
   const carregar = useCallback(() => api.get(`/loja-virtual/pedidos?situacao=${filtro}${busca.trim() ? `&busca=${encodeURIComponent(busca.trim())}` : ''}`)
     .then(setDados).catch((err) => toast.erro(err)), [filtro, busca, toast]);
   useEffect(() => { const t = setTimeout(carregar, busca ? 250 : 0); return () => clearTimeout(t); }, [carregar, busca]);
-  useEffect(() => { const t = setInterval(carregar, 30000); return () => clearInterval(t); }, [carregar]);
-  const mudou = () => { carregar(); if (onMudou) onMudou(); };
+  // Atualiza sozinho: a cada 15 s, na hora em que chega pedido novo (aviso lateral) e ao voltar para a aba.
+  useEffect(() => {
+    const t = setInterval(carregar, 15000);
+    const aoChegar = () => carregar();
+    const aoVoltar = () => { if (!document.hidden) carregar(); };
+    window.addEventListener('girostock:pedido-novo', aoChegar);
+    document.addEventListener('visibilitychange', aoVoltar);
+    return () => { clearInterval(t); window.removeEventListener('girostock:pedido-novo', aoChegar); document.removeEventListener('visibilitychange', aoVoltar); };
+  }, [carregar]);
+  // Vindo do aviso de pedido novo: abre o pedido direto.
+  const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    const id = location.state && location.state.abrir;
+    if (id) { setAberto(id); navigate('/loja-virtual/pedidos', { replace: true, state: null }); }
+  }, [location.state, navigate]);
+  const mudou = () => { carregar(); if (onMudou) onMudou(); window.dispatchEvent(new Event('girostock:pedidos-mudaram')); };
 
   return (
     <div className="card">
-      <div className="ped-head" style={{ marginBottom: 6 }}><h3 style={{ margin: 0 }}>Pedidos do site</h3></div>
+      <div className="ped-head" style={{ marginBottom: 6 }}><h3 style={{ margin: 0 }}>Pedidos do site</h3><SomPedidosControle /></div>
       <p className="form-hint" style={{ marginTop: 0 }}>
         Separe, embale e envie com o código de rastreio. O cliente acompanha cada etapa no site e recebe e-mail quando o pedido é enviado ou fica pronto para retirada.
       </p>

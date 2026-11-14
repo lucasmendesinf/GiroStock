@@ -98,8 +98,10 @@ async function consultarProvedor(q) {
   const { nome } = provedorAtual();
   if (nome === 'simulado') {
     if (q.cep && SIMULADO_CEPS[q.cep]) return { ...SIMULADO_CEPS[q.cep], origem: 'cep', precisao: 'cep' };
-    const chave = `${semAcento(q.logradouro)}|${semAcento(q.cidade)}`;
-    if (SIMULADO_ENDERECOS[chave]) return { ...SIMULADO_ENDERECOS[chave], origem: 'endereco', precisao: 'endereco' };
+    const digitos = soDigitos(q.texto);
+    if (q.texto && digitos.length === 8 && SIMULADO_CEPS[digitos]) return { ...SIMULADO_CEPS[digitos], origem: 'cep', precisao: 'cep' };
+    const chave = q.texto ? Object.keys(SIMULADO_ENDERECOS).find((k) => semAcento(q.texto).includes(k.split('|')[0]) && semAcento(q.texto).includes(k.split('|')[1])) : `${semAcento(q.logradouro)}|${semAcento(q.cidade)}`;
+    if (chave && SIMULADO_ENDERECOS[chave]) return { ...SIMULADO_ENDERECOS[chave], origem: 'endereco', precisao: 'endereco' };
     return null;
   }
   if (nome === 'publico') {
@@ -110,9 +112,9 @@ async function consultarProvedor(q) {
       const c = j && j.location && j.location.coordinates;
       if (c && Number.isFinite(Number(c.latitude)) && Number.isFinite(Number(c.longitude))) return { lat: Number(c.latitude), lng: Number(c.longitude), origem: 'cep', precisao: 'cep' };
     }
-    if (q.logradouro && q.cidade) {
+    if ((q.logradouro && q.cidade) || q.texto) {
       const base = process.env.GEOCODER_NOMINATIM_URL || 'https://nominatim.openstreetmap.org/search';
-      const texto = [q.logradouro, q.numero, q.bairro, q.cidade, q.uf, 'Brasil'].filter(Boolean).join(', ');
+      const texto = q.texto || [q.logradouro, q.numero, q.bairro, q.cidade, q.uf, 'Brasil'].filter(Boolean).join(', ');
       const j = await naFila(() => buscarJson(`${base}?format=jsonv2&limit=1&countrycodes=br&q=${encodeURIComponent(texto)}`, { 'user-agent': ua }));
       const r = Array.isArray(j) ? j[0] : null;
       if (r && Number.isFinite(Number(r.lat)) && Number.isFinite(Number(r.lon))) return { lat: Number(r.lat), lng: Number(r.lon), origem: 'endereco', precisao: 'endereco' };
@@ -120,7 +122,7 @@ async function consultarProvedor(q) {
     return null;
   }
   if (nome === 'http') {
-    const texto = [q.logradouro, q.numero, q.bairro, q.cidade, q.uf, q.cep].filter(Boolean).join(', ');
+    const texto = q.texto || [q.logradouro, q.numero, q.bairro, q.cidade, q.uf, q.cep].filter(Boolean).join(', ');
     const url = String(process.env.GEOCODER_URL).replace('{q}', encodeURIComponent(texto)).replace('{cep}', encodeURIComponent(q.cep || ''));
     const cab = {};
     const h = String(process.env.GEOCODER_HEADER || '');
@@ -143,6 +145,7 @@ function normalizarConsulta(e) {
     bairro: String(e.bairro || '').trim().slice(0, 80),
     cidade: String(e.cidade || '').trim().slice(0, 80),
     uf: String(e.uf || '').trim().slice(0, 2).toUpperCase(),
+    texto: String(e.texto || '').trim().slice(0, 200), // busca livre (gestao: "Rua X, 100, Cidade")
   };
 }
 
@@ -151,10 +154,11 @@ function normalizarConsulta(e) {
 async function geocodificar(db, entrada) {
   const nao = { localizado: false, lat: null, lng: null, origem: null, precisao: null, cache: false };
   const q = normalizarConsulta(entrada || {});
-  if (q.cep.length !== 8 && !(q.logradouro && q.cidade)) return nao;
+  if (q.cep.length !== 8 && !(q.logradouro && q.cidade) && q.texto.length < 5) return nao;
+  if (q.texto && soDigitos(q.texto).length === 8 && !q.cep) q.cep = soDigitos(q.texto);
   const st = status();
   if (!st.configurado) return nao;
-  const consulta = [q.cep, q.numero, semAcento(q.logradouro), semAcento(q.bairro), semAcento(q.cidade), q.uf.toLowerCase()].join('|');
+  const consulta = [q.cep, q.numero, semAcento(q.logradouro), semAcento(q.bairro), semAcento(q.cidade), q.uf.toLowerCase(), semAcento(q.texto)].join('|');
   const chave = crypto.createHash('sha256').update(`${st.provedor}:${consulta}`).digest('hex');
   try {
     const c = (await db.query(

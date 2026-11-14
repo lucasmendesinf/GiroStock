@@ -12,6 +12,9 @@ const QRCode = require('qrcode');
 const pedidosSite = require('../services/pedidosSite');
 const frete = require('../services/frete');
 const grades = require('../services/grades');
+const raio = require('../services/raio');
+const geocodificacao = require('../services/geocodificacao');
+const { limitar } = require('../utils/limitador');
 
 const router = express.Router();
 router.use('/loja-virtual', requireModulo('loja_virtual'), requireArea('LojaVirtual'));
@@ -517,6 +520,124 @@ router.delete('/loja-virtual/regioes/:id', async (req, res) => {
   if (!isUuid(req.params.id)) throw new HttpError(404, 'bairro não encontrado');
   await pool.query(`DELETE FROM lv_regioes WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.user.tenantId]);
   res.status(204).end();
+});
+
+// ---------- entrega por raio (mapa, faixas de taxa por distancia) ----------
+async function faixasDaEmpresa(dbc, t) {
+  const { rows } = await dbc.query(`SELECT ate_km, taxa, tempo_extra_min FROM lv_raio_faixas WHERE tenant_id = $1 ORDER BY ate_km`, [t]);
+  return rows.map((f) => ({ ate_km: Number(f.ate_km), taxa: n2(f.taxa), tempo_extra_min: f.tempo_extra_min }));
+}
+function raioTela(l, faixas) {
+  return {
+    modo: l.entrega_modo,
+    loja: { lat: l.loja_lat === null ? null : Number(l.loja_lat), lng: l.loja_lng === null ? null : Number(l.loja_lng), endereco: l.endereco || '' },
+    raio_km: l.raio_km === null ? null : Number(l.raio_km),
+    usa_faixas: l.raio_usa_faixas !== false,
+    taxa_unica: n2(l.raio_taxa_unica),
+    margem_pino_m: l.raio_margem_pino_m,
+    faixas,
+    mapa: geocodificacao.configMapa(),
+    geocodificador: geocodificacao.status(),
+  };
+}
+
+router.get('/loja-virtual/raio', async (req, res) => {
+  const l = await lojaDaEmpresa(pool, req.user.tenantId);
+  res.json(raioTela(l, await faixasDaEmpresa(pool, req.user.tenantId)));
+});
+
+// Salva modo, posicao da loja, raio, margem e faixas. Mudar o raio sem mandar faixas reajusta a ultima faixa ao novo raio.
+router.put('/loja-virtual/raio', async (req, res) => {
+  const t = req.user.tenantId;
+  const b = req.body || {};
+  const atual = await lojaDaEmpresa(pool, t);
+  const faixasAntes = await faixasDaEmpresa(pool, t);
+  const modo = b.entrega_modo === undefined ? atual.entrega_modo : b.entrega_modo;
+  if (!['bairro', 'raio'].includes(modo)) throw new HttpError(400, 'modo de entrega inválido (bairro ou raio)');
+  let lat = atual.loja_lat === null ? null : Number(atual.loja_lat);
+  let lng = atual.loja_lng === null ? null : Number(atual.loja_lng);
+  if (b.loja_lat !== undefined || b.loja_lng !== undefined) {
+    if (b.loja_lat === null && b.loja_lng === null) { lat = null; lng = null; } else {
+      const c = raio.validarCoordenadas(b.loja_lat, b.loja_lng);
+      lat = Number(c.lat.toFixed(6)); lng = Number(c.lng.toFixed(6));
+    }
+  }
+  let raioKm = atual.raio_km === null ? null : Number(atual.raio_km);
+  if (b.raio_km !== undefined) {
+    const r = Number(String(b.raio_km).replace(',', '.'));
+    if (!Number.isFinite(r) || r < 0.5 || r > 60) throw new HttpError(400, 'o raio deve ser de 0,5 a 60 km');
+    if (Math.round(r * 10) / 10 !== r) throw new HttpError(400, 'o raio aceita uma casa decimal (ex.: 5,5)');
+    raioKm = r;
+  }
+  const usaFaixas = b.raio_usa_faixas === undefined ? atual.raio_usa_faixas !== false : !!b.raio_usa_faixas;
+  const taxaUnica = b.raio_taxa_unica === undefined ? Number(atual.raio_taxa_unica || 0) : valorOuNulo(b.raio_taxa_unica, 'taxa única') || 0;
+  let margem = atual.raio_margem_pino_m;
+  if (b.raio_margem_pino_m !== undefined) {
+    margem = Number(b.raio_margem_pino_m);
+    if (!Number.isInteger(margem) || margem < 0 || margem > 5000) throw new HttpError(400, 'a margem do pino deve ser de 0 a 5000 metros');
+  }
+  let faixas = faixasAntes;
+  if (b.faixas !== undefined) faixas = raio.validarFaixas(raioKm, b.faixas);
+  else if (raioKm !== null && faixasAntes.length > 0 && faixasAntes[faixasAntes.length - 1].ate_km !== raioKm) faixas = raio.ajustarFaixasAoRaio(raioKm, faixasAntes);
+  if (modo === 'raio') {
+    if (lat === null || lng === null) throw new HttpError(400, 'marque o local da loja no mapa antes de ativar a entrega por raio');
+    if (raioKm === null) throw new HttpError(400, 'informe o raio de entrega');
+    if (usaFaixas) faixas = raio.validarFaixas(raioKm, faixas);
+  } else if (b.faixas !== undefined && raioKm === null) throw new HttpError(400, 'informe o raio antes das faixas');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `UPDATE lv_lojas SET entrega_modo = $2, loja_lat = $3, loja_lng = $4, raio_km = $5, raio_usa_faixas = $6, raio_taxa_unica = $7, raio_margem_pino_m = $8, atualizado_em = now() WHERE id = $1`,
+      [atual.id, modo, lat, lng, raioKm, usaFaixas, taxaUnica, margem]
+    );
+    await client.query(`DELETE FROM lv_raio_faixas WHERE tenant_id = $1`, [t]);
+    for (const [i, f] of faixas.entries()) {
+      await client.query(`INSERT INTO lv_raio_faixas (tenant_id, ate_km, taxa, tempo_extra_min, ordem) VALUES ($1, $2, $3, $4, $5)`, [t, f.ate_km, f.taxa, f.tempo_extra_min, i + 1]);
+    }
+    await logAudit(client, {
+      tenantId: t, usuarioId: req.user.id, acao: 'loja_virtual_raio', recurso: 'lv_lojas', recursoId: atual.id,
+      detalhes: {
+        antes: { modo: atual.entrega_modo, lat: atual.loja_lat, lng: atual.loja_lng, raio_km: atual.raio_km, margem_m: atual.raio_margem_pino_m, usa_faixas: atual.raio_usa_faixas, taxa_unica: atual.raio_taxa_unica, faixas: faixasAntes },
+        depois: { modo, lat, lng, raio_km: raioKm, margem_m: margem, usa_faixas: usaFaixas, taxa_unica: taxaUnica, faixas },
+      },
+    });
+    await client.query('COMMIT');
+  } catch (err) { await client.query('ROLLBACK'); throw err; } finally { client.release(); }
+  const nova = await lojaDaEmpresa(pool, t);
+  res.json(raioTela(nova, await faixasDaEmpresa(pool, t)));
+});
+
+// Busca o endereco da loja (mesma geocodificacao do servidor, com os mesmos limites e cache).
+router.get('/loja-virtual/geocodificar', limitar('lv-geo-adm', 30, 5 * 60 * 1000), async (req, res) => {
+  const q = texto(req.query.q, 200);
+  if (q.length < 5) throw new HttpError(400, 'digite o endereço ou o CEP');
+  const g = await geocodificacao.geocodificar(pool, { texto: q });
+  res.json({ localizado: g.localizado, lat: g.lat, lng: g.lng, origem: g.origem, geocodificador: geocodificacao.status() });
+});
+
+// Simulador do cliente: a MESMA funcao de decisao do pedido. Sem "config" usa o que esta salvo; com "config" simula o que a tela
+// esta editando (raio, faixas, margem, local da loja) antes de salvar.
+router.post('/loja-virtual/raio/simular', async (req, res) => {
+  const t = req.user.tenantId;
+  const b = req.body || {};
+  const l = await lojaDaEmpresa(pool, t);
+  let loja = l;
+  let faixas = await faixasDaEmpresa(pool, t);
+  const c = b.config;
+  if (c && typeof c === 'object') {
+    loja = {
+      ...l,
+      loja_lat: c.loja_lat !== undefined ? c.loja_lat : l.loja_lat, loja_lng: c.loja_lng !== undefined ? c.loja_lng : l.loja_lng,
+      raio_km: c.raio_km !== undefined ? Number(c.raio_km) : l.raio_km, raio_usa_faixas: c.raio_usa_faixas !== undefined ? !!c.raio_usa_faixas : l.raio_usa_faixas,
+      raio_taxa_unica: c.raio_taxa_unica !== undefined ? Number(c.raio_taxa_unica) || 0 : l.raio_taxa_unica,
+      raio_margem_pino_m: c.raio_margem_pino_m !== undefined ? Math.max(0, Math.min(5000, Math.round(Number(c.raio_margem_pino_m) || 0))) : l.raio_margem_pino_m,
+    };
+    if (Array.isArray(c.faixas)) faixas = c.faixas.slice(0, 20).map((f) => ({ ate_km: Number(f.ate_km), taxa: n2(f.taxa), tempo_extra_min: Number(f.tempo_extra_min) || 0 }));
+  }
+  const origem = ['cep', 'endereco', 'pino'].includes(b.origem) ? b.origem : 'pino';
+  const r = raio.avaliarRaio(loja, faixas, b.localizado === false ? { lat: null, lng: null } : { lat: b.lat, lng: b.lng, origem });
+  res.json({ ...r, distancia_km: r.distancia_m === null ? null : Number((r.distancia_m / 1000).toFixed(2)) });
 });
 
 // ---------- cupons ----------

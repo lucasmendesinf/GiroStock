@@ -12,6 +12,7 @@ const { HttpError } = require('../utils/http');
 const precos = require('../services/precos');
 const precosCadastro = require('../services/precosCadastro');
 const conversao = require('../services/conversao');
+const { gerarCodigoBarrasInterno } = require('../services/codigoBarras');
 
 const router = express.Router();
 const UNIDADES = ['UN', 'KG', 'L', 'CX'];
@@ -142,6 +143,8 @@ async function assertBarcodeLivre(db, tenantId, barcode, ignorarId = null) {
     [tenantId, barcode, ignorarId]
   );
   if (rows.length > 0) throw new HttpError(409, 'já existe produto com este código de barras');
+  const pack = await db.query(`SELECT 1 FROM produto_faixas WHERE tenant_id = $1 AND ativo AND ean_pack = $2 LIMIT 1`, [tenantId, barcode]);
+  if (pack.rows.length > 0) throw new HttpError(409, 'este código de barras já é usado como código de pack de outro produto');
 }
 
 // Proximo codigo PRD-XXXX da empresa. O lock de transacao serializa cadastros
@@ -273,6 +276,11 @@ router.delete('/products/:id/imagem', requireArea('Estoque'), requireArea('Edita
     await logAudit(pool, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'produto_imagem_remover', recurso: 'products', recursoId: produto.id, detalhes: { nome: produto.nome } });
   }
   res.status(204).end();
+});
+
+// Sugestao de codigo de barras interno (EAN-13, prefixo 2) para o combo novo. E so uma sugestao: a unicidade e conferida de novo ao salvar.
+router.get('/products/codigo-barras-livre', requireArea('Estoque'), async (req, res) => {
+  res.json({ codigo: await gerarCodigoBarrasInterno(pool, req.user.tenantId) });
 });
 
 // Busca do PDV. Com terminal_id (ou location_id) retorna o saldo daquele local:
@@ -453,7 +461,12 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
     return res.status(400).json({ erro: 'nome deve ter no mínimo 3 caracteres' });
   }
   if (!categoria_id) return res.status(400).json({ erro: 'categoria é obrigatória' });
-  if (!barcode || !isValidBarcode(barcode)) {
+  const fichaItems = Array.isArray(ficha_tecnica) ? ficha_tecnica : [];
+  const comboItems = Array.isArray(body.combo) ? body.combo : [];
+  // So o COMBO recebe codigo de barras automatico (e so na criacao); produto comum continua exigindo o codigo.
+  let codigoBarras = barcode === undefined || barcode === null ? '' : String(barcode).trim();
+  const codigoAutomatico = comboItems.length > 0 && codigoBarras === '';
+  if (!codigoAutomatico && !isValidBarcode(codigoBarras)) {
     return res.status(400).json({ erro: 'código de barras deve ter 8 a 14 dígitos numéricos' });
   }
   if (!UNIDADES.includes(unidade)) {
@@ -461,8 +474,6 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
   }
   const { custo, venda } = validarPrecos(body.preco_custo, body.preco_venda);
 
-  const fichaItems = Array.isArray(ficha_tecnica) ? ficha_tecnica : [];
-  const comboItems = Array.isArray(body.combo) ? body.combo : [];
   if (fichaItems.length > 0 && comboItems.length > 0) return res.status(400).json({ erro: 'o produto é lanche (ficha técnica) ou combo, não os dois' });
   const ifood = await camposIfood(pool, req.user.tenantId, body, {});
   if (fichaItems.length > 0 && !(req.user.modulos && req.user.modulos.lanchonete)) {
@@ -498,8 +509,11 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
     await getOwnedLocation(pool, location_id, req.user.tenantId);
     assertLocationAccess(req.user, location_id, 'lançar estoque neste local');
   }
-  await assertBarcodeLivre(pool, req.user.tenantId, barcode);
+  if (codigoAutomatico) codigoBarras = await gerarCodigoBarrasInterno(pool, req.user.tenantId);
+  else await assertBarcodeLivre(pool, req.user.tenantId, codigoBarras);
 
+  // Codigo automatico (combo) que colide numa corrida: gera outro e tenta de novo (ate 5 vezes). Codigo digitado: 409 como sempre.
+  for (let tentativa = 1; ; tentativa++) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -510,7 +524,7 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
       `INSERT INTO products (tenant_id, codigo_interno, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, vende_ifood, codigo_ifood, descricao)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING id, codigo_interno, nome, categoria_id, supplier_id, barcode, unidade, preco_custo, preco_venda, ativo, vende_ifood, codigo_ifood, descricao`,
-      [req.user.tenantId, codigoInterno, nome.trim(), categoria_id, fornecedores.principal, barcode, unidade, custo, venda, ifood.vende_ifood, ifood.codigo_ifood, descricaoDe(body, null)]
+      [req.user.tenantId, codigoInterno, nome.trim(), categoria_id, fornecedores.principal, codigoBarras, unidade, custo, venda, ifood.vende_ifood, ifood.codigo_ifood, descricaoDe(body, null)]
     );
     const product = rows[0];
     await sincronizarFornecedores(client, req.user.tenantId, product.id, fornecedores.ids);
@@ -573,12 +587,19 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
     });
 
     await client.query('COMMIT');
-    res.status(201).json({ ...product, fornecedores: fornecedores.ids, ficha_tecnica: ficha, avisos_precos: avisosPrecos });
+    res.status(201).json({ ...product, fornecedores: fornecedores.ids, ficha_tecnica: ficha, avisos_precos: avisosPrecos, codigo_barras_automatico: codigoAutomatico });
+    return;
   } catch (err) {
     await client.query('ROLLBACK');
+    if (codigoAutomatico && err.code === '23505' && /barcode/.test(err.constraint || '') && tentativa < 5) {
+      codigoBarras = await gerarCodigoBarrasInterno(pool, req.user.tenantId);
+      continue;
+    }
+    if (err.code === '23505' && /barcode/.test(err.constraint || '')) throw new HttpError(409, 'já existe produto com este código de barras');
     throw err;
   } finally {
     client.release();
+  }
   }
 });
 

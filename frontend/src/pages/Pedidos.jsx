@@ -338,6 +338,33 @@ export default function Pedidos() {
 }
 
 // ---------- gaveta de detalhe ----------
+// Avisos de WhatsApp mandados ao cliente deste pedido (modulo WhatsApp).
+const NOME_AVISO = { recebido: 'Pedido recebido', em_preparo: 'Em preparo', pronto_retirada: 'Pronto para retirar', saiu_entrega: 'Saiu para entrega', entregue: 'Entregue', cancelado: 'Cancelado' };
+const SIT_AVISO = { enviada: ['enviada', ''], entregue: ['entregue', 'ok'], lida: ['lida ✓✓', 'ok'], falhou: ['falhou', 'err'] };
+function AvisosWhatsapp({ pedido }) {
+  const { user } = useAuth();
+  const usa = !!(user && user.modulos && user.modulos.whatsapp);
+  const [lista, setLista] = useState(null);
+  useEffect(() => {
+    if (!usa || !pedido) return undefined;
+    let vivo = true;
+    const ler = () => api.get(`/whatsapp/mensagens?order_id=${pedido.id}`).then((l) => { if (vivo) setLista(l); }).catch(() => {});
+    ler();
+    const t = setInterval(ler, 10000);
+    return () => { vivo = false; clearInterval(t); };
+  }, [usa, pedido]);
+  if (!usa || !lista || lista.length === 0) return null;
+  return (
+    <div className="ped-sec ped-wa">
+      <div className="ped-rotulo">WhatsApp do cliente</div>
+      {lista.slice().reverse().map((m) => {
+        const [st, cor] = SIT_AVISO[m.situacao] || [m.situacao, ''];
+        return <div key={m.id} className="ped-wa-linha"><span>{NOME_AVISO[m.evento] || m.evento} · {dataHora(m.criado_em)}</span><span className={`ped-pill ${cor}`} title={m.motivo || ''}>{st}</span></div>;
+      })}
+    </div>
+  );
+}
+
 function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, onClose, onAvancar, onCancelar, onDestino, onImprimir, onEntregador, onIfood }) {
   const entrega = p.tipo === 'entrega';
   const entregaLoja = entregaDaLoja(p);
@@ -366,6 +393,7 @@ function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, onClose, onAva
         <div className="muted" style={{ marginTop: 4 }}>{entrega ? `🛵 ${p.endereco}` : p.comanda_id ? destinoDoPedido(p) : p.tipo === 'mesa' ? `🍽 ${p.endereco || 'Mesa'}` : '🛍 Retirada no balcão'}</div>
         {p.observacao && <div className="ped-nota"><b>Obs.:</b> {p.observacao}</div>}
         <BlocoIfood p={p} onFeito={onIfood} />
+        <AvisosWhatsapp pedido={p} />
 
         {p.status === 'cancelado' ? (
           <div className="ped-nota" style={{ borderColor: 'var(--err)' }}><b>Pedido cancelado</b>{p.motivo_cancelamento ? ` · ${p.motivo_cancelamento}` : ''}</div>

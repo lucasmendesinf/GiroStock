@@ -120,6 +120,7 @@ Cada cliente usa só os módulos (segmentos) que contratou. O Master define isso
 | iFood e 99Food | pedidos das plataformas na tela de Pedidos | Pedidos |
 | Casa de shows e eventos | eventos, PDVs e estoque do evento, agenda no site | PDV |
 | Nota fiscal (NFC-e) | cupom fiscal direto na SEFAZ (sem custo por nota), modo teste, contingência e cancelamento | PDV |
+| WhatsApp (API oficial) | conecta o WhatsApp Business da empresa (o número continua no celular) e avisa o cliente de cada etapa do pedido | — |
 | Loja virtual | site da loja ligado por API, produtos com fotos, cupons, entrega por bairro, Pix/cartão (Mercado Pago), pedidos com separação, envio e rastreio | — (cardápio digital usa a tela de Pedidos) |
 | Financeiro | contas a pagar/receber, fluxo de caixa, resultado do mês | Financeiro |
 

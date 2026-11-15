@@ -1898,3 +1898,18 @@ table.tabela-cartoes tr.nf-linha-pendente td:first-child { box-shadow: inset 4px
 .pr-aplicado { color: var(--ok); }
 .pr-lista-faixas { display: block; font-size: 11px; font-weight: 500; color: var(--muted); margin-top: 2px; }
 .pr-indica { font-size: 10.5px; font-weight: 700; color: var(--gold-light); text-transform: uppercase; letter-spacing: .4px; }
+
+/* ---------- WhatsApp ---------- */
+.wa-conectar { display: grid; gap: 12px; }
+.wa-conectar h3 { margin: 0; }
+.wa-botao { justify-self: start; background: #25d366 !important; border-color: #25d366 !important; color: #06290f !important; }
+.wa-status { display: grid; gap: 10px; }
+.wa-status h3 { margin: 0; }
+.wa-avisos { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.wa-aviso { display: flex; gap: 10px; align-items: flex-start; padding: 12px; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; }
+.wa-aviso input { margin-top: 3px; }
+.wa-aviso-corpo { display: grid; gap: 6px; font-size: 14px; }
+.wa-balao { display: block; padding: 8px 10px; border-radius: 10px 10px 10px 2px; background: #dcf8c6; color: #1b1b1b; font-size: 13px; line-height: 1.4; }
+.ped-wa { display: grid; gap: 4px; }
+.ped-wa-linha { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.wa-aviso-corpo .ped-pill { justify-self: start; }

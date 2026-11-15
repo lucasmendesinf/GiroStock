@@ -9,6 +9,7 @@ export const TELAS = [
   { path: '/garcom', label: 'Garçom', area: 'Garcom', modulo: 'garcom' },
   { path: '/comissoes', label: 'Comissões', area: 'Comissoes', modulo: 'garcom' },
   { path: '/eventos', label: 'Eventos', area: 'Eventos', modulo: 'eventos' },
+  { path: '/whatsapp', label: 'WhatsApp', area: 'Configuracoes', modulo: 'whatsapp', exigeModulo: true },
   { path: '/nota-fiscal', label: 'Nota fiscal', area: null, algumaArea: ['Configuracoes', 'Estoque', 'CancelarVendas'], modulo: 'nota_fiscal', exigeModulo: true },
   { path: '/clientes', label: 'Clientes', area: 'Clientes' },
   { path: '/produtos', label: 'Produtos & Estoque', area: 'Estoque' },

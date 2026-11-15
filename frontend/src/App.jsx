@@ -24,6 +24,7 @@ import Comandas from './pages/Comandas.jsx';
 import Comissoes from './pages/Comissoes.jsx';
 import Eventos from './pages/Eventos.jsx';
 import NotaFiscal from './pages/NotaFiscal.jsx';
+import WhatsApp from './pages/WhatsApp.jsx';
 import Clientes from './pages/Clientes.jsx';
 import Products from './pages/Products.jsx';
 import Users from './pages/Users.jsx';
@@ -243,6 +244,7 @@ export default function App() {
       <Route path="/garcom/*" element={<Private area="Garcom"><Garcom /></Private>} />
       <Route path="/comissoes" element={<Private area="Comissoes" modulo="garcom"><Comissoes /></Private>} />
       <Route path="/eventos" element={<Private area="Eventos" modulo="eventos"><Eventos /></Private>} />
+      <Route path="/whatsapp" element={<Private area="Configuracoes" modulo="whatsapp"><WhatsApp /></Private>} />
       <Route path="/nota-fiscal" element={<Private algumaArea={['Configuracoes', 'Estoque', 'CancelarVendas']} modulo="nota_fiscal"><NotaFiscal /></Private>} />
       <Route path="/clientes" element={<Private area="Clientes"><Clientes /></Private>} />
       <Route path="/produtos" element={<Private area="Estoque"><Products /></Private>} />

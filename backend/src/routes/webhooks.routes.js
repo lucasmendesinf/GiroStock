@@ -4,6 +4,7 @@ const express = require('express');
 const food99 = require('../integracoes/food99/servico');
 const lojaVirtual = require('../services/lojaVirtual');
 const monitoramento = require('../services/monitoramento');
+const whatsapp = require('../integracoes/whatsapp');
 
 const router = express.Router();
 
@@ -29,6 +30,23 @@ router.post('/mercadopago/:lojaId', express.json({ limit: '200kb' }), async (req
       'x-signature': req.get('x-signature'), 'x-request-id': req.get('x-request-id'),
     });
     res.status(200).json(r);
+  } catch (err) {
+    const status = err.status && err.status < 500 ? err.status : 500;
+    if (status >= 500) { console.error(err); monitoramento.registrarErro(req, status, err); }
+    res.status(status).json({ erro: status >= 500 ? 'erro interno' : err.message });
+  }
+});
+
+// WhatsApp (Meta): verificacao do endereco (GET, hub.challenge) e avisos de entregue/lida/falhou (POST, corpo bruto
+// assinado com o segredo do app em X-Hub-Signature-256). Responder 200 rapido para nao haver reenvio.
+router.get('/whatsapp', (req, res) => {
+  const token = whatsapp.meta().verifyToken;
+  if (req.query['hub.mode'] === 'subscribe' && token && req.query['hub.verify_token'] === token) return res.status(200).send(String(req.query['hub.challenge'] || ''));
+  return res.status(403).send('verificação recusada');
+});
+router.post('/whatsapp', express.raw({ type: () => true, limit: '2mb' }), async (req, res) => {
+  try {
+    res.status(200).json(await whatsapp.receberWebhook(Buffer.isBuffer(req.body) ? req.body : Buffer.from(''), req.get('x-hub-signature-256')));
   } catch (err) {
     const status = err.status && err.status < 500 ? err.status : 500;
     if (status >= 500) { console.error(err); monitoramento.registrarErro(req, status, err); }

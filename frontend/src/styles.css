@@ -2052,3 +2052,19 @@ table.tabela-cartoes tr.nf-linha-pendente td:first-child { box-shadow: inset 4px
 .wa-caixa-lista { display: grid; gap: 10px; max-height: 420px; overflow: auto; padding-right: 4px; }
 .wa-caixa-msg { display: grid; gap: 4px; max-width: 560px; }
 .teste-acoes { border: 1px dashed var(--warn); border-radius: 10px; padding: 8px 10px; }
+
+/* Relatorios: barra dividida em partes (paleta categorica validada para daltonismo; cor segue a forma de pagamento) */
+:root, :root[data-theme="dark"] { --serie-1: #3987e5; --serie-2: #d95926; --serie-3: #199e70; --serie-4: #c98500; --serie-5: #d55181; --serie-6: #0ca30c; --serie-outros: #6b6a66; }
+:root[data-theme="light"] { --serie-1: #2a78d6; --serie-2: #eb6834; --serie-3: #1baf7a; --serie-4: #eda100; --serie-5: #e87ba4; --serie-6: #008300; --serie-outros: #a3a29d; }
+.rel-divisao { margin: 4px 0 14px; display: grid; gap: 8px; }
+.rel-divisao-barra { display: flex; gap: 2px; height: 22px; border-radius: 6px; overflow: hidden; }
+.rel-divisao.fina { margin: 0; }
+.rel-divisao.fina .rel-divisao-barra { height: 8px; border-radius: 4px; min-width: 90px; }
+.rel-divisao-parte { display: block; min-width: 3px; cursor: default; }
+.rel-divisao-parte:hover { filter: brightness(1.12); }
+.rel-divisao-legenda { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+.rel-divisao-legenda b { color: var(--ivory); font-weight: 700; }
+.rel-divisao-item { display: inline-flex; align-items: center; gap: 6px; }
+.rel-divisao-item i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.rel-cruz tfoot td { border-top: 2px solid var(--line); }
+.rel-cruz-barra { min-width: 110px; }

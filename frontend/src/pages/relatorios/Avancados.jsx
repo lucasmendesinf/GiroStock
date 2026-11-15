@@ -10,7 +10,7 @@ import { Barras } from '../financeiro/util.jsx';
 
 const AGRUPAMENTOS = [
   ['loja', 'Por loja'], ['operador', 'Por operador'], ['canal', 'Por canal de venda'], ['categoria', 'Por categoria'],
-  ['produto', 'Por produto'], ['pagamento', 'Por forma de pagamento'], ['dia_semana', 'Por dia da semana'], ['hora', 'Por horário'], ['dia', 'Por dia'],
+  ['produto', 'Por produto'], ['pagamento', 'Por forma de pagamento'], ['categoria_pagamento', 'Categoria × pagamento'], ['dia_semana', 'Por dia da semana'], ['hora', 'Por horário'], ['dia', 'Por dia'],
 ];
 const PAGAMENTO = { pix: 'Pix', cartao_credito: 'Cartão de crédito', cartao_debito: 'Cartão de débito', dinheiro: 'Dinheiro', online: 'Pago online (apps)' };
 const diaBR = (d) => (d ? d.slice(0, 10).split('-').reverse().join('/') : '');
@@ -23,6 +23,43 @@ const variacao = (v, pp = false, ruim = false) => {
 };
 const nomeArq = (base, query) => `${base}_${query.get('data_inicio') || 'inicio'}_a_${query.get('data_fim') || 'hoje'}.csv`;
 
+// Cores das partes (paleta categorica validada para daltonismo nos dois temas: --serie-1..6 em styles.css). A cor segue a
+// forma de pagamento (Pix e sempre a mesma cor); nas categorias, a ordem de tamanho. Mais de 6 partes: o resto vira "Outros".
+const COR_FORMA = { pix: 1, dinheiro: 2, cartao_credito: 3, cartao_debito: 4, online: 5 };
+const MAX_PARTES = 6;
+function partesDe(itens, corDe) {
+  const ord = [...itens].filter((x) => x.valor > 0).sort((a, b) => b.valor - a.valor);
+  const total = ord.reduce((t, x) => t + x.valor, 0);
+  let lista = ord;
+  if (ord.length > MAX_PARTES) {
+    const resto = ord.slice(MAX_PARTES - 1);
+    lista = [...ord.slice(0, MAX_PARTES - 1), { chave: '__outros', nome: `Outros (${resto.length})`, valor: resto.reduce((t, x) => t + x.valor, 0), outros: true }];
+  }
+  return lista.map((x, i) => ({ ...x, cor: x.outros ? 'var(--serie-outros)' : `var(--serie-${corDe ? corDe(x, i) : i + 1})`, pct: total > 0 ? (x.valor / total) * 100 : 0 }));
+}
+const pctBR = (v) => `${v.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
+
+// Barra dividida em partes (como se divide o total) com legenda: nome, valor e % de cada parte. O tooltip mostra o mesmo.
+function BarraDivisao({ partes, titulo, fina = false, legenda = true }) {
+  if (!partes.length) return null;
+  return (
+    <figure className={`rel-divisao ${fina ? 'fina' : ''}`} aria-label={titulo}>
+      <div className="rel-divisao-barra" role="img" aria-label={partes.map((p) => `${p.nome}: ${pctBR(p.pct)}`).join(', ')}>
+        {partes.map((p) => (
+          <span key={p.chave} className="rel-divisao-parte" style={{ flexGrow: Math.max(p.pct, 0.0001), background: p.cor }} title={`${p.nome}: ${brl(p.valor)} (${pctBR(p.pct)})`} />
+        ))}
+      </div>
+      {legenda && (
+        <figcaption className="rel-divisao-legenda">
+          {partes.map((p) => (
+            <span key={p.chave} className="rel-divisao-item"><i style={{ background: p.cor }} aria-hidden="true" /><b>{p.nome}</b> {brl(p.valor)} · {pctBR(p.pct)}</span>
+          ))}
+        </figcaption>
+      )}
+    </figure>
+  );
+}
+
 // Vendas comparadas por loja, operador, canal, categoria, produto, forma, dia da semana, horario ou dia.
 export function AbaComparativos({ query }) {
   const { user } = useAuth();
@@ -32,6 +69,7 @@ export function AbaComparativos({ query }) {
   const [d, setD] = useState(null);
   useEffect(() => {
     setD(null);
+    if (por === 'categoria_pagamento') return;
     const q = new URLSearchParams(query);
     q.set('por', por);
     api.get(`/reports/comparativo?${q}`).then(setD).catch((err) => toast.erro(err));
@@ -44,11 +82,18 @@ export function AbaComparativos({ query }) {
       ['Grupo', 'Vendas', porItem ? 'Quantidade' : 'Itens', 'Total', 'Participação %', 'Custo', 'Lucro bruto', 'Margem %', ...(porItem ? [] : ['Ticket médio', 'Descontos', 'Canceladas'])],
       d.linhas.map((l) => [nome(l), l.vendas, numeroCsv(l.itens), numeroCsv(l.total), numeroCsv(l.participacao), numeroCsv(l.custo), numeroCsv(l.lucro), numeroCsv(l.margem), ...(porItem ? [] : [numeroCsv(l.ticket), numeroCsv(l.descontos), l.canceladas])]));
   }
+  const chips = (
+    <div className="es-chips" role="group" aria-label="Agrupar por">
+      {grupos.map(([id, n]) => <button key={id} type="button" className={`es-chip ${por === id ? 'on' : ''}`} aria-pressed={por === id} onClick={() => setPor(id)}>{n}</button>)}
+    </div>
+  );
+  if (por === 'categoria_pagamento') return <div className="form-stack">{chips}<CategoriaPagamento query={query} /></div>;
+  const divisao = d && (por === 'categoria' || por === 'pagamento') && d.linhas.length > 1
+    ? partesDe(d.linhas.map((l) => ({ chave: l.chave, nome: nome(l), valor: l.total })), por === 'pagamento' ? (x) => COR_FORMA[x.chave] || 6 : null)
+    : null;
   return (
     <div className="form-stack">
-      <div className="es-chips" role="group" aria-label="Agrupar por">
-        {grupos.map(([id, n]) => <button key={id} type="button" className={`es-chip ${por === id ? 'on' : ''}`} aria-pressed={por === id} onClick={() => setPor(id)}>{n}</button>)}
-      </div>
+      {chips}
       <div className="card">
         {!d ? <p className="muted">Calculando…</p> : d.linhas.length === 0 ? <Vazio>Sem vendas no período.</Vazio> : (
           <>
@@ -57,6 +102,7 @@ export function AbaComparativos({ query }) {
               <button type="button" className="btn-link" onClick={exportar}>Exportar CSV</button>
             </div>
             {porItem && <p className="form-hint" style={{ marginTop: 0 }}>Valor dos itens, antes do desconto dado na venda inteira.</p>}
+            {divisao && <BarraDivisao partes={divisao} titulo={`Como o total se divide ${por === 'pagamento' ? 'entre as formas de pagamento' : 'entre as categorias'}`} />}
             {serie && d.linhas.length > 1 && (
               <Barras titulo="Total vendido" altura={120} dados={d.linhas.map((l) => ({ chave: l.chave, valor: l.total, nome: nome(l) }))} rotulo={(x) => x.nome} />
             )}
@@ -89,6 +135,64 @@ export function AbaComparativos({ query }) {
             </div>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Categoria x forma de pagamento: uma linha por categoria, uma coluna por forma; cada linha com a sua divisao (barra fina).
+function CategoriaPagamento({ query }) {
+  const toast = useToast();
+  const [d, setD] = useState(null);
+  useEffect(() => { setD(null); api.get(`/reports/categoria-pagamento?${query}`).then(setD).catch((err) => toast.erro(err)); }, [query, toast]);
+  if (!d) return <div className="card"><p className="muted">Calculando…</p></div>;
+  if (!d.linhas.length) return <div className="card"><Vazio>Sem vendas no período.</Vazio></div>;
+  const nomeForma = (f) => PAGAMENTO[f] || f;
+  const corForma = (f) => `var(--serie-${COR_FORMA[f] || 6})`;
+  const partesLinha = (l) => d.formas.map((f) => ({ chave: f, nome: nomeForma(f), valor: l.por_forma[f] || 0, cor: corForma(f) }))
+    .filter((x) => x.valor > 0).map((x) => ({ ...x, pct: l.total > 0 ? (x.valor / l.total) * 100 : 0 }));
+  function exportar() {
+    baixarCsv(nomeArq('vendas_categoria_pagamento', query), ['Categoria', ...d.formas.map(nomeForma), 'Total'],
+      [...d.linhas.map((l) => [l.nome, ...d.formas.map((f) => numeroCsv(l.por_forma[f] || 0)), numeroCsv(l.total)]),
+        ['Total', ...d.formas.map((f) => numeroCsv(d.totais_forma[f] || 0)), numeroCsv(d.total)]]);
+  }
+  return (
+    <div className="card">
+      <div className="ped-head" style={{ marginBottom: 6 }}>
+        <h3 style={{ margin: 0 }}>Categoria × forma de pagamento · {brl(d.total)}</h3>
+        <button type="button" className="btn-link" onClick={exportar}>Exportar CSV</button>
+      </div>
+      <p className="form-hint" style={{ marginTop: 0 }}>Quanto de cada categoria foi pago em cada forma. Venda paga em mais de uma forma: o valor dos itens é dividido na proporção do que foi pago em cada forma. Valor dos itens, antes do desconto da venda inteira.</p>
+      <div className="rel-divisao-legenda" aria-label="Formas de pagamento">
+        {d.formas.map((f) => <span key={f} className="rel-divisao-item"><i style={{ background: corForma(f) }} aria-hidden="true" /><b>{nomeForma(f)}</b></span>)}
+      </div>
+      <div className="tabela-wrap">
+        <table className="tabela-cartoes rel-comp rel-cruz">
+          <thead>
+            <tr><th>Categoria</th>{d.formas.map((f) => <th key={f} className="num">{nomeForma(f)}</th>)}<th className="num">Total</th><th>Divisão</th></tr>
+          </thead>
+          <tbody>
+            {d.linhas.map((l) => (
+              <tr key={l.chave}>
+                <td><b>{l.nome}</b></td>
+                {d.formas.map((f) => {
+                  const v = l.por_forma[f] || 0;
+                  return <td key={f} className="num">{v > 0 ? <>{brl(v)}<div className="celula-sub">{pctBR(l.total > 0 ? (v / l.total) * 100 : 0)}</div></> : <span className="muted">—</span>}</td>;
+                })}
+                <td className="num"><b>{brl(l.total)}</b></td>
+                <td className="rel-cruz-barra"><BarraDivisao partes={partesLinha(l)} titulo={`Divisão de ${l.nome} por forma de pagamento`} fina legenda={false} /></td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td><b>Total</b></td>
+              {d.formas.map((f) => <td key={f} className="num"><b>{brl(d.totais_forma[f] || 0)}</b><div className="celula-sub">{pctBR(d.total > 0 ? ((d.totais_forma[f] || 0) / d.total) * 100 : 0)}</div></td>)}
+              <td className="num"><b>{brl(d.total)}</b></td>
+              <td className="rel-cruz-barra"><BarraDivisao partes={partesLinha({ total: d.total, por_forma: d.totais_forma })} titulo="Divisão do total por forma de pagamento" fina legenda={false} /></td>
+            </tr>
+          </tfoot>
+        </table>
       </div>
     </div>
   );

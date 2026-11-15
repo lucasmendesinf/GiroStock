@@ -296,6 +296,33 @@ router.get('/reports/comparativo', requireArea('Relatorios'), async (req, res) =
   });
 });
 
+// Categoria x forma de pagamento: quanto de cada categoria foi pago em cada forma. Venda paga em mais de uma forma: o valor
+// de cada item e dividido na proporcao do que foi pago em cada forma (a soma da linha bate com o "Por categoria").
+router.get('/reports/categoria-pagamento', requireArea('Relatorios'), async (req, res) => {
+  const { params, where } = filtros(req, { incluirStatus: false });
+  const rows = (await pool.query(
+    `SELECT COALESCE(c.id::text, 'sem') AS chave,
+            COALESCE(CASE WHEN pc.nome IS NOT NULL THEN pc.nome || ' › ' || c.nome ELSE c.nome END, 'Sem categoria') AS nome,
+            vp.forma::text AS forma, SUM(si.subtotal * (vp.valor / NULLIF(s.total, 0))) AS total
+     FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN v_sale_pagamentos vp ON vp.sale_id = s.id JOIN products p ON p.id = si.product_id
+     LEFT JOIN categories c ON c.id = p.categoria_id LEFT JOIN categories pc ON pc.id = c.parent_id
+     WHERE ${where} GROUP BY 1, 2, 3`, params
+  )).rows;
+  const linhas = new Map();
+  const totaisForma = {};
+  for (const r of rows) {
+    const v = n2(r.total);
+    if (!linhas.has(r.chave)) linhas.set(r.chave, { chave: r.chave, nome: r.nome, total: 0, por_forma: {} });
+    const l = linhas.get(r.chave);
+    l.por_forma[r.forma] = n2((l.por_forma[r.forma] || 0) + v);
+    l.total = n2(l.total + v);
+    totaisForma[r.forma] = n2((totaisForma[r.forma] || 0) + v);
+  }
+  const formas = Object.keys(totaisForma).sort((x, y) => totaisForma[y] - totaisForma[x]);
+  const lista = [...linhas.values()].sort((x, y) => y.total - x.total);
+  res.json({ formas, totais_forma: totaisForma, total: n2(lista.reduce((t, l) => t + l.total, 0)), linhas: lista });
+});
+
 // Casa de shows: os eventos do periodo (pelo dia de inicio) lado a lado: vendas, custo e margem, estoque enviado ao setor e
 // quebra/perdas (perdas lancadas + diferenca na contagem - sobras, a preco de custo), com a variacao para o evento anterior.
 router.get('/reports/eventos', requireArea('Relatorios'), requireModulo('eventos'), async (req, res) => {

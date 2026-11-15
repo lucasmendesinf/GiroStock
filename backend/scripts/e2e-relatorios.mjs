@@ -70,6 +70,11 @@ check('por canal: PDV e pedido por telefone separados', porCanal.j.linhas.some((
 const porCat = await api('GET', `/reports/comparativo?por=categoria&${P}`, null, A);
 const subtot = Number((await db.query(`SELECT SUM(si.subtotal) AS t FROM sale_items si JOIN sales s ON s.id = si.sale_id WHERE s.tenant_id = $1 AND s.status = 'concluida'`, [tenant])).rows[0].t);
 check('por categoria: Bebidas e Lanches, soma = subtotal dos itens', porCat.j.linhas.some((l) => /Bebidas/.test(l.nome)) && porCat.j.linhas.some((l) => /Lanches/.test(l.nome)) && igual(porCat.j.total, subtot), { linhas: porCat.j.linhas, subtot });
+const cruz = await api('GET', `/reports/categoria-pagamento?${P}`, null, A);
+check('categoria × pagamento: total igual ao "por categoria" e cada linha soma as formas', cruz.s === 200 && Math.abs(cruz.j.total - porCat.j.total) < 0.05
+  && cruz.j.linhas.every((l) => Math.abs(Object.values(l.por_forma).reduce((t, v) => t + v, 0) - l.total) < 0.05) && cruz.j.formas.length >= 1, cruz.j);
+check('categoria × pagamento: cada categoria bate com o "por categoria"', cruz.j.linhas.every((l) => { const c = porCat.j.linhas.find((x) => x.chave === l.chave); return c && Math.abs(c.total - l.total) < 0.05; }), [cruz.j.linhas, porCat.j.linhas]);
+check('categoria × pagamento: filtro por forma de pagamento', (await api('GET', `/reports/categoria-pagamento?forma_pagamento=pix&${P}`, null, A)).j.formas.every((f) => f === 'pix'));
 const porProd = await api('GET', `/reports/comparativo?por=produto&${P}`, null, A);
 const refriQtd = Number((await db.query(`SELECT SUM(si.quantidade) AS q FROM sale_items si JOIN sales s ON s.id = si.sale_id WHERE si.product_id = $1 AND s.status = 'concluida'`, [REFRI.id])).rows[0].q);
 check('por produto: quantidade do refrigerante confere', porProd.j.linhas.some((l) => l.chave === REFRI.id && igual(l.itens, refriQtd)), porProd.j.linhas);

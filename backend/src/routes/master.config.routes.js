@@ -14,6 +14,7 @@ const { verificarMigracoes } = require('../services/saude');
 const { modulosDoPlano } = require('../utils/limites');
 const { CHAVES, conflitoDeDependencia } = require('../config/modulos');
 const ifoodApi = require('../integracoes/ifood/api');
+const whatsapp = require('../integracoes/whatsapp');
 const codigoLogin = require('../services/codigoLogin');
 const geocodificacao = require('../services/geocodificacao');
 const food99Api = require('../integracoes/food99/api');
@@ -128,10 +129,9 @@ async function statusIntegracoes() {
     { id: 'codigo_login', nome: 'Código de login da loja (WhatsApp/SMS)', status: codigoStatus.configurado ? 'ok' : 'nao_configurado', detalhe: `${codigoStatus.provedor}: ${codigoStatus.detalhe}`, testavel: false },
     { id: 'geocodificacao', nome: 'Geocodificação de endereços (entrega por raio)', status: geo.configurado ? 'ok' : 'nao_configurado', detalhe: `${geo.provedor}: ${geo.motivo}`, testavel: false },
     { id: 'mapa_tiles', nome: 'Mapa de fundo (tiles)', status: mapa.padrao ? 'indisponivel' : 'ok', detalhe: mapa.padrao ? 'usando o mapa padrão do OpenStreetMap: a política dele não permite uso pesado; em produção com tráfego real configure MAPA_TILES_URL e MAPA_ATRIBUICAO (MapTiler, Mapbox, Stadia…)' : 'provedor de mapas configurado (MAPA_TILES_URL)', testavel: false },
-    { id: 'whatsapp', nome: 'WhatsApp (API)', status: 'nao_contratado', detalhe: 'não contratado: as mensagens usam o link wa.me', testavel: false },
+    { id: 'whatsapp', nome: 'WhatsApp (API oficial da Meta)', status: whatsapp.disponivel() ? 'ok' : 'nao_configurado', detalhe: whatsapp.disponivel() ? `app da Meta configurado${process.env.WHATSAPP_VERIFY_TOKEN ? '' : ' (falta WHATSAPP_VERIFY_TOKEN: o webhook não confirma entregue/lida nem o SAIR)'}: cada empresa conecta o número no menu WhatsApp` : 'WHATSAPP_APP_ID/WHATSAPP_APP_SECRET/WHATSAPP_CONFIG_ID ausentes: crie o app na Meta (docs/whatsapp.md); sem eles, as mensagens usam o link wa.me', testavel: false },
     { id: 'ifood', nome: 'iFood', status: ifoodApi.configurado() ? 'ok' : 'nao_configurado', detalhe: ifoodApi.configurado() ? `app configurado${process.env.IFOOD_API_URL ? ` (endereço: ${process.env.IFOOD_API_URL})` : ''}: cada loja conecta a sua conta em Lojas & PDVs` : 'IFOOD_CLIENT_ID/IFOOD_CLIENT_SECRET ausentes: cadastre o app no Portal do Desenvolvedor iFood', testavel: false },
     { id: '99food', nome: '99Food', status: food99Api.configurado() ? 'ok' : 'nao_configurado', detalhe: food99Api.configurado() ? `app configurado${process.env.FOOD99_API_URL ? ` (endereço: ${process.env.FOOD99_API_URL})` : ''}: webhook em /api/webhooks/99food; cada loja conecta em Lojas & PDVs` : 'FOOD99_APP_ID/FOOD99_APP_SECRET ausentes: cadastre o app no portal de desenvolvedores da 99Food', testavel: false },
-    { id: '99food', nome: '99Food', status: 'futuro', detalhe: 'etapa futura', testavel: false },
   ];
 }
 router.get('/master/config/integracoes', async (req, res) => {

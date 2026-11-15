@@ -106,9 +106,11 @@ try {
   const cab = await new Promise((ok) => { const rl = require('readline').createInterface({ input: fs.createReadStream(path.join(dirB, bjs.arquivo)).pipe(zlib.createGunzip()) }); rl.once('line', (l) => { rl.close(); ok(JSON.parse(l)); }); });
   check('cabeçalho do JS: formato, versão do schema e contagens', cab.formato === 'girostock-js-v1' && cab.versao_schema && cab.contagens.tenants > 0 && !cab.tabelas.includes('backups') && !cab.tabelas.includes('schema_migrations'), { f: cab.formato, v: cab.versao_schema });
   // falha simulada: sem arquivo parcial
-  const antesArqs = fs.readdirSync(dirB).length;
+  const antesArqs = new Set(fs.readdirSync(dirB));
   const bfalha = await backup.gerarBackup({ tipo: 'manual', usuarioId: masterId, usarPgDump: false, falharEm: 'locations' });
-  check('falha simulada -> registro "falhou", sem arquivo e sem parcial', bfalha.status === 'falhou' && !bfalha.arquivo && fs.readdirSync(dirB).length === antesArqs && !fs.readdirSync(dirB).some((f) => f.endsWith('.parcial')), { status: bfalha.status, erro: bfalha.erro });
+  // arquivos novos so podem ser do backup automatico do servidor (que pode rodar ao mesmo tempo), nunca o manual que falhou
+  const novosArqs = fs.readdirSync(dirB).filter((f) => !antesArqs.has(f));
+  check('falha simulada -> registro "falhou", sem arquivo e sem parcial', bfalha.status === 'falhou' && !bfalha.arquivo && novosArqs.every((f) => /-automatico\./.test(f)) && !fs.readdirSync(dirB).some((f) => f.endsWith('.parcial')), { status: bfalha.status, erro: bfalha.erro, novosArqs });
   // uma geracao por vez
   const par = await Promise.allSettled([backup.gerarBackup({ tipo: 'manual', usuarioId: masterId, usarPgDump: false }), backup.gerarBackup({ tipo: 'manual', usuarioId: masterId, usarPgDump: false })]);
   const ok409 = par.filter((p) => p.status === 'rejected' && p.reason.status === 409).length;
@@ -152,7 +154,19 @@ try {
   const antesFalha = { tenants: await contar(teste, 'tenants'), users: await contar(teste, 'users'), prods: await contar(teste, 'products') };
   const modoTeste = require('../src/services/modoTeste');
   let errRest = null;
-  try { await backup.restaurarNoTeste(regB1.id, { usuarioId: masterId, tenantId: plataformaId, falharNaTabela: 'locations' }); } catch (e) { errRest = e; }
+  // backup interrompido (servidor reiniciado no meio): ao ligar, vira "falhou" e o .parcial antigo e apagado
+  const presoId = (await prod.query(`INSERT INTO backups (arquivo, tipo, status, formato, criado_em) VALUES ('preso-e2e.gbk.gz', 'automatico', 'gerando', 'js', now() - interval '10 minutes') RETURNING id`)).rows[0].id;
+  const parcialVelho = path.join(dirB, 'girostock-preso-e2e.gbk.gz.parcial');
+  fs.writeFileSync(parcialVelho, 'x');
+  fs.utimesSync(parcialVelho, new Date(Date.now() - 10 * 60e3), new Date(Date.now() - 10 * 60e3));
+  const parcialNovo = path.join(dirB, 'girostock-agora-e2e.gbk.gz.parcial');
+  fs.writeFileSync(parcialNovo, 'x');
+  const rec = await backup.recuperarInterrompidos();
+  const preso = (await prod.query(`SELECT status, erro FROM backups WHERE id = $1`, [presoId])).rows[0];
+  check('backup interrompido: registro vira "falhou" e o .parcial antigo é apagado (o recente fica)', preso.status === 'falhou' && /reiniciou/.test(preso.erro) && !fs.existsSync(parcialVelho) && fs.existsSync(parcialNovo) && rec.marcados >= 1, { preso, rec });
+  fs.rmSync(parcialNovo, { force: true });
+  // a falha simulada so existe na restauracao do formato JS (o pg_restore e externo): usa o backup JS gerado acima
+  try { await backup.restaurarNoTeste(bjs.id, { usuarioId: masterId, tenantId: plataformaId, falharNaTabela: 'locations' }); } catch (e) { errRest = e; }
   const depoisFalha = { tenants: await contar(teste, 'tenants'), users: await contar(teste, 'users'), prods: await contar(teste, 'products') };
   check('falha no meio da restauração -> ROLLBACK, teste anterior preservado', !!errRest && JSON.stringify(antesFalha) === JSON.stringify(depoisFalha) && !modoTeste.estaCopiando(), { antesFalha, depoisFalha, err: errRest && errRest.message });
   // teste igual a producao: recusado

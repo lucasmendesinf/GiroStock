@@ -240,9 +240,42 @@ async function executarAutomaticoSeDevido(agora = new Date(), opcoes = {}) {
   return r;
 }
 
+// Backup interrompido (servidor reiniciado no meio, ex.: atualizacao do sistema): o registro ficava "gerando" para sempre e o
+// arquivo .parcial ficava na pasta. Ao ligar, se nenhum backup estiver rodando (trava livre), marca como "falhou" e apaga
+// os .parcial com mais de 2 minutos.
+async function recuperarInterrompidos() {
+  const c = await pool.producao.connect();
+  try {
+    const livre = (await c.query('SELECT pg_try_advisory_lock($1) AS ok', [LOCK_BACKUP])).rows[0].ok;
+    if (!livre) return { pulou: true };
+    try {
+      const r = await c.query(
+        `UPDATE backups SET status = 'falhou', erro = 'interrompido: o servidor reiniciou durante o backup', arquivo = NULL, concluido_em = now()
+         WHERE status = 'gerando' AND criado_em < now() - interval '2 minutes' RETURNING id`
+      );
+      let apagados = 0;
+      const pronto = diretorioPronto();
+      if (pronto.ok) {
+        for (const f of fs.readdirSync(pronto.dir)) {
+          if (!f.endsWith('.parcial')) continue;
+          const caminho = path.join(pronto.dir, f);
+          try { if (Date.now() - fs.statSync(caminho).mtimeMs > 2 * 60 * 1000) { fs.rmSync(caminho, { force: true }); apagados += 1; } } catch { /* segue */ }
+        }
+      }
+      if (r.rowCount || apagados) console.log(`backup: ${r.rowCount} backup(s) interrompido(s) marcado(s) como falhou, ${apagados} arquivo(s) parcial(is) apagado(s)`);
+      return { marcados: r.rowCount, apagados };
+    } finally {
+      await c.query('SELECT pg_advisory_unlock($1)', [LOCK_BACKUP]).catch(() => {});
+    }
+  } finally {
+    c.release();
+  }
+}
+
 let timer = null;
 function iniciarAgendador() {
   if (timer) return;
+  recuperarInterrompidos().catch((err) => console.error('backup: limpeza de interrompidos', curto(err)));
   const tick = () => executarAutomaticoSeDevido().catch((err) => console.error('backup automático:', curto(err)));
   timer = setInterval(tick, 60 * 1000);
   timer.unref();
@@ -336,6 +369,7 @@ async function restaurarNoTeste(id, { usuarioId, tenantId, anonimizar = true, fa
 }
 
 module.exports = {
+  recuperarInterrompidos,
   dirBackups, diretorioPronto, temPgDump, temPgRestore, gerarBackup, listar, arquivoVerificado, remover, aplicarRetencao,
   executarAutomaticoSeDevido, iniciarAgendador, restaurarJsEm, restaurarNoTeste, pgRestore, sha256DoArquivo, curto, FORMATO_JS,
 };

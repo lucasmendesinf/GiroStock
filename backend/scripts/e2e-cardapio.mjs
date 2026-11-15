@@ -28,7 +28,14 @@ let pulados = 0;
 const check = (nome, cond, info) => {
   if (cond) { pass++; console.log(`  ok   ${nome}`); } else { fail++; console.log(`  FALHA ${nome} -> ${String(JSON.stringify(info)).slice(0, 600)}`); }
 };
+// Leitura (GET) com uma nova tentativa se a conexao reaproveitada ja estava fechada pelo servidor (acontece depois dos
+// spawnSync, que travam o teste por alguns segundos enquanto o servidor encerra as conexoes ociosas).
 async function req(method, url, body, headers = {}) {
+  const r = await req1(method, url, body, headers);
+  if (r.s === 'CAIU' && method === 'GET' && /fetch failed/.test(r.j)) return req1(method, url, body, headers);
+  return r;
+}
+async function req1(method, url, body, headers = {}) {
   try {
     const bruto = Buffer.isBuffer(body);
     const res = await fetch(url, {
@@ -240,7 +247,7 @@ const semProv = spawnSync('node', ['-e', 'console.log(JSON.stringify(require("./
 check('producao sem provedor: login por codigo indisponivel (status no Master)', /"provedor":"nenhum"/.test(semProv.stdout), semProv.stdout);
 const integ = await api('GET', '/master/config/integracoes', null, MAS);
 const iLogin = integ.j.integracoes && integ.j.integracoes.find((i) => i.id === 'codigo_login');
-check('painel Master mostra o provedor do codigo (so status, sem segredos)', iLogin && /simulado/.test(iLogin.detalhe) && !JSON.stringify(iLogin).match(/TOKEN|SECRET/), iLogin);
+check('painel Master mostra o provedor do codigo (so status, sem segredos)', iLogin && /simulado/.test(iLogin.detalhe) && !JSON.stringify(iLogin).match(/TOKEN|SECRET/), iLogin || integ);
 
 console.log('\n# 5. Bairros, entrega x retirada, pedido minimo, loja pausada, estoque');
 await api('POST', '/loja-virtual/regioes', { nome: `Centro E2E ${sufixo}`, taxa: 6 }, A);

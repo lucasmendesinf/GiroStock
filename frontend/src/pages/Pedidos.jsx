@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useToast } from '../context/UiContext.jsx';
@@ -8,7 +8,8 @@ import PedidoForm, { NOME_ORIGEM, vendaDoPedido } from '../components/PedidoForm
 import Cupom, { imprimirCupom, configDaVenda } from '../components/Cupom.jsx';
 import { brl, dataHora, parseNumero, qtd } from '../utils/format';
 import { temModulo } from '../utils/permissions.js';
-import { BlocoIfood, CancelarIfoodModal, EtiquetasIfood, PendenciasIfood, bipe, classePlataforma, nomePlataforma } from '../components/IfoodPedidos.jsx';
+import { BlocoIfood, CancelarIfoodModal, EtiquetasIfood, PendenciasIfood, classePlataforma, nomePlataforma } from '../components/IfoodPedidos.jsx';
+import SomPedidosControle from '../components/SomPedidosControle.jsx';
 import { textoComplementos } from '../components/EscolherComplementos.jsx';
 
 const COLUNAS = [
@@ -22,7 +23,7 @@ const NOME_STATUS = { novo: 'Novo', em_preparo: 'Em preparo', pronto: 'Pronto', 
 const ORIGENS_FILTRO = [['todas', 'Todas as origens'], ['balcao', 'Balcão'], ['telefone', 'Telefone'], ['whatsapp', 'WhatsApp']];
 const ORIGENS_IFOOD = [['ifood', 'iFood'], ['99food', '99Food']]; // com o modulo "iFood e 99Food"
 const ATRASO_PADRAO_MIN = 25; // padrao; o Master pode mudar em Configuracoes globais (user.parametros)
-const INTERVALO_MS = 15000;
+const INTERVALO_MS = 10000;
 
 // Entrega feita pela plataforma (iFood/99Food): a loja nao despacha; de pronto vai direto a finalizado (o entregador dela retira).
 const entregaDaLoja = (p) => p.tipo === 'entrega' && !(p.externo && p.externo.entrega_pela_plataforma);
@@ -62,7 +63,6 @@ export default function Pedidos() {
   const usaIfood = temModulo(user, 'delivery_apps');
   const usaLoja = temModulo(user, 'loja_virtual');
   const [pendencias, setPendencias] = useState([]);
-  const vistos = useRef(null); // pedidos do iFood ja vistos (para o aviso sonoro dos novos)
 
   // Lojas que usam pedidos e que o usuario pode ver.
   useEffect(() => {
@@ -77,17 +77,8 @@ export default function Pedidos() {
   const carregar = useCallback(async () => {
     if (!lojaId) return;
     try {
+      // O aviso de pedido novo (cartao + som) fica no AvisoPedidos, em qualquer tela.
       const lista = await api.get(`/orders?location_id=${lojaId}`);
-      // Aviso sonoro quando chega pedido novo do iFood/99Food ou da loja virtual (ja pago, se for pago no site);
-      // nao toca na primeira carga da tela.
-      const chegou = (p) => p.status === 'novo' && (p.origem === 'ifood' || p.origem === '99food' || (p.origem === 'loja_virtual' && !aguardandoPagamento(p)));
-      const doIfood = lista.filter(chegou).map((p) => p.id);
-      if (vistos.current && doIfood.some((id) => !vistos.current.has(id))) {
-        bipe();
-        const novo = lista.find((p) => chegou(p) && !vistos.current.has(p.id));
-        toast.sucesso(novo.origem === 'loja_virtual' ? `Novo pedido da loja virtual #${novo.numero}` : `Novo pedido ${novo.origem === '99food' ? 'da' : 'do'} ${nomePlataforma(novo.origem)} #${novo.codigo_externo || novo.numero}`);
-      }
-      vistos.current = new Set([...(vistos.current || []), ...doIfood]);
       setPedidos(lista);
       if (usaIfood) api.get('/integracoes/pendencias').then((l) => setPendencias(l.filter((x) => x.location_id === lojaId))).catch(() => setPendencias([]));
       setBuscadoEm(Date.now());
@@ -95,11 +86,15 @@ export default function Pedidos() {
     } catch (err) { toast.erro(err); }
   }, [lojaId, toast, usaIfood]);
 
-  // Atualizacao automatica (ponto de extensao: trocar por WebSocket/SSE quando houver iFood/99Food).
+  // Atualizacao automatica: a cada 10 s, na hora em que o aviso detecta pedido novo e ao voltar para a aba.
   useEffect(() => {
     carregar();
     const t = setInterval(carregar, INTERVALO_MS);
-    return () => clearInterval(t);
+    const aoChegar = () => carregar();
+    const aoVoltar = () => { if (!document.hidden) carregar(); };
+    window.addEventListener('girostock:pedido-novo', aoChegar);
+    document.addEventListener('visibilitychange', aoVoltar);
+    return () => { clearInterval(t); window.removeEventListener('girostock:pedido-novo', aoChegar); document.removeEventListener('visibilitychange', aoVoltar); };
   }, [carregar]);
   useEffect(() => {
     const t = setInterval(() => setAgora(Date.now()), 30000);
@@ -140,6 +135,7 @@ export default function Pedidos() {
       const atualizado = await promessa;
       if (mensagem) toast.sucesso(mensagem(atualizado));
       await carregar();
+      window.dispatchEvent(new Event('girostock:pedidos-mudaram')); // o cartao do aviso some na hora
       if (aberta) setDetalhe(await api.get(`/orders/${aberta}`));
       return atualizado;
     } catch (err) {
@@ -222,6 +218,7 @@ export default function Pedidos() {
             {lojas.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
           </select>
         )}
+        <SomPedidosControle />
         <button type="button" className="btn-link" onClick={() => setEntregadoresAberto(true)}>Entregadores</button>
         <button type="button" className="btn-primario" onClick={() => setNovoAberto(true)}>+ Novo pedido</button>
       </div>
@@ -302,7 +299,7 @@ export default function Pedidos() {
           onAvancar={() => avancar(detalhe)} onCancelar={() => setCancelar(detalhe)} onDestino={() => setDestino(detalhe)} onImprimir={() => imprimir(detalhe.id)}
           onEntregador={(id) => executar(api.put(`/orders/${detalhe.id}/entregador`, { entregador_id: id || null }))}
           pedidoLista={pedidos.find((p) => p.id === aberta)}
-          onIfood={async () => { await carregar(); if (aberta) setDetalhe(await api.get(`/orders/${aberta}`)); }} />
+          onIfood={async () => { await carregar(); window.dispatchEvent(new Event('girostock:pedidos-mudaram')); if (aberta) setDetalhe(await api.get(`/orders/${aberta}`)); }} />
       )}
 
       {novoAberto && (

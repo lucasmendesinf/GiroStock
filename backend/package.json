@@ -46,7 +46,8 @@
     "test:e2e:precos": "node scripts/e2e-precos.mjs",
     "test:e2e:combo-codigo": "node scripts/e2e-combo-codigo-preco.mjs",
     "test:e2e:raio": "node scripts/e2e-raio-entrega.mjs",
-    "test:e2e:fiscal": "node scripts/e2e-fiscal.mjs"
+    "test:e2e:fiscal": "node scripts/e2e-fiscal.mjs",
+    "test:e2e:avisos": "node scripts/e2e-avisos-pedidos.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

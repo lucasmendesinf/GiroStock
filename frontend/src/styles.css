@@ -1966,3 +1966,43 @@ table.tabela-cartoes tr.nf-linha-pendente td:first-child { box-shadow: inset 4px
   .rz-layout { grid-template-columns: 1fr; }
   .rz-mapa-wrap { position: relative; top: 0; height: 440px; }
 }
+/* ---------- Aviso de pedido novo (cartao lateral, em qualquer tela) ---------- */
+.aviso-pedidos { position: fixed; top: 84px; right: 16px; z-index: 110; display: flex; flex-direction: column; gap: 10px; width: min(360px, calc(100vw - 32px)); }
+.aviso-pedido { --cor: var(--gold-light); position: relative; display: flex; align-items: stretch; gap: 10px; padding: 12px 34px 12px 12px; border-radius: 16px;
+  background: var(--panel); border: 1px solid var(--line); border-left: 5px solid var(--cor); box-shadow: 0 12px 32px rgba(0, 0, 0, .28);
+  animation: aviso-pedido-entra .35s cubic-bezier(.2, .9, .3, 1.2); }
+.aviso-pedido.origem-ifood { --cor: #ea1d2c; }
+.aviso-pedido.origem-99food { --cor: #ffb400; }
+.aviso-pedido.origem-loja_virtual { --cor: #25d366; }
+.aviso-pedido-icone { flex: 0 0 42px; width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; background: var(--cor); color: #fff;
+  font-weight: 900; font-size: 15px; letter-spacing: -.5px; align-self: flex-start; animation: aviso-pedido-pulso 1.6s ease-in-out 3; }
+.aviso-pedido.origem-99food .aviso-pedido-icone { color: #1a1100; }
+.aviso-pedido-corpo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 0; border: none; background: none; color: var(--ivory);
+  text-align: left; cursor: pointer; font: inherit; }
+.aviso-pedido-topo { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.aviso-pedido-topo b { font-size: 14px; }
+.aviso-pedido-topo small { color: var(--muted, #888); font-size: 11px; white-space: nowrap; }
+.aviso-pedido-linha { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aviso-pedido-sub { color: var(--muted, #888); font-size: 12px; white-space: normal; }
+.aviso-pedido-abrir { margin-top: 4px; font-size: 12px; font-weight: 800; color: var(--cor); }
+.aviso-pedido.origem-99food .aviso-pedido-abrir { color: #c98a00; }
+.aviso-pedido-fechar { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; padding: 0; border: none; border-radius: 50%; background: transparent;
+  color: var(--muted, #888); font-size: 18px; line-height: 1; cursor: pointer; }
+.aviso-pedido-fechar:hover { background: var(--panel-alt, rgba(0, 0, 0, .06)); }
+.aviso-pedidos-som { padding: 10px 12px; border-radius: 12px; border: 1px dashed var(--warn); background: var(--warn-soft); color: var(--ivory); font-weight: 700; font-size: 13px; cursor: pointer; }
+.aviso-pedidos-rodape { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 10px; font-size: 12px; color: var(--muted, #888);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 999px; box-shadow: 0 6px 16px rgba(0, 0, 0, .15); }
+.aviso-pedidos-rodape .btn-link { padding: 2px 6px; font-size: 12px; margin-left: auto; }
+@keyframes aviso-pedido-entra { from { opacity: 0; transform: translateX(110%); } to { opacity: 1; transform: none; } }
+@keyframes aviso-pedido-pulso { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--cor) 60%, transparent); } 50% { box-shadow: 0 0 0 8px transparent; } }
+@media (max-width: 640px) { .aviso-pedidos { top: auto; bottom: 12px; right: 12px; left: 12px; width: auto; } }
+@media (prefers-reduced-motion: reduce) { .aviso-pedido, .aviso-pedido-icone { animation: none; } }
+.som-pedidos { position: relative; }
+.som-pedidos-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 120; width: min(320px, 86vw); padding: 12px; border-radius: 12px; background: var(--panel);
+  border: 1px solid var(--line); box-shadow: 0 12px 28px rgba(0, 0, 0, .25); display: grid; gap: 10px; }
+@media (max-width: 640px) { .som-pedidos-menu { right: auto; left: 0; } }
+.som-pedidos-testes { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+.aviso-teste { --cor: var(--gold-light); padding: 6px 10px; border-radius: 999px; border: 1px solid var(--cor); background: transparent; color: var(--ivory); font-weight: 700; font-size: 12px; cursor: pointer; }
+.aviso-teste.origem-ifood { --cor: #ea1d2c; }
+.aviso-teste.origem-99food { --cor: #ffb400; }
+.aviso-teste.origem-loja_virtual { --cor: #25d366; }

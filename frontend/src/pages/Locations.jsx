@@ -15,7 +15,7 @@ export default function Locations() {
   const { user } = useAuth();
   const moduloPedidos = temModulo(user, 'pedidos');
   const moduloGarcom = temModulo(user, 'garcom');
-  const moduloIfood = temModulo(user, 'delivery_apps') && !user.modoTeste; // o modo teste nao fala com o iFood nem com a 99Food
+  const moduloIfood = temModulo(user, 'delivery_apps'); // no modo teste o iFood e simulado (a 99Food nao aparece)
   const confirmar = useConfirm();
   const [locations, setLocations] = useState([]);
   const [terminals, setTerminals] = useState([]);
@@ -213,7 +213,7 @@ export default function Locations() {
         );
       })}
       {moduloIfood && locations.length > 0 && <IfoodConexoes lojas={locations} />}
-      {moduloIfood && locations.length > 0 && <Food99Conexoes lojas={locations} />}
+      {moduloIfood && !user.modoTeste && locations.length > 0 && <Food99Conexoes lojas={locations} />}
       {recebimento && <ConfigRecebimentoGarcom loja={locations.find((x) => x.id === recebimento.id) || recebimento} terminais={terminals} onClose={() => setRecebimento(null)} onSalvo={() => { setRecebimento(null); reload(); }} />}
       {configurando && <ConfigCupom loja={locations.find((x) => x.id === configurando.id) || configurando} onClose={() => setConfigurando(null)} onSalvo={() => { setConfigurando(null); reload(); }} />}
     </div>

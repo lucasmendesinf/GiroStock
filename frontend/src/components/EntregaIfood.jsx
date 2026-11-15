@@ -5,6 +5,7 @@ import { api } from '../api/client';
 import { useConfirm, useToast } from '../context/UiContext.jsx';
 import { Field, Modal } from './ui.jsx';
 import { brl, dataHora } from '../utils/format';
+import { useAuth } from '../context/AuthContext.jsx';
 
 // Entregador do iFood (Entrega Facil / Sob Demanda) para pedido de outro canal: cotacao, chamar, acompanhar no mapa e cancelar.
 // O endereco e as coordenadas vao para o app do entregador; o cliente acompanha pelo link do iFood.
@@ -46,6 +47,11 @@ export function BlocoEntregaIfood({ pedido: p, onMudou }) {
   const [dados, setDados] = useState(null); // rastreio + mapa
   const e = p.entrega_ifood;
   const ativa = entregaIfoodAtiva(p);
+  const { user } = useAuth();
+  const emTeste = !!(user && user.modoTeste);
+  async function avancarTeste() {
+    try { await api.post(`/integracoes/entregas/pedidos/${p.id}/teste/avancar`, {}); onMudou(); setTimeout(carregar, 400); } catch (err) { toast.erro(err); }
+  }
   const carregar = useCallback(async () => {
     try {
       const prep = await api.get(`/integracoes/entregas/pedidos/${p.id}`);
@@ -59,9 +65,9 @@ export function BlocoEntregaIfood({ pedido: p, onMudou }) {
     if (!mostra) return undefined;
     carregar();
     if (!ativa) return undefined;
-    const t = setInterval(carregar, 30000);
+    const t = setInterval(carregar, emTeste ? 5000 : 30000); // modo teste: o entregador simulado anda rapido
     return () => clearInterval(t);
-  }, [carregar, ativa, mostra, chaveEstado]);
+  }, [carregar, ativa, mostra, chaveEstado, emTeste]);
   if (!e && !podeChamarIfood(p)) return null;
   const ent = dados && dados.entrega;
   const [nomeSt, cor] = e ? STATUS_ENTREGA[e.status] || [e.status, ''] : ['', ''];
@@ -91,6 +97,7 @@ export function BlocoEntregaIfood({ pedido: p, onMudou }) {
             {e.tracking_url && telCliente && <a className="btn-link" href={`https://wa.me/55${telCliente.replace(/^55(?=\d{10,11}$)/, '')}?text=${encodeURIComponent(textoCliente)}`} target="_blank" rel="noreferrer">Mandar link ao cliente (WhatsApp)</a>}
             {e.tracking_url && <button type="button" className="btn-link" onClick={() => navigator.clipboard.writeText(e.tracking_url).then(() => toast.sucesso('Link copiado'), () => {})}>Copiar link</button>}
             {['solicitada', 'buscando', 'alocado', 'indo_loja', 'na_loja'].includes(e.status) && <button type="button" className="btn-link perigo" onClick={() => setCancelar(true)}>Cancelar entregador</button>}
+            {emTeste && <button type="button" className="btn-link" onClick={avancarTeste} title="Modo teste: o entregador simulado anda sozinho; isto pula para a próxima etapa">⏩ Avançar entregador (teste)</button>}
           </div>
         </>
       )}

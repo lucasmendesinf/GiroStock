@@ -6,6 +6,7 @@ import { dataHora } from '../utils/format';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import CampanhasWhatsApp from '../components/CampanhasWhatsApp.jsx';
+import CaixaWhatsappTeste from '../components/CaixaWhatsappTeste.jsx';
 
 // WhatsApp (API oficial da Meta): conectar o numero da empresa (cadastro incorporado da Meta; com a coexistencia o numero
 // continua no WhatsApp Business do celular), escolher os avisos do pedido, testar e ver o historico das mensagens.
@@ -139,7 +140,7 @@ export default function WhatsApp() {
             <li>Pedidos do iFood e da 99Food não recebem aviso daqui (a própria plataforma avisa o cliente).</li>
           </ul>
           {m.disponivel || m.simulador ? (
-            <button type="button" className="btn-primario wa-botao" disabled={conectando} onClick={conectar}>{conectando ? 'Conectando…' : m.simulador ? 'Conectar WhatsApp (simulador de testes)' : 'Conectar WhatsApp'}</button>
+            <button type="button" className="btn-primario wa-botao" disabled={conectando} onClick={conectar}>{conectando ? 'Conectando…' : m.simulador ? (user && user.modoTeste ? 'Conectar WhatsApp de teste (simulado)' : 'Conectar WhatsApp (simulador de testes)') : 'Conectar WhatsApp'}</button>
           ) : <p className="error">A integração com a Meta ainda não foi configurada no servidor (aplicativo da Calutec na Meta). Fale com o suporte.</p>}
           <p className="muted">Ao clicar, abre a janela da Meta: entre com o Facebook, escolha a empresa e o número e, no celular, leia o QR Code que aparece (WhatsApp Business → Configurações → Dispositivos conectados).</p>
         </div>
@@ -185,6 +186,7 @@ export default function WhatsApp() {
             </div>
           </div>
 
+          {user && user.modoTeste && <CaixaWhatsappTeste />}
           {podeCampanha && <CampanhasWhatsApp inicial={state && state.campanha ? { segmento: state.campanha } : null} />}
 
           <div className="card">

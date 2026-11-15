@@ -189,6 +189,26 @@ Os pedidos do iFood entram sozinhos na tela **Pedidos**, reservam o estoque e fi
 - **Segurança**: tokens cifrados (mesma chave do 2FA, `TOTP_ENC_KEY`), nunca saem na API, na exportação nem na cópia para o modo teste (lá a conexão fica desligada). O modo teste nunca fala com o iFood.
 - Caminhos da API do iFood concentrados em `backend/src/integracoes/ifood/api.js`.
 
+### Testar no modo teste do GiroStock (iFood e WhatsApp simulados)
+
+Ligando o **modo teste** (faixa laranja no topo; usuário com a permissão *Modo teste*), o iFood e o WhatsApp passam a ser
+**simulados dentro do próprio servidor**: nada vai para o iFood nem para a Meta, e tudo fica na cópia de teste (a produção
+não vê nada). Não precisa de conta de teste do iFood nem de app da Meta.
+
+- **Lojas & PDVs → Receber pedidos do iFood → Conectar iFood de teste** (um clique, sem Portal do Parceiro).
+- **Pedidos → 🧪 Pedido iFood de teste**: escolhe itens (produtos do GiroStock ou item desconhecido, para testar o vínculo),
+  entrega (entregador do iFood, da loja ou retirada) e pagamento (online, dinheiro, cartão). O pedido cai na hora, com som e aviso.
+  Na gaveta do pedido: **Cliente cancela** / **Cliente pede cancelamento**.
+- **Cardápio no iFood** (enviar produtos, preço e disponibilidade) funciona igual.
+- **Chamar entregador iFood**: o entregador simulado **anda sozinho** (alocado → a caminho → na loja → coletou → no cliente →
+  entregue, em ~2 min) e a moto se move no mapa; **⏩ Avançar entregador (teste)** pula a etapa. Sem localizar o endereço,
+  usa um ponto perto da loja (dá para arrastar no mapa).
+- **WhatsApp → Conectar WhatsApp de teste**: avisos do pedido e campanhas com cupom funcionam; as mensagens aparecem em
+  **Mensagens que teriam sido enviadas (teste)**, como o cliente veria. *Simular resposta* (ex.: SAIR) testa o descadastro.
+- A 99Food não é simulada (fica escondida no modo teste). O estado dos simuladores fica em memória: reiniciar o servidor
+  zera a lista de mensagens e os pedidos pendentes do simulador.
+- Teste automático: `npm run test:e2e:teste-integracoes`.
+
 ### Para ligar em produção
 
 1. Cadastro da **Calutec** (CNPJ de tecnologia) no Portal do Desenvolvedor iFood; criar o app **distribuído** do módulo de pedidos.

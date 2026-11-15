@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useConfirm, useToast } from '../context/UiContext.jsx';
 import { Field, Modal } from './ui.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
 
 const ROTULO = {
   aguardando_codigo: ['warn', 'Aguardando autorização'], escolher_loja: ['warn', 'Escolher a loja do iFood'],
@@ -17,6 +18,8 @@ export default function IfoodConexoes({ lojas }) {
   const [dados, setDados] = useState(null);
   const [conectando, setConectando] = useState(null); // { loja, id, codigo, link } ou { loja, id, lojas } (escolher)
   const [cardapio, setCardapio] = useState(null); // { integ, loja }
+  const { user } = useAuth();
+  const emTeste = !!(user && user.modoTeste);
 
   const carregar = useCallback(() => api.get('/integracoes').then(setDados).catch((err) => toast.erro(err)), [toast]);
   useEffect(() => { carregar(); }, [carregar]);
@@ -24,6 +27,11 @@ export default function IfoodConexoes({ lojas }) {
 
   const porLoja = Object.fromEntries(dados.integracoes.filter((i) => i.plataforma === 'ifood').map((i) => [i.location_id, i]));
   async function conectar(loja) {
+    if (emTeste) {
+      // modo teste: iFood simulado, conecta direto (sem Portal do Parceiro)
+      try { const r = await api.post('/integracoes/ifood/conectar-teste', { location_id: loja.id }); toast.sucesso(`iFood de teste conectado: ${r.merchant_nome}`); carregar(); } catch (err) { toast.erro(err); }
+      return;
+    }
     try { const r = await api.post('/integracoes/ifood/conectar', { location_id: loja.id }); setConectando({ loja, ...r }); carregar(); } catch (err) { toast.erro(err); }
   }
   async function alternarAceite(i) {
@@ -49,6 +57,7 @@ export default function IfoodConexoes({ lojas }) {
     <div className="card ifood-card">
       <div className="ped-head" style={{ margin: '0 0 6px' }}><h3 style={{ margin: 0 }}><span className="ped-tag ifood">iFood</span> Receber pedidos do iFood</h3></div>
       <p className="form-hint" style={{ marginTop: 0 }}>Os pedidos do iFood entram sozinhos na tela <b>Pedidos</b> da loja conectada (verificação a cada 30 segundos), reservam o estoque e o aceite, o preparo, a entrega e os cancelamentos ficam sincronizados com o iFood.</p>
+      {emTeste && <div className="ped-nota" style={{ borderColor: 'var(--warn)' }}>🧪 <b>Modo teste: iFood simulado.</b> Conecte com um clique, gere pedidos de teste na tela Pedidos e chame o entregador: nada vai para o iFood de verdade.</div>}
       {!dados.ifood_configurado && <div className="ped-nota" style={{ borderColor: 'var(--warn)' }}>A integração ainda não foi ativada no servidor (aguardando as credenciais do app no Portal do Desenvolvedor iFood).</div>}
       {lojas.filter((l) => l.ativo).map((l) => {
         const i = porLoja[l.id];
@@ -76,9 +85,9 @@ export default function IfoodConexoes({ lojas }) {
               {!ligado && i && i.status === 'escolher_loja' && (
                 <button type="button" className="btn-link" onClick={() => setConectando({ loja: l, id: i.id, lojas: i.lojas_disponiveis })}>Escolher a loja do iFood</button>
               )}
-              {!ligado && dados.ifood_configurado && <button type="button" className="btn-primario" onClick={() => conectar(l)}>{i && i.status === 'reautorizar' ? 'Reconectar iFood' : 'Conectar iFood'}</button>}
+              {!ligado && dados.ifood_configurado && <button type="button" className="btn-primario" onClick={() => conectar(l)}>{emTeste ? 'Conectar iFood de teste' : i && i.status === 'reautorizar' ? 'Reconectar iFood' : 'Conectar iFood'}</button>}
             </div>
-            {ligado && <ModoTeste integ={i} onChange={(m) => alterarTeste(i, m)} />}
+            {ligado && !emTeste && <ModoTeste integ={i} onChange={(m) => alterarTeste(i, m)} />}
           </div>
         );
       })}

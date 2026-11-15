@@ -11,6 +11,7 @@ import { temModulo } from '../utils/permissions.js';
 import { BlocoIfood, CancelarIfoodModal, EtiquetasIfood, PendenciasIfood, classePlataforma, nomePlataforma } from '../components/IfoodPedidos.jsx';
 import SomPedidosControle from '../components/SomPedidosControle.jsx';
 import { BlocoEntregaIfood, EtiquetaEntregaIfood, entregaIfoodAtiva } from '../components/EntregaIfood.jsx';
+import { AcoesClienteTeste, BotaoPedidoTesteIfood } from '../components/TesteIfood.jsx';
 import { textoComplementos } from '../components/EscolherComplementos.jsx';
 
 const COLUNAS = [
@@ -221,6 +222,7 @@ export default function Pedidos() {
           </select>
         )}
         <SomPedidosControle />
+        {usaIfood && user.modoTeste && <BotaoPedidoTesteIfood lojaId={lojaId} onGerado={async (r) => { await carregar(); if (r.order_id) abrirDetalhe(r.order_id); }} />}
         <button type="button" className="btn-link" onClick={() => setEntregadoresAberto(true)}>Entregadores</button>
         <button type="button" className="btn-primario" onClick={() => setNovoAberto(true)}>+ Novo pedido</button>
       </div>
@@ -300,7 +302,7 @@ export default function Pedidos() {
           onClose={() => { setAberta(null); setDetalhe(null); }}
           onAvancar={() => avancar(detalhe)} onCancelar={() => setCancelar(detalhe)} onDestino={() => setDestino(detalhe)} onImprimir={() => imprimir(detalhe.id)}
           onEntregador={(id) => executar(api.put(`/orders/${detalhe.id}/entregador`, { entregador_id: id || null }))}
-          pedidoLista={pedidos.find((p) => p.id === aberta)} usaIfood={usaIfood}
+          pedidoLista={pedidos.find((p) => p.id === aberta)} usaIfood={usaIfood} emTeste={!!user.modoTeste}
           onIfood={async () => { await carregar(); window.dispatchEvent(new Event('girostock:pedidos-mudaram')); if (aberta) setDetalhe(await api.get(`/orders/${aberta}`)); }} />
       )}
 
@@ -364,7 +366,7 @@ function AvisosWhatsapp({ pedido }) {
   );
 }
 
-function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, usaIfood, onClose, onAvancar, onCancelar, onDestino, onImprimir, onEntregador, onIfood }) {
+function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, usaIfood, emTeste, onClose, onAvancar, onCancelar, onDestino, onImprimir, onEntregador, onIfood }) {
   const entrega = p.tipo === 'entrega';
   const entregaLoja = entregaDaLoja(p);
   const fluxo = entregaLoja ? COLUNAS : COLUNAS.filter(([s]) => s !== 'saiu_entrega');
@@ -392,6 +394,7 @@ function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, usaIfood, onCl
         <div className="muted" style={{ marginTop: 4 }}>{entrega ? `🛵 ${p.endereco}` : p.comanda_id ? destinoDoPedido(p) : p.tipo === 'mesa' ? `🍽 ${p.endereco || 'Mesa'}` : '🛍 Retirada no balcão'}</div>
         {p.observacao && <div className="ped-nota"><b>Obs.:</b> {p.observacao}</div>}
         <BlocoIfood p={p} onFeito={onIfood} />
+        {emTeste && usaIfood && <AcoesClienteTeste pedido={p} onFeito={onIfood} />}
         <AvisosWhatsapp pedido={p} />
 
         {p.status === 'cancelado' ? (

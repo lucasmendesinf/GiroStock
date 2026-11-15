@@ -2047,3 +2047,8 @@ table.tabela-cartoes tr.nf-linha-pendente td:first-child { box-shadow: inset 4px
 .ent-botao { width: 100%; background: #ea1d2c !important; border-color: #ea1d2c !important; color: #fff !important; font-weight: 800; }
 .ent-mapa { height: 220px; border-radius: 12px; border: 1px solid var(--line); margin-top: 4px; z-index: 0; }
 .ent-acoes { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+
+/* Modo teste: caixa do WhatsApp simulado e acoes de teste */
+.wa-caixa-lista { display: grid; gap: 10px; max-height: 420px; overflow: auto; padding-right: 4px; }
+.wa-caixa-msg { display: grid; gap: 4px; max-width: 560px; }
+.teste-acoes { border: 1px dashed var(--warn); border-radius: 10px; padding: 8px 10px; }

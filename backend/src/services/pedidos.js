@@ -152,10 +152,12 @@ async function criarPedido(client, user, b, opcoes = {}) {
   }
   // Preco da LOJA + faixa de quantidade DESTE pedido/rodada (nunca soma entre rodadas). Pedido de plataforma e do site trazem o preco deles.
   const regras = precosInformados ? null : await precos.precosDosProdutos(client, user.tenantId, locationId, precos.itensParaPreco(linhas));
-  for (const l of linhas) {
+  const rateio = regras ? precos.ratearLinhas(linhas.map((l) => ({ product_id: l.product_id, quantidade: l.quantidade, compl: precoDosComplementos(l.complementos) })), regras) : new Map();
+  for (const [idx, l] of linhas.entries()) {
     const regra = regras ? regras.get(l.product_id) : null;
     const compl = precoDosComplementos(l.complementos);
-    const preco = l.preco_unitario !== undefined ? l.preco_unitario : Number(((regra ? regra.preco_unitario : Number(mapa.get(l.product_id).preco_venda)) + compl).toFixed(2));
+    const rat = l.preco_unitario === undefined ? rateio.get(idx) : null;
+    const preco = l.preco_unitario !== undefined ? l.preco_unitario : rat ? rat.preco_unitario : Number(((regra ? regra.preco_unitario : Number(mapa.get(l.product_id).preco_venda)) + compl).toFixed(2));
     const tabela = regra && regra.faixa ? Number((regra.preco_tabela + compl).toFixed(2)) : null;
     const rotulo = regra && regra.faixa ? (regra.faixa.rotulo || `${regra.faixa.quantidade_minima} un`) : null;
     // Observacao: itens com preparo (consomem insumos), com complementos ou combo; de plataforma, em qualquer item.
@@ -163,7 +165,7 @@ async function criarPedido(client, user, b, opcoes = {}) {
     const obs = (preparo || externo || loja || opcoes.comanda) && l.observacao ? l.observacao : null;
     await client.query(
       `INSERT INTO order_items (order_id, product_id, quantidade, preco_unitario, subtotal, observacao, complementos, garcom_id, preco_tabela, faixa_rotulo) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [orderId, l.product_id, l.quantidade, preco, Number((preco * l.quantidade).toFixed(2)), obs, l.complementos.length ? JSON.stringify(l.complementos) : null, opcoes.comanda ? opcoes.comanda.garcomId || null : null, tabela, rotulo]
+      [orderId, l.product_id, l.quantidade, preco, rat ? rat.subtotal : Number((preco * l.quantidade).toFixed(2)), obs, l.complementos.length ? JSON.stringify(l.complementos) : null, opcoes.comanda ? opcoes.comanda.garcomId || null : null, tabela, rotulo]
     );
   }
   await client.query(`INSERT INTO order_status_log (order_id, de, para, usuario_id) VALUES ($1, NULL, 'novo', $2)`, [orderId, user.id || null]);

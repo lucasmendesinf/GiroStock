@@ -2,7 +2,7 @@
 //   node scripts/teste-precos.mjs
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const { cent, reais, precoDaFaixaEmCentavos, validarFaixasDaLoja, escolherFaixa, itensParaPreco } = require('../src/services/precos.js');
+const { cent, reais, precoDaFaixaEmCentavos, validarFaixasDaLoja, escolherFaixa, itensParaPreco, calcularTotal, rotuloDoCalculo, ratearLinhas } = require('../src/services/precos.js');
 
 let ok = 0; let falhas = 0;
 const check = (nome, cond, extra) => { if (cond) { ok++; console.log('  ok  ', nome); } else { falhas++; console.log('  FALHA', nome, extra === undefined ? '' : JSON.stringify(extra)); } };
@@ -18,8 +18,7 @@ check('reais(800) = 8', reais(800) === 8);
 console.log('\n# preco da faixa pelo modo de cadastro');
 check('unitario 8,00 -> 800', precoDaFaixaEmCentavos({ modo: 'unitario', valor: 8, quantidade_minima: 6 }, 950) === 800);
 check('kit R$ 48,00 / 6 un -> 800 por unidade', precoDaFaixaEmCentavos({ modo: 'kit', valor: 48, quantidade_minima: 6 }, 950) === 800);
-const eKit = lanca(() => precoDaFaixaEmCentavos({ modo: 'kit', valor: 50, quantidade_minima: 6 }, 950));
-check('kit R$ 50,00 / 6 un nao divide em centavos -> 400', eKit && eKit.status === 400 && /não divide em centavos/.test(eKit.message), eKit && eKit.message);
+check('pack R$ 50,00 / 6 un e aceito (preco medio 833 para mostrar)', precoDaFaixaEmCentavos({ modo: 'kit', valor: 50, quantidade_minima: 6 }, 950) === 833);
 check('percentual 20% sobre 9,50 -> 760', precoDaFaixaEmCentavos({ modo: 'percentual', valor: 20, quantidade_minima: 6 }, 950) === 760);
 check('percentual 15% sobre 9,50 arredonda para centavos (807,5 -> 808)', precoDaFaixaEmCentavos({ modo: 'percentual', valor: 15, quantidade_minima: 6 }, 950) === 808);
 check('percentual 100% -> 400', !!lanca(() => precoDaFaixaEmCentavos({ modo: 'percentual', valor: 100, quantidade_minima: 6 }, 950)));
@@ -67,6 +66,28 @@ const p1 = it.find((x) => x.product_id === 'p1'); const p2 = it.find((x) => x.pr
 check('mesmo produto com observacoes diferentes SOMA (4 + 2 = 6)', p1.quantidade === 6);
 check('produto diferente nao soma', p2.quantidade === 5);
 check('faixa_id da linha acompanha o produto', itensParaPreco([{ product_id: 'p1', quantidade: 3, faixa_id: '11111111-1111-4111-8111-111111111111' }, { product_id: 'p1', quantidade: 3 }])[0].faixa_id === '11111111-1111-4111-8111-111111111111');
+
+console.log('\n# pack fechado + avulsas (faixa kit)');
+// unidade R$ 5,00; pack 12 por R$ 50,00
+const P12 = { id: 'k12', quantidade_minima: 12, preco_cent: 417, automatica: true, rotulo: 'Pack 12', modo_cadastro: 'kit', kit_cent: 5000 };
+const tot = (q, fx = [P12], fid = null) => calcularTotal(fx, q, 500, fid);
+check('11 un = preço normal (55,00)', tot(11).total_cent === 5500 && !tot(11).pack);
+check('12 un = valor do pack (50,00)', tot(12).total_cent === 5000 && tot(12).pack);
+check('13 un = 1 pack + 1 avulsa (55,00)', tot(13).total_cent === 5500 && tot(13).avulsas === 1);
+check('24 un = 2 packs (100,00)', tot(24).total_cent === 10000 && tot(24).packs[0].vezes === 2);
+check('25 un = 2 packs + 1 avulsa (105,00)', tot(25).total_cent === 10500);
+check('rótulo: "Pack 12 ×2 + 1 avulsa"', rotuloDoCalculo(tot(25)) === 'Pack 12 ×2 + 1 avulsa', rotuloDoCalculo(tot(25)));
+const P6 = { id: 'k6', quantidade_minima: 6, preco_cent: 450, automatica: true, rotulo: 'Pack 6', modo_cadastro: 'kit', kit_cent: 2700 };
+check('dois packs (12 e 6): 18 un = 50 + 27 = 77,00', tot(18, [P12, P6]).total_cent === 7700, tot(18, [P12, P6]));
+check('dois packs: 20 un = 50 + 27 + 2 × 5 = 87,00', tot(20, [P12, P6]).total_cent === 8700);
+const AT = { id: 'a30', quantidade_minima: 30, preco_cent: 380, automatica: true, rotulo: 'Atacado 30', modo_cadastro: 'unitario', kit_cent: null };
+check('atacado mais barato que os packs vale o atacado (30 un × 3,80 = 114,00 < 2 packs + 6 = 130,00)', tot(30, [P12, AT]).total_cent === 11400 && !tot(30, [P12, AT]).pack);
+check('pack manual só vale se escolhido', tot(12, [{ ...P12, automatica: false }]).total_cent === 6000 && tot(12, [{ ...P12, automatica: false }], 'k12').total_cent === 5000);
+check('quantidade fracionada não forma pack', tot(12.5).total_cent === 6250);
+const regras = new Map([['p', { total_cent: 5500, quantidade: 13 }]]);
+const rat = ratearLinhas([{ product_id: 'p', quantidade: 6, compl: 0 }, { product_id: 'x', quantidade: 1 }, { product_id: 'p', quantidade: 7, compl: 1 }], regras);
+check('rateio em 2 linhas do mesmo produto fecha o total exato (55,00 + 7 × 1,00 de complemento)', Math.round((rat.get(0).subtotal + rat.get(2).subtotal) * 100) === 5500 + 700 && !rat.has(1), [...rat.entries()]);
+check('rateio: preço médio com 4 casas (6 un de 25,38 -> 4,23)', rat.get(0).preco_unitario === Number((rat.get(0).subtotal / 6).toFixed(4)));
 
 console.log(`\nRESULTADO: ${ok} ok, ${falhas} falha(s)`);
 process.exit(falhas ? 1 : 0);

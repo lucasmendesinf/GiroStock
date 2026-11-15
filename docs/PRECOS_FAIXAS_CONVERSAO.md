@@ -18,9 +18,18 @@ O custo é **um só** por produto (`products.preco_custo`); só o preço de vend
 
 - Valem só para o **mesmo produto** (sem mistura) e só dentro de **um documento**: a venda do PDV, o pedido ou a **rodada** da comanda. Nunca somam entre rodadas; o fechamento da comanda repete os preços das rodadas.
 - Cada faixa é **automática** (o sistema aplica ao atingir a quantidade) ou **manual** (só com `faixa_id` no item). Havendo as duas elegíveis, vale a de **menor preço unitário** (nunca empilha).
-- Aplicada a faixa, **todas** as unidades pagam o preço dela (8 un com faixa de 6 = 8 × preço do pack).
+- Dois tipos de faixa:
+  - **Pack fechado** (modo `kit`, "valor do pack"): cada pack fechado sai pelo valor do pack e o que sobra sai pelo preço
+    normal da unidade. Ex.: unidade R$ 5,00 e pack de 12 por R$ 50,00 → 11 un = 55,00; **12 un = 50,00**; 13 un = 50 + 5 =
+    55,00; 24 un = 100,00; 25 un = 105,00. Com vários packs (12 e 6), usa do maior para o menor. O valor do pack é
+    cobrado **exato** (qualquer valor; não precisa dividir em centavos). A linha guarda o preço **médio** com 4 casas
+    (50,00 ÷ 12 = 4,1667) e o **subtotal exato**; com duas linhas do mesmo produto, o total é repartido entre elas.
+    O rótulo da linha diz o que valeu ("Caixa 12 ×2 + 1 avulsa").
+  - **Atacado** (modos `unitario` e `percentual`): a partir da quantidade, **todas** as unidades pagam o preço da faixa
+    (8 un com atacado de 6 = 8 × preço da faixa).
+  - Com os dois tipos no mesmo produto, vale o **menor total**.
 - Se a loja tem faixas próprias, elas **substituem** as gerais (`location_id` nulo) naquela loja. Combos não têm faixa (aceitam preço por loja).
-- Como informar: **preço por unidade**, **preço do kit** (precisa dividir em centavos exatos: R$ 48,00 ÷ 6 = 8,00; R$ 50,00 ÷ 6 é recusado) ou **% de desconto** (arredonda para centavos).
+- Como informar: **valor do pack fechado** (qualquer valor), **preço por unidade** ou **% de desconto** (arredonda para centavos).
 - Validações: preço da faixa menor que o unitário; quantidades mínimas inteiras (≥ 2) e distintas; preços decrescentes conforme a quantidade cresce. **Alerta** (não bloqueia) se a faixa está no custo ou abaixo, ou com margem menor que 10%.
 - **EAN do pack** (8 a 14 números): único na empresa e diferente de qualquer código de barras de produto. Ler o EAN do pack no PDV lança a quantidade da faixa.
 - `sale_items` e `order_items` guardam `preco_tabela` (preço da loja antes da faixa, com complementos) e `faixa_rotulo` (nulos sem faixa). O resumo de vendas mostra `desconto_por_quantidade` = Σ (preço de tabela − cobrado) × quantidade.

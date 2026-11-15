@@ -424,7 +424,7 @@ function Comanda() {
               <div key={i.key} className="gc-item gc-item-col">
                 <div className="gc-item-top">
                   <div className="gc-item-l"><span className="gc-nome">{i.nome}</span>{i.complementos.length > 0 && <span className="gc-sub">{textoComplementos(i.complementos)}</span>}
-                    {calcItem(i).faixa && <span className="gc-sub pr-pack">{calcItem(i).faixa.rotulo || `Pack ${calcItem(i).faixa.quantidade_minima}`}: {brl(calcItem(i).unit)} cada em vez de {brl(calcItem(i).tabela)}</span>}</div>
+                    {calcItem(i).faixa && <span className="gc-sub pr-pack">{calcItem(i).pack ? `${calcItem(i).rotulo}: ${brl(calcItem(i).unit * i.quantidade)} em vez de ${brl(calcItem(i).tabela * i.quantidade)}` : `${calcItem(i).rotulo}: ${brl(calcItem(i).unit)} cada em vez de ${brl(calcItem(i).tabela)}`}</span>}</div>
                   <b className="gc-item-v">{brl(calcItem(i).unit * i.quantidade)}</b>
                 </div>
                 <div className="gc-item-bot">

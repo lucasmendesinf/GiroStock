@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { api } from '../api/client';
 import { requestFullscreen, isFullscreen as checkIsFullscreen } from '../utils/fullscreen';
 import { brl, qtd, parseNumero, dataHora, UNIDADES_INTEIRAS, FORMA_PAGAMENTO } from '../utils/format';
+import { calcularPreco } from '../utils/faixas.js';
 import { useToast, useConfirm } from '../context/UiContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -388,21 +389,13 @@ export default function PDV() {
   const visiveis = categoriaAtiva ? results.filter((p) => p.categoria === categoriaAtiva) : results;
   // Preco de cada linha: preco da LOJA + faixa de quantidade do MESMO produto (soma das linhas) + complementos. O servidor recalcula e e a verdade.
   const totalDoProduto = cart.reduce((m, i) => { m[i.id] = (m[i.id] || 0) + i.quantidade; return m; }, {});
-  function faixaVale(i) {
-    const fx = i.faixas || [];
-    if (fx.length === 0) return null;
-    const q = totalDoProduto[i.id] || 0;
-    let auto = null;
-    for (const f of fx) if (f.automatica && q >= f.quantidade_minima && (!auto || f.quantidade_minima > auto.quantidade_minima)) auto = f;
-    const manual = faixaManual[i.id] ? fx.find((f) => f.id === faixaManual[i.id] && q >= f.quantidade_minima) : null;
-    if (auto && manual) return manual.preco_unitario < auto.preco_unitario ? manual : auto;
-    return manual || auto || null;
-  }
   function calcLinha(i) {
-    const f = faixaVale(i);
     const base = i.preco_base !== undefined ? Number(i.preco_base) : Number(i.preco_venda) - precoComplementos(i.complementos);
     const compl = precoComplementos(i.complementos);
-    return { unit: Number(((f ? f.preco_unitario : base) + compl).toFixed(2)), tabela: Number((base + compl).toFixed(2)), faixa: f };
+    const manual = faixaManual[i.id] && (i.faixas || []).some((f) => f.id === faixaManual[i.id] && (totalDoProduto[i.id] || 0) >= f.quantidade_minima) ? faixaManual[i.id] : null;
+    const c = calcularPreco(i.faixas, totalDoProduto[i.id] || 0, base, manual);
+    // unit sem arredondar (pack fechado: 50,00 / 12); o total da linha arredonda no fim
+    return { unit: c.unit + compl, tabela: Number((base + compl).toFixed(2)), faixa: c.faixa, rotulo: c.rotulo, pack: c.pack };
   }
   // Proxima faixa automatica ainda nao atingida (dica "faltam N un") e faixas manuais ja liberadas pela quantidade.
   function proximaFaixa(i) {
@@ -411,7 +404,7 @@ export default function PDV() {
   }
   const manuaisLiberadas = (i) => (i.faixas || []).filter((f) => !f.automatica && (totalDoProduto[i.id] || 0) >= f.quantidade_minima);
   const faixaParaEnviar = (i) => (faixaManual[i.id] && (i.faixas || []).some((f) => f.id === faixaManual[i.id] && (totalDoProduto[i.id] || 0) >= f.quantidade_minima) ? faixaManual[i.id] : undefined);
-  const subtotal = Number(cart.reduce((acc, i) => acc + calcLinha(i).unit * i.quantidade, 0).toFixed(2));
+  const subtotal = Number(cart.reduce((acc, i) => acc + Number((calcLinha(i).unit * i.quantidade).toFixed(2)), 0).toFixed(2));
 
   // ---------- pedido (lanchonete): o carrinho vira pedido em vez de venda imediata ----------
   const [lojas, setLojas] = useState([]);
@@ -910,7 +903,9 @@ export default function PDV() {
                   {i.complementos && i.complementos.length > 0 && <span className="carrinho-comps">{textoComplementos(i.complementos)}</span>}
                   <span className="muted">{qtd(i.quantidade, i.unidade)} {i.unidade} × {calcLinha(i).faixa && <s className="pr-riscado">{brl(calcLinha(i).tabela)}</s>} {brl(calcLinha(i).unit)}</span>
                   {calcLinha(i).faixa && (
-                    <span className="pr-pack">{calcLinha(i).faixa.rotulo || `Pack ${calcLinha(i).faixa.quantidade_minima}`}: cada unidade sai por {brl(calcLinha(i).unit)} em vez de {brl(calcLinha(i).tabela)} · economia {brl((calcLinha(i).tabela - calcLinha(i).unit) * i.quantidade)}</span>
+                    <span className="pr-pack">{calcLinha(i).pack
+                      ? <>{calcLinha(i).rotulo} · {brl(calcLinha(i).unit * i.quantidade)} em vez de {brl(calcLinha(i).tabela * i.quantidade)} · economia {brl((calcLinha(i).tabela - calcLinha(i).unit) * i.quantidade)}</>
+                      : <>{calcLinha(i).rotulo}: cada unidade sai por {brl(calcLinha(i).unit)} em vez de {brl(calcLinha(i).tabela)} · economia {brl((calcLinha(i).tabela - calcLinha(i).unit) * i.quantidade)}</>}</span>
                   )}
                   {cart.findIndex((c) => c.id === i.id) === cart.indexOf(i) && (() => {
                     const prox = proximaFaixa(i);

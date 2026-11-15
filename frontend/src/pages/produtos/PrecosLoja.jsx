@@ -10,7 +10,7 @@ import { brl, parseNumero } from '../../utils/format';
 const cent = (v) => Math.round(Number(v) * 100 + (Number(v) >= 0 ? 1e-7 : -1e-7));
 const num = (s) => { const n = parseNumero(s); return Number.isFinite(n) ? n : 0; };
 const virg = (n) => String(n).replace('.', ',');
-const MODOS = [['unitario', 'Preço por unidade'], ['kit', 'Preço do kit'], ['percentual', '% de desconto']];
+const MODOS = [['kit', 'Pack fechado (valor do pack)'], ['unitario', 'Atacado: preço por unidade'], ['percentual', 'Atacado: % de desconto']];
 const margemDe = (preco, custo) => (preco > 0 ? ((preco - custo) / preco) * 100 : null);
 const pctTxt = (m) => (m === null || !Number.isFinite(m) ? '—' : `${m.toFixed(1).replace('.', ',')}%`);
 
@@ -57,8 +57,7 @@ export function calcFaixa(f, precoLoja) {
   if (f.modo === 'kit') {
     const total = cent(v);
     if (!(q >= 2)) return { unit: null, erro: 'informe a quantidade mínima' };
-    if (total % q !== 0) return { unit: null, erro: `o kit de ${q} un por ${brl(total / 100)} não divide em centavos exatos` };
-    return { unit: total / q / 100 };
+    return { unit: total / q / 100, kit: total / 100 }; // pack fechado: o valor do pack e cobrado exato (sem exigir divisao)
   }
   if (f.modo === 'percentual') {
     if (!(v < 100)) return { unit: null, erro: 'o desconto precisa ser menor que 100%' };
@@ -135,7 +134,7 @@ function FaixaCard({ f, i, lista, precoLoja, custo, onChange, onRemove }) {
             {MODOS.map(([k, n]) => <option key={k} value={k}>{n}</option>)}
           </select>
         </Field>
-        <Field label={f.modo === 'percentual' ? 'Desconto (%)' : f.modo === 'kit' ? 'Preço do kit (R$)' : 'Preço por unidade (R$)'}>
+        <Field label={f.modo === 'percentual' ? 'Desconto (%)' : f.modo === 'kit' ? 'Valor do pack fechado (R$)' : 'Preço por unidade (R$)'}>
           <input inputMode="decimal" value={f.valor} onChange={(e) => set({ valor: e.target.value })} />
         </Field>
         <Field label="Aplicação">
@@ -147,10 +146,15 @@ function FaixaCard({ f, i, lista, precoLoja, custo, onChange, onRemove }) {
       </div>
       <div className="pr-faixa-calc">
         <span>Por unidade <b>{unit !== null && unit !== undefined ? brl(unit) : '—'}</b></span>
-        <span>Kit fechado <b>{unit !== null && unit !== undefined && q >= 2 ? brl(unit * q) : '—'}</b></span>
+        <span>Pack fechado <b>{unit !== null && unit !== undefined && q >= 2 ? brl(f.modo === 'kit' ? num(f.valor) : unit * q) : '—'}</b></span>
         <span>Desconto <b className={desc !== null && desc <= 0 ? 'pr-err' : 'pr-ok'}>{pctTxt(desc)}</b></span>
         <span>Margem <b className={unit !== null && unit !== undefined && custo > 0 && unit <= custo ? 'pr-err' : ''}>{pctTxt(unit !== null && unit !== undefined ? margemDe(unit, custo) : null)}</b></span>
       </div>
+      {q >= 2 && unit !== null && unit !== undefined && (
+        <p className="pr-regra">{f.modo === 'kit'
+          ? `Pack fechado: ${q} un = ${brl(num(f.valor))}; ${q + 1} un = ${brl(num(f.valor) + precoLoja)} (1 pack + 1 avulsa); ${q * 2} un = ${brl(num(f.valor) * 2)}; menos de ${q} = preço normal.`
+          : `Atacado: a partir de ${q} un, todas as unidades saem por ${brl(unit)} (ex.: ${q + 1} un = ${brl(unit * (q + 1))}).`}</p>
+      )}
       <div className="pr-faixa-pe">
         <label className="pr-ean">EAN do pack (opcional)
           <input inputMode="numeric" value={f.ean_pack} placeholder="código do fardo" onChange={(e) => set({ ean_pack: e.target.value.replace(/\D/g, '').slice(0, 14) })} />

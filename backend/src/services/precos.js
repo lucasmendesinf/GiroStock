@@ -7,7 +7,10 @@
 //  - Faixa de quantidade vale so para o MESMO produto, dentro de UM documento (venda, pedido ou rodada); nunca entre rodadas.
 //  - Se a loja tem faixas proprias, elas substituem as gerais (location_id NULL) naquela loja.
 //  - Faixa automatica: vale a de maior quantidade_minima atingida. Manual: so com faixa_id. Automatica + manual elegiveis:
-//    vale a de menor preco unitario (nunca empilha). Aplicada a faixa, TODAS as unidades pagam o preco da faixa.
+//    vale a de menor preco unitario (nunca empilha). Aplicada a faixa, TODAS as unidades pagam o preco da faixa ("atacado").
+//  - Faixa "kit" (pack fechado, ex.: 12 un por R$ 50,00): cada pack fechado sai pelo valor do pack e o que sobra sai pelo
+//    preco normal da unidade (13 = 1 pack + 1 avulsa; 24 = 2 packs). Varios packs: do maior para o menor. Se a regra de
+//    atacado de outra faixa ficar mais barata, vale a mais barata. O valor do pack e cobrado exato (sem exigir divisao).
 //  - Dinheiro sempre em centavos inteiros.
 const { HttpError } = require('../utils/http');
 const { isUuid } = require('../utils/tenant');
@@ -24,13 +27,7 @@ const brl = (c) => `R$ ${(c / 100).toFixed(2).replace('.', ',')}`;
 function precoDaFaixaEmCentavos({ modo, valor, quantidade_minima }, precoLojaCent) {
   const v = Number(valor);
   if (!(v > 0)) throw new HttpError(400, 'informe um valor maior que zero para a faixa');
-  if (modo === 'kit') {
-    const total = cent(v);
-    if (total % quantidade_minima !== 0) {
-      throw new HttpError(400, `o kit de ${quantidade_minima} un por ${brl(total)} não divide em centavos exatos; informe outro valor (ex.: ${brl(Math.round(total / quantidade_minima) * quantidade_minima)})`);
-    }
-    return total / quantidade_minima;
-  }
+  if (modo === 'kit') return Math.round(cent(v) / quantidade_minima); // preco medio por unidade (so para mostrar e validar)
   if (modo === 'percentual') {
     if (!(v < 100)) throw new HttpError(400, 'o desconto em % precisa ser menor que 100');
     return Math.round(precoLojaCent * (1 - v / 100));
@@ -82,6 +79,48 @@ function escolherFaixa(faixas, quantidade, faixaId) {
   return manual || auto;
 }
 
+// Total (centavos) de uma quantidade do produto: tabela, atacado (faixas por unidade/%) ou pack fechado + avulsas (faixas kit).
+// faixas: [{ id, quantidade_minima, preco_cent, automatica, rotulo, modo_cadastro, kit_cent }]. Vale o menor total.
+// Devolve { total_cent, faixa (a que valeu ou o maior pack usado), packs: [{ faixa, vezes }], avulsas, pack: bool }.
+function calcularTotal(faixas, quantidade, tabelaCent, faixaId) {
+  const q = Number(quantidade);
+  const lista = faixas || [];
+  const ehKit = (f) => f.modo_cadastro === 'kit' && f.kit_cent > 0;
+  // manual pedida: valida (existe e a quantidade alcanca)
+  if (faixaId) escolherFaixa(lista, q, faixaId);
+  const atacado = escolherFaixa(lista.filter((f) => !ehKit(f) && (f.automatica || f.id === faixaId)), q, lista.some((f) => !ehKit(f) && f.id === faixaId) ? faixaId : null);
+  let melhor = { total_cent: Math.round(q * tabelaCent), faixa: null, packs: [], avulsas: q, pack: false };
+  if (atacado) {
+    const t = Math.round(q * atacado.preco_cent);
+    if (t < melhor.total_cent) melhor = { total_cent: t, faixa: atacado, packs: [], avulsas: 0, pack: false };
+  }
+  // pack fechado: so quantidade inteira forma pack
+  if (Number.isInteger(q)) {
+    const kits = lista.filter((f) => ehKit(f) && (f.automatica || f.id === faixaId)).sort((a, b) => b.quantidade_minima - a.quantidade_minima);
+    let resto = q;
+    let total = 0;
+    const packs = [];
+    for (const k of kits) {
+      const vezes = Math.floor(resto / k.quantidade_minima);
+      if (vezes > 0) { packs.push({ faixa: k, vezes }); total += vezes * k.kit_cent; resto -= vezes * k.quantidade_minima; }
+    }
+    if (packs.length) {
+      total += resto * tabelaCent;
+      if (total < melhor.total_cent) melhor = { total_cent: total, faixa: packs[0].faixa, packs, avulsas: resto, pack: true };
+    }
+  }
+  return melhor;
+}
+
+// Rotulo do que valeu: "Pack 12" | "Pack 12 ×2 + 1 avulsa" | rotulo da faixa de atacado.
+function rotuloDoCalculo(c) {
+  if (!c.faixa) return null;
+  if (!c.pack) return c.faixa.rotulo || `${c.faixa.quantidade_minima} un`;
+  const partes = c.packs.map((p) => `${p.faixa.rotulo || `Pack ${p.faixa.quantidade_minima}`}${p.vezes > 1 ? ` ×${p.vezes}` : ''}`);
+  if (c.avulsas > 0) partes.push(`${c.avulsas} avulsa${c.avulsas > 1 ? 's' : ''}`);
+  return partes.join(' + ').slice(0, 60);
+}
+
 // ---------- leitura em lote (venda, pedido, busca) ----------
 
 // Faixas e precos da loja para varios produtos. Devolve { precos: Map(product_id -> { preco_cent|null, vende }), faixas: Map(product_id -> [...]) }.
@@ -95,7 +134,7 @@ async function carregarRegras(db, tenantId, locationId, productIds) {
   );
   for (const r of pr.rows) precos.set(r.product_id, { preco_cent: r.preco_venda === null ? null : cent(r.preco_venda), vende: r.vende });
   const fx = await db.query(
-    `SELECT id, product_id, location_id, rotulo, quantidade_minima, preco_unitario, modo_cadastro, automatica, ean_pack
+    `SELECT id, product_id, location_id, rotulo, quantidade_minima, preco_unitario, modo_cadastro, valor_cadastro, automatica, ean_pack
        FROM produto_faixas WHERE tenant_id = $1 AND ativo AND product_id = ANY($2::uuid[]) AND (location_id = $3 OR location_id IS NULL)
       ORDER BY quantidade_minima`,
     [tenantId, productIds, locationId]
@@ -106,6 +145,8 @@ async function carregarRegras(db, tenantId, locationId, productIds) {
     porProduto.get(r.product_id)[r.location_id ? 'loja' : 'gerais'].push({
       id: r.id, rotulo: r.rotulo, quantidade_minima: r.quantidade_minima, preco_cent: cent(r.preco_unitario),
       modo_cadastro: r.modo_cadastro, automatica: r.automatica, ean_pack: r.ean_pack,
+      // pack fechado: o valor do pack exato (como foi cadastrado), nao o preco medio x quantidade
+      kit_cent: r.modo_cadastro === 'kit' ? (r.valor_cadastro !== null ? cent(r.valor_cadastro) : cent(r.preco_unitario) * r.quantidade_minima) : null,
     });
   }
   // faixas proprias da loja substituem as gerais
@@ -132,10 +173,41 @@ async function precosDosProdutos(db, tenantId, locationId, itens, opc = {}) {
     const vende = !regra || regra.vende !== false;
     if (!vende && !opc.ignorarVende) throw new HttpError(400, `"${p.nome}" não é vendido nesta loja`);
     const tabelaCent = regra && regra.preco_cent !== null ? regra.preco_cent : cent(p.preco_venda);
-    const faixa = combos.has(it.product_id) ? null : escolherFaixa(faixas.get(it.product_id) || [], it.quantidade, it.faixa_id || null);
+    const c = combos.has(it.product_id) ? { total_cent: Math.round(Number(it.quantidade) * tabelaCent), faixa: null, pack: false, packs: [], avulsas: 0 }
+      : calcularTotal(faixas.get(it.product_id) || [], it.quantidade, tabelaCent, it.faixa_id || null);
+    const q = Number(it.quantidade);
     out.set(it.product_id, {
-      nome: p.nome, vende, preco_tabela: reais(tabelaCent), preco_unitario: reais(faixa ? faixa.preco_cent : tabelaCent),
-      faixa: faixa ? { id: faixa.id, rotulo: faixa.rotulo, quantidade_minima: faixa.quantidade_minima } : null,
+      nome: p.nome, vende, preco_tabela: reais(tabelaCent),
+      // pack fechado: preco medio com 4 casas (12 por 50,00 = 4,1667); o total exato vai em total_cent (rateado nas linhas)
+      preco_unitario: c.pack ? Number((c.total_cent / q / 100).toFixed(4)) : reais(c.faixa ? c.faixa.preco_cent : tabelaCent),
+      total_cent: c.pack ? c.total_cent : null, quantidade: q,
+      faixa: c.faixa ? { id: c.faixa.id, rotulo: rotuloDoCalculo(c), quantidade_minima: c.faixa.quantidade_minima, pack: c.pack } : null,
+    });
+  }
+  return out;
+}
+
+// Pack fechado: reparte o total exato do produto (centavos) entre as linhas dele, pela quantidade (a ultima leva o resto).
+// linhas: [{ product_id, quantidade, compl (reais por unidade) }] na ordem do documento. Devolve Map(indice -> { subtotal, preco_unitario }).
+function ratearLinhas(linhas, regras) {
+  const out = new Map();
+  const grupos = new Map();
+  linhas.forEach((l, i) => {
+    const r = regras && regras.get(l.product_id);
+    if (!r || r.total_cent === null || r.total_cent === undefined) return;
+    if (!grupos.has(l.product_id)) grupos.set(l.product_id, []);
+    grupos.get(l.product_id).push(i);
+  });
+  for (const [pid, idx] of grupos) {
+    const r = regras.get(pid);
+    let resto = r.total_cent;
+    idx.forEach((i, k) => {
+      const l = linhas[i];
+      const q = Number(l.quantidade);
+      const parte = k === idx.length - 1 ? resto : Math.round((r.total_cent * q) / r.quantidade);
+      resto -= parte;
+      const sub = parte + Math.round(cent(l.compl || 0) * q);
+      out.set(i, { subtotal: reais(sub), preco_unitario: Number((sub / q / 100).toFixed(4)) });
     });
   }
   return out;
@@ -176,8 +248,9 @@ async function infoDePrecoDaLoja(db, tenantId, locationId, produtos) {
       preco_diferente_da_padrao: !!(regra && regra.preco_cent !== null && regra.preco_cent !== cent(p.preco_venda)),
       faixas: lista.map((f) => ({
         id: f.id, rotulo: f.rotulo, quantidade_minima: f.quantidade_minima, preco_unitario: reais(f.preco_cent),
-        kit: reais(f.preco_cent * f.quantidade_minima), automatica: f.automatica, ean_pack: f.ean_pack || null,
-        economia: reais((tabelaCent - f.preco_cent) * f.quantidade_minima),
+        modo: f.modo_cadastro === 'kit' ? 'pack' : 'atacado', // pack: pack fechado + avulsas; atacado: todas as unidades no preco da faixa
+        kit: f.modo_cadastro === 'kit' && f.kit_cent ? reais(f.kit_cent) : reais(f.preco_cent * f.quantidade_minima), automatica: f.automatica, ean_pack: f.ean_pack || null,
+        economia: reais(tabelaCent * f.quantidade_minima - (f.modo_cadastro === 'kit' && f.kit_cent ? f.kit_cent : f.preco_cent * f.quantidade_minima)),
       })),
     });
   }
@@ -199,6 +272,6 @@ async function buscarPorEanPack(db, tenantId, locationId, ean) {
 }
 
 module.exports = {
-  cent, reais, brl, precoDaFaixaEmCentavos, validarFaixasDaLoja, escolherFaixa,
+  cent, reais, brl, precoDaFaixaEmCentavos, validarFaixasDaLoja, escolherFaixa, calcularTotal, rotuloDoCalculo, ratearLinhas,
   carregarRegras, precosDosProdutos, precoDoProduto, itensParaPreco, infoDePrecoDaLoja, buscarPorEanPack,
 };

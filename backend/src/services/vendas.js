@@ -81,6 +81,8 @@ async function registrarVenda(client, user, dados) {
     preco_informado: (dados.precos_informados || dados.precos_do_pedido) && Number.isFinite(Number(i.preco_unitario)) ? Number(i.preco_unitario) : null,
     preco_tabela_informado: (dados.precos_informados || dados.precos_do_pedido) && i.preco_tabela !== undefined && i.preco_tabela !== null && Number.isFinite(Number(i.preco_tabela)) ? Number(i.preco_tabela) : null,
     faixa_rotulo_informado: (dados.precos_informados || dados.precos_do_pedido) && i.faixa_rotulo ? String(i.faixa_rotulo) : null,
+    // pedido/comanda interno com pack fechado: o subtotal exato da linha (o preco unitario e medio, com 4 casas)
+    subtotal_informado: dados.precos_do_pedido && i.subtotal !== undefined && i.subtotal !== null && Number.isFinite(Number(i.subtotal)) ? Number(i.subtotal) : null,
     complementos_pedidos: Array.isArray(i.complementos) ? i.complementos : [],
   }));
 
@@ -153,13 +155,17 @@ async function registrarVenda(client, user, dados) {
   // ou comanda internos: ja inclui os complementos). Produto que a loja nao vende e recusado.
   const usaInformado = !!(dados.precos_informados || dados.precos_do_pedido);
   const regras = usaInformado ? null : await precos.precosDosProdutos(client, user.tenantId, locationId, precos.itensParaPreco(linhas));
-  const linhasComPreco = linhas.map((l) => {
+  // pack fechado (12 por R$ 50,00): o total exato do produto e repartido nas linhas dele
+  const rateio = regras ? precos.ratearLinhas(linhas.map((l) => ({ product_id: l.product_id, quantidade: l.quantidade, compl: precoDosComplementos(l.complementos) })), regras) : new Map();
+  const linhasComPreco = linhas.map((l, idx) => {
     const compl = precoDosComplementos(l.complementos);
     const regra = regras ? regras.get(l.product_id) : null;
-    const preco = l.preco_informado !== null ? l.preco_informado : Number((regra.preco_unitario + compl).toFixed(2));
+    const rat = rateio.get(idx);
+    const preco = l.preco_informado !== null ? l.preco_informado : rat ? rat.preco_unitario : Number((regra.preco_unitario + compl).toFixed(2));
     const comFaixa = regra && regra.faixa;
+    const subtotal = rat ? rat.subtotal : l.subtotal_informado !== null && l.subtotal_informado !== undefined ? l.subtotal_informado : Number((preco * l.quantidade).toFixed(2));
     return {
-      ...l, preco_unitario: preco, custo_unitario: custoUnitario(comp, l.product_id, l.complementos), subtotal: Number((preco * l.quantidade).toFixed(2)),
+      ...l, preco_unitario: preco, custo_unitario: custoUnitario(comp, l.product_id, l.complementos), subtotal,
       preco_tabela: comFaixa ? Number((regra.preco_tabela + compl).toFixed(2)) : l.preco_tabela_informado,
       faixa_rotulo: comFaixa ? (regra.faixa.rotulo || `${regra.faixa.quantidade_minima} un`) : l.faixa_rotulo_informado,
     };

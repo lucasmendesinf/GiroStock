@@ -10,6 +10,7 @@ import { brl, dataHora, parseNumero, qtd } from '../utils/format';
 import { temModulo } from '../utils/permissions.js';
 import { BlocoIfood, CancelarIfoodModal, EtiquetasIfood, PendenciasIfood, classePlataforma, nomePlataforma } from '../components/IfoodPedidos.jsx';
 import SomPedidosControle from '../components/SomPedidosControle.jsx';
+import { BlocoEntregaIfood, EtiquetaEntregaIfood, entregaIfoodAtiva } from '../components/EntregaIfood.jsx';
 import { textoComplementos } from '../components/EscolherComplementos.jsx';
 
 const COLUNAS = [
@@ -146,7 +147,7 @@ export default function Pedidos() {
 
   function avancar(p, extra = {}) {
     const para = proximo(p);
-    if (para === 'saiu_entrega' && !p.entregador_id && !extra.entregador_id) { setEscolherEntregador(p); return; }
+    if (para === 'saiu_entrega' && !p.entregador_id && !extra.entregador_id && !entregaIfoodAtiva(p)) { setEscolherEntregador(p); return; }
     if (para === 'finalizado' && !p.pago && !extra.forma_pagamento) { setReceber(p); return; }
     executar(api.post(`/orders/${p.id}/status`, { para, ...extra }), (r) => `Pedido #${r.numero} → ${NOME_STATUS[r.status]}${r.status === 'finalizado' ? ' · reserva convertida em baixa definitiva do estoque' : ''}`);
   }
@@ -200,6 +201,7 @@ export default function Pedidos() {
         </div>
         {p.externo && <div className="ped-r3" style={{ marginTop: 6 }}><EtiquetasIfood p={p} /></div>}
         {p.entregador_nome && p.status === 'saiu_entrega' && <div className="ped-its" style={{ marginTop: 6 }}>Entregador: <b>{p.entregador_nome}</b></div>}
+        {p.entrega_ifood && aberto(p) && <div className="ped-r3" style={{ marginTop: 6 }}><EtiquetaEntregaIfood p={p} /></div>}
         {a && aberto(p) && !aguardandoPagamento(p) && (
           <div className="ped-act" onClick={(e) => e.stopPropagation()}>
             <button type="button" onClick={() => avancar(p)}>{a}</button>
@@ -298,7 +300,7 @@ export default function Pedidos() {
           onClose={() => { setAberta(null); setDetalhe(null); }}
           onAvancar={() => avancar(detalhe)} onCancelar={() => setCancelar(detalhe)} onDestino={() => setDestino(detalhe)} onImprimir={() => imprimir(detalhe.id)}
           onEntregador={(id) => executar(api.put(`/orders/${detalhe.id}/entregador`, { entregador_id: id || null }))}
-          pedidoLista={pedidos.find((p) => p.id === aberta)}
+          pedidoLista={pedidos.find((p) => p.id === aberta)} usaIfood={usaIfood}
           onIfood={async () => { await carregar(); window.dispatchEvent(new Event('girostock:pedidos-mudaram')); if (aberta) setDetalhe(await api.get(`/orders/${aberta}`)); }} />
       )}
 
@@ -362,7 +364,7 @@ function AvisosWhatsapp({ pedido }) {
   );
 }
 
-function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, onClose, onAvancar, onCancelar, onDestino, onImprimir, onEntregador, onIfood }) {
+function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, usaIfood, onClose, onAvancar, onCancelar, onDestino, onImprimir, onEntregador, onIfood }) {
   const entrega = p.tipo === 'entrega';
   const entregaLoja = entregaDaLoja(p);
   const fluxo = entregaLoja ? COLUNAS : COLUNAS.filter(([s]) => s !== 'saiu_entrega');
@@ -407,7 +409,8 @@ function Gaveta({ pedido: p, entregadores, agoraMin, pedidoLista, onClose, onAva
           </div>
         )}
 
-        {entregaLoja && ['pronto', 'saiu_entrega'].includes(p.status) && (
+        {usaIfood && entrega && <BlocoEntregaIfood pedido={p} onMudou={onIfood} />}
+        {entregaLoja && ['pronto', 'saiu_entrega'].includes(p.status) && !entregaIfoodAtiva(p) && (
           <Field label="Entregador">
             <select value={p.entregador_id || ''} onChange={(e) => onEntregador(e.target.value)}>
               <option value="">Escolha...</option>

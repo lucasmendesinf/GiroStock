@@ -317,7 +317,8 @@ async function varrer() {
     for (const p of pend) { try { await conferirModelos(p.tenant_id); } catch { /* tenta depois */ } }
     const { rows } = await pool.query(
       `SELECT l.id AS log_id, l.para, l.criado_em, o.id AS order_id, o.tenant_id, o.numero, o.origem, o.tipo, o.comanda_id, o.status AS status_atual,
-              o.cliente_nome, o.cliente_telefone, o.pagamento_online, o.pagamento_status, loc.nome AS loja_nome, cr.nome AS entregador_nome,
+              o.cliente_nome, o.cliente_telefone, o.pagamento_online, o.pagamento_status, loc.nome AS loja_nome,
+              COALESCE(cr.nome, (SELECT 'o entregador do iFood' FROM entregas_ifood ei WHERE ei.order_id = o.id AND ei.status NOT IN ('cancelada', 'falhou') LIMIT 1)) AS entregador_nome,
               COALESCE((SELECT SUM(oi.subtotal) FROM order_items oi WHERE oi.order_id = o.id), 0) + o.taxa_entrega - o.desconto - COALESCE(o.desconto_pix, 0) AS total,
               w.phone_number_id, w.token_cript, w.avisos, w.modelos
        FROM order_status_log l JOIN orders o ON o.id = l.order_id JOIN locations loc ON loc.id = o.location_id

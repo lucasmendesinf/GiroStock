@@ -11,6 +11,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tokenDoMasterComDoisFatores } from './e2e-2fa-helper.mjs';
+import { createRequire } from 'node:module';
 
 const raiz = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const B = process.env.API_URL || 'http://localhost:3000';
@@ -241,6 +242,87 @@ check('a conexão mostra modo teste e o produto de teste', lista2.modo_teste ===
 await api('PATCH', `/integracoes/${INTEG}`, { modo_teste: false }, A);
 const pt2 = await sim('POST', '/_sim/pedidos', { itens: [{ nome: `Outro aleatorio ${Date.now()}`, quantidade: 1, preco: 10 }] });
 check('modo teste desligado: item desconhecido volta a pedir vínculo', (await ate(async () => (await prod.query(`SELECT situacao FROM pedidos_externos WHERE externo_id = $1`, [pt2.j.id])).rows[0]) || {}).situacao === 'aguardando_vinculo');
+
+console.log('\n# 6c. Entregador do iFood (Entrega Fácil / Sob Demanda) para pedido de outro canal');
+const novoPed = async (extra = {}) => (await api('POST', '/orders', { location_id: L.Lanchonete, origem: 'telefone', tipo: 'entrega', cliente_nome: 'Paula Cliente', cliente_telefone: '(41) 99876-5432',
+  endereco: 'Avenida Paulista, 100 - Apto 12 - Bela Vista, São Paulo/SP (Ref.: perto do metrô)', taxa_entrega: 7, itens: [{ product_id: REFRI.id, quantidade: 2 }], ...extra }, A)).j;
+await api('POST', '/stock-movements', { product_id: REFRI.id, tipo: 'entrada', quantidade: 30, location_destino_id: L.Lanchonete, motivo: 'e2e entrega ifood' }, A);
+const PE = await novoPed();
+const totalPE = Number(PE.total);
+const prep = await api('GET', `/integracoes/entregas/pedidos/${PE.id}`, null, A);
+check('preparar: pode chamar; endereço do texto do pedido separado em campos', prep.s === 200 && prep.j.pode === true && prep.j.endereco.logradouro === 'Avenida Paulista' && prep.j.endereco.numero === '100'
+  && prep.j.endereco.complemento === 'Apto 12' && prep.j.endereco.bairro === 'Bela Vista' && prep.j.endereco.cidade === 'São Paulo' && prep.j.endereco.uf === 'SP' && prep.j.endereco.referencia === 'perto do metrô', prep.j);
+const end = { ...prep.j.endereco, cep: '' };
+check('cotar sem CEP -> 400', (await api('POST', `/integracoes/entregas/pedidos/${PE.id}/cotar`, { endereco: end }, A)).s === 400);
+const cepr = await api('GET', '/integracoes/entregas/cep/01310100', null, A);
+check('buscar CEP preenche rua, bairro e cidade', cepr.s === 200 && cepr.j.encontrado && cepr.j.cidade === 'São Paulo' && cepr.j.uf === 'SP', cepr.j);
+const endOk = { ...end, cep: '01310-100', lat: null, lng: null };
+const cot = await api('POST', `/integracoes/entregas/pedidos/${PE.id}/cotar`, { endereco: endOk }, A);
+check('cotação: valor, distância, tempo e formas de pagamento; coordenadas do endereço', cot.s === 200 && cot.j.cotacao_id && cot.j.valor > 5 && cot.j.distancia_m > 1000 && cot.j.tempo_min === 20 && cot.j.tempo_max === 30
+  && cot.j.formas.some((f) => f.metodo === 'CASH') && Math.abs(cot.j.lat - -23.5614) < 0.001 && cot.j.origem_coordenadas !== 'pino', cot.j);
+const longe = await api('POST', `/integracoes/entregas/pedidos/${PE.id}/cotar`, { endereco: { ...endOk, cep: '20040020' } }, A);
+check('endereço longe demais (> 10 km) -> 422 com o motivo em português', longe.s === 422 && /longe demais/.test(longe.j.erro), longe.j);
+const pino = await api('POST', `/integracoes/entregas/pedidos/${PE.id}/cotar`, { endereco: { ...endOk, lat: -23.5600, lng: -46.6500 } }, A);
+check('pino conferido no mapa: usa as coordenadas marcadas', pino.s === 200 && pino.j.origem_coordenadas === 'pino' && pino.j.lat === -23.56, pino.j);
+const chamar = (corpo) => api('POST', `/integracoes/entregas/pedidos/${PE.id}/chamar`, { endereco: endOk, cotacao_id: cot.j.cotacao_id, cotacao: cot.j, alocar_em_min: 10, ...corpo }, A);
+check('chamar sem dizer como o cliente paga -> 400', (await chamar({})).s === 400);
+check('troco menor que o total -> 400', (await chamar({ pagamento: { tipo: 'dinheiro', troco_para: 1 } })).s === 400);
+const ch = await chamar({ pagamento: { tipo: 'dinheiro', troco_para: 100 } });
+check('entregador chamado: link de acompanhamento do iFood', ch.s === 201 && ch.j.status === 'solicitada' && /meupedido\.ifood\.com\.br/.test(ch.j.tracking_url) && ch.j.valor === cot.j.valor, ch.j);
+const criada = (await acoes()).filter((x) => x.acao === 'entrega_criar').pop();
+const corpoIf = criada && criada.corpo;
+check('vai ao iFood: endereço completo com coordenadas (aparece no app do entregador), cliente e celular',
+  corpoIf && corpoIf.delivery.deliveryAddress.streetName === 'Avenida Paulista' && corpoIf.delivery.deliveryAddress.postalCode === '01310100' && corpoIf.delivery.deliveryAddress.complement === 'Apto 12'
+  && corpoIf.delivery.deliveryAddress.reference === 'perto do metrô' && typeof corpoIf.delivery.deliveryAddress.coordinates.latitude === 'number'
+  && corpoIf.customer.phone.areaCode === '41' && corpoIf.customer.phone.number === '998765432' && corpoIf.delivery.preparationTime === 600, corpoIf);
+check('itens, taxa e pagamento em dinheiro com troco batendo com o total do pedido', corpoIf && corpoIf.items.length === 1 && corpoIf.items[0].quantity === 2 && corpoIf.delivery.merchantFee === 7
+  && corpoIf.payments.methods[0].method === 'CASH' && Math.abs(corpoIf.payments.methods[0].value - totalPE) < 0.01 && corpoIf.payments.methods[0].cash.changeFor === 100, [corpoIf, totalPE]);
+check('chamar de novo com entregador a caminho -> 409', (await chamar({ pagamento: { tipo: 'dinheiro', troco_para: 100 } })).s === 409);
+check('cancelar o pedido com entregador do iFood a caminho -> 409', (await api('POST', `/orders/${PE.id}/cancel`, { motivo: 'teste de cancelamento' }, A)).s === 409);
+const statusEnt = async (id = PE.id) => (await api('GET', `/orders/${id}`, null, A)).j;
+check('evento do iFood: buscando entregador (sem virar pedido do iFood)', !!(await ate(async () => (await statusEnt()).entrega_ifood?.status === 'buscando'))
+  && !(await prod.query(`SELECT 1 FROM pedidos_externos WHERE externo_id = $1`, [criada.entrega])).rows.length);
+await sim('POST', `/_sim/entregas/${criada.entrega}/alocar`);
+const aloc = await ate(async () => { const o = await statusEnt(); return o.entrega_ifood?.status === 'alocado' ? o : null; });
+check('entregador alocado, com o nome', aloc && aloc.entrega_ifood.entregador_nome === 'Carlos Entregador', aloc && aloc.entrega_ifood);
+const rast = await api('GET', `/integracoes/entregas/pedidos/${PE.id}/rastreio`, null, A);
+check('rastreio: posição do entregador no mapa', rast.s === 200 && rast.j.entregador && Math.abs(rast.j.entregador.lat - -23.54652) < 0.0001 && rast.j.previsao_entrega, rast.j);
+await sim('POST', `/_sim/entregas/${criada.entrega}/coletar`);
+const saiu = await ate(async () => { const o = await statusEnt(); return o.status === 'saiu_entrega' && o.entrega_ifood?.status === 'em_rota' ? o : null; });
+check('entregador coletou: o pedido vai sozinho para "Saiu p/ entrega"', !!saiu, await statusEnt());
+await sim('POST', `/_sim/entregas/${criada.entrega}/codigo`);
+check('código de entrega que o entregador pede ao cliente (4 últimos dígitos)', !!(await ate(async () => (await statusEnt()).entrega_ifood?.codigo_entrega === '5432')));
+await sim('POST', `/_sim/entregas/${criada.entrega}/concluir`);
+check('entrega concluída no iFood', !!(await ate(async () => (await statusEnt()).entrega_ifood?.status === 'entregue')));
+const fin = await api('POST', `/orders/${PE.id}/status`, { para: 'finalizado', forma_pagamento: 'dinheiro', valor_recebido: 100 }, A);
+check('finalizar o pedido entregue pelo iFood (gera a venda)', fin.s === 200 && fin.j.status === 'finalizado', fin.j);
+// segundo pedido: cartão na entrega e cancelamento do entregador
+const PE2 = await novoPed();
+const cot2 = (await api('POST', `/integracoes/entregas/pedidos/${PE2.id}/cotar`, { endereco: endOk }, A)).j;
+check('cartão sem bandeira -> 400', (await api('POST', `/integracoes/entregas/pedidos/${PE2.id}/chamar`, { endereco: endOk, cotacao_id: cot2.cotacao_id, pagamento: { tipo: 'credito' } }, A)).s === 400);
+const ch2 = await api('POST', `/integracoes/entregas/pedidos/${PE2.id}/chamar`, { endereco: endOk, cotacao_id: cot2.cotacao_id, cotacao: cot2, pagamento: { tipo: 'credito', bandeira: 'Visa' } }, A);
+const corpo2 = (await acoes()).filter((x) => x.acao === 'entrega_criar').pop().corpo;
+check('cartão de crédito na entrega: bandeira vai ao iFood', ch2.s === 201 && corpo2.payments.methods[0].method === 'CREDIT' && corpo2.payments.methods[0].card.brand === 'Visa', corpo2.payments);
+const motE = await api('GET', `/integracoes/entregas/pedidos/${PE2.id}/motivos`, null, A);
+check('motivos de cancelamento vêm do iFood', motE.s === 200 && motE.j.some((x) => x.codigo === '817'), motE.j);
+check('motivo inválido -> 409', (await api('POST', `/integracoes/entregas/pedidos/${PE2.id}/cancelar`, { codigo: '999' }, A)).s === 409);
+check('cancelar o entregador', (await api('POST', `/integracoes/entregas/pedidos/${PE2.id}/cancelar`, { codigo: '817' }, A)).s === 200);
+check('evento do iFood: entrega cancelada', !!(await ate(async () => (await statusEnt(PE2.id)).entrega_ifood?.status === 'cancelada')));
+check('sem entregador ativo, o pedido pode ser cancelado', (await api('POST', `/orders/${PE2.id}/cancel`, { motivo: 'cliente desistiu' }, A)).s === 200);
+// sem o servico contratado; retirada; pedido do site com endereço em campos
+await sim('POST', '/_sim/entregas/config', { desligado: true });
+const PE3 = await novoPed();
+const cot3 = (await api('POST', `/integracoes/entregas/pedidos/${PE3.id}/cotar`, { endereco: endOk }, A)).j;
+const sd = await api('POST', `/integracoes/entregas/pedidos/${PE3.id}/chamar`, { endereco: endOk, cotacao_id: cot3.cotacao_id, pagamento: { tipo: 'pago' } }, A);
+check('serviço não contratado: explica como ativar no Portal do Parceiro', sd.s === 422 && /Portal do Parceiro/.test(sd.j.erro), sd.j);
+await sim('POST', '/_sim/entregas/config', { desligado: false });
+const PR = (await api('POST', '/orders', { location_id: L.Lanchonete, origem: 'balcao', tipo: 'retirada', itens: [{ product_id: REFRI.id, quantidade: 1 }] }, A)).j;
+const prr = (await api('GET', `/integracoes/entregas/pedidos/${PR.id}`, null, A)).j;
+check('pedido de retirada não chama entregador', prr.pode === false && /entrega/.test(prr.motivo), prr);
+check('cotar pedido de retirada -> 409', (await api('POST', `/integracoes/entregas/pedidos/${PR.id}/cotar`, { endereco: endOk }, A)).s === 409);
+const { enderecoDoTexto } = createRequire(import.meta.url)('../src/integracoes/ifood/entregas');
+const et = enderecoDoTexto('Rua das Flores, 200 - Centro, Curitiba/PR');
+check('endereço do texto: rua, número, bairro, cidade e UF', et.logradouro === 'Rua das Flores' && et.numero === '200' && et.bairro === 'Centro' && et.cidade === 'Curitiba' && et.uf === 'PR', et);
 
 console.log('\n# 7. Modulo desligado para de receber; token renovado sozinho; desconectar');
 await api('PATCH', `/master/empresas/${empresa}`, { recursos: { delivery_apps: null } }, MAS);

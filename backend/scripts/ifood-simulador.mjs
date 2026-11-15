@@ -39,6 +39,26 @@ const FULL = { PLC: 'PLACED', CFM: 'CONFIRMED', RTP: 'READY_TO_PICKUP', DSP: 'DI
 function evento(code, pedido, metadata) {
   eventos.push({ id: id(), code, fullCode: FULL[code] || code, orderId: pedido.id, merchantId: pedido.merchant.id, createdAt: new Date().toISOString(), salesChannel: 'IFOOD', metadata });
 }
+// ---------- Shipping (Entrega Facil / Sob Demanda) ----------
+// Loja simulada na Praca da Se (SP). Cotacao: R$ 5,00 + R$ 1,50 por km; acima de 10 km -> DeliveryDistanceTooHigh.
+const LOJA_PONTO = { lat: -23.55052, lng: -46.633308 };
+const cotacoesSim = new Map(); // quoteId -> { merchantId, lat, lng, valor }
+const entregasSim = new Map(); // id -> { merchantId, corpo, status, rastreio }
+let shippingDesligado = false;
+const CURTO = { REQUEST_DRIVER: 'RDR', ASSIGN_DRIVER: 'ADR', REQUEST_DRIVER_SUCCESS: 'RDS', REQUEST_DRIVER_FAILED: 'RDF', GOING_TO_ORIGIN: 'GTO', ARRIVED_AT_ORIGIN: 'AAO',
+  COLLECTED: 'CLT', DELIVERY_IN_TRANSIT: 'DIT', ARRIVED_AT_DESTINATION: 'AAD', DELIVERY_DROP_CODE_REQUESTED: 'DDCR', DELIVERY_CONCLUDED: 'CON', CANCELLATION_REQUESTED: 'CAR', CANCELLED: 'CAN' };
+function eventoEntrega(fullCode, idEntrega, metadata) {
+  const e = entregasSim.get(idEntrega);
+  eventos.push({ id: id(), code: CURTO[fullCode] || fullCode, fullCode, orderId: idEntrega, merchantId: e.merchantId, createdAt: new Date().toISOString(), salesChannel: 'POS', metadata });
+}
+function distanciaKm(a, b) {
+  const r = 6371; const rad = (x) => (x * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat); const dLng = rad(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * r * Math.asin(Math.sqrt(h));
+}
+const erroShip = (res, code, msg) => responder(res, 400, { error: { code, message: msg || code } });
+
 function emitirTokens() {
   const accessToken = 'sim-at-' + crypto.randomBytes(12).toString('hex');
   const refreshToken = 'sim-rt-' + crypto.randomBytes(12).toString('hex');
@@ -116,6 +136,28 @@ const servidor = http.createServer(async (req, res) => {
       return responder(res, 200, { authorizationCode: r.autorizacao, mensagem: 'Cole este código de autorização no GiroStock' });
     }
     if (c === '/_sim/acoes') return responder(res, 200, acoes);
+    if (c === '/_sim/entregas' && req.method === 'GET') return responder(res, 200, Object.fromEntries(entregasSim));
+    if (c === '/_sim/entregas/config' && req.method === 'POST') { shippingDesligado = !!b.desligado; return responder(res, 200, { desligado: shippingDesligado }); }
+    let me = c.match(/^\/_sim\/entregas\/([^/]+)\/([a-z_]+)$/);
+    if (me && req.method === 'POST') {
+      const e = entregasSim.get(me[1]);
+      if (!e) return responder(res, 404, { error: { message: 'entrega não encontrada' } });
+      const passo = me[2];
+      const tel = e.corpo.customer.phone || {};
+      const mapa = {
+        alocar: () => { e.status = 'alocado'; e.rastreio = { lat: LOJA_PONTO.lat + 0.004, lng: LOJA_PONTO.lng }; eventoEntrega('ASSIGN_DRIVER', me[1], { workerName: 'Carlos Entregador' }); },
+        a_caminho: () => { e.status = 'indo_loja'; eventoEntrega('GOING_TO_ORIGIN', me[1], {}); },
+        na_loja: () => { e.status = 'na_loja'; e.rastreio = { ...LOJA_PONTO }; eventoEntrega('ARRIVED_AT_ORIGIN', me[1], {}); },
+        coletar: () => { e.status = 'em_rota'; const d = e.corpo.delivery.deliveryAddress.coordinates; e.rastreio = { lat: (LOJA_PONTO.lat + d.latitude) / 2, lng: (LOJA_PONTO.lng + d.longitude) / 2 }; eventoEntrega('COLLECTED', me[1], {}); },
+        codigo: () => { eventoEntrega('DELIVERY_DROP_CODE_REQUESTED', me[1], { CODE: String(tel.number || '').slice(-4) }); },
+        no_destino: () => { e.status = 'no_destino'; const d = e.corpo.delivery.deliveryAddress.coordinates; e.rastreio = { lat: d.latitude, lng: d.longitude }; eventoEntrega('ARRIVED_AT_DESTINATION', me[1], {}); },
+        concluir: () => { e.status = 'entregue'; eventoEntrega('DELIVERY_CONCLUDED', me[1], {}); },
+        falhar: () => { e.status = 'falhou'; eventoEntrega('REQUEST_DRIVER_FAILED', me[1], { reason: 'sem entregadores na região' }); },
+      };
+      if (!mapa[passo]) return responder(res, 400, { error: { message: 'passo inválido' } });
+      mapa[passo]();
+      return responder(res, 200, { ok: true, status: e.status });
+    }
     if (c === '/_sim/eventos') return responder(res, 200, eventos);
     if (c === '/_sim/cardapio') return responder(res, 200, Object.fromEntries([...itensSim].map(([mm, mapa]) => [mm, { categorias: categoriasSim.get(mm) || [], itens: Object.fromEntries(mapa) }])));
     if (c === '/_sim/catalogo') return responder(res, 200, Object.fromEntries([...catalogo].map(([m, mapa]) => [m, Object.fromEntries(mapa)])));
@@ -164,6 +206,64 @@ const servidor = http.createServer(async (req, res) => {
     if (c === '/events/v1.0/events/acknowledgment' && req.method === 'POST') {
       const ids = new Set((Array.isArray(b) ? b : []).map((x) => x.id));
       eventos = eventos.filter((e) => !ids.has(e.id));
+      return responder(res, 202);
+    }
+
+    // ---------- shipping (Sob Demanda) ----------
+    let ms = c.match(/^\/shipping\/v1\.0\/merchants\/([^/]+)\/deliveryAvailabilities$/);
+    if (ms && req.method === 'GET') {
+      const lat = Number(url.searchParams.get('latitude')); const lng = Number(url.searchParams.get('longitude'));
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return erroShip(res, 'BadRequest');
+      const km = distanciaKm(LOJA_PONTO, { lat, lng });
+      if (km > 10) return erroShip(res, 'DeliveryDistanceTooHigh');
+      const valor = Math.round((5 + 1.5 * km) * 100) / 100;
+      const qid = crypto.randomUUID();
+      cotacoesSim.set(qid, { merchantId: ms[1], lat, lng, valor });
+      return responder(res, 200, {
+        id: qid, expirationAt: new Date(Date.now() + 86400e3).toISOString(), createdAt: new Date().toISOString(), distance: Math.round(km * 1000), preparationTime: 600,
+        quote: { grossValue: valor, discount: 0, raise: 0, netValue: valor }, deliveryTime: { min: 1200, max: 1800 }, hasPaymentMethods: true,
+        paymentMethods: [{ id: id(), brand: 'Visa', liability: 'IFOOD', paymentType: 'OFFLINE', method: 'CREDIT' }, { id: id(), brand: 'Mastercard', liability: 'IFOOD', paymentType: 'OFFLINE', method: 'DEBIT' }, { id: id(), liability: 'IFOOD', paymentType: 'OFFLINE', method: 'CASH' }],
+      });
+    }
+    ms = c.match(/^\/shipping\/v1\.0\/merchants\/([^/]+)\/orders$/);
+    if (ms && req.method === 'POST') {
+      if (shippingDesligado) return erroShip(res, 'MerchantEasyDeliveryDisabled');
+      const cu = b.customer || {}; const d = b.delivery || {}; const a = d.deliveryAddress || {}; const co = a.coordinates || {};
+      if (!cu.name || !cu.phone || !/^\d{2}$/.test(cu.phone.areaCode || '') || !/^\d{7,9}$/.test(cu.phone.number || '')) return erroShip(res, 'BadRequestCustomer');
+      if (!/^\d{8}$/.test(a.postalCode || '') || !a.streetName || !a.streetNumber || !a.neighborhood || !a.city || !/^[A-Z]{2}$/.test(a.state || '') || a.country !== 'BR') return erroShip(res, 'BadRequest', 'endereço incompleto');
+      if (!Number.isFinite(co.latitude) || !Number.isFinite(co.longitude)) return erroShip(res, 'BadRequest', 'sem coordenadas');
+      if (typeof d.merchantFee !== 'number') return erroShip(res, 'BadRequest', 'merchantFee');
+      if (!cotacoesSim.has(d.quoteId)) return erroShip(res, 'BadRequest', 'quoteId inválido');
+      const its = Array.isArray(b.items) ? b.items : [];
+      if (!its.length || its.some((i) => !i.id || !i.name || !(Number.isInteger(i.quantity) && i.quantity > 0) || Math.abs(i.price - i.quantity * i.unitPrice) > 0.05 || Math.abs(i.totalPrice - i.price - i.optionsPrice) > 0.001)) return erroShip(res, 'BadRequest', 'itens inválidos');
+      const totalItens = its.reduce((s, i) => s + i.totalPrice, 0) + d.merchantFee;
+      if (b.payments) {
+        const ps = b.payments.methods || [];
+        if (ps.some((p) => !['CREDIT', 'DEBIT', 'CASH'].includes(p.method) || p.type !== 'OFFLINE' || ((p.method === 'CREDIT' || p.method === 'DEBIT') && !(p.card && p.card.brand)) || (p.method === 'CASH' && !(p.cash && p.cash.changeFor >= p.value)))) return erroShip(res, 'PaymentMethodNotFound');
+        if (Math.abs(ps.reduce((s, p) => s + p.value, 0) - totalItens) > 0.01) return erroShip(res, 'PaymentTotalInvalid');
+      }
+      const novo = crypto.randomUUID();
+      entregasSim.set(novo, { merchantId: ms[1], corpo: b, status: 'solicitada', rastreio: null });
+      eventoEntrega('REQUEST_DRIVER', novo, {});
+      acoes.push({ acao: 'entrega_criar', entrega: novo, corpo: b, em: new Date().toISOString() });
+      return responder(res, 202, { id: novo, trackingUrl: `https://meupedido.ifood.com.br/${novo}` });
+    }
+    ms = c.match(/^\/shipping\/v1\.0\/orders\/([^/]+)\/(tracking|cancellationReasons|cancel)$/);
+    if (ms) {
+      const e = entregasSim.get(ms[1]);
+      if (!e) return responder(res, 404, { error: { code: 'OrderNotFound' } });
+      if (ms[2] === 'tracking') {
+        if (!e.rastreio) return responder(res, 404, { error: { code: 'NotFound' } });
+        return responder(res, 200, { latitude: e.rastreio.lat, longitude: e.rastreio.lng, expectedDelivery: new Date(Date.now() + 900e3).toISOString(), pickupEtaStart: 120, deliveryEtaEnd: 900, trackDate: new Date().toISOString() });
+      }
+      const podeCancelar = ['solicitada', 'alocado', 'indo_loja', 'na_loja'].includes(e.status);
+      if (ms[2] === 'cancellationReasons') return podeCancelar ? responder(res, 200, [{ cancelCodeId: '817', description: 'O cliente cancelou o pedido' }, { cancelCodeId: '818', description: 'Impossível preparar o pedido' }]) : responder(res, 204);
+      if (req.method !== 'POST' || !b.reason || !Number.isInteger(b.cancellationCode)) return erroShip(res, 'BadRequest');
+      if (!podeCancelar) return erroShip(res, 'BadRequest', 'não pode mais cancelar');
+      e.status = 'cancelada';
+      acoes.push({ acao: 'entrega_cancelar', entrega: ms[1], corpo: b, em: new Date().toISOString() });
+      eventoEntrega('CANCELLATION_REQUESTED', ms[1], {});
+      eventoEntrega('CANCELLED', ms[1], {});
       return responder(res, 202);
     }
 

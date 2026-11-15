@@ -108,6 +108,17 @@ router.post('/integracoes/:id/disponibilidade/enviar', configuracoes, async (req
   }
 });
 
+// ---------- entregador do iFood (Entrega Facil / Sob Demanda) para pedido de outro canal: area Pedidos ----------
+const entregas = require('../integracoes/ifood/entregas');
+const idPedido = (req) => { if (!isUuid(req.params.orderId)) throw new HttpError(404, 'pedido não encontrado'); return req.params.orderId; };
+router.get('/integracoes/entregas/cep/:cep', pedidos, async (req, res) => { res.json(await entregas.buscarCep(req.params.cep)); });
+router.get('/integracoes/entregas/pedidos/:orderId', pedidos, async (req, res) => { res.json(await entregas.preparar(req.user, idPedido(req))); });
+router.post('/integracoes/entregas/pedidos/:orderId/cotar', pedidos, async (req, res) => { res.json(await entregas.cotar(req.user, idPedido(req), req.body || {})); });
+router.post('/integracoes/entregas/pedidos/:orderId/chamar', pedidos, async (req, res) => { res.status(201).json(await entregas.solicitar(req.user, idPedido(req), req.body || {})); });
+router.get('/integracoes/entregas/pedidos/:orderId/rastreio', pedidos, async (req, res) => { res.json(await entregas.rastrear(req.user, idPedido(req))); });
+router.get('/integracoes/entregas/pedidos/:orderId/motivos', pedidos, async (req, res) => { res.json(await entregas.motivosCancelar(req.user, idPedido(req))); });
+router.post('/integracoes/entregas/pedidos/:orderId/cancelar', pedidos, async (req, res) => { res.json(await entregas.cancelar(req.user, idPedido(req), req.body || {})); });
+
 // ---------- cardapio do iFood: enviar os produtos do GiroStock ----------
 router.get('/integracoes/:id/cardapio', configuracoes, async (req, res) => {
   const integ = await integracaoIfood(req);

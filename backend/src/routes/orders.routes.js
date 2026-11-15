@@ -39,6 +39,9 @@ const SELECT_PEDIDO = `
          (SELECT json_build_object('id', pe.id, 'plataforma', pe.plataforma, 'confirmado', pe.confirmado, 'status_externo', pe.status_externo,
                  'entrega_pela_plataforma', pe.entrega_pela_plataforma, 'faltas_estoque', pe.faltas_estoque, 'disputa', pe.disputa)
             FROM pedidos_externos pe WHERE pe.order_id = o.id LIMIT 1) AS externo,
+         (SELECT json_build_object('id', ei.id, 'status', ei.status, 'valor', ei.valor, 'tracking_url', ei.tracking_url, 'entregador_nome', ei.entregador_nome,
+                 'codigo_entrega', ei.codigo_entrega, 'erro', ei.erro, 'tempo_min', ei.tempo_min, 'tempo_max', ei.tempo_max, 'atualizado_em', ei.atualizado_em)
+            FROM entregas_ifood ei WHERE ei.order_id = o.id ORDER BY ei.criado_em DESC LIMIT 1) AS entrega_ifood,
          COALESCE((SELECT MAX(sl.criado_em) FROM order_status_log sl WHERE sl.order_id = o.id), o.criado_em) AS etapa_desde,
          GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (now() - COALESCE((SELECT MAX(sl.criado_em) FROM order_status_log sl WHERE sl.order_id = o.id), o.criado_em))) / 60))::int AS minutos_etapa
   FROM orders o
@@ -238,8 +241,10 @@ router.post('/orders/:id/status', async (req, res) => {
     let entregadorId = o.entregador_id;
     if (para === 'saiu_entrega') {
       entregadorId = b.entregador_id || o.entregador_id;
-      if (!entregadorId) throw new HttpError(400, 'escolha o entregador antes de sair para a entrega');
-      await getOwned(client, 'couriers', entregadorId, req.user.tenantId, { columns: 'id, ativo' });
+      // entregador do iFood (Entrega Facil) a caminho: dispensa o entregador proprio
+      const viaIfood = (await client.query(`SELECT 1 FROM entregas_ifood WHERE order_id = $1 AND status NOT IN ('cancelada', 'falhou') LIMIT 1`, [o.id])).rows.length > 0;
+      if (!entregadorId && !viaIfood) throw new HttpError(400, 'escolha o entregador antes de sair para a entrega');
+      if (entregadorId) await getOwned(client, 'couriers', entregadorId, req.user.tenantId, { columns: 'id, ativo' });
     }
 
     let saleId = o.sale_id;
@@ -328,6 +333,8 @@ router.post('/orders/:id/cancel', async (req, res) => {
     assertLocationAccess(req.user, o.location_id, 'cancelar pedidos desta loja');
     if (o.lv_fluxo === 'ecommerce') throw new HttpError(409, MSG_LOJA_ONLINE);
     if (o.status === 'finalizado') throw new HttpError(409, 'o pedido já foi finalizado: cancele pela venda (Relatórios), que devolve o estoque');
+    const entregaIfood = (await client.query(`SELECT 1 FROM entregas_ifood WHERE order_id = $1 AND status IN ('solicitada', 'buscando', 'alocado', 'indo_loja', 'na_loja', 'em_rota', 'no_destino') LIMIT 1`, [o.id])).rows.length > 0;
+    if (entregaIfood) throw new HttpError(409, 'há um entregador do iFood neste pedido: cancele o entregador primeiro (no pedido, "Entregador iFood" → Cancelar entregador)');
     if (o.status === 'cancelado') throw new HttpError(400, 'este pedido já foi cancelado');
     if ((await client.query(`SELECT 1 FROM comanda_pagamento_rodadas WHERE order_id = $1`, [o.id])).rows.length > 0) throw new HttpError(409, 'esta rodada já foi paga no app: um gerente precisa estornar o recebimento antes (Comandas)');
     // Pedido da loja virtual (producao): cancela pelo servico da loja, que estorna antes o pagamento feito no site.

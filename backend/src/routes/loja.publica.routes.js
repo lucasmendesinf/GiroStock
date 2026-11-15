@@ -708,6 +708,14 @@ router.post('/pedidos', comConta, limitar('lv-pedido', 30, 10 * 60 * 1000), asyn
     if (descontoPix || c.maior_idade) {
       await client.query(`UPDATE orders SET desconto_pix = $2, maior_idade_declarada_em = CASE WHEN $3 THEN now() END WHERE id = $1`, [r.orderId, descontoPix, !!c.maior_idade]);
     }
+    // Endereco em campos (para chamar o entregador do iFood sem redigitar) e as coordenadas salvas do endereco.
+    if (endereco) {
+      await client.query(`UPDATE orders SET entrega_endereco = $2 WHERE id = $1`, [r.orderId, JSON.stringify({
+        cep: String(endereco.cep || '').replace(/\D/g, ''), logradouro: endereco.logradouro, numero: endereco.numero, complemento: endereco.complemento || '',
+        bairro: endereco.bairro, cidade: endereco.cidade, uf: endereco.uf, referencia: endereco.referencia || '',
+        lat: endereco.lat === null || endereco.lat === undefined ? null : Number(endereco.lat), lng: endereco.lng === null || endereco.lng === undefined ? null : Number(endereco.lng),
+      })]);
+    }
     // Entrega por raio: distancia, faixa e origem das coordenadas ficam no pedido (o operador ve em Pedidos).
     if (c.raio && c.raio.status === 'atende' && !c.entrega.servico) {
       await client.query(

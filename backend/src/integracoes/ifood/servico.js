@@ -135,6 +135,8 @@ async function confirmarNoIfood(integ, pe) {
 const STATUS_POR_CODIGO = { PLC: 'PLACED', CFM: 'CONFIRMED', SPS: 'SEPARATION_STARTED', SPE: 'SEPARATION_ENDED', RTP: 'READY_TO_PICKUP', DSP: 'DISPATCHED', CON: 'CONCLUDED', CAN: 'CANCELLED' };
 
 async function tratarEvento(integ, ev) {
+  // entrega Sob Demanda (entregador do iFood para pedido de outro canal): nao e pedido do iFood
+  if (await require('./entregas').tratarEvento(integ, ev)) return;
   const codigo = ev.code || '';
   const cheio = ev.fullCode || STATUS_POR_CODIGO[codigo] || codigo;
   if (codigo === 'PLC' || cheio === 'PLACED') { await receberPedido(integ, ev.orderId); return; }
@@ -454,7 +456,7 @@ const mapear = pedidoDoIfood;
 const produtosDosItens = (client, tenantId, itens) => comum.produtosDosItens(client, tenantId, itens, PLATAFORMA);
 
 module.exports = {
-  mapear, confirmarPedido: confirmarNoIfood,
+  tokenDa, mapear, confirmarPedido: confirmarNoIfood,
   iniciarConexao, concluirConexao, escolherLoja, desconectar, sincronizar, cicloGeral, iniciarPolling, integracao,
   aoMudarStatus, pedidoExternoDoPedido, pedidoExterno, aceitar, motivos, solicitarCancelamento, responderDisputa, vincular,
   importar, produtosDosItens, PLATAFORMA, atualizarDisponibilidade, listaDisponibilidade, enviarCardapio, listaCardapio, atualizarPrecos,

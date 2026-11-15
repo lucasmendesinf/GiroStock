@@ -27,6 +27,10 @@ const CAMINHOS = {
   categorias: (m) => `/catalog/v2.0/merchants/${encodeURIComponent(m)}/categories`,
   itens: (m) => `/catalog/v2.0/merchants/${encodeURIComponent(m)}/items`,
   precos: (m) => `/catalog/v2.0/merchants/${encodeURIComponent(m)}/products/price`,
+  // Shipping (Entrega Facil / Sob Demanda): pedido de outro canal + entregador iFood
+  entregaCotacao: (m) => `/shipping/v1.0/merchants/${encodeURIComponent(m)}/deliveryAvailabilities`,
+  entregaCriar: (m) => `/shipping/v1.0/merchants/${encodeURIComponent(m)}/orders`,
+  entrega: (id, acao) => `/shipping/v1.0/orders/${encodeURIComponent(id)}/${acao}`,
 };
 
 function mensagemDe(corpo) {
@@ -152,7 +156,29 @@ async function alterarPrecos(token, merchantId, itens) {
   return r.corpo;
 }
 
+// ---------- Shipping: entregador do iFood para pedido de outro canal ----------
+async function cotarEntrega(token, merchantId, lat, lng) {
+  const r = await chamar('GET', `${CAMINHOS.entregaCotacao(merchantId)}?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lng)}`, { token });
+  return r.corpo || {};
+}
+async function criarEntrega(token, merchantId, corpo) {
+  const r = await chamar('POST', CAMINHOS.entregaCriar(merchantId), { token, json: corpo });
+  return r.corpo || {}; // { id, trackingUrl }
+}
+async function motivosCancelarEntrega(token, id) {
+  const r = await chamar('GET', CAMINHOS.entrega(id, 'cancellationReasons'), { token });
+  return r.status === 204 || !Array.isArray(r.corpo) ? [] : r.corpo.map((m) => ({ codigo: String(m.cancelCodeId), descricao: m.description }));
+}
+async function cancelarEntrega(token, id, codigo, motivo) {
+  await chamar('POST', CAMINHOS.entrega(id, 'cancel'), { token, json: { reason: motivo, cancellationCode: Number(codigo) } });
+}
+async function rastrearEntrega(token, id) {
+  const r = await chamar('GET', CAMINHOS.entrega(id, 'tracking'), { token });
+  return r.corpo || {};
+}
+
 module.exports = {
+  cotarEntrega, criarEntrega, motivosCancelarEntrega, cancelarEntrega, rastrearEntrega,
   alterarDisponibilidade, catalogos, categorias, criarCategoria, salvarItem, alterarPrecos,
   configurado, gerarCodigoVinculo, tokenPorCodigo, renovarToken, lojas, eventos, confirmarRecebimento, pedido,
   confirmar, iniciarPreparo, prontoParaRetirada, despachar, motivosCancelamento, solicitarCancelamento, responderDisputa, CAMINHOS,

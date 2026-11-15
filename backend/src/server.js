@@ -20,3 +20,4 @@ app.listen(port, () => {
 require('./services/fiscal').iniciarVarredura(); // nota fiscal: envia as NFC-e emitidas em contingencia quando a SEFAZ volta (a cada 2 min)
 require('./integracoes/whatsappCampanhas').iniciarEnvio(); // WhatsApp: envia as campanhas na fila (a cada 5 s)
 require('./integracoes/whatsapp').iniciarVarredura(); // WhatsApp: avisa o cliente de cada etapa do pedido (a cada 10 s)
+require('./integracoes/testeSimulado').iniciarCiclosTeste(); // modo teste: iFood e WhatsApp simulados rodando no banco de teste (a cada 5 s)

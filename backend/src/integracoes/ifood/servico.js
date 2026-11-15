@@ -364,10 +364,11 @@ async function atualizarPrecos(integ) {
 }
 
 // Ciclo de todas as conexoes ativas de empresas com o modulo "iFood e 99Food" ligado.
-let rodando = false;
+const rodando = {}; // um por banco (producao / teste)
 async function cicloGeral() {
-  if (rodando || !api.configurado()) return;
-  rodando = true;
+  const ctx = require('../testeSimulado').ativo() ? 't' : 'p';
+  if (rodando[ctx] || !api.configurado()) return;
+  rodando[ctx] = true;
   try {
     const { rows } = await db().query(`SELECT i.* FROM integracoes_delivery i JOIN tenants t ON t.id = i.tenant_id WHERE i.plataforma = 'ifood' AND i.status = 'conectado' AND t.status = 'ativa'`);
     for (const integ of rows) {
@@ -383,7 +384,7 @@ async function cicloGeral() {
       }
     }
   } finally {
-    rodando = false;
+    rodando[ctx] = false;
   }
 }
 

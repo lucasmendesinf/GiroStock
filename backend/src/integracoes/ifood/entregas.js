@@ -85,6 +85,11 @@ async function coordenadas(e, b) {
   const lng = Number(b.lng);
   if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && (lat !== 0 || lng !== 0)) return { lat, lng, origem: 'pino' };
   const g = await geocodificacao.geocodificar(db(), { cep: e.cep, numero: e.numero, logradouro: e.logradouro, bairro: e.bairro, cidade: e.cidade, uf: e.uf });
+  // modo teste (iFood simulado): sem localizar o endereco, usa um ponto a ~2 km da loja (da para arrastar no mapa)
+  if (!g.localizado && require('../testeSimulado').ativo() && b.tenantId) {
+    const loja = await require('../testeAcoes').pontoDaLoja(b.tenantId);
+    return { lat: Number((loja.lat - 0.012).toFixed(6)), lng: Number((loja.lng + 0.011).toFixed(6)), origem: 'teste' };
+  }
   if (!g.localizado) {
     const st = geocodificacao.status();
     throw new HttpError(422, st.configurado
@@ -176,14 +181,13 @@ const pagoAntes = (o) => !!o.pago || (!!o.pagamento_online && o.pagamento_status
 
 // ---------- cotacao ----------
 async function cotar(user, orderId, b) {
-  if (user.modoTeste) throw new HttpError(409, 'o modo teste não chama entregadores do iFood');
   const o = await pedidoDaEntrega(user, orderId);
   const bloq = podeChamar(o);
   if (bloq) throw new HttpError(409, bloq);
   const integ = await conexaoDaLoja(user.tenantId, o.location_id);
   if (!integ) throw new HttpError(409, 'conecte o iFood nesta loja (Lojas & PDVs) para usar os entregadores do iFood');
   const e = validarEndereco(b.endereco || {});
-  const pt = await coordenadas(e, b.endereco || {});
+  const pt = await coordenadas(e, { ...(b.endereco || {}), tenantId: user.tenantId });
   let c;
   try { c = await api.cotarEntrega(await token(integ), integ.merchant_id, pt.lat, pt.lng); } catch (err) { throw erroDoIfood(err); }
   const q = c.quote || {};
@@ -224,7 +228,6 @@ async function itensIfood(o) {
 }
 
 async function solicitar(user, orderId, b) {
-  if (user.modoTeste) throw new HttpError(409, 'o modo teste não chama entregadores do iFood');
   const o = await pedidoDaEntrega(user, orderId);
   const bloq = podeChamar(o);
   if (bloq) throw new HttpError(409, bloq);
@@ -234,7 +237,7 @@ async function solicitar(user, orderId, b) {
   if (!integ) throw new HttpError(409, 'conecte o iFood nesta loja (Lojas & PDVs) para usar os entregadores do iFood');
   if (!b.cotacao_id) throw new HttpError(400, 'faça a cotação antes de chamar o entregador');
   const e = validarEndereco(b.endereco || {});
-  const pt = await coordenadas(e, b.endereco || {});
+  const pt = await coordenadas(e, { ...(b.endereco || {}), tenantId: user.tenantId });
   const tel = telefoneIfood(o.cliente_telefone);
   if (!tel) throw new HttpError(400, 'informe o celular do cliente no pedido (com DDD): o entregador do iFood pede ao cliente os 4 últimos dígitos para entregar');
   const nome = corta(o.cliente_nome, 50) || 'Cliente';
@@ -329,7 +332,8 @@ async function rastrear(user, orderId) {
   const e = await entregaAtual(o.id);
   if (!e) throw new HttpError(404, 'este pedido não tem entrega do iFood');
   const acompanha = ['alocado', 'indo_loja', 'na_loja', 'em_rota', 'no_destino'].includes(e.status);
-  if (acompanha && (!e.rastreio_em || Date.now() - new Date(e.rastreio_em).getTime() > 25000)) {
+  const intervalo = require('../testeSimulado').ativo() ? 3000 : 25000; // modo teste: a moto anda no mapa
+  if (acompanha && (!e.rastreio_em || Date.now() - new Date(e.rastreio_em).getTime() > intervalo)) {
     try {
       const integ = await comum.integracao(e.integracao_id);
       const t = await api.rastrearEntrega(await token(integ), e.ifood_pedido_id);

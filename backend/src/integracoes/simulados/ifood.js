@@ -7,6 +7,12 @@ const crypto = require('crypto');
 function criarSimulador(opcoes = {}) {
 const BASE = opcoes.base || 'http://simulador-ifood.local';
 const LOJAS = opcoes.lojas ? opcoes.lojas.map((l) => ({ ...l })) : [{ id: 'sim-loja-1', name: 'Lanchonete Simulada' }];
+// leniente (modo teste do GiroStock): o estado fica so em memoria; depois de reiniciar o servidor os tokens, lojas e pedidos
+// antigos continuam aceitos (nada de "reconecte o iFood" a cada atualizacao do sistema).
+const leniente = !!opcoes.leniente;
+const tokenLoja = new Map(); // token/refresh -> merchantId (vinculo feito para uma loja so)
+const garantirLoja = (mid) => { if (leniente && mid && !LOJAS.some((l) => l.id === mid)) LOJAS.push({ id: mid, name: 'Loja (teste)' }); };
+const pontoDa = (mid) => { const l = LOJAS.find((x) => x.id === mid); return l && l.ponto ? l.ponto : LOJA_PONTO; };
 const id = () => crypto.randomUUID();
 const codigos = new Map(); // userCode -> { verificador, autorizacao }
 const autorizacoes = new Map(); // authorizationCode -> verificador
@@ -44,12 +50,63 @@ function distanciaKm(a, b) {
   const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
   return 2 * r * Math.asin(Math.sqrt(h));
 }
+// Passos do entregador (o teste manda um a um; o modo teste avanca sozinho em ~3 minutos ou pelo botao "avancar").
+function passosEntrega(idEnt, e, tel) {
+  const loja = pontoDa(e.merchantId);
+  const dest = () => { const d = e.corpo.delivery.deliveryAddress.coordinates; return { lat: d.latitude, lng: d.longitude }; };
+  return {
+    alocar: () => { e.status = 'alocado'; e.rastreio = { lat: loja.lat + 0.004, lng: loja.lng + 0.003 }; e.desde = Date.now(); eventoEntrega('ASSIGN_DRIVER', idEnt, { workerName: 'Carlos Entregador' }); },
+    a_caminho: () => { e.status = 'indo_loja'; e.desde = Date.now(); eventoEntrega('GOING_TO_ORIGIN', idEnt, {}); },
+    na_loja: () => { e.status = 'na_loja'; e.rastreio = { ...loja }; e.desde = Date.now(); eventoEntrega('ARRIVED_AT_ORIGIN', idEnt, {}); },
+    coletar: () => { e.status = 'em_rota'; const d = dest(); e.rastreio = { lat: (loja.lat + d.lat) / 2, lng: (loja.lng + d.lng) / 2 }; e.desde = Date.now(); eventoEntrega('COLLECTED', idEnt, {}); },
+    codigo: () => { eventoEntrega('DELIVERY_DROP_CODE_REQUESTED', idEnt, { CODE: String((tel || {}).number || '').slice(-4) }); },
+    no_destino: () => { e.status = 'no_destino'; e.rastreio = dest(); e.desde = Date.now(); eventoEntrega('ARRIVED_AT_DESTINATION', idEnt, {}); },
+    concluir: () => { e.status = 'entregue'; e.rastreio = dest(); eventoEntrega('DELIVERY_CONCLUDED', idEnt, {}); },
+    falhar: () => { e.status = 'falhou'; eventoEntrega('REQUEST_DRIVER_FAILED', idEnt, { reason: 'sem entregadores na região' }); },
+  };
+}
+const SEQUENCIA = [['solicitada', 'alocar'], ['alocado', 'a_caminho'], ['indo_loja', 'na_loja'], ['na_loja', 'coletar'], ['em_rota', 'no_destino'], ['no_destino', 'concluir']];
+function avancarEntrega(idEnt) {
+  const e = entregasSim.get(idEnt);
+  if (!e) return null;
+  const passo = (SEQUENCIA.find(([st]) => st === e.status) || [])[1];
+  if (!passo) return e.status;
+  const tel = e.corpo.customer.phone || {};
+  const ps = passosEntrega(idEnt, e, tel);
+  ps[passo]();
+  if (passo === 'coletar') ps.codigo();
+  return e.status;
+}
+// Entrega automatica: cada passo depois de alguns segundos (so avanca se ainda estiver no passo anterior).
+function agendarEntrega(idEnt) {
+  const tempos = opcoes.entregaAutomatica;
+  if (!tempos) return;
+  SEQUENCIA.forEach(([st], i) => {
+    const t = setTimeout(() => { const e = entregasSim.get(idEnt); if (e && e.status === st) avancarEntrega(idEnt); }, tempos[i]);
+    if (t.unref) t.unref();
+  });
+}
+// Posicao do entregador entre dois pontos conforme o tempo (modo teste: o motoboy "anda" no mapa).
+function posicao(e) {
+  if (!opcoes.entregaAutomatica || !e.desde) return e.rastreio;
+  const loja = pontoDa(e.merchantId);
+  const d = e.corpo.delivery.deliveryAddress.coordinates;
+  const dest = { lat: d.latitude, lng: d.longitude };
+  const ini = { lat: loja.lat + 0.004, lng: loja.lng + 0.003 };
+  const tempos = opcoes.entregaAutomatica;
+  const frac = (ms) => Math.max(0, Math.min(1, (Date.now() - e.desde) / ms));
+  const entre = (a, b, f) => ({ lat: a.lat + (b.lat - a.lat) * f, lng: a.lng + (b.lng - a.lng) * f });
+  if (e.status === 'indo_loja') return entre(ini, loja, frac(tempos[2] - tempos[1]));
+  if (e.status === 'em_rota') return entre(loja, dest, frac(tempos[4] - tempos[3]));
+  return e.rastreio;
+}
 const erroShip = (code, msg) => responder(400, { error: { code, message: msg || code } });
 
-function emitirTokens() {
+function emitirTokens(loja) {
   const accessToken = 'sim-at-' + crypto.randomBytes(12).toString('hex');
   const refreshToken = 'sim-rt-' + crypto.randomBytes(12).toString('hex');
   tokens.add(accessToken); refreshs.add(refreshToken);
+  if (loja) { tokenLoja.set(accessToken, loja); tokenLoja.set(refreshToken, loja); }
   return { accessToken, refreshToken, type: 'bearer', expiresIn: Number(process.env.SIM_EXPIRA || 21600) };
 }
 
@@ -91,7 +148,7 @@ function novoPedido(b) {
 }
 
 
-const autorizado = (headers) => tokens.has(String(headers.authorization || '').replace(/^Bearer /, ''));
+const autorizado = (headers) => { const t = String(headers.authorization || '').replace(/^Bearer /, ''); return tokens.has(t) || (leniente && /^sim-at-/.test(t)); };
 function responder(status, corpo) { return { status, corpo: corpo === undefined ? null : corpo }; }
 
 // Atende uma chamada como a API do iFood. endereco: caminho com query (ex.: /order/v1.0/orders/x); corpo ja interpretado.
@@ -106,7 +163,8 @@ async function atender(metodo, endereco, headers = {}, corpo = {}) {
       const r = codigos.get(url.searchParams.get('userCode'));
       if (!r) return responder(404, { error: { message: 'código de vínculo inválido' } });
       r.autorizacao = r.autorizacao || 'SIM-' + crypto.randomBytes(4).toString('hex').toUpperCase();
-      autorizacoes.set(r.autorizacao, r.verificador);
+      if (url.searchParams.get('merchantId')) r.loja = url.searchParams.get('merchantId');
+      autorizacoes.set(r.autorizacao, { verificador: r.verificador, loja: r.loja || null });
       return responder(200, { authorizationCode: r.autorizacao, mensagem: 'Cole este código de autorização no GiroStock' });
     }
     if (c === '/_sim/acoes') return responder(200, acoes);
@@ -118,16 +176,8 @@ async function atender(metodo, endereco, headers = {}, corpo = {}) {
       if (!e) return responder(404, { error: { message: 'entrega não encontrada' } });
       const passo = me[2];
       const tel = e.corpo.customer.phone || {};
-      const mapa = {
-        alocar: () => { e.status = 'alocado'; e.rastreio = { lat: LOJA_PONTO.lat + 0.004, lng: LOJA_PONTO.lng }; eventoEntrega('ASSIGN_DRIVER', me[1], { workerName: 'Carlos Entregador' }); },
-        a_caminho: () => { e.status = 'indo_loja'; eventoEntrega('GOING_TO_ORIGIN', me[1], {}); },
-        na_loja: () => { e.status = 'na_loja'; e.rastreio = { ...LOJA_PONTO }; eventoEntrega('ARRIVED_AT_ORIGIN', me[1], {}); },
-        coletar: () => { e.status = 'em_rota'; const d = e.corpo.delivery.deliveryAddress.coordinates; e.rastreio = { lat: (LOJA_PONTO.lat + d.latitude) / 2, lng: (LOJA_PONTO.lng + d.longitude) / 2 }; eventoEntrega('COLLECTED', me[1], {}); },
-        codigo: () => { eventoEntrega('DELIVERY_DROP_CODE_REQUESTED', me[1], { CODE: String(tel.number || '').slice(-4) }); },
-        no_destino: () => { e.status = 'no_destino'; const d = e.corpo.delivery.deliveryAddress.coordinates; e.rastreio = { lat: d.latitude, lng: d.longitude }; eventoEntrega('ARRIVED_AT_DESTINATION', me[1], {}); },
-        concluir: () => { e.status = 'entregue'; eventoEntrega('DELIVERY_CONCLUDED', me[1], {}); },
-        falhar: () => { e.status = 'falhou'; eventoEntrega('REQUEST_DRIVER_FAILED', me[1], { reason: 'sem entregadores na região' }); },
-      };
+      if (passo === 'proximo') { avancarEntrega(me[1]); return responder(200, { ok: true, status: e.status }); }
+      const mapa = passosEntrega(me[1], e, tel);
       if (!mapa[passo]) return responder(400, { error: { message: 'passo inválido' } });
       mapa[passo]();
       return responder(200, { ok: true, status: e.status });
@@ -156,14 +206,15 @@ async function atender(metodo, endereco, headers = {}, corpo = {}) {
     if (c === '/authentication/v1.0/oauth/token' && metodo === 'POST') {
       if (!b.clientId || !b.clientSecret) return responder(401, { error: { message: 'credenciais do app inválidas' } });
       if (b.grantType === 'authorization_code') {
-        if (autorizacoes.get(b.authorizationCode) !== b.authorizationCodeVerifier) return responder(400, { error: { message: 'authorizationCode inválido' } });
+        const au = autorizacoes.get(b.authorizationCode);
+        if (!au || au.verificador !== b.authorizationCodeVerifier) return responder(400, { error: { message: 'authorizationCode inválido' } });
         autorizacoes.delete(b.authorizationCode);
-        return responder(200, emitirTokens());
+        return responder(200, emitirTokens(au.loja));
       }
       if (b.grantType === 'refresh_token') {
-        if (!refreshs.has(b.refreshToken)) return responder(401, { error: { message: 'refreshToken inválido' } });
+        if (!refreshs.has(b.refreshToken) && !(leniente && /^sim-rt-/.test(String(b.refreshToken || '')))) return responder(401, { error: { message: 'refreshToken inválido' } });
         refreshs.delete(b.refreshToken);
-        return responder(200, emitirTokens());
+        return responder(200, emitirTokens(tokenLoja.get(b.refreshToken)));
       }
       return responder(400, { error: { message: 'grantType inválido' } });
     }
@@ -171,7 +222,10 @@ async function atender(metodo, endereco, headers = {}, corpo = {}) {
     if (!autorizado(headers)) return responder(401, { error: { message: 'token inválido' } });
 
     // ---------- lojas, eventos ----------
-    if (c === '/merchant/v1.0/merchants') return responder(200, LOJAS);
+    if (c === '/merchant/v1.0/merchants') {
+      const so = tokenLoja.get(String(headers.authorization || '').replace(/^Bearer /, ''));
+      return responder(200, (so ? LOJAS.filter((l) => l.id === so) : LOJAS).map((l) => ({ id: l.id, name: l.name })));
+    }
     if (c === '/events/v1.0/events:polling') {
       const lojas = String(headers['x-polling-merchants'] || '').split(',').filter(Boolean);
       const lista = eventos.filter((e) => lojas.length === 0 || lojas.includes(e.merchantId));
@@ -188,7 +242,7 @@ async function atender(metodo, endereco, headers = {}, corpo = {}) {
     if (ms && metodo === 'GET') {
       const lat = Number(url.searchParams.get('latitude')); const lng = Number(url.searchParams.get('longitude'));
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return erroShip('BadRequest');
-      const km = distanciaKm(LOJA_PONTO, { lat, lng });
+      const km = distanciaKm(pontoDa(ms[1]), { lat, lng });
       if (km > 10) return erroShip('DeliveryDistanceTooHigh');
       const valor = Math.round((5 + 1.5 * km) * 100) / 100;
       const qid = crypto.randomUUID();
@@ -219,6 +273,7 @@ async function atender(metodo, endereco, headers = {}, corpo = {}) {
       const novo = crypto.randomUUID();
       entregasSim.set(novo, { merchantId: ms[1], corpo: b, status: 'solicitada', rastreio: null });
       eventoEntrega('REQUEST_DRIVER', novo, {});
+      agendarEntrega(novo);
       acoes.push({ acao: 'entrega_criar', entrega: novo, corpo: b, em: new Date().toISOString() });
       return responder(202, { id: novo, trackingUrl: `https://meupedido.ifood.com.br/${novo}` });
     }
@@ -228,7 +283,8 @@ async function atender(metodo, endereco, headers = {}, corpo = {}) {
       if (!e) return responder(404, { error: { code: 'OrderNotFound' } });
       if (ms[2] === 'tracking') {
         if (!e.rastreio) return responder(404, { error: { code: 'NotFound' } });
-        return responder(200, { latitude: e.rastreio.lat, longitude: e.rastreio.lng, expectedDelivery: new Date(Date.now() + 900e3).toISOString(), pickupEtaStart: 120, deliveryEtaEnd: 900, trackDate: new Date().toISOString() });
+        const pos = posicao(e);
+        return responder(200, { latitude: Number(pos.lat.toFixed(6)), longitude: Number(pos.lng.toFixed(6)), expectedDelivery: new Date(Date.now() + 900e3).toISOString(), pickupEtaStart: 120, deliveryEtaEnd: 900, trackDate: new Date().toISOString() });
       }
       const podeCancelar = ['solicitada', 'alocado', 'indo_loja', 'na_loja'].includes(e.status);
       if (ms[2] === 'cancellationReasons') return podeCancelar ? responder(200, [{ cancelCodeId: '817', description: 'O cliente cancelou o pedido' }, { cancelCodeId: '818', description: 'Impossível preparar o pedido' }]) : responder(204);
@@ -245,6 +301,7 @@ async function atender(metodo, endereco, headers = {}, corpo = {}) {
     m = c.match(/^\/order\/v1\.0\/orders\/([^/]+)(?:\/([A-Za-z]+))?$/);
     if (m) {
       const p = pedidos.get(m[1]);
+      if (!p && leniente && m[2] && m[2] !== 'cancellationReasons') return responder(202, { status: 'ACCEPTED' });
       if (!p) return responder(404, { error: { message: 'pedido não encontrado' } });
       const a = m[2];
       if (!a && metodo === 'GET') return responder(200, p);
@@ -270,6 +327,7 @@ async function atender(metodo, endereco, headers = {}, corpo = {}) {
     // ---------- cardapio: catalogos, categorias, itens e precos (Catalog API v2) ----------
     m = c.match(/^\/catalog\/v2\.0\/merchants\/([^/]+)\/(catalogs|categories|items|products\/price)$/);
     if (m) {
+      garantirLoja(m[1]);
       if (!LOJAS.some((l) => l.id === m[1])) return responder(403, { error: { message: 'loja não autorizada' } });
       const mer = m[1];
       if (!categoriasSim.has(mer)) categoriasSim.set(mer, []);
@@ -310,6 +368,7 @@ async function atender(metodo, endereco, headers = {}, corpo = {}) {
     // ---------- cardapio: status por codigo PDV ----------
     m = c.match(/^\/catalog\/v2\.0\/merchants\/([^/]+)\/products\/status$/);
     if (m && metodo === 'PATCH') {
+      garantirLoja(m[1]);
       if (!LOJAS.some((l) => l.id === m[1])) return responder(403, { error: { message: 'loja não autorizada' } });
       if (!Array.isArray(b) || b.some((x) => !x.externalCode || !['AVAILABLE', 'UNAVAILABLE'].includes(x.status))) return responder(400, { error: { message: 'corpo inválido' } });
       if (!catalogo.has(m[1])) catalogo.set(m[1], new Map());
@@ -327,7 +386,7 @@ async function atender(metodo, endereco, headers = {}, corpo = {}) {
 return {
   atender, LOJAS, pedidos, entregasSim, itensSim, categoriasSim, acoes,
   get eventos() { return eventos; },
-  novoPedido, eventoEntrega, distanciaKm,
+  novoPedido, eventoEntrega, distanciaKm, avancarEntrega, garantirLoja, tokenLoja,
 };
 }
 

@@ -7,7 +7,8 @@ const { MATRIX } = require('../middleware/permissions');
 const { logAudit } = require('../utils/audit');
 const { HttpError } = require('../utils/http');
 
-const db = () => pool.producao;
+// Banco do contexto: producao (padrao, ciclos e webhooks) ou o de teste (requisicao/ciclo do modo teste, com o iFood simulado).
+const db = () => (pool.emTeste() ? pool.teste() : pool.producao);
 const NOME = { ifood: 'iFood', '99food': '99Food' };
 
 // Cada plataforma: mapear(payload) -> dados do pedido; aceiteAutomatico(integ, pe). Carregado sob demanda (evita ciclo).

@@ -294,8 +294,9 @@ router.post('/orders/:id/status', async (req, res) => {
       pago = true;
     }
 
-    // Pedido do iFood/99Food: avisa a plataforma ANTES de gravar (se ela recusar, nada muda aqui). Nunca no modo teste.
-    if ((o.origem === 'ifood' || o.origem === '99food') && o.origem_externa_id && !req.user.modoTeste) {
+    // Pedido do iFood/99Food: avisa a plataforma ANTES de gravar (se ela recusar, nada muda aqui).
+    // No modo teste o iFood e simulado (integracoes/testeSimulado.js); a 99Food nao conecta no teste.
+    if ((o.origem === 'ifood' || (o.origem === '99food' && !req.user.modoTeste)) && o.origem_externa_id) {
       await comum.plataforma(o.origem).aoMudarStatus({ ...o, entregador_id: entregadorId }, para);
     }
 
@@ -346,7 +347,7 @@ router.post('/orders/:id/cancel', async (req, res) => {
     }
     // Pedido do iFood/99Food com a loja conectada: o cancelamento e pedido a plataforma (motivo da lista dela); o pedido
     // daqui e cancelado quando ela confirmar, liberando a reserva de estoque.
-    if (!req.user.modoTeste) {
+    {
       const pe = await comum.pedidoExternoDoPedido(req.user.tenantId, o.id);
       const integ = pe && pe.integracao_id ? (await client.query(`SELECT status FROM integracoes_delivery WHERE id = $1`, [pe.integracao_id])).rows[0] : null;
       if (pe && integ && integ.status === 'conectado' && pe.status_externo !== 'CANCELLED') {

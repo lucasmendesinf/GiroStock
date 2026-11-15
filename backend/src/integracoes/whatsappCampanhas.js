@@ -254,10 +254,11 @@ async function detalhe(tenantId, id) {
 }
 
 // ---------- envio da fila ----------
-let enviando = false;
+const enviando = {}; // um por banco (producao / teste)
 async function enviarFila() {
-  if (enviando) return 0;
-  enviando = true;
+  const ctx = pool.emTeste() ? 't' : 'p';
+  if (enviando[ctx]) return 0;
+  enviando[ctx] = true;
   let n = 0;
   try {
     // reserva um lote (cada mensagem sai uma vez so, mesmo com mais de um servidor)
@@ -289,7 +290,7 @@ async function enviarFila() {
        WHERE c.status = 'enviando' AND NOT EXISTS (SELECT 1 FROM whatsapp_mensagens m WHERE m.campanha_id = c.id AND m.situacao = 'na_fila')`
     );
   } finally {
-    enviando = false;
+    enviando[ctx] = false;
   }
   return n;
 }

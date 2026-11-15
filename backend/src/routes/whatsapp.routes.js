@@ -54,6 +54,19 @@ router.post('/whatsapp/campanhas', clientes, async (req, res) => { res.status(20
 router.get('/whatsapp/campanhas/:id', clientes, async (req, res) => { res.json(await campanhas.detalhe(req.user.tenantId, req.params.id)); });
 router.post('/whatsapp/campanhas/:id/cancelar', clientes, async (req, res) => { res.json(await campanhas.cancelar(req.user, req.params.id)); });
 
+// ---------- so no modo teste (WhatsApp simulado): mensagens que "teriam saido" e resposta do cliente ----------
+const testeAcoes = require('../integracoes/testeAcoes');
+router.get('/whatsapp/teste/caixa', async (req, res) => {
+  const a = req.user.areas || {};
+  if (!a.Configuracoes && !a.Clientes) return res.status(403).json({ erro: 'sem acesso' });
+  res.json(await testeAcoes.caixaWhatsapp(req.user));
+});
+router.post('/whatsapp/teste/responder', async (req, res) => {
+  const a = req.user.areas || {};
+  if (!a.Configuracoes && !a.Clientes) return res.status(403).json({ erro: 'sem acesso' });
+  res.json(await testeAcoes.responderWhatsapp(req.user, req.body || {}));
+});
+
 // Historico: da empresa (Configuracoes) ou de um pedido (tela Pedidos).
 router.get('/whatsapp/mensagens', async (req, res) => {
   const a = req.user.areas || {};

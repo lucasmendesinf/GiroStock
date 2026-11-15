@@ -14,11 +14,12 @@ const api99 = require('../integracoes/food99/api');
 const comum = require('../integracoes/comum');
 
 const router = express.Router();
+// Modo teste: o iFood e simulado dentro do servidor (integracoes/testeSimulado.js); a 99Food ainda nao tem simulacao.
 router.use('/integracoes', requireModulo('delivery_apps'), (req, res, next) => {
-  if (req.user.modoTeste) return next(new HttpError(409, 'integrações de delivery não funcionam no modo teste'));
+  if (req.user.modoTeste && /99food/.test(req.path)) return next(new HttpError(409, 'a 99Food não funciona no modo teste (só o iFood é simulado)'));
   next();
 });
-const db = pool.producao;
+const db = pool; // banco do contexto: producao, ou o de teste no modo teste (iFood simulado)
 const configuracoes = requireArea('Configuracoes');
 const pedidos = requireArea('Pedidos');
 
@@ -106,6 +107,22 @@ router.post('/integracoes/:id/disponibilidade/enviar', configuracoes, async (req
     if (err.status && err.status < 600 && err.corpo !== undefined) throw new HttpError(502, `o iFood não aceitou a atualização do cardápio: ${err.message}`);
     throw err;
   }
+});
+
+// ---------- so no modo teste (iFood simulado) ----------
+const testeAcoes = require('../integracoes/testeAcoes');
+router.post('/integracoes/ifood/conectar-teste', configuracoes, async (req, res) => { res.json(await testeAcoes.conectarIfood(req.user, (req.body || {}).location_id)); });
+router.post('/integracoes/:id/teste/pedido', pedidos, async (req, res) => {
+  if (!isUuid(req.params.id)) throw new HttpError(404, 'conexão não encontrada');
+  res.status(201).json(await testeAcoes.gerarPedido(req.user, req.params.id, req.body || {}));
+});
+router.post('/integracoes/teste/pedidos/:orderId/cliente/:acao', pedidos, async (req, res) => {
+  if (!isUuid(req.params.orderId)) throw new HttpError(404, 'pedido não encontrado');
+  res.json(await testeAcoes.acaoCliente(req.user, req.params.orderId, req.params.acao));
+});
+router.post('/integracoes/entregas/pedidos/:orderId/teste/avancar', pedidos, async (req, res) => {
+  if (!isUuid(req.params.orderId)) throw new HttpError(404, 'pedido não encontrado');
+  res.json(await testeAcoes.avancarEntregador(req.user, req.params.orderId));
 });
 
 // ---------- entregador do iFood (Entrega Facil / Sob Demanda) para pedido de outro canal: area Pedidos ----------

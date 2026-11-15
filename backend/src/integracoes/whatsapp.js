@@ -18,11 +18,13 @@ const { logAudit } = require('../utils/audit');
 
 const GRAPH = () => (process.env.WHATSAPP_GRAPH_URL || 'https://graph.facebook.com').replace(/\/$/, '');
 const VERSAO = () => process.env.WHATSAPP_GRAPH_VERSAO || 'v23.0';
-const meta = () => ({
+const teste = require('./testeSimulado');
+// Modo teste: a Meta e simulada dentro do servidor (integracoes/testeSimulado.js); as mensagens nao saem.
+const meta = () => (teste.ativo() ? { appId: 'teste', appSecret: 'teste', configId: 'teste', verifyToken: process.env.WHATSAPP_VERIFY_TOKEN || '' } : {
   appId: process.env.WHATSAPP_APP_ID || '', appSecret: process.env.WHATSAPP_APP_SECRET || '', configId: process.env.WHATSAPP_CONFIG_ID || '',
   verifyToken: process.env.WHATSAPP_VERIFY_TOKEN || '',
 });
-const simulador = () => process.env.WHATSAPP_SIMULADOR === '1';
+const simulador = () => process.env.WHATSAPP_SIMULADOR === '1' || teste.ativo();
 const disponivel = () => { const m = meta(); return !!(m.appId && m.appSecret && m.configId); };
 
 const brl = (v) => `R$ ${Number(v || 0).toFixed(2).replace('.', ',')}`;
@@ -84,7 +86,8 @@ async function graph(metodo, caminho, { token, json, query } = {}) {
   const q = query ? `?${new URLSearchParams(query).toString()}` : '';
   let r;
   try {
-    r = await requisicao(metodo, `${GRAPH()}/${VERSAO()}${caminho}${q}`, { headers: token ? { authorization: `Bearer ${token}` } : {}, json, timeoutMs: 20000 });
+    const opcoes = { headers: token ? { authorization: `Bearer ${token}` } : {}, json, timeoutMs: 20000 };
+    r = teste.ativo() ? await teste.chamarWhatsapp(metodo, `/${VERSAO()}${caminho}${q}`, opcoes) : await requisicao(metodo, `${GRAPH()}/${VERSAO()}${caminho}${q}`, opcoes);
   } catch (err) {
     throw new HttpError(502, `sem resposta da Meta (WhatsApp): ${err.message}`);
   }
@@ -261,11 +264,12 @@ function eventoDoStatus(para, o) {
 
 const moduloCache = new Map();
 async function moduloLigado(tenantId) {
-  const c = moduloCache.get(tenantId);
+  const chave = `${teste.ativo() ? 't' : 'p'}:${tenantId}`;
+  const c = moduloCache.get(chave);
   if (c && Date.now() - c.em < 60000) return c.ok;
   let ok = false;
   try { const e = await dadosDaEmpresa(pool, tenantId); ok = !!(e && efetivos(e).recursos.whatsapp); } catch { ok = false; }
-  moduloCache.set(tenantId, { ok, em: Date.now() });
+  moduloCache.set(chave, { ok, em: Date.now() });
   return ok;
 }
 
@@ -304,10 +308,11 @@ async function processar(l) {
   return id;
 }
 
-let varrendo = false;
+const varrendo = {}; // um por banco (producao / teste)
 async function varrer() {
-  if (varrendo) return;
-  varrendo = true;
+  const ctx = teste.ativo() ? 't' : 'p';
+  if (varrendo[ctx]) return;
+  varrendo[ctx] = true;
   try {
     // modelos ainda em analise: confere a cada 10 min
     const pend = (await pool.query(
@@ -332,7 +337,7 @@ async function varrer() {
       try { await processar({ ...l, total: Number(l.total) }); } catch (err) { console.error('whatsapp aviso', err.message); }
     }
   } finally {
-    varrendo = false;
+    varrendo[ctx] = false;
   }
 }
 function iniciarVarredura() {
@@ -392,6 +397,22 @@ async function descadastrar(phoneNumberId, de) {
   return { removidos: ids.length };
 }
 const SITUACAO = { sent: 'enviada', delivered: 'entregue', read: 'lida', failed: 'falhou' };
+// Status de entrega das mensagens (entregue/lida/falhou), vindos do webhook da Meta ou do simulador do modo teste.
+async function aplicarStatus(statuses) {
+  let n = 0;
+  for (const st of statuses || []) {
+    const nova = SITUACAO[st.status];
+    if (!nova || !st.id) continue;
+    const m = (await pool.query(`SELECT id, situacao FROM whatsapp_mensagens WHERE wamid = $1`, [st.id])).rows[0];
+    if (!m) continue;
+    if (nova !== 'falhou' && (ORDEM[nova] || 0) <= (ORDEM[m.situacao] || 0)) continue; // nao volta (lida -> entregue)
+    const erro = nova === 'falhou' && st.errors && st.errors[0] ? `${st.errors[0].title || ''}${st.errors[0].message ? `: ${st.errors[0].message}` : ''}`.slice(0, 500) : null;
+    await pool.query(`UPDATE whatsapp_mensagens SET situacao = $2, motivo = COALESCE($3, motivo), atualizado_em = now() WHERE id = $1`, [m.id, nova, erro]);
+    n += 1;
+  }
+  return n;
+}
+
 async function receberWebhook(bruto, assinatura) {
   if (!assinaturaValida(bruto, assinatura)) throw new HttpError(401, 'assinatura inválida');
   let corpo;
@@ -405,22 +426,13 @@ async function receberWebhook(bruto, assinatura) {
           try { await descadastrar((ch.value.metadata || {}).phone_number_id, msg.from); } catch (err) { console.error('whatsapp sair', err.message); }
         }
       }
-      for (const st of (ch.value && ch.value.statuses) || []) {
-        const nova = SITUACAO[st.status];
-        if (!nova || !st.id) continue;
-        const m = (await pool.query(`SELECT id, situacao FROM whatsapp_mensagens WHERE wamid = $1`, [st.id])).rows[0];
-        if (!m) continue;
-        if (nova !== 'falhou' && (ORDEM[nova] || 0) <= (ORDEM[m.situacao] || 0)) continue; // nao volta (lida -> entregue)
-        const erro = nova === 'falhou' && st.errors && st.errors[0] ? `${st.errors[0].title || ''}${st.errors[0].message ? `: ${st.errors[0].message}` : ''}`.slice(0, 500) : null;
-        await pool.query(`UPDATE whatsapp_mensagens SET situacao = $2, motivo = COALESCE($3, motivo), atualizado_em = now() WHERE id = $1`, [m.id, nova, erro]);
-        n += 1;
-      }
+      n += await aplicarStatus((ch.value && ch.value.statuses) || []);
     }
   }
   return { ok: true, atualizadas: n };
 }
 
 module.exports = {
-  MODELOS, MODELOS_MARKETING, TODOS_MODELOS, EVENTOS, graph, enviarModelo, registrar, marcarErroConta, moduloLigado, garantirModelosMarketing, descadastrar, chaveTelefone, telefoneWhatsapp, contaDa, publica, conectar, desconectar, salvarAvisos, conferirModelos, enviarTeste,
+  aplicarStatus, MODELOS, MODELOS_MARKETING, TODOS_MODELOS, EVENTOS, graph, enviarModelo, registrar, marcarErroConta, moduloLigado, garantirModelosMarketing, descadastrar, chaveTelefone, telefoneWhatsapp, contaDa, publica, conectar, desconectar, salvarAvisos, conferirModelos, enviarTeste,
   varrer, iniciarVarredura, receberWebhook, assinaturaValida, eventoDoStatus, meta, disponivel, simulador,
 };

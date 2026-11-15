@@ -6,9 +6,12 @@
 // Fluxo do app distribuido: userCode -> a loja autoriza no Portal do Parceiro -> authorizationCode -> tokens.
 const { requisicao, ErroPlataforma } = require('../http');
 
+const teste = require('../testeSimulado');
+
+// Modo teste: o iFood e simulado dentro do servidor (integracoes/testeSimulado.js), sem credenciais e sem rede.
 const base = () => (process.env.IFOOD_API_URL || 'https://merchant-api.ifood.com.br').replace(/\/+$/, '');
-const credenciais = () => ({ clientId: process.env.IFOOD_CLIENT_ID || '', clientSecret: process.env.IFOOD_CLIENT_SECRET || '' });
-const configurado = () => !!(process.env.IFOOD_CLIENT_ID && process.env.IFOOD_CLIENT_SECRET);
+const credenciais = () => (teste.ativo() ? { clientId: 'teste', clientSecret: 'teste' } : { clientId: process.env.IFOOD_CLIENT_ID || '', clientSecret: process.env.IFOOD_CLIENT_SECRET || '' });
+const configurado = () => teste.ativo() || !!(process.env.IFOOD_CLIENT_ID && process.env.IFOOD_CLIENT_SECRET);
 
 const CAMINHOS = {
   userCode: '/authentication/v1.0/oauth/userCode',
@@ -43,7 +46,7 @@ function mensagemDe(corpo) {
 async function chamar(metodo, caminho, { token, ...opcoes } = {}) {
   const headers = { ...(opcoes.headers || {}) };
   if (token) headers.authorization = `Bearer ${token}`;
-  const r = await requisicao(metodo, base() + caminho, { ...opcoes, headers });
+  const r = teste.ativo() ? await teste.chamarIfood(metodo, caminho, { ...opcoes, headers }) : await requisicao(metodo, base() + caminho, { ...opcoes, headers });
   if (r.status >= 400) throw new ErroPlataforma(r.status, `iFood respondeu ${r.status}${mensagemDe(r.corpo) ? `: ${mensagemDe(r.corpo)}` : ''}`, r.corpo);
   return r;
 }

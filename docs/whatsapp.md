@@ -62,13 +62,40 @@ Depois: Master → empresa → ligar o módulo **WhatsApp (API oficial)** → na
 - Com a coexistência, abra o WhatsApp Business no celular pelo menos a cada 14 dias (regra da Meta).
 - Token expirado/revogado: a tela pede **Reconectar**.
 
+## Campanhas com cupom (etapa 2)
+
+Menu **WhatsApp → Campanhas com cupom** (precisa da área *Clientes*). Também dá para chegar por **Clientes → Enviar
+mensagem → Criar campanha com cupom**.
+
+- **Para quem**: um segmento de Clientes (em risco, inativos, aniversariantes, VIP, recorrentes, novos ou todos).
+  Só recebe quem **aceitou receber mensagens** e tem celular válido. Quem recebeu campanha nos **últimos 7 dias** fica
+  de fora (evita bloqueios, que derrubam a qualidade do número). Até 2.000 clientes por campanha.
+- **Mensagem**: 4 modelos de **marketing** criados na conta da empresa (aprovados pela Meta em minutos), todos com o
+  rodapé *"Responda SAIR para não receber mais ofertas."*:
+  *Volte com cupom*, *Aniversário com cupom*, *Oferta com cupom* (texto da oferta livre) e *Oferta sem cupom*.
+  Contas conectadas antes desta etapa ganham os modelos ao abrir a tela.
+- **Cupom individual**: cada cliente recebe um código próprio (ex.: `VOLTA-7K2QX`), uso único, com validade, desconto
+  (% / R$ / frete grátis) e pedido mínimo. Vale no **cardápio digital e na loja virtual**, entrando na conta do cliente
+  (o dono é reconhecido pelo cadastro ou pelo celular da conta; outra pessoa recebe "cupom pessoal"). Esses cupons não
+  aparecem na lista de cupons da loja.
+- **Envio**: as mensagens entram numa fila e saem aos poucos (20 a cada 5 s). Antes de enviar, a tela mostra a prévia,
+  quantos recebem, quem ficou de fora e o **custo estimado** (`WHATSAPP_CUSTO_MARKETING`, padrão R$ 0,35 por mensagem —
+  só informativo; quem cobra é a Meta, no cartão da conta). Dá para **cancelar** o que ainda está na fila (os cupons não
+  enviados são desativados).
+- **Resultado**: entregues, lidas, falhas (com o motivo da Meta), **cupons usados** e **vendas** dos pedidos com o cupom.
+- **SAIR**: quando o cliente responde *SAIR* (ou parar, pare, stop, cancelar, descadastrar), o webhook tira o consentimento
+  (cadastro e conta do site), cancela o que estava na fila para ele e responde confirmando. Os avisos do pedido continuam.
+  Para isso, o webhook do app precisa estar assinado no campo **messages** (o mesmo dos status de entrega).
+- Regras da Meta: a mensagem de marketing é mais cara que a de utilidade; a Meta pode não entregar marketing para quem
+  já recebeu muitas mensagens de empresas (aparece como falha com o motivo); número novo começa com limite diário menor.
+
 ## Testes
 
 Servidor de testes: `WHATSAPP_SIMULADOR=1`, `WHATSAPP_GRAPH_URL=http://localhost:4994` e as variáveis acima com qualquer valor
 (o segredo igual ao `SIM_APP_SECRET` do simulador), `node scripts/whatsapp-simulador.mjs` e `npm run test:e2e:whatsapp`
-(39 verificações: conexão, modelos, teste, webhook e assinatura, cada etapa do pedido, regras, permissões, desconectar).
+(64 verificações: conexão, modelos, teste, webhook e assinatura, cada etapa do pedido, regras, campanhas com cupom, SAIR, permissões, desconectar).
 
 ## Próximas etapas
 
-2. Receber mensagens: resposta automática com o link do cardápio digital; código de acesso da loja virtual pelo WhatsApp.
-3. Campanhas de cupom para os segmentos de clientes (modelos de marketing, com consentimento do cliente).
+3. Receber mensagens: resposta automática com o link do cardápio digital; código de acesso da loja virtual pelo WhatsApp.
+4. Campanha automática (ex.: todo dia, quem completou 30 dias sem pedir recebe o cupom; aniversariante no dia).

@@ -622,8 +622,15 @@ async function validarCupom(dbc, loja, codigo, conta, subtotal, tipo) {
     const usos = Number((await dbc.query(`SELECT COUNT(*) AS n FROM orders WHERE cupom_id = $1 AND status <> 'cancelado'`, [c.id])).rows[0].n);
     if (usos >= c.limite_total) throw new HttpError(422, 'este cupom já atingiu o limite de usos');
   }
-  if (c.limite_por_cliente !== null || c.primeira_compra) {
+  if (c.limite_por_cliente !== null || c.primeira_compra || c.customer_id) {
     if (!conta) throw new HttpError(422, 'entre na sua conta para usar este cupom');
+    // cupom individual (campanha do WhatsApp): so o cliente dono, pelo cadastro ou pelo celular da conta
+    if (c.customer_id && conta.customer_id !== c.customer_id) {
+      const dono = (await dbc.query(`SELECT telefone FROM customers WHERE id = $1`, [c.customer_id])).rows[0];
+      const fim = (t) => String(t || '').replace(/\D/g, '').replace(/^55(?=\d{10,11}$)/, '');
+      const igual = dono && fim(dono.telefone) && (fim(dono.telefone) === fim(conta.telefone) || (fim(dono.telefone).slice(0, 2) === fim(conta.telefone).slice(0, 2) && fim(dono.telefone).slice(-8) === fim(conta.telefone).slice(-8)));
+      if (!igual) throw new HttpError(422, 'este cupom é pessoal e pertence a outro cliente');
+    }
     if (c.limite_por_cliente !== null) {
       const meus = Number((await dbc.query(`SELECT COUNT(*) AS n FROM orders WHERE cupom_id = $1 AND lv_conta_id = $2 AND status <> 'cancelado'`, [c.id, conta.id])).rows[0].n);
       if (meus >= c.limite_por_cliente) throw new HttpError(422, 'você já usou este cupom');

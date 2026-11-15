@@ -14,6 +14,7 @@ const { HttpError } = require('../utils/http');
 const { cifrar, decifrar } = require('../services/totp');
 const { dadosDaEmpresa, efetivos } = require('../utils/limites');
 const { requisicao } = require('./http');
+const { logAudit } = require('../utils/audit');
 
 const GRAPH = () => (process.env.WHATSAPP_GRAPH_URL || 'https://graph.facebook.com').replace(/\/$/, '');
 const VERSAO = () => process.env.WHATSAPP_GRAPH_VERSAO || 'v23.0';
@@ -48,6 +49,25 @@ const MODELOS = [
     exemplo: ['Maria', '123', 'J&A Conveniência'], params: (p) => [p.nome, p.numero, p.loja] },
 ];
 const MODELO_DO_EVENTO = Object.fromEntries(MODELOS.map((m) => [m.evento, m]));
+
+// Modelos de MARKETING (campanhas com cupom). A Meta cobra mais caro e exige consentimento do cliente; o rodape
+// avisa como sair (quem responde SAIR perde o consentimento automaticamente: receberWebhook).
+const RODAPE_MARKETING = 'Responda SAIR para não receber mais ofertas.';
+const MODELOS_MARKETING = [
+  { chave: 'volta', nome: 'girostock_cupom_volta', titulo: 'Volte com cupom', cupom: true,
+    texto: 'Oi, {{1}}! Sentimos sua falta na {{2}}. Para você voltar, preparamos um cupom de {{3}}: use o código {{4}} até {{5}} no nosso cardápio online.',
+    exemplo: ['Maria', 'J&A Conveniência', '10% de desconto', 'VOLTA-7K2QX', '30/11'] },
+  { chave: 'aniversario', nome: 'girostock_cupom_aniversario', titulo: 'Aniversário com cupom', cupom: true,
+    texto: 'Feliz aniversário, {{1}}! A {{2}} preparou um presente para você: cupom de {{3}} com o código {{4}}, válido até {{5}}. Aproveite!',
+    exemplo: ['Maria', 'J&A Conveniência', '15% de desconto', 'NIVER-7K2QX', '30/11'] },
+  { chave: 'oferta_cupom', nome: 'girostock_oferta_cupom', titulo: 'Oferta com cupom', cupom: true, oferta: true,
+    texto: 'Oi, {{1}}! A {{2}} tem uma oferta para você: {{3}}. Use o cupom {{4}} até {{5}} no nosso cardápio online.',
+    exemplo: ['Maria', 'J&A Conveniência', 'X-Tudo + refri com 20% de desconto', 'OFERTA-7K2QX', '30/11'] },
+  { chave: 'oferta', nome: 'girostock_oferta', titulo: 'Oferta sem cupom', cupom: false, oferta: true,
+    texto: 'Oi, {{1}}! Novidade na {{2}}: {{3}}. Peça pelo nosso cardápio online.',
+    exemplo: ['Maria', 'J&A Conveniência', 'chegou o novo X-Bacon duplo'] },
+].map((m) => ({ ...m, categoria: 'MARKETING', rodape: RODAPE_MARKETING }));
+const TODOS_MODELOS = [...MODELOS.map((m) => ({ ...m, categoria: 'UTILITY' })), ...MODELOS_MARKETING];
 const EVENTOS = MODELOS.map((m) => m.evento);
 
 // Telefone do cliente no formato da API (55 + DDD + numero). null se nao der para usar.
@@ -93,12 +113,14 @@ function publica(c) {
 }
 
 // Cria os modelos na conta da empresa (os que ja existem sao mantidos) e le a situacao de cada um.
-async function criarModelos(c, token) {
-  for (const m of MODELOS) {
+async function criarModelos(c, token, lista = TODOS_MODELOS) {
+  for (const m of lista) {
     try {
+      const components = [{ type: 'BODY', text: m.texto, example: { body_text: [m.exemplo] } }];
+      if (m.rodape) components.push({ type: 'FOOTER', text: m.rodape });
       await graph('POST', `/${c.waba_id}/message_templates`, {
         token,
-        json: { name: m.nome, language: 'pt_BR', category: 'UTILITY', components: [{ type: 'BODY', text: m.texto, example: { body_text: [m.exemplo] } }] },
+        json: { name: m.nome, language: 'pt_BR', category: m.categoria, components },
       });
     } catch (err) {
       if (!/exist|já existe|duplicate/i.test(err.message)) throw err;
@@ -111,7 +133,7 @@ async function conferirModelos(tenantId) {
   const token = decifrar(c.token_cript);
   const r = await graph('GET', `/${c.waba_id}/message_templates`, { token, query: { fields: 'name,status,language', limit: '200' } });
   const st = {};
-  for (const t of r.data || []) if (t.language === 'pt_BR' && MODELOS.some((m) => m.nome === t.name)) st[t.name] = t.status;
+  for (const t of r.data || []) if (t.language === 'pt_BR' && TODOS_MODELOS.some((m) => m.nome === t.name)) st[t.name] = t.status;
   await pool.query(`UPDATE whatsapp_contas SET modelos = $2, modelos_conferidos_em = now(), atualizado_em = now() WHERE tenant_id = $1`, [tenantId, JSON.stringify(st)]);
   return st;
 }
@@ -146,6 +168,20 @@ async function conectar(user, b) {
     await pool.query(`UPDATE whatsapp_contas SET ultimo_erro = $2 WHERE tenant_id = $1`, [user.tenantId, `modelos de mensagem: ${err.message}`]);
   }
   return publica(await contaDa(pool, user.tenantId));
+}
+
+// Conta conectada antes das campanhas: cria os modelos de marketing que faltam.
+async function garantirModelosMarketing(tenantId) {
+  const c = await contaDa(pool, tenantId);
+  if (!c || c.status !== 'conectado') return;
+  const faltam = MODELOS_MARKETING.filter((m) => !(c.modelos || {})[m.nome]);
+  if (faltam.length === 0) return;
+  try {
+    await criarModelos(c, decifrar(c.token_cript), faltam);
+    await conferirModelos(tenantId);
+  } catch (err) {
+    await pool.query(`UPDATE whatsapp_contas SET ultimo_erro = $2 WHERE tenant_id = $1`, [tenantId, `modelos de marketing: ${err.message}`]);
+  }
 }
 
 async function desconectar(user) {
@@ -314,6 +350,46 @@ function assinaturaValida(bruto, assinatura) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 const ORDEM = { enviada: 1, entregue: 2, lida: 3 };
+
+// "SAIR" (ou parar/pare/stop/cancelar/descadastrar, ou o botao de parar promocoes): o cliente deixa de receber campanhas.
+// Os avisos do pedido continuam (sao mensagens de servico, nao de oferta).
+const PEDIDO_SAIR = /^(sair|parar|pare|stop|cancelar|descadastrar|parar promo[cç][oõ]es|n[aã]o quero (mais )?receber)[.!]*$/i;
+// Telefone do cliente comparado pelo DDD + 8 ultimos digitos (a Meta pode devolver o celular brasileiro sem o 9).
+function chaveTelefone(t) {
+  let d = String(t || '').replace(/\D/g, '');
+  if (d.length >= 12 && d.startsWith('55')) d = d.slice(2);
+  if (d.length < 10) return null;
+  return `${d.slice(0, 2)}:${d.slice(-8)}`;
+}
+async function descadastrar(phoneNumberId, de) {
+  const c = phoneNumberId ? (await pool.query(`SELECT * FROM whatsapp_contas WHERE phone_number_id = $1 AND status = 'conectado'`, [String(phoneNumberId)])).rows[0] : null;
+  if (!c) return { removidos: 0 };
+  const chave = chaveTelefone(de);
+  if (!chave) return { removidos: 0 };
+  const fim8 = chave.slice(3);
+  const cand = (await pool.query(`SELECT id, telefone FROM customers WHERE tenant_id = $1 AND right(regexp_replace(COALESCE(telefone, ''), '[^0-9]', '', 'g'), 8) = $2`, [c.tenant_id, fim8])).rows
+    .filter((x) => chaveTelefone(x.telefone) === chave);
+  const ids = cand.map((x) => x.id);
+  if (ids.length) {
+    await pool.query(
+      `UPDATE customers SET aceita_mensagens = false, consentimento_em = now(), consentimento_origem = 'WhatsApp: respondeu SAIR' WHERE id = ANY($1::uuid[])`, [ids]
+    );
+    await pool.query(`UPDATE lv_contas SET aceita_mensagens = false WHERE tenant_id = $1 AND customer_id = ANY($2::uuid[])`, [c.tenant_id, ids]);
+    // o que ainda estava na fila de campanha para este cliente nao sai mais
+    await pool.query(`UPDATE whatsapp_mensagens SET situacao = 'ignorada', motivo = 'cliente pediu para sair', atualizado_em = now() WHERE customer_id = ANY($1::uuid[]) AND situacao = 'na_fila'`, [ids]);
+  }
+  await logAudit(pool, { tenantId: c.tenant_id, usuarioId: null, acao: 'whatsapp_cliente_saiu', recurso: 'customers', recursoId: null, detalhes: { clientes: ids.length } }).catch(() => {});
+  // confirma para o cliente (dentro da janela de 24 h aberta pela mensagem dele: texto livre, sem modelo)
+  try {
+    const nome = c.nome_verificado || 'loja';
+    const r = await graph('POST', `/${c.phone_number_id}/messages`, {
+      token: decifrar(c.token_cript),
+      json: { messaging_product: 'whatsapp', recipient_type: 'individual', to: String(de).replace(/\D/g, ''), type: 'text', text: { body: `Pronto! Você não vai mais receber ofertas da ${nome} por aqui. Os avisos dos seus pedidos continuam normalmente.` } },
+    });
+    await registrar(c.tenant_id, { evento: 'saiu', telefone: String(de).replace(/\D/g, ''), wamid: r.messages && r.messages[0] ? r.messages[0].id : null, situacao: 'enviada' });
+  } catch { /* a confirmacao e cortesia */ }
+  return { removidos: ids.length };
+}
 const SITUACAO = { sent: 'enviada', delivered: 'entregue', read: 'lida', failed: 'falhou' };
 async function receberWebhook(bruto, assinatura) {
   if (!assinaturaValida(bruto, assinatura)) throw new HttpError(401, 'assinatura inválida');
@@ -322,6 +398,12 @@ async function receberWebhook(bruto, assinatura) {
   let n = 0;
   for (const ent of corpo.entry || []) {
     for (const ch of ent.changes || []) {
+      for (const msg of (ch.value && ch.value.messages) || []) {
+        const texto = (msg.text && msg.text.body) || (msg.button && msg.button.text) || (msg.interactive && msg.interactive.button_reply && msg.interactive.button_reply.title) || '';
+        if (PEDIDO_SAIR.test(texto.trim()) && msg.from) {
+          try { await descadastrar((ch.value.metadata || {}).phone_number_id, msg.from); } catch (err) { console.error('whatsapp sair', err.message); }
+        }
+      }
       for (const st of (ch.value && ch.value.statuses) || []) {
         const nova = SITUACAO[st.status];
         if (!nova || !st.id) continue;
@@ -338,6 +420,6 @@ async function receberWebhook(bruto, assinatura) {
 }
 
 module.exports = {
-  MODELOS, EVENTOS, telefoneWhatsapp, contaDa, publica, conectar, desconectar, salvarAvisos, conferirModelos, enviarTeste,
+  MODELOS, MODELOS_MARKETING, TODOS_MODELOS, EVENTOS, graph, enviarModelo, registrar, marcarErroConta, moduloLigado, garantirModelosMarketing, descadastrar, chaveTelefone, telefoneWhatsapp, contaDa, publica, conectar, desconectar, salvarAvisos, conferirModelos, enviarTeste,
   varrer, iniciarVarredura, receberWebhook, assinaturaValida, eventoDoStatus, meta, disponivel, simulador,
 };

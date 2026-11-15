@@ -14,6 +14,7 @@ let statusForcado = null; // null = aprova; 'PENDING' | 'REJECTED'
 const enviadas = [];
 let assinados = 0;
 
+function modelosPorNome(nome) { for (const m of modelos.values()) if (m.has(nome)) return m.get(nome); return null; }
 function responder(res, status, corpo) { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(corpo)); }
 const erro = (res, status, message, code = 100) => responder(res, status, { error: { message, type: 'OAuthException', code } });
 async function corpoDe(req) { const p = []; for await (const c of req) p.push(c); const t = Buffer.concat(p).toString(); try { return t ? JSON.parse(t) : {}; } catch { return {}; } }
@@ -30,6 +31,18 @@ http.createServer(async (req, res) => {
   const auth = req.headers.authorization || '';
   if (url.pathname === '/__sim/modelos' && req.method === 'POST') { statusForcado = (await corpoDe(req)).status || null; return responder(res, 200, { ok: true, status: statusForcado }); }
   if (url.pathname === '/__sim/mensagens') return responder(res, 200, { enviadas, assinados });
+  // cliente responde no WhatsApp: { from, texto, phone_number_id }
+  if (url.pathname === '/__sim/receber' && req.method === 'POST') {
+    const b = await corpoDe(req);
+    const corpo = JSON.stringify({ object: 'whatsapp_business_account', entry: [{ id: 'WABA', changes: [{ field: 'messages', value: {
+      messaging_product: 'whatsapp', metadata: { phone_number_id: String(b.phone_number_id) },
+      contacts: [{ wa_id: b.from, profile: { name: 'Cliente' } }],
+      messages: [{ from: b.from, id: `wamid.IN${crypto.randomBytes(6).toString('hex')}`, timestamp: String(Math.floor(Date.now() / 1000)), type: 'text', text: { body: b.texto } }],
+    } }] }] });
+    const sig = `sha256=${crypto.createHmac('sha256', SEGREDO).update(corpo).digest('hex')}`;
+    const r = await fetch(WEBHOOK, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hub-signature-256': sig }, body: corpo });
+    return responder(res, 200, { ok: r.ok, status: r.status });
+  }
   if (url.pathname === '/__sim/limpar') { enviadas.length = 0; modelos.clear(); statusForcado = null; return responder(res, 200, { ok: true }); }
   if (partes[1] === 'oauth' && partes[2] === 'access_token') {
     const code = url.searchParams.get('code');
@@ -47,21 +60,29 @@ http.createServer(async (req, res) => {
     if (req.method === 'POST') {
       const b = await corpoDe(req);
       const txt = (b.components || [])[0] && b.components[0].text;
-      if (!b.name || b.category !== 'UTILITY' || !txt) return erro(res, 400, 'Invalid parameter');
+      if (!b.name || !['UTILITY', 'MARKETING'].includes(b.category) || !txt) return erro(res, 400, 'Invalid parameter');
+      const rodape = (b.components || []).find((c) => c.type === 'FOOTER');
+      if (rodape && (!rodape.text || rodape.text.length > 60)) return erro(res, 400, 'Invalid footer');
       if (/^\{\{|\}\}$/.test(txt.trim())) return erro(res, 400, 'Template cannot start or end with a variable');
       if (m.has(b.name)) return erro(res, 400, `Content in this language already exists for ${b.name}`, 100);
-      m.set(b.name, { status: 'PENDING' });
-      return responder(res, 200, { id: crypto.randomUUID(), status: 'PENDING', category: 'UTILITY' });
+      m.set(b.name, { status: 'PENDING', categoria: b.category, rodape: rodape ? rodape.text : null });
+      return responder(res, 200, { id: crypto.randomUUID(), status: 'PENDING', category: b.category });
     }
     for (const v of m.values()) v.status = statusForcado || 'APPROVED';
     return responder(res, 200, { data: [...m.entries()].map(([name, v]) => ({ name, status: v.status, language: 'pt_BR' })) });
   }
   if (recurso === 'messages' && req.method === 'POST') {
     const b = await corpoDe(req);
-    if (b.messaging_product !== 'whatsapp' || b.type !== 'template' || !b.to) return erro(res, 400, 'Invalid parameter');
+    if (b.messaging_product !== 'whatsapp' || !['template', 'text'].includes(b.type) || !b.to) return erro(res, 400, 'Invalid parameter');
+    if (b.type === 'text') {
+      if (!b.text || !b.text.body) return erro(res, 400, 'Invalid parameter');
+      const wamid = `wamid.SIM${crypto.randomBytes(10).toString('hex')}`;
+      enviadas.push({ wamid, to: b.to, texto: b.text.body });
+      return responder(res, 200, { messaging_product: 'whatsapp', contacts: [{ input: b.to, wa_id: b.to }], messages: [{ id: wamid }] });
+    }
     if (/0000$/.test(b.to)) return erro(res, 400, '(#131026) Message undeliverable', 131026);
     const wamid = `wamid.SIM${crypto.randomBytes(10).toString('hex')}`;
-    enviadas.push({ wamid, to: b.to, modelo: b.template.name, params: ((b.template.components || [])[0] || {}).parameters.map((p) => p.text) });
+    enviadas.push({ wamid, to: b.to, modelo: b.template.name, categoria: (modelosPorNome(b.template.name) || {}).categoria, params: ((b.template.components || [])[0] || {}).parameters.map((p) => p.text) });
     setTimeout(() => webhook([{ id: wamid, status: 'sent', recipient_id: b.to }]), 150);
     setTimeout(() => webhook([{ id: wamid, status: 'delivered', recipient_id: b.to }]), 300);
     if (/1111$/.test(b.to)) setTimeout(() => webhook([{ id: wamid, status: 'read', recipient_id: b.to }]), 450);

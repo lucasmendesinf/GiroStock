@@ -5,6 +5,7 @@ const { requireArea, requireModulo } = require('../middleware/permissions');
 const { logAudit } = require('../utils/audit');
 const { isUuid } = require('../utils/tenant');
 const wa = require('../integracoes/whatsapp');
+const campanhas = require('../integracoes/whatsappCampanhas');
 
 const router = express.Router();
 router.use('/whatsapp', requireModulo('whatsapp'));
@@ -37,6 +38,21 @@ router.post('/whatsapp/modelos/conferir', requireArea('Configuracoes'), async (r
 router.post('/whatsapp/teste', requireArea('Configuracoes'), async (req, res) => {
   res.json(await wa.enviarTeste(req.user, (req.body || {}).telefone));
 });
+
+// ---------- campanhas (etapa 2): area Clientes ----------
+const clientes = requireArea('Clientes');
+router.get('/whatsapp/campanhas', clientes, async (req, res) => {
+  const c = await wa.contaDa(pool, req.user.tenantId);
+  const conectado = !!(c && c.status === 'conectado');
+  res.json({
+    conectado, status: c ? c.status : 'desconectado', dias_entre_campanhas: campanhas.DIAS_ENTRE_CAMPANHAS,
+    modelos: conectado ? await campanhas.modelos(req.user.tenantId) : [], campanhas: await campanhas.lista(req.user.tenantId),
+  });
+});
+router.post('/whatsapp/campanhas/previa', clientes, async (req, res) => { res.json(await campanhas.previa(req.user, req.body || {})); });
+router.post('/whatsapp/campanhas', clientes, async (req, res) => { res.status(201).json(await campanhas.criar(req.user, req.body || {})); });
+router.get('/whatsapp/campanhas/:id', clientes, async (req, res) => { res.json(await campanhas.detalhe(req.user.tenantId, req.params.id)); });
+router.post('/whatsapp/campanhas/:id/cancelar', clientes, async (req, res) => { res.json(await campanhas.cancelar(req.user, req.params.id)); });
 
 // Historico: da empresa (Configuracoes) ou de um pedido (tela Pedidos).
 router.get('/whatsapp/mensagens', async (req, res) => {

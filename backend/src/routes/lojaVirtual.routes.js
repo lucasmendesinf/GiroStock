@@ -646,7 +646,7 @@ router.get('/loja-virtual/cupons', async (req, res) => {
     `SELECT c.*, c.inicio::text AS inicio, c.fim::text AS fim,
             (SELECT COUNT(*)::int FROM orders o WHERE o.cupom_id = c.id AND o.status <> 'cancelado') AS usos,
             (SELECT COALESCE(SUM(o.desconto), 0) FROM orders o WHERE o.cupom_id = c.id AND o.status <> 'cancelado') AS desconto_total
-     FROM lv_cupons c WHERE c.tenant_id = $1 ORDER BY c.ativo DESC, c.criado_em DESC`,
+     FROM lv_cupons c WHERE c.tenant_id = $1 AND c.customer_id IS NULL ORDER BY c.ativo DESC, c.criado_em DESC`,
     [req.user.tenantId]
   );
   res.json(rows.map((c) => ({ ...c, valor: n2(c.valor), pedido_minimo: n2(c.pedido_minimo), desconto_total: n2(c.desconto_total), desconto_maximo: c.desconto_maximo === null ? null : n2(c.desconto_maximo) })));

@@ -3,11 +3,14 @@ import { api } from '../api/client';
 import { useConfirm, useToast } from '../context/UiContext.jsx';
 import { Field, Vazio } from '../components/ui.jsx';
 import { dataHora } from '../utils/format';
+import { useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext.jsx';
+import CampanhasWhatsApp from '../components/CampanhasWhatsApp.jsx';
 
 // WhatsApp (API oficial da Meta): conectar o numero da empresa (cadastro incorporado da Meta; com a coexistencia o numero
 // continua no WhatsApp Business do celular), escolher os avisos do pedido, testar e ver o historico das mensagens.
 const SITUACAO = { enviada: ['Enviada', ''], entregue: ['Entregue', 'ok'], lida: ['Lida', 'ok'], falhou: ['Falhou', 'err'] };
-const EVENTO = { recebido: 'Pedido recebido', em_preparo: 'Em preparo', pronto_retirada: 'Pronto para retirar', saiu_entrega: 'Saiu para entrega', entregue: 'Entregue', cancelado: 'Cancelado', teste: 'Teste' };
+const EVENTO = { campanha: 'Campanha', saiu: 'Cliente pediu para sair', recebido: 'Pedido recebido', em_preparo: 'Em preparo', pronto_retirada: 'Pronto para retirar', saiu_entrega: 'Saiu para entrega', entregue: 'Entregue', cancelado: 'Cancelado', teste: 'Teste' };
 const MODELO = { APPROVED: ['Aprovado', 'ok'], PENDING: ['Em análise na Meta', 'warn'], REJECTED: ['Recusado pela Meta', 'err'], NAO_CRIADO: ['Não criado', 'err'] };
 
 // SDK do Facebook (so quando a pessoa clica em Conectar).
@@ -32,6 +35,9 @@ export default function WhatsApp() {
   const [tel, setTel] = useState('');
   const [enviando, setEnviando] = useState(false);
   const sessao = useRef({});
+  const { user } = useAuth();
+  const { state } = useLocation();
+  const podeCampanha = !!(user && user.areas && user.areas.Clientes);
   const carregar = useCallback(async () => {
     try {
       const d = await api.get('/whatsapp');
@@ -178,6 +184,8 @@ export default function WhatsApp() {
               })}
             </div>
           </div>
+
+          {podeCampanha && <CampanhasWhatsApp inicial={state && state.campanha ? { segmento: state.campanha } : null} />}
 
           <div className="card">
             <h3>Enviar mensagem de teste</h3>

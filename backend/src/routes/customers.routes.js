@@ -476,3 +476,13 @@ router.get('/customers/:id', gerir, async (req, res) => {
 module.exports = router;
 module.exports.inserirCliente = inserirCliente;
 module.exports.apenasDigitos = apenasDigitos;
+// Clientes de um segmento (ou os escolhidos), com os agregados: usado pelas campanhas do WhatsApp.
+module.exports.clientesDaCampanha = async (tenantId, { segmento, customer_ids } = {}) => {
+  const vip = await vipLimiteDoTenant(pool, tenantId);
+  const lim = await limitesDeCliente();
+  const { rows } = await pool.query(`${SQL_CLIENTES('')} ORDER BY c.nome`, [tenantId]);
+  let lista = rows.map((r) => formatar(r, vip, lim));
+  if (Array.isArray(customer_ids) && customer_ids.length) { const ids = new Set(customer_ids); lista = lista.filter((c) => ids.has(c.id)); }
+  else if (segmento && segmento !== 'todos') lista = lista.filter((c) => c.segmentos.includes(segmento));
+  return lista;
+};

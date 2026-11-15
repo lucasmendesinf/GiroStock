@@ -18,4 +18,5 @@ app.listen(port, () => {
   console.log(`GiroStock API rodando na porta ${port}`);
 });
 require('./services/fiscal').iniciarVarredura(); // nota fiscal: envia as NFC-e emitidas em contingencia quando a SEFAZ volta (a cada 2 min)
+require('./integracoes/whatsappCampanhas').iniciarEnvio(); // WhatsApp: envia as campanhas na fila (a cada 5 s)
 require('./integracoes/whatsapp').iniciarVarredura(); // WhatsApp: avisa o cliente de cada etapa do pedido (a cada 10 s)

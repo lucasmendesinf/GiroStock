@@ -144,6 +144,70 @@ await db.query(`INSERT INTO order_status_log (order_id, de, para) VALUES ($1, NU
 await espera(3000);
 check('pedido do iFood: não manda (a plataforma avisa)', !(await paraTel('5541944441111')).length);
 
+console.log('\n# 5b. Campanhas de marketing com cupom individual (etapa 2)');
+const cli = async (nome, tel, aceita) => (await db.query(
+  `INSERT INTO customers (tenant_id, nome, telefone, aceita_mensagens, consentimento_em, consentimento_origem) VALUES ($1, $2, $3, $4, CASE WHEN $4 THEN now() END, CASE WHEN $4 THEN 'teste' END) RETURNING id`,
+  [E.id, nome, tel, aceita])).rows[0].id;
+const C1 = await cli('Ana Lima', '41981111111', true);
+const C2 = await cli('Bruno Reis', '41981112222', false);
+const C3 = await cli('Carla Dias', null, true);
+const C4 = await cli('Diego Melo', '41981113333', true);
+const camp0 = await api('GET', '/whatsapp/campanhas', null, E.token);
+check('modelos de marketing: 4, aprovados pela Meta (criados ao conectar, com rodapé "SAIR")', camp0.s === 200 && camp0.j.modelos.length === 4 && camp0.j.modelos.every((m) => m.status === 'APPROVED' && /SAIR/.test(m.rodape)), camp0.j);
+const base = { nome: 'Volta 10%', modelo: 'volta', customer_ids: [C1, C2, C3, C4], cupom: { tipo: 'percentual', valor: 10, validade_dias: 7, pedido_minimo: 30 } };
+check('modelo inválido -> 400', (await api('POST', '/whatsapp/campanhas/previa', { ...base, modelo: 'x' }, E.token)).s === 400);
+check('oferta sem texto -> 400', (await api('POST', '/whatsapp/campanhas/previa', { ...base, modelo: 'oferta_cupom' }, E.token)).s === 400);
+check('desconto acima de 90% -> 400', (await api('POST', '/whatsapp/campanhas/previa', { ...base, cupom: { ...base.cupom, valor: 95 } }, E.token)).s === 400);
+const pv = await api('POST', '/whatsapp/campanhas/previa', base, E.token);
+check('prévia: 2 aptos, 1 sem consentimento, 1 sem celular, custo estimado e exemplo com cupom e validade',
+  pv.s === 200 && pv.j.total === 2 && pv.j.sem_consentimento === 1 && pv.j.sem_celular === 1 && pv.j.custo_estimado > 0
+  && /Sentimos sua falta na J&A Conveniência/.test(pv.j.exemplo.texto) && /10% de desconto/.test(pv.j.exemplo.texto) && /VOLTA-[A-Z0-9]{5}/.test(pv.j.exemplo.texto), pv.j);
+const cr = await api('POST', '/whatsapp/campanhas', base, E.token);
+check('campanha criada para 2 clientes', cr.s === 201 && cr.j.total === 2, cr.j);
+const mA = await aguardar(async () => (await paraTel('5541981111111')).find((m) => m.modelo === 'girostock_cupom_volta'));
+const mD = await aguardar(async () => (await paraTel('5541981113333')).find((m) => m.modelo === 'girostock_cupom_volta'));
+check('mensagem de marketing sai pela API: nome, empresa, desconto, código próprio e validade', mA && mA.categoria === 'MARKETING' && mA.params[0] === 'Ana' && mA.params[1] === 'J&A Conveniência'
+  && mA.params[2] === '10% de desconto' && /^VOLTA-[A-Z0-9]{5}$/.test(mA.params[3]) && /^\d{2}\/\d{2}$/.test(mA.params[4]), mA);
+check('cada cliente recebe um código diferente', mD && mD.params[3] !== mA.params[3], [mA && mA.params, mD && mD.params]);
+check('quem não aceitou mensagens não recebe', !(await paraTel('5541981112222')).length);
+const cupA = (await db.query(`SELECT * FROM lv_cupons WHERE tenant_id = $1 AND upper(codigo) = $2`, [E.id, mA.params[3]])).rows[0];
+check('cupom individual: do cliente, uso único, pedido mínimo e validade', cupA && cupA.customer_id === C1 && cupA.limite_total === 1 && cupA.limite_por_cliente === 1 && Number(cupA.pedido_minimo) === 30 && Number(cupA.valor) === 10 && cupA.fim, cupA);
+const det = await aguardar(async () => { const r = (await api('GET', `/whatsapp/campanhas/${cr.j.id}`, null, E.token)).j; return r.status === 'concluida' && r.entregues === 2 ? r : null; });
+check('resultado da campanha: concluída, 2 enviadas e entregues, códigos na lista', det && det.enviadas === 2 && det.mensagens.length === 2 && det.mensagens.every((m) => /^VOLTA-/.test(m.cupom)), det);
+const lv = createRequire(import.meta.url)('../src/services/lojaVirtual');
+const loja = { tenant_id: E.id };
+const tentar = async (conta) => { try { await lv.validarCupom(db, loja, mA.params[3], conta, 50, 'retirada'); return 'ok'; } catch (e) { return e.message; } };
+check('cupom vale para o dono (conta ligada ao cadastro)', (await tentar({ id: crypto.randomUUID(), customer_id: C1, telefone: '41981111111' })) === 'ok');
+check('cupom vale para o dono pelo celular da conta', (await tentar({ id: crypto.randomUUID(), customer_id: null, telefone: '(41) 98111-1111' })) === 'ok');
+check('outro cliente não usa o cupom pessoal', /outro cliente/.test(await tentar({ id: crypto.randomUUID(), customer_id: C4, telefone: '41981113333' })));
+check('sem conta: pede para entrar', /entre na sua conta/.test(await tentar(null)));
+await db.query(`INSERT INTO orders (tenant_id, location_id, numero, origem, cliente_nome, tipo, cupom_id, desconto) VALUES ($1, $2, 99501, 'loja_virtual', 'Ana Lima', 'retirada', $3, 5)`, [E.id, L, cupA.id]);
+const lst = (await api('GET', '/whatsapp/campanhas', null, E.token)).j.campanhas.find((c) => c.id === cr.j.id);
+check('lista de campanhas: cupom usado aparece no resultado', lst && lst.cupons_usados === 1 && lst.lidas >= 0, lst);
+check('cupons individuais não aparecem na lista de cupons da loja', (await db.query(`SELECT count(*)::int AS n FROM lv_cupons WHERE tenant_id = $1 AND customer_id IS NULL`, [E.id])).rows[0].n === 0);
+const pv2 = await api('POST', '/whatsapp/campanhas/previa', base, E.token);
+check('quem recebeu campanha nos últimos 7 dias fica de fora', pv2.j.total === 0 && pv2.j.recentes === 2, pv2.j);
+check('campanha sem ninguém apto -> 400', (await api('POST', '/whatsapp/campanhas', base, E.token)).s === 400);
+check('cancelar campanha já concluída -> 409', (await api('POST', `/whatsapp/campanhas/${cr.j.id}/cancelar`, {}, E.token)).s === 409);
+// cliente responde SAIR (a Meta manda o celular brasileiro sem o 9: 55 41 8111-1111)
+const rs = await sim('/__sim/receber', { from: '554181111111', texto: 'Sair', phone_number_id: '2220001' });
+const saiu = await aguardar(async () => { const r = (await db.query(`SELECT aceita_mensagens, consentimento_origem FROM customers WHERE id = $1`, [C1])).rows[0]; return r.aceita_mensagens === false ? r : null; });
+check('cliente respondeu SAIR: perde o consentimento (origem registrada)', rs.ok && saiu && /SAIR/.test(saiu.consentimento_origem), [rs, saiu]);
+check('SAIR: o cliente recebe a confirmação', !!(await aguardar(async () => (await paraTel('554181111111')).find((m) => /não vai mais receber ofertas/.test(m.texto || '')))));
+check('outra mensagem do cliente não tira o consentimento', (await sim('/__sim/receber', { from: '5541981113333', texto: 'quero sair mais cedo hoje', phone_number_id: '2220001' })).ok
+  && (await espera(800), (await db.query(`SELECT aceita_mensagens FROM customers WHERE id = $1`, [C4])).rows[0].aceita_mensagens === true));
+// cancelar: campanha com mensagem na fila
+const C5 = await cli('Elisa Prado', '41981114444', true);
+const cpz = (await db.query(`INSERT INTO whatsapp_campanhas (tenant_id, nome, modelo, total) VALUES ($1, 'Cancelar', 'oferta', 1) RETURNING id`, [E.id])).rows[0].id;
+const cupz = (await db.query(`INSERT INTO lv_cupons (tenant_id, codigo, tipo, valor, customer_id, campanha_id) VALUES ($1, 'CANC-${SUF}', 'valor', 5, $2, $3) RETURNING id`, [E.id, C5, cpz])).rows[0].id;
+await db.query(`INSERT INTO whatsapp_mensagens (tenant_id, evento, telefone, modelo, situacao, campanha_id, customer_id, cupom_id, parametros) VALUES ($1, 'campanha', '5541981114444', 'girostock_oferta', 'na_fila', $2, $3, $4, '["Elisa","J&A","x"]')`, [E.id, cpz, C5, cupz]);
+const cc = await api('POST', `/whatsapp/campanhas/${cpz}/cancelar`, {}, E.token);
+check('cancelar: o que estava na fila não sai e o cupom é desativado', cc.s === 200 && cc.j.nao_enviadas === 1 && (await db.query(`SELECT ativo FROM lv_cupons WHERE id = $1`, [cupz])).rows[0].ativo === false, cc.j);
+const emailCx0 = `e2e.wa.caixa0.${SUF}@girostock.local`; const sCx0 = rnd();
+await api('POST', '/users', { nome: 'Caixa0', email: emailCx0, senha: sCx0, perfil: 'Caixa/Operador', location_id: L }, E.token);
+const CX0 = (await login(emailCx0, sCx0)).j.token;
+check('caixa (sem a área Clientes) não cria campanha (403)', (await api('POST', '/whatsapp/campanhas', base, CX0)).s === 403);
+
 console.log('\n# 6. Permissões, isolamento e desconectar');
 const emailCx = `e2e.wa.caixa.${SUF}@girostock.local`; const sCx = rnd();
 await api('POST', '/users', { nome: 'Caixa', email: emailCx, senha: sCx, perfil: 'Caixa/Operador', location_id: L }, E.token);

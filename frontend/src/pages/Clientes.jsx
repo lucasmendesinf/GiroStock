@@ -4,6 +4,8 @@ import { api } from '../api/client';
 import { useToast } from '../context/UiContext.jsx';
 import { Modal } from '../components/ui.jsx';
 import { brl, dataHora, fmtTel } from '../utils/format';
+import { useAuth } from '../context/AuthContext.jsx';
+import { temModulo } from '../utils/permissions';
 
 const SEGMENTOS = [
   ['todos', 'Todos'], ['novo', 'Novos'], ['recorrente', 'Recorrentes'], ['vip', 'VIP'], ['risco', 'Em risco'],
@@ -322,6 +324,13 @@ function ModalMensagem({ inicial, onClose }) {
   const [texto, setTexto] = useState('');
   const [prev, setPrev] = useState(null);
   const [criando, setCriando] = useState(false);
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [apiWa, setApiWa] = useState(false); // WhatsApp conectado pela API oficial: campanha com cupom, envio automatico
+  useEffect(() => {
+    if (unico || !temModulo(user, 'whatsapp')) return;
+    api.get('/whatsapp/campanhas').then((r) => setApiWa(!!r.conectado)).catch(() => {});
+  }, [user, unico]);
 
   useEffect(() => {
     api.get('/customers/campaigns/modelos').then((m) => {
@@ -384,7 +393,13 @@ function ModalMensagem({ inicial, onClose }) {
           ))}
           {prev && prev.total > 6 && <div className="cl-sub" style={{ padding: '8px 4px' }}>… e mais {prev.total - 6}</div>}
         </div>
-        <div className="ped-nota"><b>Como enviar:</b> nesta fase, o botão abre o WhatsApp do atendente com a mensagem pronta (1 clique por cliente, tudo registrado no histórico). Envio automático em lote exige a API oficial do WhatsApp — fica para a fase seguinte. Toda mensagem de campanha leva "Responda SAIR para não receber mais mensagens".</div>
+        {apiWa && (
+          <div className="ped-nota" style={{ borderColor: '#25d366' }}>
+            <b>WhatsApp conectado pela API oficial:</b> envie para todo o segmento de uma vez, com um <b>cupom individual</b> para cada cliente.{' '}
+            <button type="button" className="btn-link" onClick={() => navigate('/whatsapp', { state: { campanha: seg === 'sem_whatsapp' ? 'todos' : seg } })}>Criar campanha com cupom ›</button>
+          </div>
+        )}
+        <div className="ped-nota"><b>Como enviar:</b> aqui, o botão abre o WhatsApp do atendente com a mensagem pronta (1 clique por cliente, tudo registrado no histórico). Para envio automático em lote, com cupom individual, conecte o WhatsApp pela API oficial (menu WhatsApp). Toda mensagem de campanha leva "Responda SAIR para não receber mais mensagens".</div>
         <div className="modal-actions">
           <button type="button" onClick={onClose}>Fechar</button>
           <button type="button" disabled={criando || !prev || prev.total === 0} onClick={criarFila}>Criar fila de envio</button>

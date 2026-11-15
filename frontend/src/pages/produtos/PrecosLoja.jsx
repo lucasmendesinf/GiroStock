@@ -283,7 +283,7 @@ export default function PrecosLoja({ estado, setEstado, locais, venda, custo, co
               <span className={m !== null && m < 10 ? 'pr-warn' : ''}>{pctTxt(m)}</span>
               <span>{fx.length === 0 ? <small className="muted">sem desconto por quantidade</small> : fx.map((f, k) => {
                 const { unit } = calcFaixa(f, p);
-                return <em key={k} className="pr-tag">{f.rotulo || `${f.quantidade_minima} un`}: {f.quantidade_minima} un × {unit === null || unit === undefined ? '—' : brl(unit)}{f.automatica === false ? ' (manual)' : ''}</em>;
+                return <em key={k} className="pr-tag">{f.rotulo || `${f.quantidade_minima} un`}: {f.modo === 'kit' ? `${f.quantidade_minima} un por ${brl(num(f.valor))}` : <>{f.quantidade_minima} un × {unit === null || unit === undefined ? '—' : brl(unit)}</>}{f.automatica === false ? ' (manual)' : ''}</em>;
               })}</span>
             </div>
           );

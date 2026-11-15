@@ -901,7 +901,7 @@ export default function PDV() {
                 <div className="carrinho-info">
                   <span className="carrinho-nome">{i.nome}</span>
                   {i.complementos && i.complementos.length > 0 && <span className="carrinho-comps">{textoComplementos(i.complementos)}</span>}
-                  <span className="muted">{qtd(i.quantidade, i.unidade)} {i.unidade} × {calcLinha(i).faixa && <s className="pr-riscado">{brl(calcLinha(i).tabela)}</s>} {brl(calcLinha(i).unit)}</span>
+                  <span className="muted">{qtd(i.quantidade, i.unidade)} {i.unidade} × {calcLinha(i).pack ? brl(calcLinha(i).tabela) : <>{calcLinha(i).faixa && <s className="pr-riscado">{brl(calcLinha(i).tabela)}</s>} {brl(calcLinha(i).unit)}</>}</span>
                   {calcLinha(i).faixa && (
                     <span className="pr-pack">{calcLinha(i).pack
                       ? <>{calcLinha(i).rotulo} · {brl(calcLinha(i).unit * i.quantidade)} em vez de {brl(calcLinha(i).tabela * i.quantidade)} · economia {brl((calcLinha(i).tabela - calcLinha(i).unit) * i.quantidade)}</>

@@ -29,6 +29,14 @@ export default function IfoodConexoes({ lojas }) {
   async function alternarAceite(i) {
     try { await api.patch(`/integracoes/${i.id}`, { aceite_automatico: !i.aceite_automatico }); toast.sucesso(!i.aceite_automatico ? 'Aceite automático ligado' : 'Aceite automático desligado'); carregar(); } catch (err) { toast.erro(err); }
   }
+  async function alterarTeste(i, mudanca) {
+    try {
+      await api.patch(`/integracoes/${i.id}`, mudanca);
+      if ('modo_teste' in mudanca) toast.sucesso(mudanca.modo_teste ? 'Modo teste ligado' : 'Modo teste desligado');
+      else toast.sucesso('Produto de teste salvo');
+      carregar();
+    } catch (err) { toast.erro(err); }
+  }
   async function buscar(i) {
     try { const r = await api.post(`/integracoes/${i.id}/sincronizar`); toast.sucesso(r.eventos ? `${r.eventos} novidade(s) do iFood recebida(s)` : 'Nenhuma novidade no iFood agora'); carregar(); } catch (err) { toast.erro(err); }
   }
@@ -70,6 +78,7 @@ export default function IfoodConexoes({ lojas }) {
               )}
               {!ligado && dados.ifood_configurado && <button type="button" className="btn-primario" onClick={() => conectar(l)}>{i && i.status === 'reautorizar' ? 'Reconectar iFood' : 'Conectar iFood'}</button>}
             </div>
+            {ligado && <ModoTeste integ={i} onChange={(m) => alterarTeste(i, m)} />}
           </div>
         );
       })}
@@ -123,9 +132,142 @@ function ConectarModal({ estado, onClose }) {
   );
 }
 
+// Modo teste (conta de teste do iFood): o pedido de teste vem com itens de codigo aleatorio, que nunca batem com o
+// cadastro. Ligado, o item que o GiroStock nao reconhece entra como o "produto de teste" escolhido, e o pedido segue
+// sozinho (aceite automatico, estoque, preparo) como um pedido real. Desligue antes de vender de verdade.
+function ModoTeste({ integ, onChange }) {
+  const [produtos, setProdutos] = useState(null);
+  useEffect(() => {
+    if (!integ.modo_teste) return;
+    api.get('/products?limit=500&ativo=true').then((r) => setProdutos(Array.isArray(r) ? r : r.items || r.produtos || [])).catch(() => setProdutos([]));
+  }, [integ.modo_teste]);
+  return (
+    <div className="ifood-teste">
+      <label className="check" title="Só para a conta de teste do iFood: itens que o GiroStock não reconhece entram como o produto de teste">
+        <input type="checkbox" checked={!!integ.modo_teste} onChange={() => onChange({ modo_teste: !integ.modo_teste })} /> Modo teste (conta de teste do iFood)
+      </label>
+      {integ.modo_teste && (
+        <div className="ifood-teste-corpo">
+          <Field label="Produto de teste" hint="Item do pedido que o GiroStock não reconhece entra como este produto (sem pedir vínculo).">
+            <select value={integ.produto_teste_id || ''} onChange={(e) => onChange({ produto_teste_id: e.target.value || null })}>
+              <option value="">— escolha um produto —</option>
+              {(produtos || []).map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+            </select>
+          </Field>
+          {!integ.produto_teste_id && <div className="form-hint" style={{ color: 'var(--warn)' }}>Escolha o produto de teste para os pedidos de teste entrarem sozinhos.</div>}
+          <div className="form-hint">Desligue o modo teste antes de começar a vender de verdade no iFood.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const brl = (v) => (v === null || v === undefined ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
+
+// Cardapio do iFood: aba "Produtos" (enviar os produtos do GiroStock para o cardapio do iFood: nome, descricao,
+// preco da loja, categoria, foto, com o codigo do produto como codigo PDV) e aba "Disponibilidade" (pausa o que
+// acabou e reativa o que voltou, sozinho a cada 30 s).
+function CardapioModal({ integ, loja, onClose }) {
+  const [aba, setAba] = useState('produtos');
+  return (
+    <Modal titulo={`Cardápio no iFood · ${loja.nome}`} subtitulo="Envie seus produtos para o iFood. Depois, preço e disponibilidade são atualizados sozinhos." onClose={onClose} largura="larga">
+      <div className="form-stack">
+        <div className="segmentado" role="tablist">
+          <button type="button" role="tab" aria-selected={aba === 'produtos'} className={aba === 'produtos' ? 'ativo' : ''} onClick={() => setAba('produtos')}>Produtos</button>
+          <button type="button" role="tab" aria-selected={aba === 'disponibilidade'} className={aba === 'disponibilidade' ? 'ativo' : ''} onClick={() => setAba('disponibilidade')}>Disponibilidade</button>
+        </div>
+        {aba === 'produtos' ? <EnviarProdutos integ={integ} onClose={onClose} /> : <Disponibilidade integ={integ} onClose={onClose} />}
+      </div>
+    </Modal>
+  );
+}
+
+function EnviarProdutos({ integ, onClose }) {
+  const toast = useToast();
+  const [lista, setLista] = useState(null);
+  const [marcados, setMarcados] = useState(new Set());
+  const [busca, setBusca] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [falhas, setFalhas] = useState([]);
+  const carregar = useCallback(() => api.get(`/integracoes/${integ.id}/cardapio`).then((r) => {
+    setLista(r.produtos);
+    setMarcados((m) => (m.size ? m : new Set(r.produtos.filter((p) => p.vende_ifood).map((p) => p.id))));
+  }).catch((err) => { toast.erro(err); setLista([]); }), [integ, toast]);
+  useEffect(() => { carregar(); }, [carregar]);
+
+  const termo = busca.trim().toLowerCase();
+  const visiveis = (lista || []).filter((p) => !termo || p.nome.toLowerCase().includes(termo) || (p.codigo || '').toLowerCase().includes(termo) || (p.categoria || '').toLowerCase().includes(termo));
+  const todosMarcados = visiveis.length > 0 && visiveis.every((p) => marcados.has(p.id));
+  function alternar(id) { const m = new Set(marcados); if (m.has(id)) m.delete(id); else m.add(id); setMarcados(m); }
+  function alternarTodos() {
+    const m = new Set(marcados);
+    visiveis.forEach((p) => (todosMarcados ? m.delete(p.id) : m.add(p.id)));
+    setMarcados(m);
+  }
+  async function enviar() {
+    setEnviando(true);
+    setFalhas([]);
+    try {
+      const r = await api.post(`/integracoes/${integ.id}/cardapio/enviar`, { product_ids: [...marcados] });
+      if (r.erros) { toast.erro(`${r.enviados} enviado(s), ${r.erros} com problema`); setFalhas(r.itens.filter((x) => !x.ok)); }
+      else toast.sucesso(`${r.enviados} produto(s) no cardápio do iFood`);
+      carregar();
+    } catch (err) { toast.erro(err); } finally { setEnviando(false); }
+  }
+  const noIfood = (lista || []).filter((p) => p.no_ifood).length;
+  return (
+    <>
+      <p className="form-hint" style={{ margin: 0 }}>
+        Marque os produtos e clique em <b>Enviar ao iFood</b>. Vão o nome, a descrição, o preço desta loja, a categoria e a foto, com o <b>código do produto</b> como código PDV — assim o pedido do iFood já entra vinculado. Se o produto já existe no iFood com o mesmo código, ele é atualizado (não duplica).
+      </p>
+      {lista === null ? <p className="muted">Carregando…</p> : lista.length === 0 ? <p className="muted">Nenhum produto ativo cadastrado.</p> : (
+        <>
+          <div className="ifood-card-barra">
+            <input type="search" placeholder="Buscar produto, código ou categoria" value={busca} onChange={(e) => setBusca(e.target.value)} />
+            <span className="muted">{marcados.size} marcado(s) · {noIfood} no iFood</span>
+          </div>
+          {falhas.length > 0 && (
+            <div className="ped-nota" style={{ borderColor: 'var(--err)' }}>
+              {falhas.map((f) => <div key={f.id}><b>{f.nome}</b>: {f.erro}</div>)}
+            </div>
+          )}
+          <div className="tabela-wrap ifood-card-tabela">
+            <table className="compacta">
+              <thead><tr>
+                <th style={{ width: 32 }}><input type="checkbox" aria-label="Marcar todos" checked={todosMarcados} onChange={alternarTodos} /></th>
+                <th>Produto</th><th>Código PDV</th><th>Preço</th><th>No iFood</th>
+              </tr></thead>
+              <tbody>
+                {visiveis.map((p) => (
+                  <tr key={p.id}>
+                    <td><input type="checkbox" aria-label={`Enviar ${p.nome}`} checked={marcados.has(p.id)} onChange={() => alternar(p.id)} /></td>
+                    <td>{p.nome}<span className="celula-sub"> {p.categoria || 'Sem categoria'}{!p.tem_foto && ' · sem foto'}</span></td>
+                    <td>{p.codigo || <span className="muted">sem código</span>}</td>
+                    <td>{brl(p.preco)}</td>
+                    <td>
+                      {p.erro ? <span className="ped-pill err" title={p.erro}>Erro</span>
+                        : p.no_ifood ? (p.desatualizado ? <span className="ped-pill warn" title={`No iFood: ${brl(p.preco_no_ifood)}`}>Atualizando preço</span> : <span className="ped-pill ok">Enviado</span>)
+                        : <span className="muted">não enviado</span>}
+                      {p.erro && <div className="celula-sub" style={{ color: 'var(--err)' }}>{p.erro}</div>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+      <div className="modal-actions">
+        <button type="button" onClick={onClose}>Fechar</button>
+        <button type="button" className="btn-primario" disabled={enviando || marcados.size === 0} onClick={enviar}>{enviando ? 'Enviando…' : `Enviar ao iFood (${marcados.size})`}</button>
+      </div>
+    </>
+  );
+}
+
 // Disponibilidade no cardapio do iFood: produtos marcados "Vender no iFood" e complementos com codigo.
 // O GiroStock pausa o que acabou e reativa o que voltou sozinho (a cada 30 s); "Enviar agora" manda tudo de novo.
-function CardapioModal({ integ, loja, onClose }) {
+function Disponibilidade({ integ, onClose }) {
   const toast = useToast();
   const [lista, setLista] = useState(null);
   const [enviando, setEnviando] = useState(false);
@@ -137,35 +279,34 @@ function CardapioModal({ integ, loja, onClose }) {
   }
   const pausados = (lista || []).filter((x) => x.status === 'UNAVAILABLE').length;
   return (
-    <Modal titulo={`Cardápio no iFood · ${loja.nome}`} subtitulo="O GiroStock pausa no iFood o que acabou (estoque ou insumo da receita) e reativa quando volta." onClose={onClose} largura="larga">
-      <div className="form-stack">
-        {lista === null ? <p className="muted">Calculando…</p> : lista.length === 0 ? (
-          <p className="muted">Nenhum produto marcado para o iFood. No cadastro do produto, marque <b>"Vender no iFood"</b>; nos complementos, informe o <b>código PDV no iFood</b>.</p>
-        ) : (
-          <>
-            <div className="muted">{lista.length - pausados} à venda · {pausados} pausado(s)</div>
-            <div className="tabela-wrap">
-              <table className="compacta">
-                <thead><tr><th>Item</th><th>Código PDV</th><th>Situação</th><th>No iFood</th></tr></thead>
-                <tbody>
-                  {lista.map((x) => (
-                    <tr key={`${x.tipo}:${x.codigo}`}>
-                      <td>{x.nome}{x.tipo === 'complemento' && <span className="celula-sub"> complemento</span>}</td>
-                      <td>{x.codigo}</td>
-                      <td><span className={`ped-pill ${x.status === 'AVAILABLE' ? 'ok' : 'err'}`}>{x.status === 'AVAILABLE' ? 'À venda' : 'Pausado'}</span>{x.motivo && <span className="celula-sub"> {x.motivo}</span>}</td>
-                      <td className="muted">{x.no_ifood ? (x.no_ifood === x.status ? 'atualizado' : 'enviando…') : 'ainda não enviado'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-        <div className="modal-actions">
-          <button type="button" onClick={onClose}>Fechar</button>
-          <button type="button" className="btn-primario" disabled={enviando || !lista || lista.length === 0} onClick={enviar}>{enviando ? 'Enviando…' : 'Enviar tudo ao iFood agora'}</button>
-        </div>
+    <>
+      <p className="form-hint" style={{ margin: 0 }}>O GiroStock pausa no iFood o que acabou (estoque ou insumo da receita) e reativa quando volta.</p>
+      {lista === null ? <p className="muted">Calculando…</p> : lista.length === 0 ? (
+        <p className="muted">Nenhum produto no iFood ainda. Envie os produtos na aba <b>Produtos</b>; nos complementos, informe o <b>código PDV no iFood</b>.</p>
+      ) : (
+        <>
+          <div className="muted">{lista.length - pausados} à venda · {pausados} pausado(s)</div>
+          <div className="tabela-wrap">
+            <table className="compacta">
+              <thead><tr><th>Item</th><th>Código PDV</th><th>Situação</th><th>No iFood</th></tr></thead>
+              <tbody>
+                {lista.map((x) => (
+                  <tr key={`${x.tipo}:${x.codigo}`}>
+                    <td>{x.nome}{x.tipo === 'complemento' && <span className="celula-sub"> complemento</span>}</td>
+                    <td>{x.codigo}</td>
+                    <td><span className={`ped-pill ${x.status === 'AVAILABLE' ? 'ok' : 'err'}`}>{x.status === 'AVAILABLE' ? 'À venda' : 'Pausado'}</span>{x.motivo && <span className="celula-sub"> {x.motivo}</span>}</td>
+                    <td className="muted">{x.no_ifood ? (x.no_ifood === x.status ? 'atualizado' : 'enviando…') : 'ainda não enviado'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+      <div className="modal-actions">
+        <button type="button" onClick={onClose}>Fechar</button>
+        <button type="button" className="btn-primario" disabled={enviando || !lista || lista.length === 0} onClick={enviar}>{enviando ? 'Enviando…' : 'Enviar disponibilidade agora'}</button>
       </div>
-    </Modal>
+    </>
   );
 }

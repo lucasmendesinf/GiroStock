@@ -10,6 +10,8 @@ const { HttpError } = require('../../utils/http');
 const { ErroPlataforma } = require('../http');
 const { reservadosDaLoja } = require('../../utils/reservas');
 const { unidadesDisponiveis } = require('../../services/consumo');
+const crypto = require('crypto');
+const precos = require('../../services/precos');
 
 const { db, integracao, registrarErro, importar, cancelarLocal, pedidoExternoDoPedido, pedidoExterno, vincular } = comum;
 const PLATAFORMA = 'ifood';
@@ -57,7 +59,7 @@ async function iniciarConexao(user, locationId) {
     ? await db().query(
       `UPDATE integracoes_delivery SET status = 'aguardando_codigo', codigo_vinculo = $3, verificador_token_cript = $4,
               codigo_vinculo_expira_em = now() + ($5 || ' seconds')::interval, criado_por = $6, ultimo_erro = NULL, atualizado_em = now()
-       WHERE id = $7 RETURNING id`, [...valores, atual.rows[0].id])
+       WHERE id = $7 AND tenant_id = $1::uuid AND location_id = $2::uuid RETURNING id`, [...valores, atual.rows[0].id])
     : await db().query(
       `INSERT INTO integracoes_delivery (tenant_id, location_id, plataforma, status, codigo_vinculo, verificador_token_cript, codigo_vinculo_expira_em, criado_por)
        VALUES ($1, $2, 'ifood', 'aguardando_codigo', $3, $4, now() + ($5 || ' seconds')::interval, $6) RETURNING id`, valores);
@@ -220,6 +222,145 @@ async function listaDisponibilidade(integ) {
   });
 }
 
+// ---------------------------------------------------------------- cardapio: enviar produtos do GiroStock ao iFood
+// Produtos marcados "Vender no iFood" viram itens no cardapio do iFood com o codigo PDV (externalCode) = codigo do produto
+// (codigo iFood ou codigo interno). Com isso os pedidos (inclusive os de teste) chegam com o codigo e entram sozinhos.
+// Ids (UUID v4) gerados aqui e guardados em ifood_cardapio: reenviar atualiza o mesmo item (PUT /items e idempotente).
+const codigoPdv = (p) => String(p.codigo_ifood || p.codigo_interno || '').trim().toUpperCase();
+
+async function categoriaNoIfood(integ, token, chave, nome, existentes) {
+  const ja = (await db().query(`SELECT categoria_ifood_id FROM ifood_categorias WHERE integracao_id = $1 AND chave = $2`, [integ.id, chave])).rows[0];
+  if (ja) return ja.categoria_ifood_id;
+  // categoria com o mesmo nome ja no iFood (criada a mao no portal): usa ela
+  const igual = existentes.find((c) => String(c.nome || '').trim().toLowerCase() === nome.trim().toLowerCase());
+  const id = igual ? igual.id : (await api.criarCategoria(token, integ.merchant_id, nome)).id;
+  if (!id) throw new HttpError(502, `o iFood não devolveu o id da categoria "${nome}"`);
+  await db().query(
+    `INSERT INTO ifood_categorias (integracao_id, chave, categoria_ifood_id, nome) VALUES ($1, $2, $3, $4)
+     ON CONFLICT (integracao_id, chave) DO UPDATE SET categoria_ifood_id = EXCLUDED.categoria_ifood_id, nome = EXCLUDED.nome`,
+    [integ.id, chave, id, nome]
+  );
+  return id;
+}
+
+async function produtosDoCardapio(integ, ids = null) {
+  const params = [integ.tenant_id];
+  let filtro = 'p.vende_ifood';
+  if (ids) { params.push(ids); filtro = `p.id = ANY($${params.length}::uuid[])`; }
+  return (await db().query(
+    `SELECT p.id, p.nome, p.descricao, p.codigo_interno, p.codigo_ifood, p.preco_venda, p.ativo, p.vende_ifood, p.categoria_id, c.nome AS categoria_nome,
+            p.imagem_id, img.mime AS imagem_mime
+     FROM products p LEFT JOIN categories c ON c.id = p.categoria_id LEFT JOIN lv_imagens img ON img.id = p.imagem_id
+     WHERE p.tenant_id = $1 AND ${filtro} ORDER BY c.nome NULLS LAST, p.nome`, params
+  )).rows;
+}
+
+// Envia (cria ou atualiza) os produtos ao cardapio do iFood. ids: so esses (e marca "Vender no iFood"); sem ids: todos os marcados.
+async function enviarCardapio(user, integ, ids = null) {
+  if (ids && ids.length) {
+    await db().query(`UPDATE products SET vende_ifood = true WHERE tenant_id = $1 AND id = ANY($2::uuid[])`, [integ.tenant_id, ids]);
+  }
+  const prods = await produtosDoCardapio(integ, ids && ids.length ? ids : null);
+  if (prods.length === 0) throw new HttpError(400, 'nenhum produto marcado para vender no iFood');
+  const token = await tokenDa(integ);
+  const infoPreco = await precos.infoDePrecoDaLoja(db(), integ.tenant_id, integ.location_id, prods.map((p) => ({ id: p.id, preco_venda: p.preco_venda })));
+  const disp = new Map((await calcularDisponibilidade(integ)).filter((x) => x.tipo === 'item').map((x) => [x.id, x.status]));
+  const existentes = await api.categorias(token, integ.merchant_id).catch(() => []);
+  const noIfoodPorCodigo = new Map(existentes.flatMap((c) => c.itens || []).filter((i) => i.codigo && i.id).map((i) => [i.codigo, i]));
+  const resultado = [];
+  // codigos repetidos nao podem ir (o iFood exige externalCode unico por loja)
+  const vistos = new Map();
+  for (const p of prods) {
+    const codigo = codigoPdv(p);
+    try {
+      if (!codigo) throw new Error('produto sem código (preencha o código PDV do iFood ou o código interno)');
+      if (vistos.has(codigo)) throw new Error(`código ${codigo} repetido com "${vistos.get(codigo)}"`);
+      vistos.set(codigo, p.nome);
+      const ip = infoPreco.get(p.id);
+      if (ip && ip.vende === false) throw new Error('a loja conectada não vende este produto (preço por loja)');
+      const preco = Number(ip ? ip.preco_venda : p.preco_venda);
+      const ja = (await db().query(`SELECT item_id, produto_ifood_id, imagem_enviada, enviado_em FROM ifood_cardapio WHERE integracao_id = $1 AND product_id = $2`, [integ.id, p.id])).rows[0];
+      // item com este codigo ja no iFood (criado no portal ou numa conexao anterior): atualiza ele em vez de criar outro
+      const noIfood = noIfoodPorCodigo.get(codigo);
+      const itemId = noIfood ? noIfood.id : ja && ja.enviado_em ? ja.item_id : crypto.randomUUID();
+      const prodId = noIfood && noIfood.produtoId ? noIfood.produtoId : ja && ja.enviado_em ? ja.produto_ifood_id : crypto.randomUUID();
+      const catId = await categoriaNoIfood(integ, token, p.categoria_id || 'sem-categoria', p.categoria_nome || 'Produtos', existentes);
+      const status = p.ativo && disp.get(p.id) !== 'UNAVAILABLE' ? 'AVAILABLE' : 'UNAVAILABLE';
+      const produto = { id: prodId, name: String(p.nome).slice(0, 100), description: String(p.descricao || '').slice(0, 1000), externalCode: codigo };
+      // foto: so jpg/png (o iFood nao aceita webp); vai em base64 so quando mudou
+      let imagemEnviada = ja ? ja.imagem_enviada : null;
+      if (p.imagem_id && ['image/jpeg', 'image/png'].includes(p.imagem_mime) && (!ja || ja.imagem_enviada !== p.imagem_id)) {
+        const img = (await db().query(`SELECT dados FROM lv_imagens WHERE id = $1`, [p.imagem_id])).rows[0];
+        if (img && img.dados.length <= 5 * 1024 * 1024) { produto.image = `data:${p.imagem_mime};base64,${img.dados.toString('base64')}`; imagemEnviada = p.imagem_id; }
+      }
+      await api.salvarItem(token, integ.merchant_id, {
+        item: { id: itemId, type: 'DEFAULT', categoryId: catId, status, price: { value: Number(preco.toFixed(2)) }, externalCode: codigo },
+        products: [produto], optionGroups: [], options: [],
+      });
+      await db().query(
+        `INSERT INTO ifood_cardapio (integracao_id, product_id, item_id, produto_ifood_id, codigo, categoria_ifood_id, preco, status, imagem_enviada, enviado_em, erro)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), NULL)
+         ON CONFLICT (integracao_id, product_id) DO UPDATE SET item_id = EXCLUDED.item_id, produto_ifood_id = EXCLUDED.produto_ifood_id, codigo = EXCLUDED.codigo,
+           categoria_ifood_id = EXCLUDED.categoria_ifood_id, preco = EXCLUDED.preco, status = EXCLUDED.status, imagem_enviada = EXCLUDED.imagem_enviada, enviado_em = now(), erro = NULL`,
+        [integ.id, p.id, itemId, prodId, codigo, catId, preco, status, imagemEnviada]
+      );
+      // a disponibilidade enviada passa a ser esta (o ciclo so manda mudancas depois)
+      await db().query(
+        `INSERT INTO ifood_disponibilidade (integracao_id, tipo, codigo, status, motivo, atualizado_em) VALUES ($1, 'item', $2, $3, NULL, now())
+         ON CONFLICT (integracao_id, tipo, codigo) DO UPDATE SET status = EXCLUDED.status, atualizado_em = now()`, [integ.id, codigo, status]
+      );
+      resultado.push({ id: p.id, nome: p.nome, codigo, ok: true, preco, status });
+    } catch (err) {
+      const msg = err instanceof ErroPlataforma ? `iFood: ${err.message}` : err.message;
+      await db().query(
+        `INSERT INTO ifood_cardapio (integracao_id, product_id, item_id, produto_ifood_id, codigo, erro) VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (integracao_id, product_id) DO UPDATE SET erro = EXCLUDED.erro`,
+        [integ.id, p.id, crypto.randomUUID(), crypto.randomUUID(), codigo || '-', String(msg).slice(0, 300)]
+      );
+      resultado.push({ id: p.id, nome: p.nome, codigo, ok: false, erro: msg });
+      if (err instanceof ErroPlataforma && (err.status === 401 || err.status === 403)) break; // sem acesso: para tudo
+    }
+  }
+  await db().query(`UPDATE integracoes_delivery SET cardapio_enviado_em = now() WHERE id = $1`, [integ.id]);
+  await logAudit(db(), { tenantId: integ.tenant_id, usuarioId: user ? user.id : null, acao: 'ifood_enviar_cardapio', recurso: 'integracoes_delivery', recursoId: integ.id, detalhes: { enviados: resultado.filter((r) => r.ok).length, erros: resultado.filter((r) => !r.ok).length } });
+  return { enviados: resultado.filter((r) => r.ok).length, erros: resultado.filter((r) => !r.ok).length, itens: resultado };
+}
+
+// Lista para a tela: produtos do GiroStock (com codigo, preco da loja) e o que esta no iFood.
+async function listaCardapio(integ) {
+  const prods = (await db().query(
+    `SELECT p.id, p.nome, p.codigo_interno, p.codigo_ifood, p.preco_venda, p.ativo, p.vende_ifood, c.nome AS categoria_nome, p.imagem_id IS NOT NULL AS tem_foto
+     FROM products p LEFT JOIN categories c ON c.id = p.categoria_id WHERE p.tenant_id = $1 AND p.ativo ORDER BY c.nome NULLS LAST, p.nome LIMIT 2000`, [integ.tenant_id]
+  )).rows;
+  const infoPreco = await precos.infoDePrecoDaLoja(db(), integ.tenant_id, integ.location_id, prods.map((p) => ({ id: p.id, preco_venda: p.preco_venda })));
+  const env = new Map((await db().query(`SELECT * FROM ifood_cardapio WHERE integracao_id = $1`, [integ.id])).rows.map((r) => [r.product_id, r]));
+  return prods.map((p) => {
+    const e = env.get(p.id);
+    const ip = infoPreco.get(p.id);
+    const preco = Number(ip ? ip.preco_venda : p.preco_venda);
+    return {
+      id: p.id, nome: p.nome, categoria: p.categoria_nome, codigo: codigoPdv(p), vende_ifood: p.vende_ifood, tem_foto: p.tem_foto, preco,
+      no_ifood: !!(e && e.enviado_em),
+      preco_no_ifood: e && e.preco !== null ? Number(e.preco) : null, desatualizado: !!(e && e.enviado_em && e.preco !== null && Number(e.preco) !== preco),
+      enviado_em: e ? e.enviado_em : null, erro: e ? e.erro : null,
+    };
+  });
+}
+
+// Precos que mudaram no GiroStock desde o envio: atualiza no iFood (lote pelo codigo PDV).
+async function atualizarPrecos(integ) {
+  const env = (await db().query(`SELECT product_id, codigo, preco FROM ifood_cardapio WHERE integracao_id = $1 AND enviado_em IS NOT NULL AND erro IS NULL`, [integ.id])).rows;
+  if (env.length === 0) return { enviados: 0 };
+  const prods = (await db().query(`SELECT id, preco_venda FROM products WHERE tenant_id = $1 AND id = ANY($2::uuid[])`, [integ.tenant_id, env.map((e) => e.product_id)])).rows;
+  const info = await precos.infoDePrecoDaLoja(db(), integ.tenant_id, integ.location_id, prods.map((p) => ({ id: p.id, preco_venda: p.preco_venda })));
+  const mudou = env.filter((e) => info.get(e.product_id) && Number(info.get(e.product_id).preco_venda) !== Number(e.preco))
+    .map((e) => ({ product_id: e.product_id, codigo: e.codigo, preco: Number(info.get(e.product_id).preco_venda) }));
+  if (mudou.length === 0) return { enviados: 0 };
+  await api.alterarPrecos(await tokenDa(integ), integ.merchant_id, mudou);
+  for (const m of mudou) await db().query(`UPDATE ifood_cardapio SET preco = $3, enviado_em = now() WHERE integracao_id = $1 AND product_id = $2`, [integ.id, m.product_id, m.preco]);
+  return { enviados: mudou.length };
+}
+
 // Ciclo de todas as conexoes ativas de empresas com o modulo "iFood e 99Food" ligado.
 let rodando = false;
 async function cicloGeral() {
@@ -234,6 +375,7 @@ async function cicloGeral() {
         await sincronizar(integ);
         // Pausa/reativa no cardapio do iFood o que acabou/voltou (falha aqui nao impede o recebimento de pedidos).
         try { await atualizarDisponibilidade(integ); } catch (err) { await registrarErro(integ.id, `disponibilidade no cardápio: ${err.message}`); }
+        try { await atualizarPrecos(integ); } catch (err) { await registrarErro(integ.id, `preços no cardápio: ${err.message}`); }
       } catch (err) {
         await registrarErro(integ.id, err.message).catch(() => {});
       }
@@ -315,5 +457,5 @@ module.exports = {
   mapear, confirmarPedido: confirmarNoIfood,
   iniciarConexao, concluirConexao, escolherLoja, desconectar, sincronizar, cicloGeral, iniciarPolling, integracao,
   aoMudarStatus, pedidoExternoDoPedido, pedidoExterno, aceitar, motivos, solicitarCancelamento, responderDisputa, vincular,
-  importar, produtosDosItens, PLATAFORMA, atualizarDisponibilidade, listaDisponibilidade,
+  importar, produtosDosItens, PLATAFORMA, atualizarDisponibilidade, listaDisponibilidade, enviarCardapio, listaCardapio, atualizarPrecos,
 };

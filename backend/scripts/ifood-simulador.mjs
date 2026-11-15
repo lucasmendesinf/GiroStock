@@ -30,6 +30,9 @@ let eventos = []; // { id, code, fullCode, orderId, merchantId, createdAt, metad
 const acoes = [];
 const disputas = new Map(); // disputeId -> orderId
 const catalogo = new Map(); // merchantId -> Map(externalCode -> { status, em })
+const categoriasSim = new Map(); // merchantId -> [{ id, name, status, template }]
+const itensSim = new Map(); // merchantId -> Map(externalCode -> { itemId, productId, nome, preco, status, categoryId, imagem })
+const UUID4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 let display = 1000;
 
 const FULL = { PLC: 'PLACED', CFM: 'CONFIRMED', RTP: 'READY_TO_PICKUP', DSP: 'DISPATCHED', CON: 'CONCLUDED', CAN: 'CANCELLED', HSD: 'HANDSHAKE_DISPUTE', HSS: 'HANDSHAKE_SETTLEMENT' };
@@ -114,6 +117,7 @@ const servidor = http.createServer(async (req, res) => {
     }
     if (c === '/_sim/acoes') return responder(res, 200, acoes);
     if (c === '/_sim/eventos') return responder(res, 200, eventos);
+    if (c === '/_sim/cardapio') return responder(res, 200, Object.fromEntries([...itensSim].map(([mm, mapa]) => [mm, { categorias: categoriasSim.get(mm) || [], itens: Object.fromEntries(mapa) }])));
     if (c === '/_sim/catalogo') return responder(res, 200, Object.fromEntries([...catalogo].map(([m, mapa]) => [m, Object.fromEntries(mapa)])));
     let m = c.match(/^\/_sim\/pedidos\/([^/]+)\/(cancelar-cliente|disputa|concluir)$/);
     if (m && req.method === 'POST') {
@@ -188,6 +192,46 @@ const servidor = http.createServer(async (req, res) => {
       evento('HSS', p);
       if (m[2] === 'accept') evento('CAN', p, { reason: 'Cancelamento aceito pela loja' });
       return responder(res, 202, { status: 'ACCEPTED' });
+    }
+    // ---------- cardapio: catalogos, categorias, itens e precos (Catalog API v2) ----------
+    m = c.match(/^\/catalog\/v2\.0\/merchants\/([^/]+)\/(catalogs|categories|items|products\/price)$/);
+    if (m) {
+      if (!LOJAS.some((l) => l.id === m[1])) return responder(res, 403, { error: { message: 'loja não autorizada' } });
+      const mer = m[1];
+      if (!categoriasSim.has(mer)) categoriasSim.set(mer, []);
+      if (!itensSim.has(mer)) itensSim.set(mer, new Map());
+      if (m[2] === 'catalogs' && req.method === 'GET') return responder(res, 200, [{ catalogId: `cat-${mer}`, context: ['DEFAULT'], status: 'AVAILABLE' }]);
+      if (m[2] === 'categories' && req.method === 'GET') {
+        const comItens = url.searchParams.get('include_items') === 'true';
+        return responder(res, 200, categoriasSim.get(mer).map((cat) => (comItens ? { ...cat, items: [...itensSim.get(mer)].filter(([, i]) => i.categoryId === cat.id).map(([codigo, i]) => ({ id: i.itemId, externalCode: codigo, productId: i.productId, status: i.status, price: { value: i.preco } })) } : cat)));
+      }
+      if (m[2] === 'categories' && req.method === 'POST') {
+        if (!b.name || b.template !== 'DEFAULT') return responder(res, 400, { error: { message: 'name e template obrigatórios' } });
+        const cat = { id: id(), name: b.name, status: b.status || 'AVAILABLE', template: b.template };
+        categoriasSim.get(mer).push(cat);
+        return responder(res, 201, cat);
+      }
+      if (m[2] === 'items' && req.method === 'PUT') {
+        const it = b.item || {};
+        const prod = (b.products || [])[0] || {};
+        if (!UUID4.test(it.id || '') || !UUID4.test(prod.id || '')) return responder(res, 404, { error: { message: 'id inválido (precisa ser UUID v4)' } });
+        if (!Array.isArray(b.optionGroups) || !Array.isArray(b.options)) return responder(res, 400, { error: { message: 'optionGroups e options obrigatórios' } });
+        if (it.type !== 'DEFAULT' || !['AVAILABLE', 'UNAVAILABLE'].includes(it.status) || !(Number(it.price && it.price.value) > 0) || !it.externalCode || !prod.name) {
+          return responder(res, 400, { error: { message: 'item incompleto' } });
+        }
+        if (!categoriasSim.get(mer).some((x) => x.id === it.categoryId)) return responder(res, 400, { error: { message: 'categoria inexistente' } });
+        const dono = itensSim.get(mer).get(it.externalCode);
+        if (dono && dono.itemId !== it.id) return responder(res, 409, { error: { message: 'externalCode já usado por outro item' } });
+        itensSim.get(mer).set(it.externalCode, { itemId: it.id, productId: prod.id, nome: prod.name, preco: Number(it.price.value), status: it.status, categoryId: it.categoryId, imagem: !!prod.image });
+        acoes.push({ acao: 'cardapio_item', codigo: it.externalCode, em: new Date().toISOString() });
+        return responder(res, 200, { ok: true });
+      }
+      if (m[2] === 'products/price' && req.method === 'PATCH') {
+        if (!Array.isArray(b) || b.some((x) => !x.externalCode || !(Number(x.price && x.price.value) > 0))) return responder(res, 400, { error: { message: 'corpo inválido' } });
+        for (const x of b) { const i = itensSim.get(mer).get(x.externalCode); if (i) i.preco = Number(x.price.value); }
+        acoes.push({ acao: 'precos', corpo: b, em: new Date().toISOString() });
+        return responder(res, 202, { batchId: id() });
+      }
     }
     // ---------- cardapio: status por codigo PDV ----------
     m = c.match(/^\/catalog\/v2\.0\/merchants\/([^/]+)\/products\/status$/);

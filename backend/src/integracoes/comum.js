@@ -40,16 +40,24 @@ async function usuarioSistema(tenantId) {
   return { id: null, tenantId, perfil: 'Administrador', locationId: null, locationIds: [], modulos, areas: aplicarRecursos({ ...MATRIX.Administrador }, modulos) };
 }
 
-// Produto do item: vinculo lembrado -> codigo PDV igual ao codigo da plataforma, ao codigo interno ou ao codigo de barras -> EAN.
+// Chave do vinculo pelo NOME do item (pedidos de teste do iFood trazem um id novo a cada pedido para o mesmo item).
+const chaveNome = (nome) => `nome:${String(nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()}`;
+
+// Produto do item: vinculo lembrado (pela chave do item; senao pelo nome) -> codigo PDV igual ao codigo da plataforma,
+// ao codigo interno ou ao codigo de barras -> EAN.
 async function produtosDosItens(client, tenantId, itens, plataformaChave = 'ifood') {
   const r = new Map();
-  const chaves = itens.map((i) => i.chave);
+  const chaves = [...itens.map((i) => i.chave), ...itens.filter((i) => i.nome).map((i) => chaveNome(i.nome))];
   const lembrados = await client.query(
     `SELECT ii.chave, ii.product_id FROM integracao_itens ii JOIN products p ON p.id = ii.product_id
      WHERE ii.tenant_id = $1 AND ii.plataforma = $2 AND ii.chave = ANY($3::text[]) AND p.ativo`,
     [tenantId, plataformaChave, chaves]
   );
-  for (const l of lembrados.rows) r.set(l.chave, l.product_id);
+  const porChave = new Map(lembrados.rows.map((l) => [l.chave, l.product_id]));
+  for (const i of itens) {
+    const lembrado = porChave.get(i.chave) || (i.nome ? porChave.get(chaveNome(i.nome)) : null);
+    if (lembrado) r.set(i.chave, lembrado);
+  }
   for (const i of itens) {
     if (r.has(i.chave)) continue;
     const codigos = [i.codigo_externo, i.ean].filter(Boolean);
@@ -88,6 +96,13 @@ async function importar(pedidoExternoId) {
     const plat = plataforma(pe.plataforma);
     const dados = plat.mapear(pe.payload);
     const produtos = await produtosDosItens(client, pe.tenant_id, dados.itens, pe.plataforma);
+    // Conexao em MODO TESTE: item sem vinculo usa o produto padrao de teste (pedidos de teste trazem itens aleatorios).
+    if (dados.itens.some((i) => !produtos.has(i.chave)) && pe.integracao_id) {
+      const it = (await client.query(
+        `SELECT i.modo_teste, i.produto_teste_id FROM integracoes_delivery i JOIN products p ON p.id = i.produto_teste_id AND p.ativo WHERE i.id = $1`, [pe.integracao_id]
+      )).rows[0];
+      if (it && it.modo_teste && it.produto_teste_id) for (const i of dados.itens) if (!produtos.has(i.chave)) produtos.set(i.chave, it.produto_teste_id);
+    }
     if (dados.itens.some((i) => !produtos.has(i.chave))) { await client.query('COMMIT'); return pe; }
     const user = await usuarioSistema(pe.tenant_id);
     // Complementos da plataforma com codigo PDV igual ao codigo de um complemento do GiroStock: baixam o insumo/produto dele.
@@ -176,6 +191,14 @@ async function vincular(user, pe, vinculos) {
        ON CONFLICT (tenant_id, plataforma, chave) DO UPDATE SET product_id = EXCLUDED.product_id, nome_externo = EXCLUDED.nome_externo`,
       [user.tenantId, pe.plataforma, v.chave, item.nome, v.product_id]
     );
+    // lembra tambem pelo nome: o proximo pedido com o mesmo item (mesmo com id novo) ja entra sozinho
+    if (item.nome && !/^nome:/.test(v.chave)) {
+      await db().query(
+        `INSERT INTO integracao_itens (tenant_id, plataforma, chave, nome_externo, product_id) VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (tenant_id, plataforma, chave) DO UPDATE SET product_id = EXCLUDED.product_id, nome_externo = EXCLUDED.nome_externo`,
+        [user.tenantId, pe.plataforma, chaveNome(item.nome).slice(0, 200), item.nome, v.product_id]
+      );
+    }
   }
   if (pe.situacao === 'erro') await db().query(`UPDATE pedidos_externos SET situacao = 'aguardando_vinculo', erro = NULL WHERE id = $1`, [pe.id]);
   const r = await importar(pe.id);

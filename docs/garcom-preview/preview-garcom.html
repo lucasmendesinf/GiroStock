@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GiroStock — Preview Garçom e Comissões</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
+<style>
+:root,:root[data-theme="dark"]{--bg:#0f0e10;--panel:#17161a;--raised:#1f1d22;--hover:#25232a;--accent:#d4ae4a;--accent-soft:rgba(212,174,74,.12);--accent-line:rgba(212,174,74,.30);--on:#17120a;--txt:#f2eee6;--txt2:#b4ada2;--txt3:#8f8980;--line:rgba(255,255,255,.08);--ok:#5fc48a;--warn:#f0a05a;--err:#ec7a72;--shadow:rgba(0,0,0,.55)}
+:root[data-theme="light"]{--bg:#f4f1ea;--panel:#fff;--raised:#f8f5ee;--hover:#f1ece0;--accent:#8f6810;--accent-soft:rgba(143,104,16,.10);--accent-line:rgba(143,104,16,.28);--on:#fff;--txt:#231f1a;--txt2:#5d564c;--txt3:#7d766b;--line:rgba(35,31,26,.10);--ok:#1f7a4d;--warn:#b25e12;--err:#b3372f;--shadow:rgba(0,0,0,.2)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font-family:Manrope,system-ui,sans-serif;font-size:14px}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit;font-size:14px;color:var(--txt);background:var(--raised);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%}
+input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px}
+.top{display:flex;align-items:center;gap:14px;height:64px;padding:0 28px;border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{font-family:'Playfair Display',serif;font-weight:800;font-size:20px;color:var(--accent)}
+.top nav{display:flex;gap:4px;flex:1;flex-wrap:wrap;margin-left:8px}
+.top nav a{padding:8px 13px;border-radius:999px;color:var(--txt2);font-size:12px;font-weight:600;cursor:pointer}
+.top nav a:hover{background:var(--raised);color:var(--txt)}
+.top nav a.on{background:var(--accent);color:var(--on);font-weight:700}
+.tg{border:1px solid var(--line);background:var(--raised);color:var(--accent);border-radius:999px;padding:7px 12px;font-weight:700;font-size:12px}
+main{padding:22px 28px 60px;max-width:1280px;margin:0 auto}
+.head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.head h2{margin:0;font-size:26px;font-weight:700;margin-right:auto}
+.btn{border:none;border-radius:10px;padding:11px 18px;font-weight:800;font-size:13px;background:var(--accent);color:var(--on);text-transform:uppercase;letter-spacing:.3px}
+.btn.ghost{background:none;border:1px solid var(--line);color:var(--txt);text-transform:none;font-weight:700}
+.btn.ghost:hover{background:var(--raised)}
+.btn.sm{padding:7px 11px;font-size:12px}
+.btn.danger{background:none;border:1px solid var(--err);color:var(--err);text-transform:none}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+.card h4{margin:0 0 12px;font-size:15px}
+.grid{display:grid;gap:12px}.g4{grid-template-columns:repeat(4,1fr)}.g2{grid-template-columns:1fr 1fr}
+.kpi small{display:block;color:var(--txt3);font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase}
+.kpi b{font-size:26px;font-weight:800}
+.kpi.hero{background:var(--accent-soft);border-color:var(--accent-line)}.kpi.hero b{color:var(--accent)}
+.sub{font-size:12px;color:var(--txt3)}
+.tbl{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:11px 12px;font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--txt3);border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:11px 12px;border-bottom:1px solid var(--line)}
+tbody tr.c{cursor:pointer}tbody tr.c:hover{background:var(--raised)}
+.tag{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--raised);color:var(--txt2);border:1px solid var(--line)}
+.pill{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;border:1px solid}
+.pill.ok{color:var(--ok);border-color:var(--ok)}.pill.warn{color:var(--warn);border-color:var(--warn)}.pill.err{color:var(--err);border-color:var(--err)}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.bar select,.bar input{width:auto}
+.ov{position:fixed;inset:0;background:var(--shadow);display:none;z-index:50}.ov.show{display:flex}
+.drawer{margin-left:auto;width:min(500px,100%);height:100%;background:var(--panel);border-left:1px solid var(--line);padding:22px;overflow:auto}
+.modal{margin:auto;width:min(620px,94%);max-height:92vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:24px}
+.modal h3,.drawer h3{margin:0 0 6px;font-size:20px}
+.x{float:right;background:none;border:none;color:var(--txt2);font-size:22px}
+label.l{display:block;font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--txt3);margin:12px 0 5px}
+.line{display:flex;justify-content:space-between;gap:10px;padding:7px 0;font-size:13px;border-bottom:1px solid var(--line)}.line:last-child{border-bottom:none}
+.note{background:var(--panel);border:1px dashed var(--line);border-radius:14px;padding:14px 18px;margin-top:18px;color:var(--txt2);line-height:1.6;font-size:13px}.note b{color:var(--txt)}
+.sw{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:13px}
+.sw button{width:40px;height:22px;border-radius:999px;border:1px solid var(--line);background:var(--raised);position:relative;padding:0;flex:none}
+.sw button::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--txt3);transition:.15s}
+.sw button.on{background:var(--accent-soft);border-color:var(--accent)}.sw button.on::after{left:20px;background:var(--accent)}
+.toast{position:fixed;right:20px;bottom:20px;background:var(--panel);border:1px solid var(--accent);color:var(--txt);padding:12px 16px;border-radius:12px;display:none;z-index:99;font-weight:600;max-width:420px}
+/* celular */
+.stage{display:grid;grid-template-columns:400px 1fr;gap:28px;align-items:start}
+.phone{width:380px;height:760px;border:10px solid #2a2830;border-radius:42px;background:var(--bg);overflow:hidden;position:relative;display:flex;flex-direction:column;box-shadow:0 18px 40px var(--shadow)}
+.phone .st{height:26px;display:flex;justify-content:space-between;padding:6px 20px 0;font-size:11px;color:var(--txt2)}
+.app{flex:1;display:flex;flex-direction:column;min-height:0}
+.ah{padding:10px 16px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+.ah b{font-size:16px}.ah .sp{flex:1}
+.ib{background:var(--raised);border:1px solid var(--line);color:var(--txt);border-radius:10px;width:36px;height:36px;font-size:16px}
+.body{flex:1;overflow:auto;padding:12px 14px}
+.foot{padding:12px 14px;border-top:1px solid var(--line);background:var(--panel)}
+.big{width:100%;padding:15px;border-radius:12px;border:none;background:var(--accent);color:var(--on);font-weight:800;font-size:15px}
+.big.g{background:none;border:1px solid var(--line);color:var(--txt);font-weight:700}
+.cm{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:10px}
+.cm .r{display:flex;align-items:center;gap:8px}
+.cm .n{font-weight:800;font-size:16px}
+.mesas{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:8px}
+.mesas button{padding:12px 0;border-radius:10px;border:1px solid var(--line);background:var(--raised);color:var(--txt);font-weight:800}
+.mesas button.oc{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.cats{display:flex;gap:6px;overflow:auto;padding-bottom:6px}
+.cats button{white-space:nowrap;border:1px solid var(--line);background:none;color:var(--txt2);border-radius:999px;padding:7px 12px;font-size:12px;font-weight:700}
+.cats button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.prods{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.prods button{text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;color:var(--txt)}
+.prods b{display:block;font-size:13px}.prods span{color:var(--accent);font-weight:800;font-size:13px}
+.it{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
+.it .q{display:flex;align-items:center;gap:6px}.it .q button{width:28px;height:28px;border-radius:8px;border:1px solid var(--line);background:var(--raised);color:var(--txt)}
+.rod{font-size:10.5px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;color:var(--txt3);margin:12px 0 2px;display:flex;gap:8px;align-items:center}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--line);border-radius:20px 20px 0 0;padding:16px 14px 18px;box-shadow:0 -12px 30px var(--shadow);z-index:5}
+.sheet h5{margin:0 0 4px;font-size:16px}
+.fm{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
+.fm button{padding:12px 4px;border-radius:12px;border:1px solid var(--line);background:var(--raised);color:var(--txt);font-weight:700;font-size:12px}
+.fm button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.seg2{display:flex;gap:8px;margin:8px 0}.seg2 button{flex:1;padding:11px 6px;border-radius:10px;border:1px solid var(--line);background:none;color:var(--txt2);font-weight:700;font-size:12px}.seg2 button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.veil{position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:4}
+.g3{grid-template-columns:repeat(3,1fr)}
+@media(max-width:1000px){.stage{grid-template-columns:1fr}.g4{grid-template-columns:1fr 1fr}.g2{grid-template-columns:1fr}main{padding:16px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <span class="brand">GiroStock</span>
+  <nav id="nav"></nav>
+  <button class="tg" id="tg">☾ / ☀ tema</button>
+</header>
+<main id="main"></main>
+<div class="ov" id="ovD"><div class="drawer" id="drawer"></div></div>
+<div class="ov" id="ovM"><div class="modal" id="modal"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $=s=>document.querySelector(s);
+const brl=v=>v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>e.style.display='none',3000)}
+const TABS=[['app','App do garçom (celular)'],['com','Comissões (gestão)'],['reg','Regras e perfil']];
+let tab='app';
+
+/* ------------ dados ------------ */
+const CAT=[['Cervejas',[['Heineken long neck',14],['Brahma lata',9],['Original 600ml',18],['Balde 5 cervejas',60]]],['Drinks',[['Caipirinha',22],['Gin tônica',28],['Aperol spritz',32],['Whisky dose',30]]],['Sem álcool',[['Água',5],['Refrigerante',8],['Energético',16]]],['Porções',[['Batata frita',34],['Isca de frango',42],['Calabresa',38]]]];
+const GAR=['Marcos','Rafael','Diego','Bianca'];
+let REG={pct:5,taxa:10,repasseTaxa:100,porCat:{Cervejas:3,Drinks:8,'Sem álcool':3,Porções:4},usaCat:true,base:'liquida',quando:'paga',estorna:true,meta:2000,bonus:2,garcomRecebe:true,formas:{pix:true,cartao:true,dinheiro:true}};
+let PAGTOS=[{gar:'Diego',local:'Pista · pulseira 155',valor:84,taxa:8.4,forma:'dinheiro',hora:'22:20',prestado:false,com:'pendente'},{gar:'Rafael',local:'Pista · pulseira 160',valor:58,taxa:5.8,forma:'cartao',hora:'22:35',prestado:true,com:'pendente'},{gar:'Marcos',local:'Mesa 4',valor:120,taxa:12,forma:'pix',hora:'21:55',prestado:true,com:'pendente'}];
+// comandas do dia (histórico para a tela de gestão)
+let CMD=[
+ {id:2041,gar:'Marcos',local:'Mesa 7',itens:[['Cervejas',60,1],['Drinks',44,2],['Porções',34,1]],desc:0,st:'paga',hora:'21:14',com:'pendente'},
+ {id:2042,gar:'Marcos',local:'Pista · pulseira 118',itens:[['Drinks',56,2]],desc:0,st:'paga',hora:'21:40',com:'pendente'},
+ {id:2043,gar:'Rafael',local:'Mesa 3',itens:[['Cervejas',54,3],['Porções',42,1]],desc:10,st:'paga',hora:'22:05',com:'pendente'},
+ {id:2044,gar:'Rafael',local:'Pista · pulseira 131',itens:[['Sem álcool',16,2],['Drinks',28,1]],desc:0,st:'cancelada',hora:'22:11',com:'—'},
+ {id:2045,gar:'Diego',local:'Mesa 12',itens:[['Cervejas',120,2],['Drinks',90,3],['Porções',80,2]],desc:0,st:'paga',hora:'22:30',com:'pendente'},
+ {id:2046,gar:'Bianca',local:'Camarote 2',itens:[['Drinks',160,5],['Sem álcool',40,4]],desc:20,st:'paga',hora:'22:48',com:'paga'},
+ {id:2047,gar:'Marcos',local:'Mesa 7',itens:[['Cervejas',28,2]],desc:0,st:'aberta',hora:'23:02',com:'—'},
+ {id:2048,gar:'Diego',local:'Pista · pulseira 140',itens:[['Drinks',84,3]],desc:0,st:'estornada',hora:'23:10',com:'estornada'}
+];
+const bruto=c=>c.itens.reduce((s,i)=>s+i[1],0);
+const base=c=>REG.base==='liquida'?Math.max(0,bruto(c)-c.desc):bruto(c);
+function comissaoProdutos(c){ // % por categoria ou padrão, proporcional ao desconto
+  const f=bruto(c)?base(c)/bruto(c):1;
+  return c.itens.reduce((s,i)=>s+i[1]*f*((REG.usaCat&&REG.porCat[i[0]]!=null?REG.porCat[i[0]]:REG.pct)/100),0);
+}
+const taxaServ=c=>base(c)*REG.taxa/100*REG.repasseTaxa/100;
+const comTotal=c=>c.st==='paga'?comissaoProdutos(c)+taxaServ(c):0;
+
+/* ------------ estado do app do garçom ------------ */
+let A={tela:'home',gar:'Marcos',modoNovo:'conta',pag:null,comandas:[
+  {id:2047,local:'Mesa 7',modo:'conta',rodadas:[{env:'23:02',itens:[['Heineken long neck',14,2]],pago:null}],novos:[]},
+  {id:2049,local:'Pista · pulseira 152',modo:'hora',rodadas:[{env:'23:15',itens:[['Caipirinha',22,1]],pago:{forma:'Pix',hora:'23:16'}}],novos:[]}
+ ],atual:null,cat:0,busca:''};
+let nextId=2050;
+
+function nav(){ $('#nav').innerHTML=TABS.map(([k,l])=>`<a class="${tab===k?'on':''}" onclick="go('${k}')">${l}</a>`).join('') }
+function go(k){tab=k;nav();render();window.scrollTo(0,0)}
+function render(){ $('#main').innerHTML= tab==='app'?telaApp(): tab==='com'?telaCom(): telaReg(); if(tab==='app')appRender() }
+
+/* ================= APP DO GARÇOM ================= */
+function telaApp(){
+  return `<div class="head"><h2>App do garçom</h2><span class="sub">visão do celular · perfil "Garçom" · só pedidos, sem caixa</span></div>
+  <div class="stage">
+    <div class="phone"><div class="st"><span>21:47</span><span>▲ ◼ 78%</span></div><div class="app" id="app"></div></div>
+    <div>
+      <div class="card"><h4>Como o garçom trabalha</h4>
+       <div class="line"><span>1. Abre uma comanda</span><b>Mesa ou Pista (pulseira/nome)</b></div>
+       <div class="line"><span>2. Lança pedidos em rodadas</span><b>cada rodada vai ao bar/cozinha</b></div>
+       <div class="line"><span>3. Recebe na hora <i>ou</i> deixa na conta</span><b>escolha ao abrir (e a qualquer momento)</b></div>
+       <div class="line"><span>4. Conta aberta: caixa cobra no fechamento</span><b>a comissão nasce quando entra o dinheiro</b></div>
+       <div class="line"><span>5. Garçom vê o extrato</span><b>comissão do dia e do mês</b></div></div>
+      <div class="card" style="margin-top:12px"><h4>O que o perfil Garçom NÃO vê</h4>
+       <div class="sub" style="line-height:1.8">Caixa, sangria, fechamento, descontos, cancelamento de venda, relatórios, estoque, cadastros, usuários. Só enxerga <b>as próprias comandas</b>. Receber pagamento no app é uma <b>permissão à parte</b> (liga/desliga por perfil ou por usuário).</div></div>
+      <div class="note"><b>Ideias para esta tela:</b><br>
+       • <b>Receber na hora ou na conta:</b> ao abrir a comanda o garçom escolhe; com "Na hora", cada rodada enviada já abre a tela de recebimento (Pix, cartão na maquininha ou dinheiro, com troco e taxa de serviço). Dá para <b>receber só parte</b> (algumas rodadas) e deixar o resto na conta.<br>
+       • <b>Dinheiro na mão do garçom</b> vira "a prestar contas": o caixa confere e dá baixa (veja a aba Comissões).<br>
+       • <b>Várias rodadas na mesma comanda</b> (a noite toda), cada uma enviada ao setor certo (bar × cozinha).<br>
+       • <b>Pista avulsa</b>: comanda por número de pulseira/cartão (nome opcional). Sem cadastro obrigatório.<br>
+       • <b>Funciona com sinal ruim</b>: pedidos ficam em fila no celular e sincronizam quando voltar o sinal (essencial na pista).<br>
+       • <b>Transferir comanda</b> para outro garçom e <b>dividir a comissão</b> quando dois atendem a mesma mesa.<br>
+       • O garçom vê o <b>próprio total e a comissão estimada</b>; ranking da equipe é opcional (ligar/desligar).</div>
+    </div>
+  </div>`;
+}
+const rodTot=r=>r.itens.reduce((s,i)=>s+i[1]*i[2],0);
+const totalCmd=c=>c.rodadas.reduce((s,r)=>s+rodTot(r),0)+c.novos.reduce((s,i)=>s+i[1]*i[2],0);
+const pagoCmd=c=>c.rodadas.filter(r=>r.pago).reduce((s,r)=>s+rodTot(r),0);
+const devendoEnv=c=>c.rodadas.filter(r=>!r.pago).reduce((s,r)=>s+rodTot(r),0);
+const pctGar=()=>REG.pct/100;
+const comPagto=p=>p.valor*pctGar()+p.taxa*REG.repasseTaxa/100;
+function appRender(){
+  const el=$('#app');if(!el)return;
+  if(A.tela==='home'){
+    const aberto=A.comandas.reduce((s,c)=>s+devendoEnv(c)+c.novos.reduce((x,i)=>x+i[1]*i[2],0),0);
+    const meus=CMD.filter(c=>c.gar===A.gar&&c.st==='paga');
+    const recs=PAGTOS.filter(p=>p.gar===A.gar);
+    const comHoje=meus.reduce((s,c)=>s+comTotal(c),0)+recs.reduce((s,p)=>s+comPagto(p),0);
+    el.innerHTML=`<div class="ah"><div><div class="sub">Pista · Noite de hoje</div><b>Olá, ${A.gar}</b></div><span class="sp"></span><button class="ib" title="Extrato" onclick="A.tela='ext';appRender()">💰</button></div>
+    <div class="body">
+      <div class="cm" style="background:var(--accent-soft);border-color:var(--accent-line)"><div class="sub">Comissão estimada da noite</div><div style="font-size:26px;font-weight:800;color:var(--accent)">${brl(comHoje)}</div><div class="sub">${meus.length+recs.length} recebimento(s) · a receber nas comandas abertas: ${brl(aberto)}</div></div>
+      <div class="rod">Minhas comandas abertas <span class="tag">${A.comandas.length}</span></div>
+      ${A.comandas.map(c=>{const pg=pagoCmd(c),dv=totalCmd(c)-pg;return `<div class="cm" onclick="abreCmd(${c.id})" style="cursor:pointer"><div class="r"><span class="n">${c.local}</span><span class="tag">#${c.id}</span><span class="tag">${c.modo==='hora'?'pagamento na hora':'conta aberta'}</span></div><div class="r" style="margin-top:6px"><span class="sub">${c.rodadas.length} rodada(s)${c.novos.length?' · <b style="color:var(--warn)">'+c.novos.length+' não enviado(s)</b>':''}</span><span style="margin-left:auto">${pg>0?'<span class="pill ok">pago '+brl(pg)+'</span> ':''}<b style="color:var(--accent)">${dv>0?'falta '+brl(dv):'quitada'}</b></span></div></div>`}).join('')||'<div class="sub" style="text-align:center;padding:24px">Nenhuma comanda aberta</div>'}
+    </div>
+    <div class="foot"><button class="big" onclick="novaCmd()">+ Nova comanda</button></div>`;
+  }
+  if(A.tela==='nova'){
+    const oc=A.comandas.map(c=>c.local);
+    el.innerHTML=`<div class="ah"><button class="ib" onclick="A.tela='home';appRender()">←</button><b>Nova comanda</b></div>
+    <div class="body"><div class="rod" style="margin-top:0">Como o cliente vai pagar?</div>
+     <div class="seg2"><button class="${A.modoNovo==='conta'?'on':''}" onclick="A.modoNovo='conta';appRender()">Conta aberta<br><span style="font-weight:500">paga no fechamento</span></button><button class="${A.modoNovo==='hora'?'on':''}" onclick="A.modoNovo='hora';appRender()" ${REG.garcomRecebe?'':'disabled style="opacity:.45"'}>Na hora<br><span style="font-weight:500">paga a cada pedido</span></button></div>
+     ${REG.garcomRecebe?'':'<div class="sub">Seu perfil não recebe pagamentos. Peça liberação ao gerente.</div>'}
+     <div class="rod">Mesa</div><div class="mesas">${Array.from({length:20},(_,i)=>i+1).map(n=>`<button class="${oc.includes('Mesa '+n)?'oc':''}" onclick="criaCmd('Mesa ${n}')">${n}</button>`).join('')}</div>
+     <div class="rod" style="margin-top:18px">Pista (cliente avulso)</div>
+     <input id="pul" inputmode="numeric" placeholder="Nº da pulseira / cartão">
+     <input id="nm" placeholder="Nome (opcional)" style="margin-top:8px">
+     <button class="big" style="margin-top:10px" onclick="criaPista()">Abrir comanda da pista</button>
+     <div class="sub" style="margin-top:10px">Dica: na pista, "Na hora" evita cliente ir embora sem pagar. Mesas em dourado já têm comanda aberta.</div></div>`;
+  }
+  if(A.tela==='cmd'){
+    const c=A.comandas.find(x=>x.id===A.atual);
+    const prods=(A.busca?CAT.flatMap(x=>x[1]).filter(p=>p[0].toLowerCase().includes(A.busca.toLowerCase())):CAT[A.cat][1]);
+    const dv=devendoEnv(c),pg=pagoCmd(c);
+    el.innerHTML=`<div class="ah"><button class="ib" onclick="A.tela='home';appRender()">←</button><div><b>${c.local}</b><div class="sub">#${c.id} · ${c.modo==='hora'?'pagamento na hora':'conta aberta'}</div></div><span class="sp"></span><div style="text-align:right"><b style="color:var(--accent)">${brl(totalCmd(c))}</b>${pg>0?'<div class="sub" style="color:var(--ok)">pago '+brl(pg)+'</div>':''}</div></div>
+    <div class="body">
+     <input placeholder="Buscar produto…" value="${A.busca}" oninput="A.busca=this.value;appRender()" id="bq">
+     ${A.busca?'':`<div class="cats" style="margin-top:8px">${CAT.map((x,i)=>`<button class="${A.cat===i?'on':''}" onclick="A.cat=${i};appRender()">${x[0]}</button>`).join('')}</div>`}
+     <div class="prods">${prods.map(p=>`<button onclick="addItem('${p[0]}',${p[1]})"><b>${p[0]}</b><span>${brl(p[1])}</span></button>`).join('')}</div>
+     ${c.novos.length?`<div class="rod" style="color:var(--warn)">Nova rodada · não enviada</div>${c.novos.map((i,k)=>`<div class="it"><span style="flex:1">${i[0]}</span><div class="q"><button onclick="qtd(${k},-1)">−</button><b>${i[2]}</b><button onclick="qtd(${k},1)">+</button></div><b style="width:64px;text-align:right">${brl(i[1]*i[2])}</b></div>`).join('')}<input placeholder="Observação (ex.: sem gelo)" style="margin-top:8px">`:''}
+     ${c.rodadas.map((r,k)=>`<div class="rod">Rodada ${k+1} · ${r.env} ${r.pago?'<span class="pill ok">pago · '+r.pago.forma+'</span>':'<span class="pill warn">na conta</span>'}</div>${r.itens.map(i=>`<div class="it" style="color:var(--txt2)"><span style="flex:1">${i[2]}× ${i[0]}</span><span>${brl(i[1]*i[2])}</span></div>`).join('')}`).join('')}
+    </div>
+    <div class="foot"><button class="big" ${c.novos.length?'':'disabled style="opacity:.45"'} onclick="enviaRodada()">${c.modo==='hora'&&REG.garcomRecebe?'Enviar e receber agora':'Enviar pedido ao bar/cozinha'}${c.novos.length?' ('+c.novos.reduce((s,i)=>s+i[2],0)+')':''}</button>
+      ${dv>0&&REG.garcomRecebe?`<button class="big g" style="margin-top:8px" onclick="abrePag(${JSON.stringify(c.rodadas.map((r,i)=>r.pago?-1:i).filter(i=>i>=0))})">Receber agora · ${brl(dv)}</button>`:''}
+      <button class="big g" style="margin-top:8px" onclick="pedeFechar()">${dv>0?'Pedir fechamento (chamar caixa)':'Encerrar comanda (tudo pago)'}</button></div>`;
+    const q=$('#bq');if(q&&A.busca){q.focus();q.setSelectionRange(q.value.length,q.value.length)}
+    if(A.pag)el.insertAdjacentHTML('beforeend',sheetPag(c));
+  }
+  if(A.tela==='ext'){
+    const meus=CMD.filter(c=>c.gar===A.gar);
+    const pag=meus.filter(c=>c.st==='paga');const recs=PAGTOS.filter(p=>p.gar===A.gar);
+    const cash=recs.filter(p=>p.forma==='dinheiro'&&!p.prestado).reduce((s,p)=>s+p.valor+p.taxa,0);
+    el.innerHTML=`<div class="ah"><button class="ib" onclick="A.tela='home';appRender()">←</button><b>Meu extrato</b></div>
+    <div class="body"><div class="cm" style="background:var(--accent-soft);border-color:var(--accent-line)"><div class="sub">Comissão da noite</div><div style="font-size:26px;font-weight:800;color:var(--accent)">${brl(pag.reduce((s,c)=>s+comTotal(c),0)+recs.reduce((s,p)=>s+comPagto(p),0))}</div><div class="sub">inclui ${REG.repasseTaxa}% da taxa de serviço (${REG.taxa}%)</div></div>
+    ${cash>0?`<div class="cm" style="border-color:var(--warn)"><div class="sub">Dinheiro que está com você</div><div style="font-size:20px;font-weight:800;color:var(--warn)">${brl(cash)}</div><div class="sub">entregue ao caixa para a prestação de contas</div></div>`:''}
+    <div class="rod" style="margin-top:4px">Recebido por mim na hora</div>
+    ${recs.map(p=>`<div class="cm"><div class="r"><b>${p.local}</b><span class="tag">${p.forma}</span><span style="margin-left:auto;font-weight:800;color:var(--accent)">${brl(comPagto(p))}</span></div><div class="sub">${p.hora} · ${brl(p.valor+p.taxa)} ${p.forma==='dinheiro'?(p.prestado?'· entregue ao caixa':'· <b style="color:var(--warn)">com você</b>'):''}</div></div>`).join('')||'<div class="sub">Nada recebido por você ainda.</div>'}
+    <div class="rod">Fechadas no caixa</div>
+    ${meus.map(c=>`<div class="cm"><div class="r"><b>${c.local}</b><span class="tag">#${c.id}</span><span style="margin-left:auto">${c.st==='paga'?'<span class="pill ok">paga</span>':c.st==='aberta'?'<span class="pill warn">aberta</span>':'<span class="pill err">'+c.st+'</span>'}</span></div><div class="sub">${c.hora} · venda ${brl(bruto(c))}</div><div style="text-align:right;font-weight:800;color:${c.st==='paga'?'var(--accent)':'var(--txt3)'}">${c.st==='paga'?brl(comTotal(c)):'—'}</div></div>`).join('')}
+    <div class="sub">A comissão conta quando o dinheiro entra: no recebimento na hora ou quando o caixa fecha a comanda. Cancelamentos e estornos não contam.</div></div>`;
+  }
+}
+function sheetPag(c){
+  const P=A.pag;const base=P.idx.reduce((s,i)=>s+rodTot(c.rodadas[i]),0);const tx=P.taxa?base*REG.taxa/100:0;const tot=base+tx;
+  const opts=[['Pix','pix','💠'],['Cartão','cartao','💳'],['Dinheiro','dinheiro','💵']].filter(o=>REG.formas[o[1]]);
+  return `<div class="veil" onclick="A.pag=null;appRender()"></div><div class="sheet"><h5>Receber agora</h5><div class="sub">${c.local} · produtos ${brl(base)}</div>
+   <div class="fm">${opts.map(o=>`<button class="${P.forma===o[0]?'on':''}" onclick="A.pag.forma='${o[0]}';appRender()">${o[2]}<br>${o[0]}</button>`).join('')}</div>
+   <div class="line" style="border:none"><span>Cobrar taxa de serviço (${REG.taxa}%)</span><span class="sw" style="margin:0"><button class="${P.taxa?'on':''}" onclick="A.pag.taxa=!A.pag.taxa;appRender()"></button></span></div>
+   ${P.forma==='Dinheiro'?'<input id="rec" inputmode="decimal" placeholder="Valor recebido (para o troco)" oninput="trocoCalc(\''+tot+'\')"><div class="sub" id="troco" style="margin-top:4px"></div><div class="sub" style="color:var(--warn)">O dinheiro fica com você até a prestação de contas no caixa.</div>':P.forma==='Cartão'?'<div class="sub">Passe na maquininha e confirme a aprovação.</div>':P.forma==='Pix'?'<div class="sub">Mostre o QR/chave do estabelecimento e confirme quando cair.</div>':'<div class="sub">Escolha a forma de pagamento.</div>'}
+   <div class="line" style="font-size:18px;border:none;margin-top:6px"><b>Total</b><b style="color:var(--accent)">${brl(tot)}</b></div>
+   <button class="big" onclick="confirmaPag()">Confirmar recebimento</button><button class="big g" style="margin-top:8px" onclick="A.pag=null;appRender()">Deixar na conta</button></div>`;
+}
+function trocoCalc(tot){const v=parseFloat(($('#rec').value||'').replace(',','.'));$('#troco').textContent=v>=+tot?'Troco: '+brl(v-tot):v?'Falta '+brl(tot-v):''}
+function abrePag(idx){A.pag={idx,forma:null,taxa:true};appRender()}
+function confirmaPag(){
+  const P=A.pag,c=A.comandas.find(x=>x.id===A.atual);
+  if(!P.forma){toast('Escolha a forma de pagamento');return}
+  const base=P.idx.reduce((s,i)=>s+rodTot(c.rodadas[i]),0),tx=P.taxa?base*REG.taxa/100:0,hora=new Date().toTimeString().slice(0,5);
+  P.idx.forEach(i=>c.rodadas[i].pago={forma:P.forma,hora});
+  PAGTOS.push({gar:A.gar,local:c.local,valor:base,taxa:tx,forma:P.forma.toLowerCase().replace('ã','a'),hora,prestado:P.forma!=='Dinheiro',com:'pendente'});
+  A.pag=null;toast('Recebido '+brl(base+tx)+' ('+P.forma+') · comissão gerada'+(P.forma==='Dinheiro'?' · dinheiro fica com você até a prestação de contas':''));appRender();
+}
+function novaCmd(){A.tela='nova';appRender()}
+function abreCmd(id){A.atual=id;A.tela='cmd';A.busca='';A.pag=null;appRender()}
+function criaCmd(local){let c=A.comandas.find(x=>x.local===local);if(!c){c={id:nextId++,local,modo:A.modoNovo,rodadas:[],novos:[]};A.comandas.push(c)}abreCmd(c.id)}
+function criaPista(){const p=$('#pul').value.trim();if(!p){toast('Informe o número da pulseira');return}const n=$('#nm').value.trim();criaCmd('Pista · pulseira '+p+(n?' ('+n+')':''))}
+function addItem(n,p){const c=A.comandas.find(x=>x.id===A.atual);const e=c.novos.find(i=>i[0]===n);if(e)e[2]++;else c.novos.push([n,p,1]);appRender()}
+function qtd(k,d){const c=A.comandas.find(x=>x.id===A.atual);c.novos[k][2]+=d;if(c.novos[k][2]<1)c.novos.splice(k,1);appRender()}
+function enviaRodada(){
+  const c=A.comandas.find(x=>x.id===A.atual);
+  c.rodadas.push({env:new Date().toTimeString().slice(0,5),itens:c.novos.map(i=>i.slice()),pago:null});c.novos=[];
+  toast('Rodada enviada ao bar/cozinha · estoque reservado');
+  if(c.modo==='hora'&&REG.garcomRecebe){abrePag([c.rodadas.length-1]);return}
+  appRender();
+}
+function pedeFechar(){
+  const c=A.comandas.find(x=>x.id===A.atual);
+  if(c.novos.length){toast('Envie ou remova os itens da nova rodada antes');return}
+  const dv=devendoEnv(c);
+  if(dv>0){toast('Caixa avisado: '+c.local+' pediu a conta · falta '+brl(dv)+(pagoCmd(c)?' (já pago '+brl(pagoCmd(c))+')':''));return}
+  A.comandas=A.comandas.filter(x=>x!==c);A.tela='home';toast('Comanda encerrada · tudo pago na hora');appRender();
+}
+
+/* ================= COMISSÕES (gestão) ================= */
+let F={per:'noite',gar:'todos',st:'todos'};
+function resumo(){
+  return GAR.map(g=>{const L=CMD.filter(c=>c.gar===g);const pagas=L.filter(c=>c.st==='paga');const P=PAGTOS.filter(p=>p.gar===g);
+    const venda=pagas.reduce((s,c)=>s+base(c),0)+P.reduce((s,p)=>s+p.valor,0),prod=pagas.reduce((s,c)=>s+comissaoProdutos(c),0)+P.reduce((s,p)=>s+p.valor*pctGar(),0),tx=pagas.reduce((s,c)=>s+taxaServ(c),0)+P.reduce((s,p)=>s+p.taxa*REG.repasseTaxa/100,0);
+    const bonus=venda>=REG.meta?venda*REG.bonus/100:0;
+    const pend=pagas.filter(c=>c.com==='pendente').reduce((s,c)=>s+comTotal(c),0)+P.filter(p=>p.com==='pendente').reduce((s,p)=>s+comPagto(p),0)+((pagas.some(c=>c.com==='pendente')||P.some(p=>p.com==='pendente'))?bonus:0);
+    const paga=pagas.filter(c=>c.com==='paga').reduce((s,c)=>s+comTotal(c),0)+P.filter(p=>p.com==='paga').reduce((s,p)=>s+comPagto(p),0);
+    return {g,cmds:L.length+P.length,pagas:pagas.length+P.length,venda,prod,tx,bonus,pend,paga,total:prod+tx+bonus,est:L.filter(c=>c.st==='estornada'||c.st==='cancelada').length}});
+}
+function blocoRecebido(){
+  const cash=PAGTOS.filter(p=>p.forma==='dinheiro'&&!p.prestado),totCash=cash.reduce((s,p)=>s+p.valor+p.taxa,0);
+  const tot=PAGTOS.reduce((s,p)=>s+p.valor+p.taxa,0);
+  return `<div class="grid g3" style="margin-bottom:12px">
+    <div class="card kpi"><small>Recebido na hora pelos garçons</small><b>${brl(tot)}</b><div class="sub">${PAGTOS.length} recebimento(s) no app</div></div>
+    <div class="card kpi" style="${totCash>0?'border-color:var(--warn)':''}"><small>Dinheiro com os garçons</small><b style="color:${totCash>0?'var(--warn)':'var(--txt)'}">${brl(totCash)}</b><div class="sub">${cash.length?cash.map(p=>p.gar).filter((v,i,a)=>a.indexOf(v)===i).join(', ')+' · a prestar contas':'tudo entregue ao caixa'}</div><div style="margin-top:8px"><button class="btn ghost sm" ${totCash>0?'':'disabled'} onclick="modalPrestacao()">Receber prestação de contas…</button></div></div>
+    <div class="card kpi"><small>Pix e cartão (já no sistema)</small><b>${brl(PAGTOS.filter(p=>p.forma!=='dinheiro').reduce((s,p)=>s+p.valor+p.taxa,0))}</b><div class="sub">confirmação pelo garçom; conciliar com extrato</div></div></div>`;
+}
+function modalPrestacao(){
+  const g=[...new Set(PAGTOS.filter(p=>p.forma==='dinheiro'&&!p.prestado).map(p=>p.gar))];
+  $('#modal').innerHTML=`<button class="x" onclick="fechar()">×</button><h3>Prestação de contas (dinheiro)</h3><div class="sub">Confira o dinheiro entregue por cada garçom. A baixa entra no caixa aberto.</div>
+  <div style="margin-top:12px">${g.map(n=>{const v=PAGTOS.filter(p=>p.gar===n&&p.forma==='dinheiro'&&!p.prestado).reduce((s,p)=>s+p.valor+p.taxa,0);return `<div class="line"><label style="display:flex;gap:10px;align-items:center"><input type="checkbox" checked style="width:auto" class="pk" data-g="${n}"> <b>${n}</b></label><span>esperado <b>${brl(v)}</b></span></div>`}).join('')}</div>
+  <label class="l">Valor conferido (total)</label><input placeholder="R$ 0,00" id="conf">
+  <div class="sub" style="margin-top:6px">Diferença (sobra/falta) fica registrada no extrato do garçom.</div>
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px"><button class="btn ghost" onclick="fechar()">Cancelar</button><button class="btn" onclick="confirmaPrest()">Confirmar e dar baixa</button></div>`;
+  $('#ovM').classList.add('show');
+}
+function confirmaPrest(){const gs=[...document.querySelectorAll('.pk')].filter(c=>c.checked).map(c=>c.dataset.g);PAGTOS.forEach(p=>{if(gs.includes(p.gar)&&p.forma==='dinheiro')p.prestado=true});fechar();render();toast('Prestação de contas registrada · dinheiro entrou no caixa')}
+function telaCom(){
+  const R=resumo().filter(r=>F.gar==='todos'||r.g===F.gar);
+  const totPend=R.reduce((s,r)=>s+r.pend,0),totVenda=R.reduce((s,r)=>s+r.venda,0),totCom=R.reduce((s,r)=>s+r.total,0);
+  return `<div class="head"><h2>Comissões</h2>
+    <button class="btn ghost sm" onclick="toast('Exportação em planilha gerada')">Exportar</button>
+    <button class="btn" onclick="modalAcerto()">Fechar acerto…</button></div>
+  <div class="bar"><select onchange="F.per=this.value;render()"><option value="noite" ${F.per==='noite'?'selected':''}>Esta noite (26/10)</option><option>Esta semana</option><option>Este mês</option><option>Período personalizado…</option></select>
+    <select onchange="F.gar=this.value;render()"><option value="todos">Todos os garçons</option>${GAR.map(g=>`<option ${F.gar===g?'selected':''}>${g}</option>`).join('')}</select>
+    <select><option>Todas as lojas</option><option>Casa de show</option></select>
+    <span class="sub" style="margin-left:auto">regra: ${REG.pct}% padrão${REG.usaCat?' (por categoria)':''} + ${REG.taxa}% serviço · base ${REG.base==='liquida'?'líquida':'bruta'}</span></div>
+  <div class="grid g4" style="margin-bottom:12px">
+    <div class="card kpi hero"><small>Comissão a pagar</small><b>${brl(totPend)}</b><div class="sub">pendente de acerto</div></div>
+    <div class="card kpi"><small>Comissão do período</small><b>${brl(totCom)}</b></div>
+    <div class="card kpi"><small>Vendas base de comissão</small><b>${brl(totVenda)}</b></div>
+    <div class="card kpi"><small>Estornos / cancelamentos</small><b>${R.reduce((s,r)=>s+r.est,0)}</b><div class="sub">não geram comissão</div></div></div>
+  ${blocoRecebido()}
+  <div class="tbl"><table><thead><tr><th>Garçom</th><th style="text-align:right">Comandas</th><th style="text-align:right">Vendas (base)</th><th style="text-align:right">Comissão</th><th style="text-align:right">Taxa serviço</th><th style="text-align:right">Bônus meta</th><th style="text-align:right">Total</th><th>Situação</th></tr></thead><tbody>
+  ${R.map(r=>`<tr class="c" onclick="detalhe('${r.g}')"><td><b>${r.g}</b></td><td style="text-align:right">${r.pagas}${r.cmds>r.pagas?`<span class="sub"> / ${r.cmds}</span>`:''}</td><td style="text-align:right">${brl(r.venda)}</td><td style="text-align:right">${brl(r.prod)}</td><td style="text-align:right">${brl(r.tx)}</td><td style="text-align:right">${r.bonus?brl(r.bonus):'—'}</td><td style="text-align:right;font-weight:800;color:var(--accent)">${brl(r.total)}</td><td>${r.pend>0?`<span class="pill warn">a pagar ${brl(r.pend)}</span>`:r.paga>0?'<span class="pill ok">pago</span>':'<span class="pill">—</span>'}</td></tr>`).join('')}
+  </tbody></table></div>
+  <div class="note"><b>Ideias para esta tela:</b><br>
+   • Clique no garçom: <b>extrato por comanda</b> (venda, regra aplicada, comissão) para conferir e contestar.<br>
+   • <b>Fechar acerto</b>: escolhe garçons e período, gera <b>recibo</b> para assinatura e lança no <b>Financeiro</b> como despesa "Comissões" (já existe o módulo).<br>
+   • Estorno/cancelamento depois do acerto vira <b>desconto no próximo acerto</b> (não some do histórico).<br>
+   • Alerta: comandas <b>abertas há muito tempo</b> ou <b>sem garçom</b> (para o caixa corrigir antes do acerto).</div>`;
+}
+function detalhe(g){
+  const L=CMD.filter(c=>c.gar===g);
+  $('#drawer').innerHTML=`<button class="x" onclick="fechar()">×</button><h3>${g}</h3><div class="sub">Extrato da noite · conferência por comanda</div>
+  <div style="margin-top:12px">${L.map(c=>`<div class="line" style="align-items:flex-start"><span><b>${c.local}</b> <span class="tag">#${c.id}</span><div class="sub">${c.hora} · venda ${brl(bruto(c))}${c.desc?' · desconto '+brl(c.desc):''}</div></span><span style="text-align:right">${c.st==='paga'?`<b style="color:var(--accent)">${brl(comTotal(c))}</b><div class="sub">prod ${brl(comissaoProdutos(c))} + serv ${brl(taxaServ(c))}</div><span class="pill ${c.com==='paga'?'ok':'warn'}">${c.com==='paga'?'pago':'pendente'}</span>`:`<span class="pill ${c.st==='aberta'?'warn':'err'}">${c.st}</span><div class="sub">sem comissão</div>`}</span></div>`).join('')}</div>
+  ${PAGTOS.filter(p=>p.gar===g).length?'<div class="rod" style="margin-top:14px;font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--txt3);font-weight:800">Recebido na hora (app)</div>'+PAGTOS.filter(p=>p.gar===g).map(p=>`<div class="line"><span><b>${p.local}</b> <span class="tag">${p.forma}</span><div class="sub">${p.hora} · ${brl(p.valor+p.taxa)}${p.forma==='dinheiro'?(p.prestado?' · entregue ao caixa':' · com o garçom'):''}</div></span><span style="text-align:right"><b style="color:var(--accent)">${brl(comPagto(p))}</b><div><span class="pill ${p.com==='paga'?'ok':'warn'}">${p.com==='paga'?'pago':'pendente'}</span></div></span></div>`).join(''):''}
+  <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap"><button class="btn ghost" onclick="toast('Comanda transferida (exemplo)')">Transferir comanda…</button><button class="btn ghost" onclick="toast('Ajuste manual registrado (exemplo)')">Ajuste manual…</button></div>`;
+  $('#ovD').classList.add('show');
+}
+function modalAcerto(){
+  const R=resumo().filter(r=>r.pend>0);
+  $('#modal').innerHTML=`<button class="x" onclick="fechar()">×</button><h3>Fechar acerto de comissões</h3><div class="sub">Período: esta noite (26/10) · só comandas pagas no caixa</div>
+  <div style="margin-top:12px">${R.map((r,i)=>`<div class="line"><label style="display:flex;gap:10px;align-items:center;cursor:pointer"><input type="checkbox" checked style="width:auto" class="ck" data-g="${r.g}" data-v="${r.pend}" onchange="somaAc()"> <b>${r.g}</b></label><b>${brl(r.pend)}</b></div>`).join('')||'<div class="sub">Nada pendente.</div>'}</div>
+  <div class="line" style="font-size:16px;margin-top:6px"><b>Total do acerto</b><b style="color:var(--accent)" id="totAc">${brl(R.reduce((s,r)=>s+r.pend,0))}</b></div>
+  <label class="l">Forma de pagamento</label><select><option>Dinheiro (sai do caixa)</option><option>Pix</option><option>Folha / acerto semanal</option></select>
+  <div class="sw"><button class="on" onclick="this.classList.toggle('on')"></button><span>Lançar no Financeiro como despesa "Comissões"</span></div>
+  <div class="sw"><button class="on" onclick="this.classList.toggle('on')"></button><span>Gerar recibo para assinatura</span></div>
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px"><button class="btn ghost" onclick="fechar()">Cancelar</button><button class="btn" onclick="confirmaAcerto()">Confirmar pagamento</button></div>`;
+  $('#ovM').classList.add('show');
+}
+function somaAc(){let t=0;document.querySelectorAll('.ck').forEach(c=>{if(c.checked)t+=+c.dataset.v});$('#totAc').textContent=brl(t)}
+function confirmaAcerto(){const gs=[...document.querySelectorAll('.ck')].filter(c=>c.checked).map(c=>c.dataset.g);if(!gs.length){toast('Selecione ao menos um garçom');return}CMD.forEach(c=>{if(gs.includes(c.gar)&&c.st==='paga'&&c.com==='pendente')c.com='paga'});PAGTOS.forEach(p=>{if(gs.includes(p.gar)&&p.com==='pendente')p.com='paga'});fechar();render();toast('Acerto confirmado · '+gs.join(', ')+' · lançado no Financeiro')}
+
+/* ================= REGRAS E PERFIL ================= */
+function telaReg(){
+  return `<div class="head"><h2>Regras de comissão e perfil Garçom</h2></div>
+  <div class="grid g2">
+   <div class="card"><h4>Como a comissão é calculada</h4>
+    <label class="l" style="margin-top:0">Comissão padrão sobre produtos (%)</label><input type="number" value="${REG.pct}" step="0.5" onchange="REG.pct=+this.value;amostra()">
+    <div class="sw"><button class="${REG.usaCat?'on':''}" onclick="REG.usaCat=!REG.usaCat;go('reg')"></button><span>Usar percentual diferente por categoria</span></div>
+    ${REG.usaCat?`<div style="margin-top:8px">${Object.keys(REG.porCat).map(k=>`<div class="line"><span>${k}</span><span><input type="number" value="${REG.porCat[k]}" step="0.5" style="width:90px" onchange="REG.porCat['${k}']=+this.value;amostra()"> %</span></div>`).join('')}</div>`:''}
+    <label class="l">Taxa de serviço cobrada do cliente (%)</label><input type="number" value="${REG.taxa}" onchange="REG.taxa=+this.value;amostra()">
+    <label class="l">Parte da taxa de serviço repassada ao garçom (%)</label><input type="number" value="${REG.repasseTaxa}" onchange="REG.repasseTaxa=+this.value;amostra()">
+    <label class="l">Base de cálculo</label><select onchange="REG.base=this.value;amostra()"><option value="liquida" ${REG.base==='liquida'?'selected':''}>Líquida (depois do desconto)</option><option value="bruta" ${REG.base==='bruta'?'selected':''}>Bruta (antes do desconto)</option></select>
+    <label class="l">Quando a comissão é gerada</label><select><option>Quando o caixa recebe a comanda (recomendado)</option><option>Quando o pedido é enviado</option></select>
+    <div class="sw"><button class="${REG.estorna?'on':''}" onclick="REG.estorna=!REG.estorna;go('reg')"></button><span>Estorno/cancelamento desconta no próximo acerto</span></div>
+    <label class="l">Bônus por meta da noite</label><div style="display:flex;gap:8px;align-items:center">vendas ≥ R$ <input type="number" value="${REG.meta}" style="width:110px" onchange="REG.meta=+this.value;amostra()"> → +<input type="number" value="${REG.bonus}" step="0.5" style="width:80px" onchange="REG.bonus=+this.value;amostra()"> %</div>
+    <div class="sub" style="margin-top:8px">Itens fora da comissão (ex.: ingresso, couvert artístico) podem ser marcados no cadastro do produto.</div></div>
+   <div>
+    <div class="card"><h4>Recebimento pelo garçom (no app)</h4>
+     <div class="sw" style="margin-top:0"><button class="${REG.garcomRecebe?'on':''}" onclick="REG.garcomRecebe=!REG.garcomRecebe;go('reg')"></button><span>Garçom pode <b>receber na hora</b> (permissão "Receber pagamento no app")</span></div>
+     ${REG.garcomRecebe?`<label class="l">Formas liberadas</label>
+      <div class="sw" style="margin-top:4px"><button class="${REG.formas.pix?'on':''}" onclick="REG.formas.pix=!REG.formas.pix;go('reg')"></button><span>Pix (garçom confirma o recebimento)</span></div>
+      <div class="sw"><button class="${REG.formas.cartao?'on':''}" onclick="REG.formas.cartao=!REG.formas.cartao;go('reg')"></button><span>Cartão (maquininha; garçom confirma a aprovação)</span></div>
+      <div class="sw"><button class="${REG.formas.dinheiro?'on':''}" onclick="REG.formas.dinheiro=!REG.formas.dinheiro;go('reg')"></button><span>Dinheiro (fica com o garçom até a <b>prestação de contas</b>)</span></div>
+      <div class="sub" style="margin-top:8px">Cada recebimento fica registrado com garçom, comanda, forma e horário. Cancelar um recebimento depois exige o caixa/gerente.</div>`:'<div class="sub" style="margin-top:8px">Com isto desligado, o garçom só lança pedidos e o caixa recebe no fechamento.</div>'}
+    </div>
+    <div class="card" style="margin-top:12px"><h4>Simulação com uma comanda</h4><div id="amostra"></div></div>
+    <div class="card" style="margin-top:12px"><h4>Perfil "Garçom" (novo)</h4>
+     <div class="line"><span>Abrir/editar as <b>próprias</b> comandas (mesa e pista)</span><span class="pill ok">sim</span></div>
+     <div class="line"><span>Enviar rodadas ao bar/cozinha</span><span class="pill ok">sim</span></div>
+     <div class="line"><span>Pedir fechamento / chamar o caixa</span><span class="pill ok">sim</span></div>
+     <div class="line"><span>Ver o próprio extrato de comissão</span><span class="pill ok">sim</span></div>
+     <div class="line"><span>Receber pagamento no app (Pix, cartão, dinheiro)</span><span class="pill warn">opcional · por perfil/usuário</span></div>
+     <div class="line"><span>Desconto, cancelar venda</span><span class="pill err">não</span></div>
+     <div class="line"><span>Caixa, estoque, relatórios, cadastros</span><span class="pill err">não</span></div>
+     <div class="line"><span>Telas liberadas</span><b>só o app do garçom (celular)</b></div>
+     <div class="sub" style="margin-top:8px">Comissão e permissões podem ser ajustadas por usuário (padrão do perfil + ajustes), como já é hoje.</div></div>
+   </div>
+  </div>
+  <div class="note"><b>Decisões para validar:</b> (1) comissão por <b>categoria</b> ou um percentual único? (2) a <b>taxa de serviço</b> vai 100% para o garçom ou é dividida (garçons/cozinha/caixa)? (3) a comissão nasce quando o <b>caixa recebe</b> (recomendado) ou quando o pedido é enviado? (4) quando dois garçons atendem a mesma mesa, <b>divide-se</b> a comissão? (5) a casa usa <b>pulseira/cartão de consumo</b> na pista ou só nome/número? (6) o <b>dinheiro</b> pode ficar com o garçom até a prestação de contas, ou o garçom só recebe Pix e cartão?</div>`;
+}
+function amostra(){
+  const el=$('#amostra');if(!el)return;
+  const c=CMD[0];
+  el.innerHTML=`<div class="sub">Mesa 7 · ${c.itens.map(i=>i[0]+' '+brl(i[1])).join(' · ')}</div>
+  <div class="line"><span>Base de cálculo</span><b>${brl(base(c))}</b></div>
+  <div class="line"><span>Comissão sobre produtos</span><b>${brl(comissaoProdutos(c))}</b></div>
+  <div class="line"><span>Taxa de serviço repassada</span><b>${brl(taxaServ(c))}</b></div>
+  <div class="line" style="font-size:15px"><b>Comissão da comanda</b><b style="color:var(--accent)">${brl(comTotal(c))}</b></div>`;
+}
+function fechar(){$('#ovD').classList.remove('show');$('#ovM').classList.remove('show')}
+$('#ovD').onclick=e=>{if(e.target.id==='ovD')fechar()};
+$('#ovM').onclick=e=>{if(e.target.id==='ovM')fechar()};
+$('#tg').onclick=()=>{const h=document.documentElement;h.dataset.theme=h.dataset.theme==='dark'?'light':'dark'};
+const _render=render;render=function(){_render();if(tab==='reg')amostra()};
+nav();render();
+</script>
+</body>
+</html>

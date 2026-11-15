@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GiroStock — Preview Clientes</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
+<style>
+:root,:root[data-theme="dark"]{--bg:#0f0e10;--panel:#17161a;--raised:#1f1d22;--hover:#25232a;--accent:#d4ae4a;--accent-soft:rgba(212,174,74,.12);--accent-line:rgba(212,174,74,.30);--on:#17120a;--txt:#f2eee6;--txt2:#b4ada2;--txt3:#8f8980;--line:rgba(255,255,255,.08);--ok:#5fc48a;--warn:#f0a05a;--err:#ec7a72;--shadow:rgba(0,0,0,.5)}
+:root[data-theme="light"]{--bg:#f4f1ea;--panel:#fff;--raised:#f8f5ee;--hover:#f1ece0;--accent:#8f6810;--accent-soft:rgba(143,104,16,.10);--accent-line:rgba(143,104,16,.28);--on:#fff;--txt:#231f1a;--txt2:#5d564c;--txt3:#7d766b;--line:rgba(35,31,26,.10);--ok:#1f7a4d;--warn:#b25e12;--err:#b3372f;--shadow:rgba(0,0,0,.18)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font-family:Manrope,system-ui,sans-serif;font-size:14px}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit;font-size:14px;color:var(--txt);background:var(--raised);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px}
+.top{display:flex;align-items:center;gap:14px;height:68px;padding:0 28px;border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{font-family:'Playfair Display',serif;font-weight:800;font-size:20px;color:var(--accent)}
+.top nav{display:flex;gap:4px;flex:1;flex-wrap:wrap}
+.top nav a{padding:8px 13px;border-radius:999px;color:var(--txt2);font-size:12px;font-weight:600;cursor:pointer}
+.top nav a:hover{background:var(--raised);color:var(--txt)}
+.top nav a.on{background:var(--accent);color:var(--on);font-weight:700}
+.tg{border:1px solid var(--line);background:var(--raised);color:var(--accent);border-radius:999px;padding:7px 12px;font-weight:700;font-size:12px}
+main{padding:22px 28px 60px}
+.head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.head h2{margin:0;font-size:26px;font-weight:700;margin-right:auto}
+.btn{border:none;border-radius:10px;padding:11px 18px;font-weight:800;font-size:13px;background:var(--accent);color:var(--on);text-transform:uppercase;letter-spacing:.3px}
+.btn.ghost{background:none;border:1px solid var(--line);color:var(--txt);text-transform:none;font-weight:700}
+.btn.ghost:hover{background:var(--raised)}
+.btn.sm{padding:8px 12px;font-size:12px}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.kpi small{display:block;color:var(--txt3);font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase}
+.kpi b{font-size:26px;font-weight:800}
+.kpi span{display:block;font-size:11px;color:var(--txt3);margin-top:2px}
+.kpi.hero{background:var(--accent-soft);border-color:var(--accent-line);cursor:pointer}
+.kpi.hero b{color:var(--accent)}
+.banner{display:flex;align-items:center;gap:12px;background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:14px;padding:12px 16px;margin-bottom:16px}
+.banner b{color:var(--accent)}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.bar input{max-width:280px}
+.chip{border:1px solid var(--line);background:none;color:var(--txt2);border-radius:999px;padding:7px 13px;font-size:12px;font-weight:700}
+.chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.chip i{font-style:normal;opacity:.7;margin-left:4px}
+.tbl{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:11px 12px;font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--txt3);border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:12px;border-bottom:1px solid var(--line)}
+tbody tr{cursor:pointer}tbody tr:hover{background:var(--raised)}
+.sub{font-size:12px;color:var(--txt3)}
+.tag{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--raised);color:var(--txt2);border:1px solid var(--line);margin:0 4px 2px 0}
+.pill{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;border:1px solid}
+.pill.ok{color:var(--ok);border-color:var(--ok)}.pill.warn{color:var(--warn);border-color:var(--warn)}.pill.err{color:var(--err);border-color:var(--err)}
+.ov{position:fixed;inset:0;background:var(--shadow);display:none;z-index:50}
+.ov.show{display:flex}
+.drawer{margin-left:auto;width:min(480px,100%);height:100%;background:var(--panel);border-left:1px solid var(--line);padding:22px;overflow:auto}
+.modal{margin:auto;width:min(760px,94%);max-height:92vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:24px}
+.modal h3,.drawer h3{margin:0 0 6px;font-size:20px}
+.x{float:right;background:none;border:none;color:var(--txt2);font-size:22px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+label{display:block;font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--txt3);margin:12px 0 5px}
+.sec{border-top:1px solid var(--line);margin-top:16px;padding-top:4px}
+.line{display:flex;justify-content:space-between;gap:10px;padding:6px 0;font-size:13px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+.stats div{background:var(--raised);border-radius:12px;padding:10px 12px}
+.stats small{display:block;font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:.6px;font-weight:700}
+.stats b{font-size:17px}
+.sw{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:13px}
+.sw button{width:40px;height:22px;border-radius:999px;border:1px solid var(--line);background:var(--raised);position:relative;padding:0}
+.sw button::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--txt3);transition:.15s}
+.sw button.on{background:var(--accent-soft);border-color:var(--accent)}
+.sw button.on::after{left:20px;background:var(--accent)}
+.msg{background:var(--raised);border:1px solid var(--line);border-radius:14px;padding:14px;white-space:pre-wrap;line-height:1.5;font-size:13px}
+.row{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--line)}
+.row .gr{flex:1}
+.row input[type=checkbox]{width:auto}
+.ideas{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-top:12px}
+.idea{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.idea b{display:block;margin-bottom:4px}
+.idea p{margin:0;color:var(--txt2);font-size:12.5px;line-height:1.5}
+.idea .fase{margin-top:8px;display:inline-block;font-size:10.5px;font-weight:700;color:var(--accent)}
+.note{background:var(--panel);border:1px dashed var(--line);border-radius:14px;padding:14px 18px;margin-top:20px;color:var(--txt2);line-height:1.6;font-size:13px}
+.note b{color:var(--txt)}
+h4.t{margin:26px 0 0;font-size:16px}
+.toast{position:fixed;right:20px;bottom:20px;background:var(--panel);border:1px solid var(--accent);color:var(--txt);padding:12px 16px;border-radius:12px;display:none;z-index:99;font-weight:600}
+@media(max-width:900px){.kpis{grid-template-columns:repeat(2,1fr)}.g2{grid-template-columns:1fr}main{padding:16px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <span class="brand">GiroStock</span>
+  <nav><a>Início</a><a>PDV</a><a>Pedidos</a><a class="on">Clientes</a><a>Produtos & Estoque</a><a>Caixa</a><a>Relatórios</a><a>Usuários</a></nav>
+  <button class="tg" id="tg">☾ / ☀ tema</button>
+</header>
+<main>
+  <div class="head">
+    <h2>Clientes</h2>
+    <select id="loja" style="width:auto"><option>Todas as lojas</option><option>Lanchonete</option><option>Distribuidora</option></select>
+    <button class="btn ghost sm" id="bImp">⇩ Gerar a partir dos pedidos</button>
+    <button class="btn ghost sm" id="bCamp">✉ Enviar mensagem</button>
+    <button class="btn" id="bNovo">+ Novo cliente</button>
+  </div>
+  <div id="ban"></div>
+  <div class="kpis" id="kpis"></div>
+  <div class="bar" id="segs"></div>
+  <div class="bar"><input id="q" placeholder="Buscar por nome, telefone ou bairro"><span class="sub" id="cnt" style="margin-left:auto"></span></div>
+  <div class="tbl"><table><thead><tr><th>Cliente</th><th>Bairro</th><th style="text-align:right">Pedidos</th><th style="text-align:right">Total gasto</th><th style="text-align:right">Ticket médio</th><th>Último pedido</th><th>Segmentos</th><th>Mensagens</th></tr></thead><tbody id="tb"></tbody></table></div>
+
+  <h4 class="t">Ideias para evoluir (para validar)</h4>
+  <div class="ideas">
+    <div class="idea"><b>📞 Cliente cadastrado sozinho</b><p>Todo pedido gerado no PDV cria/atualiza o cliente pelo <b>telefone</b> (chave única). Ao digitar o telefone no pedido, nome e endereço já aparecem preenchidos.</p><span class="fase">Fase 1</span></div>
+    <div class="idea"><b>🏷 Segmentos automáticos</b><p>Novos, recorrentes, VIP, em risco (30–59 dias sem pedir), inativos (60+), aniversariantes do mês e sem WhatsApp — calculados dos pedidos, sem digitar nada.</p><span class="fase">Fase 1</span></div>
+    <div class="idea"><b>🏠 Vários endereços</b><p>Casa, trabalho etc. No pedido de entrega o operador escolhe o endereço salvo e a taxa por bairro já vem sugerida.</p><span class="fase">Fase 1</span></div>
+    <div class="idea"><b>⭐ Produto favorito e histórico</b><p>Mostra o que o cliente mais pede e o último pedido, com botão <b>"Repetir pedido"</b> que já monta o carrinho no PDV.</p><span class="fase">Fase 1</span></div>
+    <div class="idea"><b>✅ Consentimento (LGPD)</b><p>Campo "aceita receber mensagens" por cliente, com data e origem (perguntado no balcão/telefone). Campanhas só vão para quem aceitou, e todo envio tem opção de sair.</p><span class="fase">Fase 1</span></div>
+    <div class="idea"><b>💬 Mensagens com modelo</b><p>Modelos com variáveis (<b>{nome}</b>, <b>{ultimo_pedido}</b>, <b>{cupom}</b>) para reativação, aniversário, promoção do dia e "seu pedido está pronto".</p><span class="fase">Fase 2 — link wa.me, 1 clique por cliente</span></div>
+    <div class="idea"><b>📣 Envio em lote</b><p>Escolhe o segmento, revisa a fila e envia pela <b>API oficial do WhatsApp</b> (ou fila manual até contratar). Histórico do que foi enviado a quem.</p><span class="fase">Fase 3</span></div>
+    <div class="idea"><b>🎟 Cupons e fidelidade</b><p>Cupom de retorno para inativos, "10º lanche grátis", desconto de aniversário; relatório de quantos voltaram depois da campanha.</p><span class="fase">Fase 3</span></div>
+    <div class="idea"><b>🔗 iFood / 99Food</b><p>Quando a integração existir, o cliente do app entra na base automaticamente (respeitando o que a plataforma permite usar para contato).</p><span class="fase">Etapa posterior</span></div>
+  </div>
+  <div class="note">
+    <b>Pontos para decidir:</b> (1) a chave do cliente é o <b>telefone</b> (só dígitos); pedidos sem telefone ficam como "balcão" e não geram cliente. (2) Clientes são da <b>empresa</b> (aparecem em todas as lojas), com filtro por loja. (3) Mesclar duplicados é manual, com sugestão do sistema. (4) Quem vê/envia mensagens: permissão própria (área <b>Clientes</b>).
+  </div>
+</main>
+
+<div class="ov" id="ovD"><div class="drawer" id="drawer"></div></div>
+<div class="ov" id="ovM"><div class="modal" id="modal"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $=s=>document.querySelector(s);
+const brl=v=>v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const MES=10; // outubro (aniversariantes do mês)
+let n=0;
+function C(nome,tel,bairro,end,pedidos,gasto,ultimo,desde,fav,aniv,consente,hist){return{id:++n,nome,tel,bairro,end:[end],pedidos,gasto,ultimo,desde,fav,aniv,consente,obs:'',hist:hist||[]}}
+let clientes=[
+ C('Ana Souza','(11) 98877-1020','Centro','Rua das Flores, 120',14,412,3,240,'X-Tudo','10-14',true,[['#1042','há 3 dias',65],['#1011','há 11 dias',48],['#0987','há 19 dias',57]]),
+ C('Carlos Lima','(11) 97766-3344','Jardim América','Av. Brasil, 890 ap 31',9,236,8,190,'X-Bacon','03-02',true,[['#1043','há 8 dias',38],['#1002','há 20 dias',44]]),
+ C('Marta Reis','(11) 95544-8899','Vila Nova','Rua Verde, 12',2,58,41,95,'X-Tudo','10-27',true,[['#0904','há 41 dias',29],['#0810','há 95 dias',29]]),
+ C('Pedro Henrique','(11) 94433-2211','Centro','Rua XV, 45',21,689,1,300,'Milkshake','07-19',true,[['#1046','há 1 dia',54],['#1038','há 6 dias',62]]),
+ C('Juliana Moraes','(11) 93322-1100','Jardim América','Av. Brasil, 890 ap 31',1,44,4,4,'Hot Dog Completo','',true,[['#1044','há 4 dias',44]]),
+ C('Roberto Alves','(11) 92211-0099','Industrial','Rua das Indústrias, 300',6,171,75,310,'X-Salada','10-05',false,[['#0771','há 75 dias',31]]),
+ C('Fernanda Prado','(11) 91100-9988','Vila Nova','Rua Azul, 77',3,118,33,120,'Batata Frita G','12-01',true,[['#0899','há 33 dias',40]]),
+ C('Lucas Ribeiro','(11) 90099-8877','Centro','Rua do Comércio, 8',11,327,12,210,'X-Bacon','',true,[['#1031','há 12 dias',35]]),
+ C('Bianca Torres','(11) 98888-7766','Parque Sul','Alameda Sol, 410',4,150,64,150,'Suco Natural 500ml','10-30',true,[['#0742','há 64 dias',42]]),
+ C('Diego Martins','(11) 97777-6655','Industrial','Rua das Indústrias, 18',18,520,5,280,'X-Tudo','',true,[['#1040','há 5 dias',50]]),
+ C('Sônia Cardoso','','Centro','Rua do Mercado, 55',2,60,20,60,'Hot Dog Completo','',false,[['#1022','há 20 dias',30]]),
+ C('Thiago Nunes','(11) 96655-4433','Parque Sul','Alameda Sol, 12',1,29,2,2,'X-Salada','',true,[['#1045','há 2 dias',29]]),
+];
+const SEG=[['todos','Todos'],['novo','Novos'],['recorrente','Recorrentes'],['vip','VIP'],['risco','Em risco'],['inativo','Inativos'],['aniv','Aniversariantes do mês'],['semwpp','Sem WhatsApp']];
+function segs(c){const s=[];
+ if(c.desde<=30)s.push('novo');
+ if(c.pedidos>=3)s.push('recorrente');
+ if(c.gasto>=400)s.push('vip');
+ if(c.ultimo>=30&&c.ultimo<60)s.push('risco');
+ if(c.ultimo>=60)s.push('inativo');
+ if(c.aniv&&+c.aniv.slice(0,2)===MES)s.push('aniv');
+ if(!c.tel)s.push('semwpp');
+ return s}
+const NOMESEG=Object.fromEntries(SEG);
+let seg='todos',q='';
+const lista=()=>clientes.filter(c=>(seg==='todos'||segs(c).includes(seg))&&(!q||(c.nome+c.tel+c.end.join(' ')+c.bairro).toLowerCase().includes(q)));
+const podeMsg=c=>c.consente&&c.tel;
+function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>e.style.display='none',2800)}
+function render(){
+  const ativos=clientes.filter(c=>c.ultimo<30).length, risco=clientes.filter(c=>segs(c).includes('risco')||segs(c).includes('inativo')).length;
+  const gasto=clientes.reduce((s,c)=>s+c.gasto,0),ped=clientes.reduce((s,c)=>s+c.pedidos,0);
+  $('#kpis').innerHTML=`<div class="kpi"><small>Clientes</small><b>${clientes.length}</b><span>${clientes.filter(podeMsg).length} aceitam mensagens</span></div>
+   <div class="kpi"><small>Novos (30 dias)</small><b>${clientes.filter(c=>c.desde<=30).length}</b><span>primeiro pedido recente</span></div>
+   <div class="kpi"><small>Ativos (30 dias)</small><b>${ativos}</b><span>pediram no último mês</span></div>
+   <div class="kpi hero" onclick="setSeg('risco')"><small>Para reativar</small><b>${risco}</b><span>em risco + inativos · clique para ver</span></div>
+   <div class="kpi"><small>Ticket médio</small><b>${brl(gasto/ped)}</b><span>${ped} pedidos</span></div>`;
+  $('#segs').innerHTML=SEG.map(([k,l])=>`<button class="chip ${seg===k?'on':''}" onclick="setSeg('${k}')">${l}<i>${k==='todos'?clientes.length:clientes.filter(c=>segs(c).includes(k)).length}</i></button>`).join('');
+  const L=lista();$('#cnt').textContent=L.length+' cliente'+(L.length!==1?'s':'');
+  $('#tb').innerHTML=L.map(c=>`<tr onclick="abrir(${c.id})"><td><b>${c.nome}</b><div class="sub">${c.tel||'sem telefone'}</div></td><td>${c.bairro}</td><td style="text-align:right">${c.pedidos}</td><td style="text-align:right;font-weight:800;color:var(--accent)">${brl(c.gasto)}</td><td style="text-align:right">${brl(c.gasto/c.pedidos)}</td><td style="color:${c.ultimo>=60?'var(--err)':c.ultimo>=30?'var(--warn)':'var(--txt2)'}">há ${c.ultimo} dia${c.ultimo!==1?'s':''}</td><td>${segs(c).map(s=>`<span class="tag">${NOMESEG[s]}</span>`).join('')}</td><td>${podeMsg(c)?'<span class="pill ok">Aceita</span>':c.tel?'<span class="pill warn">Não aceita</span>':'<span class="pill err">Sem contato</span>'}</td></tr>`).join('')||'<tr><td colspan="8" class="sub" style="text-align:center;padding:30px">Nenhum cliente neste filtro</td></tr>';
+}
+function setSeg(k){seg=k;render();window.scrollTo({top:0,behavior:'smooth'})}
+$('#q').oninput=e=>{q=e.target.value.toLowerCase();render()};
+
+/* ---- detalhe ---- */
+function abrir(id){
+  const c=clientes.find(x=>x.id===id);
+  $('#drawer').innerHTML=`<button class="x" onclick="fechar()">×</button>
+   <h3>${c.nome}</h3><div class="sub">${c.tel||'Sem telefone'} · cliente há ${c.desde} dias</div>
+   <div style="margin-top:8px">${segs(c).map(s=>`<span class="tag">${NOMESEG[s]}</span>`).join('')}</div>
+   <div class="stats"><div><small>Pedidos</small><b>${c.pedidos}</b></div><div><small>Total gasto</small><b>${brl(c.gasto)}</b></div><div><small>Ticket médio</small><b>${brl(c.gasto/c.pedidos)}</b></div></div>
+   <div class="line" style="margin-top:10px"><span class="sub">Produto favorito</span><b>⭐ ${c.fav}</b></div>
+   <div class="line"><span class="sub">Último pedido</span><b>há ${c.ultimo} dia${c.ultimo!==1?'s':''}</b></div>
+   ${c.aniv?`<div class="line"><span class="sub">Aniversário</span><b>${c.aniv.slice(3)}/${c.aniv.slice(0,2)}</b></div>`:''}
+   <div class="sec"><label>Endereços</label>${c.end.map((e,i)=>`<div class="line"><span>🏠 ${e}</span>${i===0?'<span class="tag">padrão</span>':''}</div>`).join('')}<button class="btn ghost sm" onclick="toast('Adicionar endereço (formulário)')">+ endereço</button></div>
+   <div class="sec"><label>Últimos pedidos</label>${c.hist.map(h=>`<div class="line"><span><b>${h[0]}</b> · ${h[1]}</span><span>${brl(h[2])}</span></div>`).join('')||'<div class="sub">Sem pedidos</div>'}</div>
+   <div class="sec"><label>Mensagens</label><div class="sw"><button class="${c.consente?'on':''}" onclick="c_toggle(${c.id})"></button><span>Aceita receber mensagens (WhatsApp) <div class="sub">${c.consente?'Consentimento registrado em 02/10/2026 · balcão':'Sem consentimento: não entra em campanhas'}</div></span></div></div>
+   <label>Observações</label><textarea rows="2" placeholder="Ex.: alérgico a cebola, prefere pagar no Pix">${c.obs}</textarea>
+   <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap"><button class="btn" onclick="toast('Abre o PDV com este cliente já selecionado')">Novo pedido</button><button class="btn ghost" onclick="toast('Monta o carrinho com o último pedido')">Repetir último pedido</button><button class="btn ghost" ${podeMsg(c)?'':'disabled'} onclick="campanha('${segs(c)[0]||'todos'}',${c.id})">✉ Mensagem</button></div>`;
+  $('#ovD').classList.add('show');
+}
+function c_toggle(id){const c=clientes.find(x=>x.id===id);c.consente=!c.consente;abrir(id);render()}
+function fechar(){$('#ovD').classList.remove('show');$('#ovM').classList.remove('show')}
+$('#ovD').onclick=e=>{if(e.target.id==='ovD')fechar()};
+$('#ovM').onclick=e=>{if(e.target.id==='ovM')fechar()};
+
+/* ---- gerar a partir dos pedidos ---- */
+let cand=[];
+function importar(){
+  cand=[
+   {nome:'Rafael Gomes',tel:'(11) 95500-1122',end:'Rua Alegre, 33',ped:3,tipo:'novo',on:true},
+   {nome:'Camila Duarte',tel:'(11) 95511-2233',end:'Av. Central, 900',ped:1,tipo:'novo',on:true},
+   {nome:'Paulo Teixeira',tel:'(11) 95522-3344',end:'Rua Lima, 71',ped:2,tipo:'novo',on:true},
+   {nome:'Ana S.',tel:'(11) 98877-1020',end:'Rua das Flores, 120',ped:2,tipo:'dup',com:'Ana Souza',on:true},
+   {nome:'Balcão',tel:'',end:'',ped:9,tipo:'sem',on:false},
+   {nome:'Carlos Lima',tel:'(11) 97766-3344',end:'Av. Brasil, 890 ap 31',ped:4,tipo:'ja',on:false}];
+  desenhaImp();$('#ovM').classList.add('show');
+}
+function desenhaImp(){
+  const nv=cand.filter(c=>c.on&&c.tipo==='novo').length,mg=cand.filter(c=>c.on&&c.tipo==='dup').length;
+  $('#modal').innerHTML=`<button class="x" onclick="fechar()">×</button><h3>Gerar clientes a partir dos pedidos</h3>
+  <div class="sub">Lemos nome, telefone e endereço dos pedidos já feitos. Telefone é a chave: pedidos do mesmo telefone viram um cliente só.</div>
+  <div style="margin-top:14px">${cand.map((c,i)=>`<div class="row"><input type="checkbox" ${c.on?'checked':''} ${c.tipo==='sem'||c.tipo==='ja'?'disabled':''} onchange="cand[${i}].on=this.checked;desenhaImp()"><div class="gr"><b>${c.nome}</b> <span class="sub">${c.tel||'sem telefone'} · ${c.ped} pedido${c.ped>1?'s':''}</span><div class="sub">${c.end||'—'}</div></div>${c.tipo==='novo'?'<span class="pill ok">Novo cliente</span>':c.tipo==='dup'?`<span class="pill warn">Mesclar com ${c.com}</span>`:c.tipo==='ja'?'<span class="pill">Já cadastrado</span>':'<span class="pill err">Sem telefone — ignorado</span>'}</div>`).join('')}</div>
+  <div class="note" style="margin-top:14px">Consentimento: clientes criados desta forma entram como <b>"não aceita mensagens"</b> até alguém confirmar com o cliente (balcão/telefone). Assim a base fica certa para a LGPD.</div>
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px"><button class="btn ghost" onclick="fechar()">Cancelar</button><button class="btn" onclick="confirmaImp()" ${nv+mg?'':'disabled'}>Criar ${nv} · mesclar ${mg}</button></div>`;
+}
+function confirmaImp(){
+  let criados=0,mesc=0;
+  cand.filter(c=>c.on&&c.tipo==='novo').forEach(c=>{clientes.push({id:++n,nome:c.nome,tel:c.tel,bairro:'—',end:[c.end],pedidos:c.ped,gasto:c.ped*38,ultimo:7,desde:7,fav:'X-Tudo',aniv:'',consente:false,obs:'',hist:[]});criados++});
+  cand.filter(c=>c.on&&c.tipo==='dup').forEach(c=>{const x=clientes.find(k=>k.nome===c.com);if(x){x.pedidos+=c.ped;mesc++}});
+  fechar();render();toast(`${criados} cliente(s) criado(s) e ${mesc} mesclado(s)`);
+}
+$('#bImp').onclick=importar;
+
+/* ---- mensagem ---- */
+const MODELOS={
+ reativacao:['Reativação','Oi {nome}! Faz um tempinho que você não pede aqui na JA Conveniência 🍔 Preparamos um desconto de 10% pra você voltar: use o cupom VOLTEI10. Peça pelo WhatsApp ou venha nos visitar!'],
+ aniversario:['Aniversário','Parabéns, {nome}! 🎉 Hoje o seu lanche tem desconto especial de aniversário. Passe aqui ou peça pelo WhatsApp e informe o cupom NIVER.'],
+ promo:['Promoção do dia','Oi {nome}! Hoje tem X-Tudo + refri por R$ 28,00 🔥 Peça pelo WhatsApp até as 22h.'],
+ pronto:['Pedido pronto','Oi {nome}, seu pedido está pronto para retirada! Obrigado pela preferência 😊']};
+let cmp={};
+function campanha(sg,idUnico){
+  cmp={seg:sg||'inativo',modelo:sg==='aniv'?'aniversario':'reativacao',unico:idUnico||null};
+  cmp.txt=MODELOS[cmp.modelo][1];desenhaCmp();$('#ovM').classList.add('show');
+}
+function dest(){return clientes.filter(c=>cmp.unico?c.id===cmp.unico:segs(c).includes(cmp.seg)||cmp.seg==='todos').filter(podeMsg)}
+function desenhaCmp(){
+  const D=dest(),bloq=clientes.filter(c=>segs(c).includes(cmp.seg)&&!podeMsg(c)).length;
+  $('#modal').innerHTML=`<button class="x" onclick="fechar()">×</button><h3>Enviar mensagem</h3>
+  <div class="g2"><div><label>Para quem</label><select ${cmp.unico?'disabled':''} onchange="cmp.seg=this.value;desenhaCmp()">${SEG.map(([k,l])=>`<option value="${k}" ${cmp.seg===k?'selected':''}>${l}</option>`).join('')}</select></div>
+  <div><label>Modelo</label><select onchange="cmp.modelo=this.value;cmp.txt=MODELOS[this.value][1];desenhaCmp()">${Object.entries(MODELOS).map(([k,v])=>`<option value="${k}" ${cmp.modelo===k?'selected':''}>${v[0]}</option>`).join('')}</select></div></div>
+  <label>Mensagem (use {nome})</label><textarea rows="4" oninput="cmp.txt=this.value;document.getElementById('pv').textContent=this.value.replace('{nome}',(dest()[0]||{nome:'Cliente'}).nome.split(' ')[0])">${cmp.txt}</textarea>
+  <label>Prévia</label><div class="msg" id="pv">${cmp.txt.replace('{nome}',(D[0]||{nome:'Cliente'}).nome.split(' ')[0])}</div>
+  <div class="sec"><div class="line"><b>${D.length} destinatário${D.length!==1?'s':''}</b><span class="sub">${bloq?bloq+' fora por não aceitar mensagens / sem telefone':'todos com consentimento'}</span></div>
+  ${D.slice(0,6).map(c=>`<div class="row"><div class="gr"><b>${c.nome}</b> <span class="sub">${c.tel}</span></div><button class="btn ghost sm" onclick="toast('Abriria wa.me/55${c.tel.replace(/\\D/g,'')} com a mensagem pronta')">Abrir no WhatsApp</button></div>`).join('')}
+  ${D.length>6?`<div class="sub" style="padding:8px 4px">… e mais ${D.length-6}</div>`:''}</div>
+  <div class="note" style="margin-top:12px"><b>Como enviar:</b> nesta fase, o botão abre o WhatsApp do atendente com a mensagem pronta (1 clique por cliente, tudo registrado no histórico). Envio automático em lote exige a API oficial do WhatsApp — fica para a fase seguinte. Toda mensagem de campanha deve ter "responda SAIR para não receber mais".</div>
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px"><button class="btn ghost" onclick="fechar()">Fechar</button><button class="btn" ${D.length?'':'disabled'} onclick="toast('Fila criada com ${D.length} mensagem(ns) · registrada no histórico');fechar()">Criar fila de envio</button></div>`;
+}
+$('#bCamp').onclick=()=>campanha('inativo');
+
+/* ---- novo cliente ---- */
+$('#bNovo').onclick=()=>{
+  $('#modal').innerHTML=`<button class="x" onclick="fechar()">×</button><h3>Novo cliente</h3>
+  <div class="g2"><div><label>Nome</label><input id="nn"></div><div><label>Telefone (WhatsApp)</label><input id="nt" placeholder="(00) 00000-0000"></div></div>
+  <div class="g2"><div><label>Endereço</label><input id="ne"></div><div><label>Bairro</label><input id="nb"></div></div>
+  <div class="g2"><div><label>Aniversário</label><input id="na" placeholder="dd/mm"></div><div></div></div>
+  <div class="sw"><button class="on" id="nc" onclick="this.classList.toggle('on')"></button><span>Cliente aceitou receber mensagens</span></div>
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px"><button class="btn ghost" onclick="fechar()">Cancelar</button><button class="btn" onclick="salvaNovo()">Salvar</button></div>`;
+  $('#ovM').classList.add('show');
+};
+function salvaNovo(){
+  const nm=$('#nn').value.trim();if(!nm){toast('Informe o nome');return}
+  const t=$('#nt').value.trim();
+  if(t&&clientes.some(c=>c.tel.replace(/\D/g,'')===t.replace(/\D/g,''))){toast('Já existe cliente com este telefone');return}
+  clientes.push({id:++n,nome:nm,tel:t,bairro:$('#nb').value||'—',end:[$('#ne').value],pedidos:0,gasto:0,ultimo:0,desde:0,fav:'—',aniv:'',consente:$('#nc').classList.contains('on'),obs:'',hist:[]});
+  fechar();render();toast('Cliente cadastrado');
+}
+$('#tg').onclick=()=>{const h=document.documentElement;h.dataset.theme=h.dataset.theme==='dark'?'light':'dark'};
+$('#ban').innerHTML=`<div class="banner"><span style="font-size:20px">💡</span><div style="flex:1">Encontramos <b>3 clientes novos</b> e <b>1 possível duplicado</b> nos seus pedidos que ainda não estão na base.</div><button class="btn sm" onclick="importar()">Revisar e criar</button></div>`;
+render();
+</script>
+</body>
+</html>

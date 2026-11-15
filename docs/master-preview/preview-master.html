@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GiroStock — Preview Admin Master</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
+<style>
+:root,:root[data-theme="dark"]{--bg:#0f0e10;--panel:#17161a;--raised:#1f1d22;--hover:#25232a;--accent:#d4ae4a;--accent-soft:rgba(212,174,74,.12);--accent-line:rgba(212,174,74,.30);--on:#17120a;--txt:#f2eee6;--txt2:#b4ada2;--txt3:#8f8980;--line:rgba(255,255,255,.08);--ok:#5fc48a;--warn:#f0a05a;--err:#ec7a72;--shadow:rgba(0,0,0,.5)}
+:root[data-theme="light"]{--bg:#f4f1ea;--panel:#fff;--raised:#f8f5ee;--hover:#f1ece0;--accent:#8f6810;--accent-soft:rgba(143,104,16,.10);--accent-line:rgba(143,104,16,.28);--on:#fff;--txt:#231f1a;--txt2:#5d564c;--txt3:#7d766b;--line:rgba(35,31,26,.10);--ok:#1f7a4d;--warn:#b25e12;--err:#b3372f;--shadow:rgba(0,0,0,.18)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font-family:Manrope,system-ui,sans-serif;font-size:14px}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit;font-size:14px;color:var(--txt);background:var(--raised);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px}
+.top{display:flex;align-items:center;gap:14px;height:68px;padding:0 28px;border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{font-family:'Playfair Display',serif;font-weight:800;font-size:20px;color:var(--accent)}
+.master{font-size:10.5px;font-weight:800;letter-spacing:1px;padding:3px 10px;border-radius:999px;background:var(--accent);color:var(--on)}
+.top nav{display:flex;gap:4px;flex:1;flex-wrap:wrap;margin-left:8px}
+.top nav a{padding:8px 13px;border-radius:999px;color:var(--txt2);font-size:12px;font-weight:600;cursor:pointer}
+.top nav a:hover{background:var(--raised);color:var(--txt)}
+.top nav a.on{background:var(--accent);color:var(--on);font-weight:700}
+.tg{border:1px solid var(--line);background:var(--raised);color:var(--accent);border-radius:999px;padding:7px 12px;font-weight:700;font-size:12px}
+main{padding:22px 28px 60px;max-width:1400px}
+.head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.head h2{margin:0;font-size:26px;font-weight:700;margin-right:auto}
+.btn{border:none;border-radius:10px;padding:11px 18px;font-weight:800;font-size:13px;background:var(--accent);color:var(--on);text-transform:uppercase;letter-spacing:.3px}
+.btn.ghost{background:none;border:1px solid var(--line);color:var(--txt);text-transform:none;font-weight:700}
+.btn.ghost:hover{background:var(--raised)}
+.btn.sm{padding:7px 11px;font-size:12px}
+.btn.danger{background:none;border:1px solid var(--err);color:var(--err);text-transform:none}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.grid{display:grid;gap:12px}
+.g4{grid-template-columns:repeat(4,1fr)}.g3{grid-template-columns:repeat(3,1fr)}.g2{grid-template-columns:1fr 1fr}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+.card h4{margin:0 0 12px;font-size:15px;font-weight:700}
+.card small.t{display:block;color:var(--txt3);font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;margin-bottom:6px}
+.big{font-size:26px;font-weight:800}
+.st{display:flex;align-items:center;gap:8px;font-weight:700}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--ok);display:inline-block}
+.dot.warn{background:var(--warn)}.dot.err{background:var(--err)}.dot.off{background:var(--txt3)}
+.sub{font-size:12px;color:var(--txt3)}
+.hero{background:var(--accent-soft);border-color:var(--accent-line)}
+.bar{height:8px;border-radius:999px;background:var(--raised);overflow:hidden;margin:6px 0 4px}
+.bar i{display:block;height:100%;background:var(--ok);border-radius:999px}
+.bar i.warn{background:var(--warn)}.bar i.err{background:var(--err)}
+.line{display:flex;justify-content:space-between;gap:10px;padding:7px 0;font-size:13px;border-bottom:1px solid var(--line)}
+.line:last-child{border-bottom:none}
+.chart{display:flex;align-items:flex-end;gap:4px;height:90px;margin-top:6px}
+.chart span{flex:1;background:var(--accent-line);border-radius:3px 3px 0 0;min-height:2px}
+.chart span.hi{background:var(--err)}
+.tbl{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:11px 12px;font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--txt3);border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+tbody tr:hover{background:var(--raised)}
+tr.click{cursor:pointer}
+.tag{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--raised);color:var(--txt2);border:1px solid var(--line)}
+.pill{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;border:1px solid}
+.pill.ok{color:var(--ok);border-color:var(--ok)}.pill.warn{color:var(--warn);border-color:var(--warn)}.pill.err{color:var(--err);border-color:var(--err)}
+.banner{display:flex;align-items:center;gap:12px;background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:14px;padding:12px 16px;margin-bottom:16px}
+.banner.warn{background:rgba(240,160,90,.10);border-color:var(--warn)}
+.ov{position:fixed;inset:0;background:var(--shadow);display:none;z-index:50}
+.ov.show{display:flex}
+.drawer{margin-left:auto;width:min(480px,100%);height:100%;background:var(--panel);border-left:1px solid var(--line);padding:22px;overflow:auto}
+.modal{margin:auto;width:min(560px,94%);max-height:92vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:24px}
+.modal h3,.drawer h3{margin:0 0 6px;font-size:20px}
+.x{float:right;background:none;border:none;color:var(--txt2);font-size:22px}
+label{display:block;font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--txt3);margin:12px 0 5px}
+.sw{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:13px}
+.sw button{width:40px;height:22px;border-radius:999px;border:1px solid var(--line);background:var(--raised);position:relative;padding:0;flex:none}
+.sw button::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--txt3);transition:.15s}
+.sw button.on{background:var(--accent-soft);border-color:var(--accent)}
+.sw button.on::after{left:20px;background:var(--accent)}
+.note{background:var(--panel);border:1px dashed var(--line);border-radius:14px;padding:14px 18px;margin-top:20px;color:var(--txt2);line-height:1.6;font-size:13px}
+.note b{color:var(--txt)}
+.toast{position:fixed;right:20px;bottom:20px;background:var(--panel);border:1px solid var(--accent);color:var(--txt);padding:12px 16px;border-radius:12px;display:none;z-index:99;font-weight:600;max-width:420px}
+#band{position:sticky;top:0;z-index:45}
+.band{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--warn);color:var(--on);padding:9px 28px;font-weight:700;font-size:13px}
+.band b{letter-spacing:.6px}
+.band button{background:var(--on);color:var(--txt);border:none;border-radius:8px;padding:6px 12px;font-weight:800;font-size:12px}
+:root[data-theme="dark"] .band button{color:#f2eee6;background:#17120a}
+:root[data-theme="light"] .band button{color:#fff;background:#231f1a}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip-ok{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;border:1px solid var(--ok);color:var(--ok)}
+.chip-no{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;border:1px solid var(--line);color:var(--txt3);text-decoration:line-through}
+.diff{color:var(--warn);font-weight:800}
+.steps{display:flex;gap:8px;margin:12px 0 4px}.steps span{flex:1;text-align:center;font-size:12px;font-weight:700;padding:8px;border-radius:10px;border:1px solid var(--line);color:var(--txt3)}.steps span.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}.steps span.done{color:var(--ok);border-color:var(--ok)}
+.prog{height:10px;border-radius:999px;background:var(--raised);overflow:hidden;margin-top:12px}.prog i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+@media(max-width:900px){.g4,.g3,.g2{grid-template-columns:1fr 1fr}main{padding:16px}}
+</style>
+</head>
+<body>
+<div id="band"></div>
+<header class="top">
+  <span class="brand">GiroStock</span><span class="master">ADMIN MASTER</span>
+  <nav id="nav"></nav>
+  <span class="sub" style="margin-right:6px">lucas.mendes.inf@gmail.com</span>
+  <button class="tg" id="tg">☾ / ☀ tema</button>
+</header>
+<main id="main"></main>
+<div class="ov" id="ovD"><div class="drawer" id="drawer"></div></div>
+<div class="ov" id="ovM"><div class="modal" id="modal"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $=s=>document.querySelector(s);
+const brl=v=>v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>e.style.display='none',3200)}
+const TABS=[['geral','Visão geral'],['empresas','Empresas'],['usuarios','Usuários & segurança'],['backups','Backups & dados'],['teste','Modo teste'],['auditoria','Auditoria'],['config','Configurações globais']];
+let tab='geral';
+
+let EMP=[
+ {id:1,nome:'JA Conveniência',doc:'12.345.678/0001-90',lojas:['Distribuidora','Lanchonete'],plano:'Completo',st:'ativa',vendas:48210.4,pedidos:612,users:7,ultimo:'hoje 12:41',criada:'12/03/2026',rec:{pedidos:true,clientes:true},lim:{lojas:[2,3],users:[7,10],pdv:[3,4]}},
+ {id:2,nome:'Mercado do Zé',doc:'98.765.432/0001-10',lojas:['Loja única'],plano:'Básico',st:'ativa',vendas:12980.0,pedidos:0,users:2,ultimo:'ontem 18:03',criada:'02/07/2026',rec:{pedidos:false,clientes:false},lim:{lojas:[1,1],users:[2,3],pdv:[1,1]}},
+ {id:3,nome:'Padaria Central',doc:'11.222.333/0001-44',lojas:['Loja única'],plano:'Completo',st:'ativa',vendas:21540.75,pedidos:203,users:4,ultimo:'hoje 09:15',criada:'20/08/2026',rec:{pedidos:true,clientes:true},lim:{lojas:[1,3],users:[4,10],pdv:[2,4]}},
+ {id:4,nome:'Lanches da Rua 7',doc:'55.444.333/0001-22',lojas:['Loja única'],plano:'Básico',st:'suspensa',vendas:0,pedidos:0,users:1,ultimo:'há 34 dias',criada:'15/05/2026',rec:{pedidos:false,clientes:false},lim:{lojas:[1,1],users:[1,3],pdv:[1,1]},motivo:'Pagamento em atraso'}
+];
+let USR=[
+ {n:'Lucas Mendes',e:'lucas.mendes.inf@gmail.com',emp:'— (master)',perfil:'Master',ult:'agora',falhas:0,on:true},
+ {n:'Administrador',e:'admin@girostock.local',emp:'JA Conveniência',perfil:'Administrador',ult:'hoje 12:41',falhas:0,on:true},
+ {n:'Carlos Roque',e:'carlaluzmendes@gmail.com',emp:'JA Conveniência',perfil:'Lanchonete/Cozinha',ult:'hoje 12:38',falhas:0,on:true},
+ {n:'Zé Antônio',e:'ze@mercadodoze.com',emp:'Mercado do Zé',perfil:'Administrador',ult:'ontem 18:03',falhas:4,on:true},
+ {n:'Teste Perm',e:'teste.perm@girostock.local',emp:'JA Conveniência',perfil:'Lanchonete/Cozinha',ult:'há 12 dias',falhas:0,on:false},
+ {n:'Marina Costa',e:'marina@padariacentral.com',emp:'Padaria Central',perfil:'Caixa',ult:'hoje 09:15',falhas:1,on:true}
+];
+USR.forEach(u=>u.mt=u.perfil==='Master');
+let BKP=[['11/10/2026 03:00','Automático','248 MB','ok'],['10/10/2026 03:00','Automático','246 MB','ok'],['09/10/2026 03:00','Automático','244 MB','ok'],['08/10/2026 14:22','Manual (Lucas)','243 MB','ok'],['07/10/2026 03:00','Automático','241 MB','ok']];
+let AUD=[
+ ['11/10 12:41','Administrador','JA Conveniência','venda','Venda nº 1873 · R$ 38,00'],
+ ['11/10 12:38','Carlos Roque','JA Conveniência','pedido','Pedido #1049 gerado (Balcão)'],
+ ['11/10 11:02','Lucas Mendes (master)','Padaria Central','suporte','Entrou como suporte · motivo: ajuste de cadastro'],
+ ['11/10 10:15','Zé Antônio','Mercado do Zé','login_falha','4 tentativas de login com falha'],
+ ['10/10 17:40','Administrador','JA Conveniência','cancelamento','Venda nº 1861 cancelada'],
+ ['10/10 09:00','Lucas Mendes (master)','Lanches da Rua 7','suspensao','Empresa suspensa · Pagamento em atraso'],
+ ['09/10 03:00','Sistema','—','backup','Backup automático concluído (244 MB)'],
+ ['08/10 14:22','Lucas Mendes (master)','—','backup','Backup manual gerado']
+];
+let ERR=[['12:31','POST /api/orders','409','Sem estoque disponível de X-Tudo','JA Conveniência'],['11:58','GET /api/reports/vendas','500','timeout na consulta (8.2s)','Padaria Central'],['09:44','POST /api/auth/login','401','Senha inválida (4ª tentativa)','Mercado do Zé']];
+const ERRH=[0,0,1,0,0,0,0,1,0,0,2,1,0,0,1,0,3,0,0,1,1,0,2,3];
+let integ=[
+ {n:'WhatsApp (API oficial)',on:false,det:'Não contratado · mensagens via link wa.me'},
+ {n:'iFood',on:false,det:'Etapa futura'},
+ {n:'99Food',on:false,det:'Etapa futura'},
+ {n:'E-mail (SMTP)',on:true,det:'smtp.calutec.com.br · senha ••••••••••'},
+ {n:'Impressora de comanda (fila)',on:true,det:'3 impressoras ativas · fila vazia'}
+];
+
+const PROD={vendas:1873,pedidos:612,produtos:148,clientes:312,usuarios:14,movimentos:5120};
+let TST={vendas:0,pedidos:0,produtos:0,clientes:0,usuarios:0,movimentos:0};
+let T={ativo:false,empresa:1,copiado:null,anon:true,por:null,config:true};
+function bandRender(){
+  $('#band').innerHTML=T.ativo?`<div class="band"><b>MODO TESTE</b><span>nada aqui afeta a produção</span><span style="margin-left:auto">Sessão de teste de <b>Lucas Mendes</b> (só esta sessão)</span><button onclick="desligaTeste()">Voltar à produção</button></div>`:'';
+}
+function testeTela(){
+  const keys=Object.keys(PROD);
+  return `<div class="head"><h2>Modo teste</h2><span class="sub">banco separado: <b>girostock_teste</b> ≠ produção</span></div>
+  <div class="grid g4" style="margin-bottom:12px">
+   <div class="card ${T.ativo?'':'hero'}"><small class="t">Estado (esta sessão)</small><div class="st"><span class="dot ${T.ativo?'warn':'off'}"></span>${T.ativo?'Ligado':'Desligado'}</div><div class="sub">${T.ativo?'Sessão de teste de Lucas Mendes':'Você está em produção'}</div></div>
+   <div class="card"><small class="t">Banco de teste</small><div class="st"><span class="dot"></span>Configurado</div><div class="sub">trava: diferente do banco de produção</div></div>
+   <div class="card"><small class="t">Última cópia da produção</small><div class="big" style="font-size:20px">${T.copiado||'nunca'}</div><div class="sub">${T.copiado?'por Lucas Mendes'+(T.anon?' · clientes anonimizados':''):'será feita na 1ª ativação'}</div></div>
+   <div class="card"><small class="t">Quem usa o teste agora</small><div class="big">${T.ativo?1:0}</div><div class="sub">só a sessão que ligou · demais seguem em produção</div></div>
+  </div>
+  <div class="grid g2" style="margin-bottom:12px">
+   <div class="card"><h4>Ligar / desligar</h4>
+    <div class="line"><span>Usuário logado</span><b>Lucas Mendes · Master</b></div>
+    <div class="sub" style="margin-top:8px">O modo teste vale para <b>o usuário logado, nesta sessão</b>. Os demais usuários continuam em produção. Quem tiver a permissão "Modo teste" vê o mesmo botão na própria conta e, ao ligar, trabalha na <b>sua própria empresa e lojas</b>, só que no banco de teste.</div>
+    <div style="margin-top:12px">${T.ativo?'<button class="btn ghost" onclick="desligaTeste()">Voltar à produção</button> <button class="btn" onclick="simulaVenda()">Simular venda de teste</button>':'<button class="btn" onclick="ligaTeste()">Ligar modo teste</button>'}</div></div>
+   <div class="card"><h4>Copiar tudo da produção</h4>
+    <div class="sub">Substitui <b>todos</b> os dados do banco de teste por uma cópia atual da produção. Só no sentido produção → teste, nunca o contrário. Só o Master pode fazer.</div>
+    <div style="margin-top:12px"><button class="btn danger" onclick="modalCopia()">Copiar tudo da produção…</button></div>
+    <div class="sub" style="margin-top:8px">A cópia é feita em uma transação: se falhar, o teste anterior continua intacto.</div></div>
+  </div>
+  <div class="card"><h4>Produção × teste</h4>
+   <div class="tbl" style="border:none"><table><thead><tr><th>Dados</th><th style="text-align:right">Produção</th><th style="text-align:right">Teste</th><th></th></tr></thead><tbody>
+   ${keys.map(k=>{const p=PROD[k],t=TST[k];return `<tr><td style="text-transform:capitalize">${k}</td><td style="text-align:right;font-weight:800">${p}</td><td style="text-align:right;font-weight:800;color:var(--accent)">${T.copiado?t:'—'}</td><td>${T.copiado&&t!==p?'<span class="diff">diferente</span>':''}</td></tr>`}).join('')}
+   </tbody></table></div>
+   <div class="sub" style="margin-top:8px">Faça uma venda de teste e veja: o número do teste muda e o da produção não.</div></div>
+  <div class="note"><b>Regras do modo teste:</b><br>
+   • Como <b>Master</b> você vê o banco de teste e faz a cópia da produção. Para testar PDV, vendas e pedidos, entre com o usuário de uma empresa que tenha a permissão "Modo teste" (por exemplo um Administrador).<br>
+   • Vale só para o <b>usuário logado que ligou</b>; os outros usuários continuam em produção.<br>
+   • Permissão <b>"Modo teste"</b> por usuário (padrão: só Master) — ajuste na aba <a style="color:var(--accent);cursor:pointer" onclick="go('usuarios')">Usuários & segurança</a>. Se a permissão for retirada, a sessão de teste da pessoa cai na hora.<br>
+   • Em teste ficam <b>desligados</b>: e-mail, mensagens e integrações. Cupom e comanda saem com <b>*** TESTE ***</b>.<br>
+   • Login e permissões continuam sendo da produção; usuários criados dentro do teste não conseguem logar.<br>
+   • Ligar, desligar e copiar ficam na <b>auditoria</b> da produção.</div>`;
+}
+function ligaTeste(){
+  if(!T.copiado){
+    $('#modal').innerHTML=`<button class="x" onclick="fechar()">×</button><h3>Primeira ativação do modo teste</h3>
+    <div class="sub">O banco <b>girostock_teste</b> será criado, receberá a estrutura e uma <b>cópia completa da produção</b>. Isso acontece uma vez; depois o teste mantém os próprios dados.</div>
+    <div class="sw"><button class="on" id="anon" onclick="this.classList.toggle('on')"></button><span>Anonimizar nomes e telefones dos clientes na cópia <div class="sub">recomendado: o teste não guarda dados pessoais reais</div></span></div>
+    <label>Digite COPIAR para confirmar</label><input id="cf" autocomplete="off">
+    <div id="pgr"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px"><button class="btn ghost" onclick="fechar()">Cancelar</button><button class="btn" id="bgo" onclick="executaCopia(true)">Criar banco e copiar</button></div>`;
+  }else{
+    $('#modal').innerHTML=`<button class="x" onclick="fechar()">×</button><h3>Ligar o modo teste?</h3>
+    <div class="sub">Esta sessão (<b>Lucas Mendes</b>) passará a trabalhar no <b>banco de teste</b>. As outras sessões continuam em produção. Nada do que fizer aparece em produção. A faixa <b>MODO TESTE</b> ficará visível o tempo todo.</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px"><button class="btn ghost" onclick="fechar()">Cancelar</button><button class="btn" onclick="ativaTeste()">Ligar modo teste</button></div>`;
+  }
+  $('#ovM').classList.add('show');
+}
+function ativaTeste(){T.ativo=true;audit('teste','—','Modo teste ligado por Lucas Mendes');fechar();render();toast('Modo teste ligado')}
+function desligaTeste(){T.ativo=false;audit('teste','—','Modo teste desligado');render();toast('De volta à produção')}
+function modalCopia(){
+  $('#modal').innerHTML=`<button class="x" onclick="fechar()">×</button><h3>Copiar tudo da produção?</h3>
+  <div class="banner warn" style="margin-top:10px"><span>⚠</span><div>Isso <b>substitui TODOS os dados de teste</b>${T.copiado?` (${TST.vendas} vendas, ${TST.clientes} clientes e o restante serão perdidos)`:''} por uma cópia atual da produção.</div></div>
+  <div class="sw"><button class="${T.anon?'on':''}" id="anon" onclick="this.classList.toggle('on')"></button><span>Anonimizar nomes e telefones dos clientes</span></div>
+  <label>Digite COPIAR para confirmar</label><input id="cf" autocomplete="off">
+  <div id="pgr"></div>
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px"><button class="btn ghost" onclick="fechar()">Cancelar</button><button class="btn danger" id="bgo" onclick="executaCopia(false)">Copiar</button></div>`;
+  $('#ovM').classList.add('show');
+}
+function executaCopia(primeira){
+  if($('#cf').value!=='COPIAR'){toast('Digite COPIAR para confirmar');return}
+  const anon=$('#anon').classList.contains('on');
+  $('#bgo').disabled=true;$('#pgr').innerHTML='<div class="sub" style="margin-top:12px" id="pt">Lendo a produção (somente leitura)…</div><div class="prog"><i id="pb"></i></div>';
+  const passos=[[25,'Copiando produtos, estoque e fornecedores…'],[55,'Copiando vendas e pedidos…'],[80,anon?'Copiando clientes (anonimizando)…':'Copiando clientes…'],[100,'Confirmando a transação…']];
+  let i=0;const t=setInterval(()=>{const p=passos[i++];$('#pb').style.width=p[0]+'%';$('#pt').textContent=p[1];
+   if(i>=passos.length){clearInterval(t);setTimeout(()=>{
+    TST={...PROD};T.copiado='11/10/2026 '+new Date().toTimeString().slice(0,5);T.anon=anon;
+    audit('teste','Todas','Cópia da produção → teste ('+(anon?'anonimizada':'sem anonimizar')+')');
+    if(primeira){T.ativo=true;audit('teste','—','Modo teste ligado por Lucas Mendes')}
+    fechar();render();toast(primeira?'Banco de teste criado, dados copiados e modo teste ligado':'Cópia concluída · teste substituído pela produção')},400)}},650);
+}
+function simulaVenda(){
+  if(!T.copiado){toast('Faça a cópia primeiro');return}
+  TST.vendas++;TST.movimentos+=3;render();toast('Venda de teste gravada só no teste · produção continua com '+PROD.vendas+' vendas');
+}
+function nav(){ $('#nav').innerHTML=TABS.map(([k,l])=>`<a class="${tab===k?'on':''}" onclick="go('${k}')">${l}</a>`).join('') }
+function go(k){tab=k;nav();render();window.scrollTo(0,0)}
+
+function render(){
+  const m=$('#main');
+  if(tab==='geral')m.innerHTML=geral();
+  if(tab==='empresas')m.innerHTML=empresas();
+  if(tab==='usuarios')m.innerHTML=usuarios();
+  if(tab==='backups')m.innerHTML=backups();
+  if(tab==='teste')m.innerHTML=testeTela();
+  bandRender();
+  if(tab==='auditoria')m.innerHTML=auditoria();
+  if(tab==='config')m.innerHTML=config();
+}
+
+/* ---------- VISÃO GERAL ---------- */
+function geral(){
+  const avisoOn=!!window.aviso;
+  return `<div class="head"><h2>Visão geral do sistema ${T.ativo?'<span class="pill warn" style="vertical-align:middle">dados de TESTE</span>':''}</h2><span class="sub">atualizado agora · <a style="color:var(--accent);cursor:pointer" onclick="toast('Verificação executada: tudo ok');render()">verificar de novo</a></span></div>
+  ${avisoOn?`<div class="banner warn"><span>📢</span><div style="flex:1"><b>Aviso global ativo:</b> ${window.aviso}</div><button class="btn ghost sm" onclick="window.aviso=null;render();toast('Aviso removido')">Remover</button></div>`:''}
+  <div class="banner"><span>🔐</span><div style="flex:1">Seu acesso <b>master</b> ainda não tem <b>verificação em duas etapas</b>. Recomendado ativar.</div><button class="btn sm" onclick="toast('Abriria a configuração de 2FA')">Ativar 2FA</button></div>
+  <div class="grid g4" style="margin-bottom:12px">
+    <div class="card"><small class="t">Backend (API)</small><div class="st"><span class="dot"></span>Online</div><div class="sub">no ar há 6d 04h · v1.14.2</div></div>
+    <div class="card"><small class="t">Banco de dados</small><div class="st"><span class="dot"></span>Conectado</div><div class="sub">PostgreSQL · 12 ms · migrations 013/013</div></div>
+    <div class="card"><small class="t">Fila de impressão</small><div class="st"><span class="dot warn"></span>1 impressora offline</div><div class="sub">Lanchonete · Cozinha desde 11:20</div></div>
+    <div class="card"><small class="t">E-mail / mensagens</small><div class="st"><span class="dot"></span>Operando</div><div class="sub">último envio há 2 h</div></div>
+  </div>
+  <div class="grid g3" style="margin-bottom:12px">
+    <div class="card"><h4>Recursos do servidor</h4>
+      <div class="line"><span>Disco</span><b>41,2 / 80 GB</b></div><div class="bar"><i style="width:51%"></i></div>
+      <div class="line"><span>Memória</span><b>1,7 / 2,0 GB</b></div><div class="bar"><i class="warn" style="width:85%"></i></div>
+      <div class="line"><span>CPU (média 15 min)</span><b>23%</b></div><div class="bar"><i style="width:23%"></i></div>
+      <div class="line"><span>Banco de dados</span><b>1,3 GB</b></div><div class="bar"><i style="width:16%"></i></div></div>
+    <div class="card"><h4>Uso hoje (plataforma)</h4>
+      <div class="line"><span>Empresas ativas</span><b>3 de 4</b></div>
+      <div class="line"><span>Usuários online agora</span><b>5</b></div>
+      <div class="line"><span>Usuários cadastrados</span><b>${USR.length}</b></div>
+      <div class="line"><span>Lojas ativas</span><b>5</b></div>
+      <div class="line"><span>Requisições/min (pico)</span><b>74</b></div></div>
+    <div class="card"><h4>Erros nas últimas 24 h</h4>
+      <div class="big">${ERRH.reduce((a,b)=>a+b,0)} <span class="sub" style="font-size:12px">erros</span></div>
+      <div class="chart">${ERRH.map(v=>`<span class="${v>=3?'hi':''}" style="height:${Math.max(3,v*30)}%" title="${v}"></span>`).join('')}</div>
+      <div class="sub">por hora · barras vermelhas = acima de 3</div></div>
+  </div>
+  <div class="card" style="margin-bottom:12px"><h4>Últimos erros</h4><div class="tbl" style="border:none"><table><thead><tr><th>Hora</th><th>Rota</th><th>Código</th><th>Mensagem</th><th>Empresa</th></tr></thead><tbody>${ERR.map(e=>`<tr><td>${e[0]}</td><td>${e[1]}</td><td><span class="pill ${e[2]==='500'?'err':'warn'}">${e[2]}</span></td><td>${e[3]}</td><td>${e[4]}</td></tr>`).join('')}</tbody></table></div></div>
+  <div class="card"><h4>Ações rápidas</h4><div style="display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn ghost" onclick="go('backups')">💾 Gerar backup agora</button>
+    <button class="btn ghost" onclick="modalAviso()">📢 Enviar aviso a todos</button>
+    <button class="btn ghost" onclick="toast('Cache limpo e conexões renovadas')">♻ Limpar cache</button>
+    <button class="btn ghost" onclick="modalManut()">🛠 Modo manutenção</button></div></div>
+  <div class="note"><b>Perfil Master:</b> este painel só aparece para o Master (empresa "Plataforma"). O Master não vê vendas, estoque ou clientes das empresas em produção — para testar, usa o <a style="color:var(--accent);cursor:pointer" onclick="go('teste')">Modo teste</a>.</div>
+  <div class="note"><b>Observação:</b> disco, memória e CPU só podem ser lidos se o sistema rodar em servidor próprio (VPS/Docker). Em hospedagem compartilhada (cPanel) esses números ficam indisponíveis e o painel mostra apenas status da API, do banco e das filas.</div>`;
+}
+
+/* ---------- EMPRESAS ---------- */
+function empresas(){
+  return `<div class="head"><h2>Empresas</h2><button class="btn" onclick="modalNovaEmp()">+ Nova empresa</button></div>
+  <div class="grid g4" style="margin-bottom:12px">
+   <div class="card"><small class="t">Empresas</small><div class="big">${EMP.length}</div></div>
+   <div class="card hero"><small class="t">Ativas</small><div class="big" style="color:var(--accent)">${EMP.filter(e=>e.st==='ativa').length}</div></div>
+   <div class="card"><small class="t">Lojas</small><div class="big">${EMP.reduce((s,e)=>s+e.lojas.length,0)}</div></div>
+   <div class="card"><small class="t">Usuários</small><div class="big">${EMP.reduce((s,e)=>s+e.users,0)}</div></div>
+  </div>
+  <div class="tbl"><table><thead><tr><th>Empresa</th><th>Lojas</th><th>Plano</th><th>Situação</th><th style="text-align:right">Usuários</th><th>Último acesso</th><th></th></tr></thead><tbody>
+  ${EMP.map(e=>`<tr class="click" onclick="abreEmp(${e.id})"><td><b>${e.nome}</b><div class="sub">${e.doc}</div></td><td>${e.lojas.length}</td><td><span class="tag">${e.plano}</span></td><td><span class="pill ${e.st==='ativa'?'ok':'err'}">${e.st==='ativa'?'Ativa':'Suspensa'}</span></td><td style="text-align:right">${e.users}</td><td style="color:var(--txt2)">${e.ultimo}</td><td style="text-align:right" onclick="event.stopPropagation()"><button class="btn ghost sm" ${e.st!=='ativa'?'disabled':''} onclick="modalSuporte(${e.id})">Entrar como suporte</button></td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+function abreEmp(id){
+  const e=EMP.find(x=>x.id===id);
+  const lim=(k,l)=>{const [u,t]=e.lim[k];return `<div class="line"><span>${l}</span><b>${u} de ${t}</b></div><div class="bar"><i class="${u>=t?'err':u/t>=.8?'warn':''}" style="width:${u/t*100}%"></i></div>`};
+  $('#drawer').innerHTML=`<button class="x" onclick="fechar()">×</button><h3>${e.nome}</h3>
+  <div class="sub">${e.doc} · cliente desde ${e.criada}</div>
+  <div style="margin:10px 0"><span class="pill ${e.st==='ativa'?'ok':'err'}">${e.st==='ativa'?'Ativa':'Suspensa'}</span> <span class="tag">${e.plano}</span>${e.motivo?` <span class="sub">· ${e.motivo}</span>`:''}</div>
+  <label>Lojas</label>${e.lojas.map(l=>`<div class="line"><span>🏪 ${l}</span><span class="tag">ativa</span></div>`).join('')}
+  <label>Limites do plano</label>${lim('lojas','Lojas')}${lim('users','Usuários')}${lim('pdv','PDVs')}
+  <label>Usuários da empresa</label>${USR.filter(u=>u.emp===e.nome).map(u=>`<div class="line"><span>👤 ${u.n} <span class="sub">${u.e}</span></span><span class="tag">${u.perfil}</span></div>`).join('')||'<div class="sub">Nenhum usuário</div>'}<button class="btn ghost sm" style="margin-top:8px" onclick="fechar2();modalNovoUsr(${e.id})">+ Usuário nesta empresa</button>
+  <label>Recursos liberados</label>
+  <div class="sw"><button class="${e.rec.pedidos?'on':''}" onclick="recTog(${e.id},'pedidos')"></button><span>Pedidos (lanchonete)</span></div>
+  <div class="sw"><button class="${e.rec.clientes?'on':''}" onclick="recTog(${e.id},'clientes')"></button><span>Clientes e mensagens</span></div>
+  <label>Uso</label>
+  <div class="line"><span>Usuários</span><b>${e.users}</b></div><div class="line"><span>Lojas</span><b>${e.lojas.length}</b></div><div class="line"><span>Último acesso</span><b>${e.ultimo}</b></div>
+  <div style="display:flex;gap:8px;margin-top:18px;flex-wrap:wrap">
+   <button class="btn" ${e.st!=='ativa'?'disabled':''} onclick="modalSuporte(${e.id})">Entrar como suporte</button>
+   <button class="btn ghost" onclick="toast('Exportação dos dados de ${e.nome} iniciada (zip por e-mail)')">Exportar dados</button>
+   ${e.st==='ativa'?`<button class="btn danger" onclick="modalSusp(${e.id})">Suspender</button>`:`<button class="btn ghost" onclick="reativa(${e.id})">Reativar</button>`}
+  </div>`;
+  $('#ovD').classList.add('show');
+}
+function recTog(id,k){const e=EMP.find(x=>x.id===id);e.rec[k]=!e.rec[k];abreEmp(id);toast(`Recurso ${k} ${e.rec[k]?'liberado':'bloqueado'} para ${e.nome}`);audit('config',e.nome,`Recurso ${k} ${e.rec[k]?'liberado':'bloqueado'}`)}
+function modalSuporte(id){
+  const e=EMP.find(x=>x.id===id);
+  $('#modal').innerHTML=`<button class="x" onclick="fechar()">×</button><h3>Entrar como suporte</h3>
+  <div class="sub">Você verá o sistema como o administrador de <b>${e.nome}</b>. O acesso fica <b>registrado na auditoria</b> e a empresa pode ser avisada.</div>
+  <label>Motivo (obrigatório)</label><input id="mot" placeholder="Ex.: ajuste de cadastro solicitado por telefone">
+  <div class="sw"><button class="on" id="avisa" onclick="this.classList.toggle('on')"></button><span>Avisar o administrador da empresa por e-mail</span></div>
+  <div class="sub" style="margin-top:8px">A sessão de suporte expira em 30 minutos e fica somente-leitura, a menos que você libere edição.</div>
+  <div class="sw"><button id="edit" onclick="this.classList.toggle('on')"></button><span>Permitir edição durante o suporte</span></div>
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px"><button class="btn ghost" onclick="fechar()">Cancelar</button><button class="btn" onclick="entraSup(${id})">Entrar</button></div>`;
+  $('#ovM').classList.add('show');
+}
+function entraSup(id){const m=$('#mot').value.trim();if(!m){toast('Informe o motivo');return}const e=EMP.find(x=>x.id===id);audit('suporte',e.nome,'Entrou como suporte · motivo: '+m);fechar();toast('Sessão de suporte aberta em '+e.nome+' (30 min) · registrada na auditoria')}
+function modalSusp(id){
+  const e=EMP.find(x=>x.id===id);
+  $('#modal').innerHTML=`<button class="x" onclick="fechar()">×</button><h3>Suspender ${e.nome}?</h3><div class="sub">Os usuários não conseguem entrar; os dados são mantidos. Pode reativar a qualquer momento.</div>
+  <label>Motivo</label><select id="ms"><option>Pagamento em atraso</option><option>Pedido do cliente</option><option>Uso indevido</option><option>Outro</option></select>
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px"><button class="btn ghost" onclick="fechar()">Cancelar</button><button class="btn danger" onclick="suspende(${id})">Suspender</button></div>`;
+  $('#ovM').classList.add('show');
+}
+function suspende(id){const e=EMP.find(x=>x.id===id);e.st='suspensa';e.motivo=$('#ms').value;audit('suspensao',e.nome,'Empresa suspensa · '+e.motivo);fechar();render();toast(e.nome+' suspensa')}
+function reativa(id){const e=EMP.find(x=>x.id===id);e.st='ativa';delete e.motivo;audit('suspensao',e.nome,'Empresa reativada');fechar();render();toast(e.nome+' reativada')}
+let W={};
+function gerarSenha(){const c='abcdefghjkmnpqrstuvwxyz23456789';let r='';for(let i=0;i<10;i++)r+=c[Math.floor(Math.random()*c.length)];return r}
+function modalNovaEmp(){W={step:1,nome:'',doc:'',plano:'Básico',loja:'Loja única',an:'',ae:'',as:gerarSenha(),troca:true};desenhaW();$('#ovM').classList.add('show')}
+function wSalva(){const v=id=>($('#'+id)?$('#'+id).value:null);if(W.step===1){W.nome=v('ne').trim();W.doc=v('nc');W.plano=v('np');W.loja=v('nl').trim()||'Loja única'}else{W.an=v('an').trim();W.ae=v('ae').trim();W.as=v('as');W.troca=$('#tr').classList.contains('on')}}
+function desenhaW(){
+  const st=W.step;
+  $('#modal').innerHTML='<button class="x" onclick="fechar()">×</button><h3>Nova empresa</h3>'+
+  '<div class="steps"><span class="'+(st===1?'on':'done')+'">1 · Dados da empresa</span><span class="'+(st===2?'on':'')+'">2 · Administrador</span></div>'+
+  (st===1?
+   '<label>Razão / nome da empresa</label><input id="ne" value="'+W.nome+'"><label>CNPJ</label><input id="nc" placeholder="00.000.000/0000-00" value="'+W.doc+'">'+
+   '<div class="grid g2"><div><label>Plano</label><select id="np"><option '+(W.plano==='Básico'?'selected':'')+'>Básico</option><option '+(W.plano==='Completo'?'selected':'')+'>Completo</option></select></div><div><label>Primeira loja</label><input id="nl" value="'+W.loja+'"></div></div>'+
+   '<div class="sub" style="margin-top:10px">Todo usuário pertence a uma empresa. Por isso o <b>administrador da empresa</b> é criado junto, no próximo passo.</div>'+
+   '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px"><button class="btn ghost" onclick="fechar()">Cancelar</button><button class="btn" onclick="wProx()">Próximo</button></div>'
+  :
+   '<div class="card" style="margin:10px 0 0;padding:10px 14px"><div class="line"><span>Empresa</span><b>'+W.nome+'</b></div><div class="line"><span>Plano · primeira loja</span><b>'+W.plano+' · '+W.loja+'</b></div></div>'+
+   '<label>Nome do administrador</label><input id="an" value="'+W.an+'"><label>E-mail (será o login)</label><input id="ae" placeholder="admin@empresa.com" value="'+W.ae+'">'+
+   '<label>Senha temporária</label><div style="display:flex;gap:8px"><input id="as" value="'+W.as+'"><button class="btn ghost sm" onclick="wSalva();W.as=gerarSenha();desenhaW()">Gerar outra</button></div>'+
+   '<div class="sw"><button class="'+(W.troca?'on':'')+'" id="tr" onclick="this.classList.toggle(\'on\')"></button><span>Exigir troca de senha no primeiro login</span></div>'+
+   '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px"><button class="btn ghost" onclick="wSalva();W.step=1;desenhaW()">Voltar</button><button class="btn" onclick="criaEmp()">Criar empresa e administrador</button></div>');
+}
+function wProx(){wSalva();if(!W.nome){toast('Informe o nome da empresa');return}W.step=2;desenhaW()}
+function criaEmp(){
+  wSalva();
+  if(!W.an){toast('Informe o nome do administrador');return}
+  if(!/^\S+@\S+\.\S+$/.test(W.ae)){toast('Informe um e-mail válido');return}
+  if(USR.some(u=>u.e.toLowerCase()===W.ae.toLowerCase())){toast('Já existe usuário com este e-mail (o e-mail é único no sistema)');return}
+  EMP.push({id:EMP.length+1,nome:W.nome,doc:W.doc||'—',lojas:[W.loja],plano:W.plano,st:'ativa',vendas:0,pedidos:0,users:1,ultimo:'nunca',criada:'11/10/2026',rec:{pedidos:false,clientes:false},lim:{lojas:[1,W.plano==='Completo'?3:1],users:[1,W.plano==='Completo'?10:3],pdv:[1,1]}});
+  USR.push({n:W.an,e:W.ae,emp:W.nome,perfil:'Administrador',ult:'nunca',falhas:0,on:true,mt:false});
+  audit('config',W.nome,'Empresa criada com o administrador '+W.an);
+  fechar();render();toast('Empresa criada · administrador '+W.an+' vinculado a '+W.nome);
+}
+let NU={};
+function modalNovoUsr(empId){
+  NU={emp:empId||'',perfil:'Caixa/Operador',lojas:[],n:'',e:'',s:gerarSenha()};desenhaNU();$('#ovM').classList.add('show');
+}
+function nuSalva(){const v=id=>($('#'+id)?$('#'+id).value:null);NU.n=v('un').trim();NU.e=v('ue').trim();NU.s=v('us');NU.perfil=v('up');NU.emp=v('uemp')}
+function desenhaNU(){
+  const e=EMP.find(x=>x.id==NU.emp);
+  const PERF=['Administrador','Gerente','Caixa/Operador','Estoque','Lanchonete/Cozinha','Financeiro'];
+  $('#modal').innerHTML='<button class="x" onclick="fechar()">×</button><h3>Novo usuário</h3>'+
+  '<div class="sub">Todo usuário é criado <b>dentro de uma empresa</b>. Para uma empresa nova, use <a style="color:var(--accent);cursor:pointer" onclick="fechar();go(\'empresas\');modalNovaEmp()">Empresas → Nova empresa</a> (cria o primeiro administrador junto).</div>'+
+  '<label>Empresa (obrigatório)</label><select id="uemp" onchange="nuSalva();NU.lojas=[];desenhaNU()"><option value="">Selecione a empresa…</option>'+EMP.filter(x=>x.st==='ativa').map(x=>'<option value="'+x.id+'" '+(x.id==NU.emp?'selected':'')+'>'+x.nome+'</option>').join('')+'</select>'+
+  (e?'<div class="sub" style="margin-top:6px">Plano '+e.plano+' · '+e.lim.users[0]+' de '+e.lim.users[1]+' usuários usados'+(e.lim.users[0]>=e.lim.users[1]?' — <b style="color:var(--err)">limite atingido</b>':'')+'</div>':'')+
+  '<div class="grid g2"><div><label>Nome</label><input id="un" value="'+NU.n+'"></div><div><label>Perfil</label><select id="up" onchange="nuSalva();desenhaNU()">'+PERF.map(p=>'<option '+(NU.perfil===p?'selected':'')+'>'+p+'</option>').join('')+'</select></div></div>'+
+  '<label>E-mail (será o login)</label><input id="ue" value="'+NU.e+'" placeholder="usuario@empresa.com">'+
+  '<label>Lojas em que atua</label>'+(e?(NU.perfil==='Administrador'?'<div class="sub">Administrador vê todas as lojas da empresa.</div>':'<div class="chips">'+e.lojas.map(l=>'<button class="tag" style="cursor:pointer;'+(NU.lojas.includes(l)?'border-color:var(--accent);color:var(--accent);background:var(--accent-soft)':'')+'" onclick="nuSalva();nuLoja(\''+l+'\')">'+l+'</button>').join('')+'</div><div class="sub" style="margin-top:6px">Pode atuar em várias lojas, só da mesma empresa.</div>'):'<div class="sub">Escolha a empresa para ver as lojas.</div>')+
+  '<label>Senha temporária</label><div style="display:flex;gap:8px"><input id="us" value="'+NU.s+'"><button class="btn ghost sm" onclick="nuSalva();NU.s=gerarSenha();desenhaNU()">Gerar outra</button></div>'+
+  '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px"><button class="btn ghost" onclick="fechar()">Cancelar</button><button class="btn" onclick="criaUsr()">Criar usuário</button></div>';
+}
+function nuLoja(l){const i=NU.lojas.indexOf(l);i>=0?NU.lojas.splice(i,1):NU.lojas.push(l);desenhaNU()}
+function criaUsr(){
+  nuSalva();const e=EMP.find(x=>x.id==NU.emp);
+  if(!e){toast('Selecione a empresa do usuário');return}
+  if(!NU.n){toast('Informe o nome');return}
+  if(!/^\S+@\S+\.\S+$/.test(NU.e)){toast('Informe um e-mail válido');return}
+  if(USR.some(u=>u.e.toLowerCase()===NU.e.toLowerCase())){toast('Já existe usuário com este e-mail (o e-mail é único no sistema)');return}
+  if(NU.perfil!=='Administrador'&&!NU.lojas.length){toast('Escolha ao menos uma loja');return}
+  if(e.lim.users[0]>=e.lim.users[1]){toast('Limite de usuários do plano atingido');return}
+  e.lim.users[0]++;e.users++;
+  USR.unshift({n:NU.n,e:NU.e,emp:e.nome,perfil:NU.perfil,ult:'nunca',falhas:0,on:true,mt:false});
+  audit('config',e.nome,'Usuário criado: '+NU.n+' ('+NU.perfil+')');
+  const dr=$('#ovD').classList.contains('show');fechar();render();if(dr)abreEmp(e.id);toast('Usuário criado em '+e.nome);
+}
+
+/* ---------- USUÁRIOS ---------- */
+function usuarios(){
+  return `<div class="head"><h2>Usuários & segurança</h2><button class="btn" onclick="modalNovoUsr()">+ Novo usuário</button></div>
+  <div class="grid g3" style="margin-bottom:12px">
+   <div class="card"><small class="t">Usuários ativos</small><div class="big">${USR.filter(u=>u.on).length}</div><div class="sub">de ${USR.length} cadastrados</div></div>
+   <div class="card ${USR.some(u=>u.falhas>=3)?'':''}" style="${USR.some(u=>u.falhas>=3)?'border-color:var(--warn)':''}"><small class="t">Logins com falha (24 h)</small><div class="big" style="color:var(--warn)">${USR.reduce((s,u)=>s+u.falhas,0)}</div><div class="sub">${USR.filter(u=>u.falhas>=3).length} usuário(s) com 3+ tentativas</div></div>
+   <div class="card"><small class="t">Sem login há 30+ dias</small><div class="big">1</div><div class="sub">candidatos a desativar</div></div>
+  </div>
+  <div class="card" style="margin-bottom:12px"><h4>Perfil Master</h4>
+   <div class="grid g2">
+    <div>
+     <div class="line"><span>Empresa</span><b>Plataforma (sem lojas e sem dados)</b></div>
+     <div class="line"><span>Como é criado</span><b>só por script (<code>npm run master</code>)</b></div>
+     <div class="line"><span>Aparece na tela de usuários das empresas?</span><b>Não</b></div>
+     <div class="line"><span>Pode ser editado/desativado por empresa?</span><b>Não</b></div>
+    </div>
+    <div><div class="sub" style="margin-bottom:6px">Áreas do perfil Master</div>
+     <div class="chips"><span class="chip-ok">Master</span><span class="chip-ok">Modo teste</span><span class="chip-no">Vendas</span><span class="chip-no">Estoque</span><span class="chip-no">Relatórios</span><span class="chip-no">Pedidos</span><span class="chip-no">Clientes</span><span class="chip-no">Configurações</span></div>
+     <div class="sub" style="margin-top:8px">O Master não opera dados de empresas em produção. Em modo teste ele escolhe uma empresa e atua como Administrador dela, só no banco de teste.</div></div>
+   </div></div>
+  <div class="tbl"><table><thead><tr><th>Usuário</th><th>Empresa</th><th>Perfil</th><th>Último login</th><th>Falhas</th><th>Modo teste</th><th>Situação</th><th></th></tr></thead><tbody>
+  ${USR.map((u,i)=>`<tr><td><b>${u.n}</b><div class="sub">${u.e}</div></td><td>${u.emp}</td><td><span class="tag">${u.perfil}</span></td><td>${u.ult}</td><td>${u.falhas>=3?`<span class="pill warn">${u.falhas}</span>`:u.falhas}</td><td>${u.perfil==='Master'?'<span class="tag" title="Padrão do perfil Master">sempre</span>':`<div class="sw" style="margin:0"><button class="${u.mt?'on':''}" onclick="togMT(${i})"></button><span class="sub">${u.mt?'liberado':'—'}</span></div>`}</td><td><span class="pill ${u.on?'ok':'err'}">${u.on?'Ativo':'Inativo'}</span></td><td style="text-align:right;white-space:nowrap"><button class="btn ghost sm" onclick="forca(${i})">Forçar troca de senha</button> <button class="btn ghost sm" onclick="encerra(${i})">Encerrar sessões</button> <button class="btn ${u.on?'danger':'ghost'} sm" ${u.perfil==='Master'?'disabled':''} onclick="togUser(${i})">${u.on?'Desativar':'Reativar'}</button></td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+function togMT(i){USR[i].mt=!USR[i].mt;audit('seguranca',USR[i].emp,'Permissão Modo teste '+(USR[i].mt?'liberada':'retirada')+': '+USR[i].n);render();toast('Modo teste '+(USR[i].mt?'liberado para ':'retirado de ')+USR[i].n+(!USR[i].mt&&T.ativo?' · sessões em modo teste dele caem na hora':''))}
+function forca(i){audit('seguranca',USR[i].emp,'Troca de senha forçada: '+USR[i].n);toast('Troca de senha exigida no próximo login de '+USR[i].n)}
+function encerra(i){audit('seguranca',USR[i].emp,'Sessões encerradas: '+USR[i].n);toast('Todas as sessões de '+USR[i].n+' foram encerradas')}
+function togUser(i){USR[i].on=!USR[i].on;audit('seguranca',USR[i].emp,(USR[i].on?'Reativado: ':'Desativado: ')+USR[i].n);render();toast(USR[i].n+(USR[i].on?' reativado':' desativado'))}
+
+/* ---------- BACKUPS ---------- */
+function backups(){
+  return `<div class="head"><h2>Backups & dados</h2><button class="btn" id="bGera" onclick="geraBkp()">💾 Gerar backup agora</button></div>
+  <div class="grid g3" style="margin-bottom:12px">
+   <div class="card hero"><small class="t">Último backup</small><div class="big" style="color:var(--accent)">${BKP[0][0].slice(0,10)}</div><div class="sub">${BKP[0][0].slice(11)} · ${BKP[0][2]} · ${BKP[0][1]}</div></div>
+   <div class="card"><small class="t">Rotina automática</small><div class="st"><span class="dot"></span>Diária às 03:00</div><div class="sub">mantém os últimos 30 backups</div></div>
+   <div class="card"><small class="t">Espaço usado por backups</small><div class="big">7,2 GB</div><div class="sub">de 20 GB reservados</div></div>
+  </div>
+  <div id="prog"></div>
+  <div class="tbl" style="margin-top:12px"><table><thead><tr><th>Data</th><th>Tipo</th><th>Tamanho</th><th>Situação</th><th></th></tr></thead><tbody>
+  ${BKP.map((b,i)=>`<tr><td>${b[0]}</td><td>${b[1]}</td><td>${b[2]}</td><td><span class="pill ok">Concluído</span></td><td style="text-align:right"><button class="btn ghost sm" onclick="toast('Download iniciado: backup ${b[0]}')">Baixar</button> <button class="btn danger sm" onclick="modalRest(${i})">Restaurar</button></td></tr>`).join('')}
+  </tbody></table></div>
+  <div class="card" style="margin-top:12px"><h4>Dados por empresa</h4>
+   ${EMP.map(e=>`<div class="line"><span><b>${e.nome}</b></span><span><button class="btn ghost sm" onclick="toast('Exportação (zip) de ${e.nome} enviada por e-mail')">Exportar dados</button></span></div>`).join('')}
+   <div class="sub" style="margin-top:8px">Útil para LGPD (pedido do titular) e para migração de servidor.</div></div>
+  <div class="card" style="margin-top:12px"><h4>Manutenção</h4><div style="display:flex;gap:8px;flex-wrap:wrap">
+   <button class="btn ghost" onclick="toast('Saldos de estoque e insumos recalculados · 0 divergências')">Recalcular saldos de estoque</button>
+   <button class="btn ghost" onclick="toast('Reindexação concluída em 4 s')">Reindexar banco</button>
+   <button class="btn ghost" onclick="toast('1 tarefa falha reprocessada (impressão)')">Reprocessar tarefas com falha (1)</button></div></div>`;
+}
+function geraBkp(){
+  $('#bGera').disabled=true;$('#prog').innerHTML='<div class="card"><b>Gerando backup…</b><div class="prog"><i id="pb"></i></div></div>';
+  let p=0;const t=setInterval(()=>{p+=12+Math.random()*18;$('#pb').style.width=Math.min(p,100)+'%';if(p>=100){clearInterval(t);BKP.unshift(['11/10/2026 '+new Date().toTimeString().slice(0,5),'Manual (Lucas)','249 MB','ok']);audit('backup','—','Backup manual gerado');render();toast('Backup concluído (249 MB)')}},250);
+}
+function modalRest(i){
+  $('#modal').innerHTML=`<button class="x" onclick="fechar()">×</button><h3>Restaurar backup de ${BKP[i][0]}?</h3>
+  <div class="banner warn" style="margin-top:10px"><span>⚠</span><div>Isso <b>substitui todos os dados atuais</b> pelos do backup. Tudo o que foi feito depois dele será perdido. O sistema ficará em manutenção durante o processo.</div></div>
+  <label>Digite RESTAURAR para confirmar</label><input id="rc">
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px"><button class="btn ghost" onclick="fechar()">Cancelar</button><button class="btn danger" onclick="if($('#rc').value==='RESTAURAR'){fechar();toast('Restauração agendada (simulação)')}else toast('Digite RESTAURAR')">Restaurar</button></div>`;
+  $('#ovM').classList.add('show');
+}
+
+/* ---------- AUDITORIA ---------- */
+let audF='todos';
+function audit(t,emp,txt){AUD.unshift(['11/10 '+new Date().toTimeString().slice(0,5),'Lucas Mendes (master)',emp,t,txt])}
+function auditoria(){
+  const tipos=['todos','suporte','suspensao','seguranca','login_falha','backup','config','venda','pedido','cancelamento'];
+  const L=AUD.filter(a=>audF==='todos'||a[3]===audF);
+  return `<div class="head"><h2>Auditoria geral</h2><button class="btn ghost sm" onclick="toast('Exportação CSV gerada')">Exportar CSV</button></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">${tipos.map(t=>`<button class="tag" style="cursor:pointer;${audF===t?'border-color:var(--accent);color:var(--accent);background:var(--accent-soft)':''}" onclick="audF='${t}';render()">${t}</button>`).join('')}</div>
+  <div class="tbl"><table><thead><tr><th>Quando</th><th>Quem</th><th>Empresa</th><th>Tipo</th><th>Detalhe</th></tr></thead><tbody>
+  ${L.map(a=>`<tr><td style="white-space:nowrap">${a[0]}</td><td>${a[1]}</td><td>${a[2]}</td><td><span class="tag">${a[3]}</span></td><td>${a[4]}</td></tr>`).join('')||'<tr><td colspan="5" class="sub" style="text-align:center;padding:24px">Nada neste filtro</td></tr>'}</tbody></table></div>
+  <div class="note"><b>Regra:</b> toda ação do painel master (entrar como suporte, suspender, forçar troca de senha, restaurar backup) entra aqui, com quem fez, quando e o motivo. Esse registro não pode ser apagado pelo painel.</div>`;
+}
+
+/* ---------- CONFIG ---------- */
+function config(){
+  return `<div class="head"><h2>Configurações globais</h2></div>
+  <div class="grid g2">
+   <div class="card"><h4>Integrações</h4>${integ.map((x,i)=>`<div class="line"><span><span class="dot ${x.on?'':'off'}"></span> <b>${x.n}</b><div class="sub" style="margin-left:18px">${x.det}</div></span><button class="btn ghost sm" onclick="toast('${x.on?'Teste de conexão: ok':'Abriria a configuração de '+x.n}')">${x.on?'Testar':'Configurar'}</button></div>`).join('')}
+     <div class="sub" style="margin-top:8px">Chaves e senhas nunca aparecem na tela: só o status.</div></div>
+   <div class="card"><h4>Aviso para todos os usuários</h4>
+     <label style="margin-top:0">Mensagem</label><textarea id="av" rows="3" placeholder="Ex.: Manutenção programada hoje às 22h (15 minutos)."></textarea>
+     <div style="display:flex;gap:8px;margin-top:10px"><button class="btn" onclick="enviaAviso()">Publicar aviso</button><button class="btn ghost" onclick="window.aviso=null;toast('Aviso removido')">Remover</button></div>
+     <h4 style="margin-top:20px">Modo manutenção</h4>
+     <div class="sw"><button id="mm" onclick="this.classList.toggle('on');toast(this.classList.contains('on')?'Manutenção LIGADA: usuários veem a tela de aviso':'Manutenção desligada')"></button><span>Bloquear o acesso das empresas (você continua entrando)</span></div></div>
+   <div class="card"><h4>Parâmetros padrão</h4>
+     <div class="line"><span>VIP: total gasto a partir de</span><b>R$ 400,00</b></div>
+     <div class="line"><span>Cliente "em risco" após</span><b>30 dias</b></div>
+     <div class="line"><span>Cliente "inativo" após</span><b>60 dias</b></div>
+     <div class="line"><span>Pedido "atrasado" após</span><b>25 min</b></div>
+     <div class="line"><span>Retenção de backups</span><b>30 dias</b></div>
+     <button class="btn ghost sm" style="margin-top:10px" onclick="toast('Abriria a edição dos parâmetros')">Editar parâmetros</button></div>
+   <div class="card"><h4>Planos e recursos</h4>
+     <div class="line"><span><b>Básico</b> — PDV, estoque, caixa</span><span class="tag">1 loja · 3 usuários</span></div>
+     <div class="line"><span><b>Completo</b> — + Pedidos, Clientes, Relatórios</span><span class="tag">3 lojas · 10 usuários</span></div>
+     <button class="btn ghost sm" style="margin-top:10px" onclick="toast('Abriria a edição dos planos')">Editar planos</button></div>
+  </div>`;
+}
+function enviaAviso(){const v=$('#av').value.trim();if(!v){toast('Escreva a mensagem');return}window.aviso=v;audit('config','Todas','Aviso global publicado');toast('Aviso publicado para todos os usuários');tab='geral';nav();render()}
+function modalAviso(){go('config')}
+function modalManut(){go('config')}
+
+function fechar2(){}
+function fechar(){$('#ovD').classList.remove('show');$('#ovM').classList.remove('show')}
+$('#ovD').onclick=e=>{if(e.target.id==='ovD')fechar()};
+$('#ovM').onclick=e=>{if(e.target.id==='ovM')fechar()};
+$('#tg').onclick=()=>{const h=document.documentElement;h.dataset.theme=h.dataset.theme==='dark'?'light':'dark'};
+nav();render();
+</script>
+</body>
+</html>

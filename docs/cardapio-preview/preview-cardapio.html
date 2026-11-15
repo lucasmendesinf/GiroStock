@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Cardápio digital — preview</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--primaria:#f28c1a;--sobre:#fff;--fundo:#f3f1ee;--cartao:#fff;--texto:#1f1b17;--texto2:#6b645c;--linha:rgba(0,0,0,.08);--selo:#b3174f;--sombra:0 4px 14px rgba(0,0,0,.08)}
+:root[data-escuro="1"]{--fundo:#121113;--cartao:#1c1a1e;--texto:#f2eee6;--texto2:#b4ada2;--linha:rgba(255,255,255,.1);--sombra:0 4px 14px rgba(0,0,0,.5)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{scroll-behavior:smooth}
+body{margin:0;background:#d9d6d1;font-family:Manrope,system-ui,sans-serif;color:var(--texto)}
+:root[data-escuro="1"] body{background:#050505}
+button{font-family:inherit;cursor:pointer}
+input,textarea{font-family:inherit}
+.wrap{display:grid;grid-template-columns:430px minmax(280px,1fr);gap:28px;max-width:1000px;margin:0 auto;padding:0 16px;align-items:start}
+.app{background:var(--fundo);min-height:100vh;position:relative;box-shadow:0 0 40px rgba(0,0,0,.18);padding-bottom:90px}
+/* capa */
+.capa{height:220px;position:relative;background:linear-gradient(135deg,#3a2a1c,#8a3b0f 45%,#f28c1a);overflow:hidden}
+.capa::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 20% 30%,rgba(255,210,120,.55),transparent 22%),radial-gradient(circle at 50% 22%,rgba(255,210,120,.5),transparent 18%),radial-gradient(circle at 80% 28%,rgba(255,210,120,.45),transparent 20%),linear-gradient(180deg,transparent 55%,rgba(0,0,0,.55))}
+.capa .bal{position:absolute;left:0;right:0;bottom:0;height:70px;background:linear-gradient(180deg,#e8620f,#c4470a)}
+.topo{position:absolute;top:14px;left:14px;right:14px;display:flex;justify-content:space-between;z-index:3}
+.ib{width:40px;height:40px;border-radius:50%;border:none;background:#fff;color:#111;font-size:18px;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+.topo .r{display:flex;gap:10px}
+.perfil{margin:-62px 14px 0;background:var(--cartao);border-radius:26px 26px 0 0;padding:0 16px 14px;position:relative;text-align:center}
+.logo{width:92px;height:92px;border-radius:50%;background:#fff;border:4px solid #fff;margin:-46px auto 8px;display:flex;align-items:center;justify-content:center;font-size:44px;box-shadow:0 4px 12px rgba(0,0,0,.2);position:relative}
+.logo i{position:absolute;inset:4px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ff9a3c,var(--primaria));display:flex;align-items:center;justify-content:center;font-style:normal}
+.perfil h1{margin:0;font-size:20px;font-weight:800}
+.status{font-size:12px;margin-top:2px;color:var(--texto2)}.status b{color:#1f9d55}
+.acoes{display:flex;justify-content:space-around;margin-top:12px}
+.acoes button{background:none;border:none;color:var(--texto);display:flex;flex-direction:column;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:4px 8px}
+.acoes button span{font-size:22px;color:var(--primaria)}
+/* barra de categorias (gruda no topo) */
+.barra{position:sticky;top:0;z-index:20;background:var(--fundo);padding:10px 12px;display:flex;gap:8px;align-items:center;box-shadow:0 1px 0 var(--linha)}
+.barra .menu{flex:none;width:40px;height:40px;border-radius:50%;border:none;background:var(--primaria);color:var(--sobre);font-size:18px}
+.barra .filtro{flex:none;border:none;background:#111;color:#fff;border-radius:999px;padding:11px 14px;font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px}
+:root[data-escuro="1"] .barra .filtro{background:#f2eee6;color:#111}
+.chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;flex:1;scroll-behavior:smooth}
+.chips::-webkit-scrollbar{display:none}
+.chips button{flex:none;border:1px solid var(--linha);background:var(--cartao);color:var(--texto);border-radius:999px;padding:10px 16px;font-size:13px;font-weight:700;white-space:nowrap}
+.chips button.on{background:var(--primaria);border-color:var(--primaria);color:var(--sobre)}
+.busca{display:none;padding:0 12px 10px;background:var(--fundo);position:sticky;top:60px;z-index:19}
+.busca.on{display:block}
+.busca input{width:100%;border:1px solid var(--linha);background:var(--cartao);color:var(--texto);border-radius:14px;padding:12px 14px;font-size:15px}
+/* lista contínua */
+.sec{padding:6px 12px 0}
+.sec h2{font-size:19px;margin:18px 4px 10px;display:flex;align-items:baseline;gap:8px}
+.sec h2 small{font-size:12px;color:var(--texto2);font-weight:600}
+.item{display:flex;gap:12px;background:var(--cartao);border-radius:20px;padding:12px;margin-bottom:12px;box-shadow:var(--sombra);align-items:center;cursor:pointer}
+.item.dir{flex-direction:row-reverse}
+.foto{flex:none;width:92px;height:92px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:44px}
+.info{flex:1;min-width:0}
+.info b{display:block;font-size:15px}
+.info p{margin:3px 0 6px;font-size:12.5px;color:var(--texto2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.35}
+.preco{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+.preco s{font-size:12px;color:var(--texto2)}
+.preco strong{font-size:16px;color:var(--primaria);font-weight:800}
+.selo{display:inline-flex;align-items:center;gap:6px;background:var(--selo);color:#fff;border-radius:12px;padding:7px 12px;font-size:12px;font-weight:800;margin-top:6px}
+.mais{flex:none;width:40px;height:40px;border-radius:50%;border:none;background:var(--primaria);color:var(--sobre);font-size:24px;line-height:1}
+.grade2 .lista{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grade2 .item{flex-direction:column;align-items:stretch;margin:0;position:relative}
+.grade2 .foto{width:100%;height:110px}
+.grade2 .mais{position:absolute;right:12px;top:94px}
+.vazio{padding:40px 20px;text-align:center;color:var(--texto2)}
+.rodape{padding:20px 16px;text-align:center;font-size:12px;color:var(--texto2)}
+/* sacola */
+.sacola{position:fixed;left:50%;transform:translateX(-50%);bottom:14px;width:min(402px,calc(100vw - 28px));background:var(--primaria);color:var(--sobre);border:none;border-radius:16px;padding:15px 18px;display:none;justify-content:space-between;font-weight:800;font-size:15px;box-shadow:0 8px 24px rgba(0,0,0,.3);z-index:30}
+.sacola.on{display:flex}
+/* folhas */
+.veu{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:40;display:none}
+.veu.on{display:block}
+.folha{position:fixed;left:50%;transform:translate(-50%,100%);bottom:0;width:min(430px,100vw);max-height:88vh;overflow:auto;background:var(--cartao);border-radius:24px 24px 0 0;padding:18px 18px 24px;z-index:41;transition:transform .22s;color:var(--texto)}
+.folha.on{transform:translate(-50%,0)}
+.folha h3{margin:0 0 4px;font-size:20px}
+.folha .x{position:absolute;right:14px;top:12px;width:34px;height:34px;border-radius:50%;border:none;background:var(--fundo);color:var(--texto);font-size:18px}
+.grp{margin-top:14px;border-top:1px solid var(--linha);padding-top:12px}
+.grp h4{margin:0 0 8px;font-size:14px;display:flex;justify-content:space-between}
+.grp h4 em{font-style:normal;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--fundo);color:var(--texto2)}
+.grp label{display:flex;justify-content:space-between;padding:10px 4px;font-size:14px;border-bottom:1px solid var(--linha);cursor:pointer}
+.grp input{accent-color:var(--primaria)}
+.qtd{display:flex;align-items:center;gap:12px;justify-content:center;margin:14px 0}
+.qtd button{width:40px;height:40px;border-radius:50%;border:1px solid var(--linha);background:var(--fundo);color:var(--texto);font-size:20px}
+.big{width:100%;border:none;border-radius:14px;padding:15px;background:var(--primaria);color:var(--sobre);font-weight:800;font-size:15px;margin-top:10px}
+.big.g{background:var(--fundo);color:var(--texto);border:1px solid var(--linha)}
+.linha{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--linha);font-size:14px}
+.tag{display:inline-block;padding:3px 10px;border-radius:999px;background:var(--fundo);font-size:12px;font-weight:700;color:var(--texto2)}
+.opt{display:flex;gap:8px;margin:10px 0}.opt button{flex:1;padding:11px 6px;border-radius:12px;border:1px solid var(--linha);background:var(--fundo);color:var(--texto);font-weight:700;font-size:13px}.opt button.on{border-color:var(--primaria);color:var(--primaria);background:var(--cartao)}
+textarea{width:100%;border:1px solid var(--linha);background:var(--fundo);color:var(--texto);border-radius:12px;padding:10px 12px;font-size:14px;resize:none}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:84px;background:#111;color:#fff;padding:12px 18px;border-radius:14px;font-weight:600;z-index:60;display:none;max-width:90vw;text-align:center;font-size:14px}
+/* painel do dono */
+.painel{position:sticky;top:16px;background:#fff;border-radius:18px;padding:18px;margin-top:16px;box-shadow:0 4px 18px rgba(0,0,0,.12);color:#231f1a;font-size:13px}
+:root[data-escuro="1"] .painel{background:#17161a;color:#f2eee6}
+.painel h3{margin:0 0 4px;font-size:17px}.painel h4{margin:16px 0 6px;font-size:12px;letter-spacing:.8px;text-transform:uppercase;opacity:.7}
+.cores{display:flex;gap:8px;flex-wrap:wrap}.cores button{width:34px;height:34px;border-radius:50%;border:3px solid transparent;outline:1px solid rgba(0,0,0,.2)}.cores button.on{border-color:#fff;outline:2px solid #111}
+.seg{display:flex;gap:6px;flex-wrap:wrap}.seg button{padding:8px 12px;border-radius:10px;border:1px solid rgba(128,128,128,.4);background:none;color:inherit;font-weight:700;font-size:12px}.seg button.on{background:#231f1a;color:#fff;border-color:#231f1a}
+:root[data-escuro="1"] .seg button.on{background:#d4ae4a;color:#17120a;border-color:#d4ae4a}
+.sw{display:flex;align-items:center;gap:10px;margin-top:8px}.sw button{width:38px;height:22px;border-radius:999px;border:1px solid rgba(128,128,128,.5);background:#ccc;position:relative;padding:0}.sw button::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.15s}.sw button.on{background:#1f9d55}.sw button.on::after{left:18px}
+.painel ul{margin:6px 0 0;padding-left:18px;line-height:1.7;opacity:.9}
+@media(max-width:900px){.wrap{display:block;padding:0}.painel{display:none}.app{box-shadow:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+ <div class="app" id="app">
+  <div class="capa"><div class="bal"></div><div class="topo"><button class="ib" onclick="abre('cats')" aria-label="menu">☰</button><div class="r"><button class="ib" onclick="abre('conta')" aria-label="entrar">⇥</button><button class="ib" onclick="busca()" aria-label="buscar">⌕</button></div></div></div>
+  <div class="perfil"><div class="logo"><i>🍔</i></div><h1 id="nome">Oba Hamburgueria</h1><div class="status"><b>● Aberto</b> · fecha às 23:30 · entrega 35–50 min</div>
+   <div class="acoes" id="acoes"></div></div>
+  <div class="barra" id="barra"><button class="menu" onclick="abre('cats')" aria-label="categorias">☰</button><button class="filtro" onclick="abre('filtros')">⚲ Filtros ▾</button><div class="chips" id="chips"></div></div>
+  <div class="busca" id="busca"><input id="q" placeholder="Buscar no cardápio…" oninput="renderLista()"></div>
+  <div id="lista"></div>
+  <div class="rodape">Cardápio digital · feito com GiroStock</div>
+ </div>
+ <aside id="painelWrap"></aside>
+</div>
+<button class="sacola" id="sacola" onclick="abre('sacola')"></button>
+<div class="veu" id="veu" onclick="fecha()"></div>
+<div class="folha" id="folha"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $=s=>document.querySelector(s);
+const brl=v=>(+v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>e.style.display='none',2800)}
+
+/* ---------- dados de exemplo ---------- */
+const CATS=['Promoções','Hambúrgueres','Combos','Porções','Bebidas','Sobremesas'];
+const COR={h:'linear-gradient(135deg,#7a3b12,#d9812c)',c:'linear-gradient(135deg,#3b5a1a,#8fbf3f)',p:'linear-gradient(135deg,#a8741a,#f0c24a)',b:'linear-gradient(135deg,#1d4f7a,#4aa3e0)',s:'linear-gradient(135deg,#7a2a4f,#e07aa8)'};
+const P=[
+ {id:1,cat:'Hambúrgueres',nome:'Smash Supreme Bacon',desc:'Dois smashes, bacon crocante, cheddar derretido, cebola caramelizada e molho da casa no pão brioche.',de:45.90,por:42.90,e:'🍔',cor:'h',pop:1,veg:0,grupos:['ponto','adic']},
+ {id:2,cat:'Hambúrgueres',nome:'Double Cheddar Angus',desc:'180g de blend Angus, queijo cheddar, cebola crispy e maionese defumada.',de:49.90,por:39.90,e:'🍔',cor:'h',pop:1,veg:0,grupos:['ponto','adic']},
+ {id:3,cat:'Hambúrgueres',nome:'Classic Burger',desc:'Hambúrguer 150g, queijo prato, alface, tomate e molho especial.',por:29.90,e:'🍔',cor:'h',pop:0,veg:0,grupos:['ponto','adic']},
+ {id:4,cat:'Hambúrgueres',nome:'Veggie Burger',desc:'Burger de grão-de-bico, queijo minas, rúcula e maionese verde.',por:34.90,e:'🥬',cor:'c',pop:0,veg:1,grupos:['adic']},
+ {id:5,cat:'Combos',nome:'Combo Burgo Família',desc:'2 burgers + batata média + onion rings + 2 refrigerantes.',de:98.90,por:74.90,e:'🍟',cor:'p',pop:1,veg:0,grupos:['bebida']},
+ {id:6,cat:'Combos',nome:'Combo Casal',desc:'2 Classic Burger + batata média + 2 refrigerantes lata.',de:79.90,por:64.90,e:'🍟',cor:'p',pop:0,veg:0,grupos:['bebida']},
+ {id:7,cat:'Porções',nome:'Batata Frita Grande',desc:'Batata crocante com cheddar e bacon, serve duas pessoas.',por:32.00,e:'🍟',cor:'p',pop:1,veg:1,grupos:['adic']},
+ {id:8,cat:'Porções',nome:'Onion Rings',desc:'Anéis de cebola empanados com molho barbecue.',por:26.00,e:'🧅',cor:'p',pop:0,veg:1,grupos:[]},
+ {id:9,cat:'Bebidas',nome:'Refrigerante Lata',desc:'Coca-Cola, Guaraná ou Sprite, 350 ml.',por:7.00,e:'🥤',cor:'b',pop:0,veg:1,grupos:[]},
+ {id:10,cat:'Bebidas',nome:'Milkshake de Ovomaltine',desc:'Sorvete de creme batido com Ovomaltine, 400 ml.',de:24.00,por:19.90,e:'🥛',cor:'s',pop:1,veg:1,grupos:[]},
+ {id:11,cat:'Sobremesas',nome:'Brownie com Sorvete',desc:'Brownie quente de chocolate com bola de sorvete de creme.',por:21.00,e:'🍰',cor:'s',pop:0,veg:1,grupos:[]}
+];
+// a categoria "Promoções" é montada sozinha com os produtos que têm preço promocional
+const GRP={ponto:{t:'Ponto da carne',obr:1,max:1,op:[['Mal passado',0],['Ao ponto',0],['Bem passado',0]]},adic:{t:'Adicionais',obr:0,max:3,op:[['Bacon extra',4],['Cheddar extra',3],['Ovo',3],['Cebola caramelizada',2]]},bebida:{t:'Escolha a bebida',obr:1,max:1,op:[['Coca-Cola',0],['Guaraná',0],['Sprite',0]]}};
+
+/* ---------- estado ---------- */
+let CFG={cor:'#f28c1a',escuro:false,layout:'esq',selo:true,acoes:true,promoEmCima:true};
+let filtro={promo:false,veg:false,pop:false};
+let sacola=[],ativa=0;
+const BAIRROS=[['Centro',5],['Jardim América',7],['Vila Nova',9]],MINIMO=25;
+let ENT={tipo:'entrega',bairro:'Centro',quando:'online',forma:'Pix',troco:''};
+const FORMAS={online:['Pix','Cartão de crédito','Cartão de débito'],entrega:['Dinheiro','Cartão de crédito','Cartão de débito','Pix']};
+let conta=null,LG={fase:1,tel:'',seg:0,depois:null,erros:0,timer:null};
+let aberta=null,prod=null,sel={},qtd=1;
+
+function acoesRapidas(){return [['Sobre','🏪','sobre'],['Entrega','🛵','entrega'],['Histórico','🧾','hist'],['Contato','☎','contato']]}
+function pctOff(p){return p.de?Math.round((1-p.por/p.de)*100):0}
+function secoes(){
+  const q=($('#q')?$('#q').value:'').trim().toLowerCase();
+  const ok=p=>(!q||(p.nome+' '+p.desc).toLowerCase().includes(q))&&(!filtro.promo||p.de)&&(!filtro.veg||p.veg)&&(!filtro.pop||p.pop);
+  const out=[];
+  if(CFG.promoEmCima){const pr=P.filter(p=>p.de&&ok(p));if(pr.length)out.push({nome:'Promoções',itens:pr})}
+  CATS.filter(c=>c!=='Promoções').forEach(c=>{const it=P.filter(p=>p.cat===c&&ok(p));if(it.length)out.push({nome:c,itens:it})});
+  return out;
+}
+function cartao(p){
+  const off=pctOff(p);
+  return `<div class="item ${CFG.layout==='dir'?'dir':''}" onclick="abrirProd(${p.id})">
+   <div class="foto" style="background:${COR[p.cor]}">${p.e}</div>
+   <div class="info"><b>${p.nome}</b><p>${p.desc}</p>
+    <div class="preco">${p.de?`<s>${brl(p.de)}</s>`:''}<strong>${brl(p.por)}</strong></div>
+    ${off&&CFG.selo?`<span class="selo">⊘ ${off}% OFF</span>`:''}</div>
+   <button class="mais" onclick="event.stopPropagation();rapido(${p.id})" aria-label="adicionar">+</button></div>`;
+}
+let SEC=[];
+function renderLista(){
+  SEC=secoes();
+  const grade=CFG.layout==='grade';
+  $('#app').classList.toggle('grade2',grade);
+  $('#lista').innerHTML=SEC.length?SEC.map((s,i)=>`<section class="sec" id="s${i}" data-i="${i}"><h2>${s.nome} <small>${s.itens.length} ${s.itens.length>1?'itens':'item'}</small></h2><div class="lista">${s.itens.map(cartao).join('')}</div></section>`).join(''):'<div class="vazio">Nada encontrado com esses filtros.</div>';
+  $('#chips').innerHTML=SEC.map((s,i)=>`<button data-i="${i}" class="${i===ativa?'on':''}" onclick="irPara(${i})">${s.nome}</button>`).join('');
+  ativa=Math.min(ativa,Math.max(0,SEC.length-1));marca();
+}
+function irPara(i){
+  const el=document.getElementById('s'+i);if(!el)return;
+  const off=($('#barra').offsetHeight||60)+($('#busca').classList.contains('on')?56:0)+6;
+  window.scrollTo({top:el.getBoundingClientRect().top+scrollY-off,behavior:'smooth'});
+}
+function marca(){document.querySelectorAll('#chips button').forEach(b=>b.classList.toggle('on',+b.dataset.i===ativa));
+  const b=document.querySelector('#chips button.on'),c=$('#chips');if(b&&c){const alvo=b.offsetLeft-c.clientWidth/2+b.clientWidth/2;c.scrollTo({left:alvo,behavior:'smooth'})}}
+/* scrollspy: a categoria ativa é a última cujo topo já passou da barra */
+function spy(){
+  const lim=($('#barra').offsetHeight||60)+($('#busca').classList.contains('on')?56:0)+30;let a=0;
+  document.querySelectorAll('.sec').forEach(s=>{if(s.getBoundingClientRect().top<=lim)a=+s.dataset.i});
+  if(innerHeight+scrollY>=document.documentElement.scrollHeight-6)a=Math.max(0,SEC.length-1); // fim da página: acende a última categoria
+  if(a!==ativa){ativa=a;marca()}
+}
+addEventListener('scroll',spy,{passive:true});
+setInterval(spy,200); // reforço só para este preview (navegadores sem evento de rolagem contínuo)
+
+/* ---------- ações rápidas / folhas ---------- */
+function renderAcoes(){$('#acoes').innerHTML=CFG.acoes?acoesRapidas().map(a=>`<button onclick="abre('${a[2]}')"><span>${a[1]}</span>${a[0]}</button>`).join(''):''}
+function folha(html){$('#folha').innerHTML=`<button class="x" onclick="fecha()">×</button>${html}`;$('#veu').classList.add('on');$('#folha').classList.add('on')}
+function fecha(){$('#veu').classList.remove('on');$('#folha').classList.remove('on');aberta=null}
+function abre(k){
+  aberta=k;
+  if(k==='cats')folha(`<h3>Categorias</h3><div style="margin-top:10px">${SEC.map((s,i)=>`<div class="linha" style="cursor:pointer" onclick="fecha();irPara(${i})"><b>${s.nome}</b><span class="tag">${s.itens.length}</span></div>`).join('')}</div>`);
+  if(k==='filtros')folha(`<h3>Filtros</h3><div class="sw"><button class="${filtro.promo?'on':''}" onclick="filtro.promo=!filtro.promo;abre('filtros');renderLista()"></button><span>Só promoções</span></div><div class="sw"><button class="${filtro.pop?'on':''}" onclick="filtro.pop=!filtro.pop;abre('filtros');renderLista()"></button><span>Mais pedidos</span></div><div class="sw"><button class="${filtro.veg?'on':''}" onclick="filtro.veg=!filtro.veg;abre('filtros');renderLista()"></button><span>Vegetarianos</span></div><button class="big" onclick="fecha()">Ver resultados</button><button class="big g" onclick="filtro={promo:false,veg:false,pop:false};renderLista();fecha()">Limpar filtros</button>`);
+  if(k==='sobre')folha(`<h3>Sobre a loja</h3><div class="linha"><span>Horário</span><b>Ter a dom · 18h às 23h30</b></div><div class="linha"><span>Endereço</span><b>Rua das Flores, 120 — Centro</b></div><div class="linha"><span>Pagamento</span><b>Pix · cartão · dinheiro</b></div><div class="linha"><span>Entrega</span><b>R$ 5,00 a R$ 9,00 por bairro</b></div><div class="linha"><span>Telefone</span><b>(11) 3000-0000</b></div>`);
+  if(k==='entrega')folha(`<h3>Entrega ou retirada</h3><div class="opt"><button class="${ENT.tipo==='entrega'?'on':''}" onclick="ENT.tipo='entrega';abre('entrega')">🛵 Entrega</button><button class="${ENT.tipo==='retirada'?'on':''}" onclick="ENT.tipo='retirada';abre('entrega')">🛍 Retirada</button></div>${ENT.tipo==='entrega'?`<div class="grp"><h4>Seu bairro</h4>${BAIRROS.map(b=>`<label><span>${b[0]}</span><span>${brl(b[1])} <input type="radio" name="bairro" ${ENT.bairro===b[0]?'checked':''} onchange="ENT.bairro='${b[0]}';abre('entrega')"></span></label>`).join('')}</div><div class="linha"><span>Tempo estimado</span><b>35–50 min</b></div>`:`<div class="linha"><span>Retirar em</span><b>Rua das Flores, 120 — Centro</b></div><div class="linha"><span>Tempo estimado</span><b>20–30 min</b></div>`}<div class="linha"><span>Pedido mínimo</span><b>${brl(MINIMO)}</b></div><button class="big" onclick="fecha()">Confirmar</button>`);
+  if(k==='contato')folha(`<h3>Contato</h3><div class="linha"><span>WhatsApp</span><b>(11) 99999-0000</b></div><div class="linha"><span>Telefone</span><b>(11) 3000-0000</b></div><div class="linha"><span>Instagram</span><b>@obahamburgueria</b></div><button class="big" onclick="toast('Abriria o WhatsApp da loja');fecha()">Chamar no WhatsApp</button>`);
+  if(k==='hist'&&!conta){login('hist');return}
+  if(k==='conta'){if(conta)folha(`<h3>Olá, ${conta.nome.split(' ')[0]}!</h3><div class="linha"><span>Telefone</span><b>${conta.tel}</b></div><button class="big g" onclick="abre('hist')">Meus pedidos</button><button class="big g" onclick="conta=null;fecha();toast('Você saiu da conta')">Sair</button>`);else login(null);return}
+  if(k==='hist')folha(`<h3>Histórico</h3>${HIST.length?HIST.map(h=>`<div class="linha"><span><b>#${h.n}</b> · ${h.h}<div style="font-size:12px;color:var(--texto2)">${h.d}</div></span><b>${brl(h.t)}</b></div>`).join(''):'<div class="vazio">Nenhum pedido ainda.</div>'}<div class="sub" style="margin-top:10px;color:var(--texto2);font-size:12px">Pedidos feitos com o telefone <b>${conta?conta.tel:''}</b>.</div>`);
+  if(k==='sacola')sacolaFolha();
+}
+const HIST=[{n:2041,h:'20:14',d:'1× Classic Burger · 1× Refrigerante Lata',t:36.90}];
+/* ---------- produto ---------- */
+function rapido(id){const p=P.find(x=>x.id===id);if(p.grupos.length){abrirProd(id);return}addSac(p,{},1,'');toast('✓ '+p.nome+' adicionado')}
+function abrirProd(id){prod=P.find(x=>x.id===id);sel={};qtd=1;pintaProd()}
+function pintaProd(){
+  const p=prod,off=pctOff(p);
+  const extra=Object.entries(sel).reduce((s,[g,v])=>s+v.reduce((a,o)=>a+GRP[g].op.find(x=>x[0]===o)[1],0),0);
+  const falta=p.grupos.some(g=>GRP[g].obr&&!(sel[g]&&sel[g].length));
+  aberta='prod';
+  folha(`<div class="foto" style="background:${COR[p.cor]};width:100%;height:170px;border-radius:18px;font-size:80px">${p.e}</div>
+   <h3 style="margin-top:12px">${p.nome}</h3><div style="color:var(--texto2);font-size:13px;line-height:1.45">${p.desc}</div>
+   <div class="preco" style="margin-top:8px">${p.de?`<s>${brl(p.de)}</s>`:''}<strong style="font-size:20px">${brl(p.por)}</strong>${off?`<span class="selo" style="margin:0 0 0 6px">⊘ ${off}% OFF</span>`:''}</div>
+   ${p.grupos.map(g=>{const G=GRP[g],multi=G.max>1;return `<div class="grp"><h4>${G.t} <em>${G.obr?'obrigatório':'opcional · até '+G.max}</em></h4>${G.op.map(o=>`<label><span>${o[0]}</span><span>${o[1]?'+ '+brl(o[1]):''} <input type="${multi?'checkbox':'radio'}" name="${g}" ${(sel[g]||[]).includes(o[0])?'checked':''} onchange="marcaOp('${g}','${o[0]}',${multi},this.checked)"></span></label>`).join('')}</div>`}).join('')}
+   <div class="grp"><h4>Observação</h4><textarea id="obs" rows="2" placeholder="Ex.: sem cebola, molho à parte"></textarea></div>
+   <div class="qtd"><button onclick="qtd=Math.max(1,qtd-1);pintaProd()">−</button><b style="font-size:18px;min-width:30px;text-align:center">${qtd}</b><button onclick="qtd++;pintaProd()">+</button></div>
+   <button class="big" ${falta?'disabled style="opacity:.5"':''} onclick="addProd()">Adicionar · ${brl((p.por+extra)*qtd)}</button>${falta?'<div style="text-align:center;font-size:12px;color:var(--texto2);margin-top:6px">Escolha as opções obrigatórias</div>':''}`);
+}
+function marcaOp(g,o,multi,on){const G=GRP[g];let v=sel[g]||[];if(!multi)v=[o];else if(on){if(v.length>=G.max){toast('Máximo de '+G.max+' opções');pintaProd();return}v=[...v,o]}else v=v.filter(x=>x!==o);sel[g]=v;pintaProd()}
+function addProd(){const obs=($('#obs')||{}).value||'';const extra=Object.entries(sel).reduce((s,[g,v])=>s+v.reduce((a,o)=>a+GRP[g].op.find(x=>x[0]===o)[1],0),0);addSac(prod,sel,qtd,obs,extra);fecha();toast('✓ '+prod.nome+' adicionado')}
+function addSac(p,s,q,obs,extra=0){sacola.push({p,s,q,obs,un:p.por+extra});atualizaSacola()}
+function atualizaSacola(){const n=sacola.reduce((a,i)=>a+i.q,0),t=sacola.reduce((a,i)=>a+i.q*i.un,0);const b=$('#sacola');b.classList.toggle('on',n>0);b.innerHTML=`<span>🛍 Ver sacola · ${n} ${n>1?'itens':'item'}</span><span>${brl(t)}</span>`}
+function sacolaFolha(){
+  const sub=sacola.reduce((a,i)=>a+i.q*i.un,0),taxa=ENT.tipo==='entrega'?BAIRROS.find(b=>b[0]===ENT.bairro)[1]:0,total=sub+taxa,falta=MINIMO-sub;
+  folha(`<h3>Sua sacola</h3><div class="sub" style="color:var(--texto2);font-size:13px">${ENT.tipo==='entrega'?'Entrega · '+ENT.bairro+' · 35–50 min':'Retirada na loja · 20–30 min'}</div>
+   ${sacola.map((i,k)=>`<div class="linha" style="align-items:flex-start"><span><b>${i.q}× ${i.p.nome}</b><div style="font-size:12px;color:var(--texto2)">${Object.values(i.s).flat().join(', ')}${i.obs?' · '+i.obs:''}</div><button style="background:none;border:none;color:var(--selo);font-size:12px;padding:0;margin-top:2px" onclick="sacola.splice(${k},1);atualizaSacola();sacola.length?sacolaFolha():fecha()">remover</button></span><b>${brl(i.q*i.un)}</b></div>`).join('')}
+   <div class="opt"><button class="${ENT.tipo==='entrega'?'on':''}" onclick="ENT.tipo='entrega';sacolaFolha()">🛵 Entrega</button><button class="${ENT.tipo==='retirada'?'on':''}" onclick="ENT.tipo='retirada';sacolaFolha()">🛍 Retirada</button></div>
+   ${ENT.tipo==='entrega'?`<div class="grp" style="margin-top:4px"><h4>Bairro</h4><select style="width:100%;padding:12px;border-radius:12px;border:1px solid var(--linha);background:var(--fundo);color:var(--texto);font-size:14px" onchange="ENT.bairro=this.value;sacolaFolha()">${BAIRROS.map(b=>`<option ${ENT.bairro===b[0]?'selected':''}>${b[0]}</option>`).join('')}</select></div>`:''}
+   <div class="grp" style="margin-top:6px"><h4>Pagamento</h4>
+   <div class="opt" style="margin:0 0 8px"><button class="${ENT.quando==='online'?'on':''}" onclick="ENT.quando='online';ENT.forma='Pix';sacolaFolha()">Pagar agora (online)</button><button class="${ENT.quando==='entrega'?'on':''}" onclick="ENT.quando='entrega';ENT.forma='Dinheiro';sacolaFolha()">Pagar ${ENT.tipo==='entrega'?'na entrega':'na retirada'}</button></div>
+   <div class="opt" style="margin:0;flex-wrap:wrap">${FORMAS[ENT.quando].map(f=>`<button class="${ENT.forma===f?'on':''}" onclick="ENT.forma='${f}';sacolaFolha()">${f}</button>`).join('')}</div>
+   ${ENT.quando==='entrega'&&ENT.forma==='Dinheiro'?`<input placeholder="Troco para quanto? (opcional)" value="${ENT.troco}" oninput="ENT.troco=this.value" style="width:100%;margin-top:8px;padding:12px;border-radius:12px;border:1px solid var(--linha);background:var(--fundo);color:var(--texto);font-size:14px">`:''}
+   <div style="font-size:12px;color:var(--texto2);margin-top:8px;line-height:1.45">${ENT.quando==='online'?(ENT.forma==='Pix'?'Você recebe o QR Code e o copia-e-cola ao finalizar. O pedido é liberado para a cozinha quando o pagamento for confirmado.':'Pagamento seguro pelo site. A loja só começa o preparo depois da aprovação.'):(ENT.forma==='Dinheiro'?'Pague em dinheiro ao receber; informe o troco se precisar.':ENT.forma==='Pix'?'O entregador mostra o QR Code do estabelecimento na hora.':'O entregador leva a maquininha.')}</div></div>
+   <div class="linha" style="margin-top:8px"><span>Subtotal</span><span>${brl(sub)}</span></div>
+   ${taxa?`<div class="linha"><span>Taxa de entrega</span><span>${brl(taxa)}</span></div>`:''}
+   <div class="linha" style="font-size:17px"><b>Total</b><b>${brl(total)}</b></div>
+   ${falta>0?`<div class="sub" style="margin:8px 0;color:var(--selo);font-size:13px">Pedido mínimo de ${brl(MINIMO)}: faltam ${brl(falta)}.</div>`:''}
+   <button class="big" ${falta>0?'disabled style="opacity:.5"':''} onclick="finalizar()">${ENT.quando==='online'?'Pagar e finalizar':'Finalizar pedido'} · ${brl(total)}</button>`);
+}
+function finalizar(){
+  if(!conta){login('fin');return}
+  if(ENT.quando==='online'){pagarOnline();return}
+  enviar();
+}
+function pagarOnline(){
+  const total=sacola.reduce((a,i)=>a+i.q*i.un,0)+(ENT.tipo==='entrega'?BAIRROS.find(b=>b[0]===ENT.bairro)[1]:0);
+  if(ENT.forma==='Pix')folha(`<h3>Pague com Pix</h3><div class="sub" style="color:var(--texto2);font-size:13px">Total ${brl(total)} · expira em 30 min</div><div style="width:170px;height:170px;margin:14px auto;border-radius:14px;background:repeating-conic-gradient(#111 0 25%,#fff 0 50%) 0 0/22px 22px;border:8px solid #fff"></div><div class="linha"><span style="word-break:break-all;font-size:12px">00020126580014br.gov.bcb.pix0136…</span><button style="border:none;background:var(--fundo);color:var(--texto);border-radius:10px;padding:6px 10px;font-weight:700" onclick="toast('Código Pix copiado')">Copiar</button></div><div class="sub" style="color:var(--texto2);font-size:13px;margin:8px 0">Aguardando o pagamento…</div><button class="big" onclick="enviar(true)">Simular pagamento aprovado</button>`);
+  else folha(`<h3>${ENT.forma}</h3><div class="sub" style="color:var(--texto2);font-size:13px">Total ${brl(total)} · pagamento seguro</div><div class="grp"><input placeholder="Número do cartão" style="width:100%;padding:12px;border-radius:12px;border:1px solid var(--linha);background:var(--fundo);color:var(--texto);margin-bottom:8px"><div style="display:flex;gap:8px"><input placeholder="Validade" style="flex:1;padding:12px;border-radius:12px;border:1px solid var(--linha);background:var(--fundo);color:var(--texto)"><input placeholder="CVV" style="flex:1;padding:12px;border-radius:12px;border:1px solid var(--linha);background:var(--fundo);color:var(--texto)"></div></div><button class="big" onclick="enviar(true)">Pagar ${brl(total)}</button>`);
+}
+function enviar(pago){const t=sacola.reduce((a,i)=>a+i.q*i.un,0);HIST.unshift({n:2042+HIST.length,h:new Date().toTimeString().slice(0,5),d:sacola.map(i=>i.q+'× '+i.p.nome).join(' · '),t});sacola=[];atualizaSacola();fecha();toast((pago?'✓ Pagamento aprovado · ':'✓ ')+'Pedido #'+HIST[0].n+' recebido · '+(ENT.tipo==='entrega'?'chega em 35–50 min':'pronto em 20–30 min'));}
+function mascara(v){const d=v.replace(/\D/g,'').slice(0,11);return d.length<=2?d:d.length<=7?`(${d.slice(0,2)}) ${d.slice(2)}`:`(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`}
+function login(depois){LG={fase:1,tel:'',seg:0,depois,erros:0,timer:LG.timer};clearInterval(LG.timer);pintaLogin()}
+function pintaLogin(){
+  const f=LG.fase,est={padding:'14px',borderRadius:'14px',border:'1px solid var(--linha)',background:'var(--fundo)',color:'var(--texto)',fontSize:'18px',width:'100%',textAlign:'center'};
+  const css=Object.entries(est).map(([k,v])=>k.replace(/[A-Z]/g,m=>'-'+m.toLowerCase())+':'+v).join(';');
+  if(f===1)folha(`<h3>Entrar</h3><div class="sub" style="color:var(--texto2);font-size:13px;margin:4px 0 12px">Digite seu telefone. Enviamos um <b>código por WhatsApp</b>. Sem senha para lembrar.</div><input id="tel" inputmode="numeric" placeholder="(11) 90000-0000" value="${LG.tel}" style="${css}" oninput="this.value=mascara(this.value);LG.tel=this.value"><button class="big" onclick="enviaCodigo()">Enviar código</button><div style="font-size:11.5px;color:var(--texto2);margin-top:10px;line-height:1.4">Ao continuar, você concorda em receber o código e com os termos da loja. (Preview: o telefone (11) 99999-0000 já é cliente.)</div>`);
+  if(f===2)folha(`<h3>Digite o código</h3><div class="sub" style="color:var(--texto2);font-size:13px;margin:4px 0 12px">Enviado para <b>${LG.tel}</b>. Vale por 10 minutos.</div><input id="cod" inputmode="numeric" maxlength="6" placeholder="000000" style="${css};letter-spacing:10px;font-size:24px" oninput="this.value=this.value.replace(/\\D/g,'');if(this.value.length===6)confereCodigo(this.value)">${LG.erros?`<div style="color:var(--selo);font-size:13px;margin-top:8px">Código incorreto. Restam ${3-LG.erros} tentativa(s).</div>`:''}<div style="display:flex;justify-content:space-between;margin-top:12px;font-size:13px"><button style="background:none;border:none;color:var(--primaria);font-weight:700" onclick="LG.fase=1;pintaLogin()">Trocar telefone</button><button id="reenv" style="background:none;border:none;color:var(--texto2);font-weight:700" ${LG.seg>0?'disabled':''} onclick="enviaCodigo()">${LG.seg>0?'Reenviar em '+LG.seg+'s':'Reenviar código'}</button></div><div style="font-size:11.5px;color:var(--texto2);margin-top:10px">(Preview: o código é <b>123456</b>.)</div>`);
+  if(f===3)folha(`<h3>Quase lá!</h3><div class="sub" style="color:var(--texto2);font-size:13px;margin:4px 0 12px">É o seu primeiro pedido nesta loja. Como podemos te chamar?</div><input id="nm" placeholder="Seu nome" style="${css};text-align:left;font-size:16px"><label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-top:12px;color:var(--texto2)"><input type="checkbox" style="width:auto" id="msg"> Quero receber promoções da loja por WhatsApp</label><button class="big" onclick="salvaNome()">Continuar</button>`);
+  const i=document.getElementById('cod')||document.getElementById('tel')||document.getElementById('nm');if(i)i.focus();
+}
+function enviaCodigo(){if(LG.tel.replace(/\D/g,'').length<10){toast('Digite o telefone com DDD');return}LG.fase=2;LG.seg=30;LG.erros=0;clearInterval(LG.timer);LG.timer=setInterval(()=>{LG.seg--;const b=document.getElementById('reenv');if(b){b.textContent=LG.seg>0?'Reenviar em '+LG.seg+'s':'Reenviar código';b.disabled=LG.seg>0}if(LG.seg<=0)clearInterval(LG.timer)},1000);pintaLogin();toast('Código enviado por WhatsApp')}
+function confereCodigo(c){if(c==='123456'){clearInterval(LG.timer);if(LG.tel==='(11) 99999-0000'){entrou('Maria Souza')}else{LG.fase=3;pintaLogin()}}else{LG.erros++;if(LG.erros>=3){toast('Muitas tentativas. Peça um novo código.');LG.fase=1;LG.erros=0}pintaLogin()}}
+function salvaNome(){const n=document.getElementById('nm').value.trim();if(n.length<2){toast('Digite seu nome');return}entrou(n)}
+function entrou(nome){conta={nome,tel:LG.tel};const d=LG.depois;fecha();toast('✓ Bem-vindo(a), '+nome.split(' ')[0]+'!');setTimeout(()=>{if(d==='hist')abre('hist');if(d==='fin')finalizar()},300)}
+function busca(){const b=$('#busca');b.classList.toggle('on');if(b.classList.contains('on'))$('#q').focus();else{$('#q').value='';renderLista()}}
+
+/* ---------- painel do dono (só para o preview) ---------- */
+const CORES=['#f28c1a','#d4ae4a','#2e9e5b','#b3174f','#2f6fde'];
+function renderPainel(){
+  $('#painelWrap').innerHTML=`<div class="painel"><h3>Como o dono monta o cardápio</h3><div style="opacity:.75">No sistema: Loja virtual › tipo "Cardápio digital". Teste as opções:</div>
+   <h4>Cor da loja</h4><div class="cores">${CORES.map(c=>`<button style="background:${c}" class="${CFG.cor===c?'on':''}" onclick="CFG.cor='${c}';tema()"></button>`).join('')}</div>
+   <h4>Tema</h4><div class="seg"><button class="${!CFG.escuro?'on':''}" onclick="CFG.escuro=false;tema()">Claro</button><button class="${CFG.escuro?'on':''}" onclick="CFG.escuro=true;tema()">Escuro</button></div>
+      <h4>Foto dos produtos</h4><div class="seg"><button class="${CFG.layout==='esq'?'on':''}" onclick="CFG.layout='esq';tudo()">Esquerda</button><button class="${CFG.layout==='dir'?'on':''}" onclick="CFG.layout='dir';tudo()">Direita</button><button class="${CFG.layout==='grade'?'on':''}" onclick="CFG.layout='grade';tudo()">Grade 2 col.</button></div>
+   <div class="sw"><button class="${CFG.selo?'on':''}" onclick="CFG.selo=!CFG.selo;tudo()"></button><span>Selo "% OFF" nas promoções</span></div>
+   <div class="sw"><button class="${CFG.promoEmCima?'on':''}" onclick="CFG.promoEmCima=!CFG.promoEmCima;ativa=0;tudo()"></button><span>Categoria "Promoções" no topo (automática)</span></div>
+   <div class="sw"><button class="${CFG.acoes?'on':''}" onclick="CFG.acoes=!CFG.acoes;tudo()"></button><span>Ações rápidas (Sobre, Entrega, Histórico, Contato)</span></div>
+   <h4>Como funciona</h4><ul><li>Todos os produtos ficam <b>numa rolagem só</b>, agrupados por categoria.</li><li>As categorias ficam <b>coladas no topo</b>; ao rolar, a categoria atual <b>acende sozinha</b> e a barra acompanha. Tocar numa categoria leva até ela.</li><li><b>Promoções</b> viram uma categoria automática (preço promocional + % OFF calculado).</li><li><b>Entrega ou retirada</b>: taxa por bairro, pedido mínimo e forma de pagamento, como na loja virtual de hoje.</li><li>Pedidos entram na tela <b>Pedidos</b> do sistema, com a forma de pagamento escolhida.</li><li>Cores, logo e capa são da loja; fotos e descrições vêm do cadastro do produto.</li></ul>
+   <h4>Como entra o cliente</h4><ul><li><b>Telefone + código</b> (sem senha): o cliente digita o telefone, recebe um código por WhatsApp e confirma. Só pede o nome no primeiro pedido.</li><li>O login é pedido só ao <b>finalizar</b> ou ao abrir o <b>histórico</b>; navegar e montar a sacola não exige conta.</li></ul><h4>Pagamento</h4><ul><li><b>Online</b>: Pix e cartão. <b>Na entrega/retirada</b>: dinheiro (com troco), cartão de crédito, cartão de débito e Pix.</li></ul><h4>Para validar</h4><ul><li>Qual serviço envia o código: <b>WhatsApp</b> (API) ou <b>SMS</b>? Precisa de um contrato/provedor.</li><li>Cartão de <b>débito online</b>: depende do provedor de pagamento; se não tiver, fica só na entrega.</li></ul></div>`;
+}
+function tema(){const r=document.documentElement;r.style.setProperty('--primaria',CFG.cor);const l=(c=>{const n=parseInt(c.slice(1),16);return (.299*(n>>16)+.587*((n>>8)&255)+.114*(n&255))/255})(CFG.cor);r.style.setProperty('--sobre',l>.62?'#1a1408':'#fff');if(CFG.escuro)r.setAttribute('data-escuro','1');else r.removeAttribute('data-escuro');renderPainel()}
+function tudo(){renderAcoes();renderLista();renderPainel();atualizaSacola()}
+tema();tudo();
+</script>
+</body>
+</html>

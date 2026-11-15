@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GiroStock — Preview Raio de entrega</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root,:root[data-theme="dark"]{--bg:#0f0e10;--panel:#17161a;--raised:#1f1d22;--hover:#25232a;--accent:#d4ae4a;--accent-soft:rgba(212,174,74,.12);--accent-line:rgba(212,174,74,.30);--on:#17120a;--txt:#f2eee6;--txt2:#b4ada2;--txt3:#8f8980;--line:rgba(255,255,255,.08);--ok:#5fc48a;--warn:#f0a05a;--err:#ec7a72;--shadow:rgba(0,0,0,.55)}
+:root[data-theme="light"]{--bg:#f4f1ea;--panel:#fff;--raised:#f8f5ee;--hover:#f1ece0;--accent:#8f6810;--accent-soft:rgba(143,104,16,.10);--accent-line:rgba(143,104,16,.28);--on:#fff;--txt:#231f1a;--txt2:#5d564c;--txt3:#7d766b;--line:rgba(35,31,26,.10);--ok:#1f7a4d;--warn:#b25e12;--err:#b3372f;--shadow:rgba(0,0,0,.2)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font-family:Manrope,system-ui,sans-serif;font-size:14px}
+button{font-family:inherit;cursor:pointer}
+input,select{font-family:inherit;font-size:14px;color:var(--txt);background:var(--raised);border:1px solid var(--line);border-radius:10px;padding:9px 11px;width:100%}
+input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px}
+input[type=range]{padding:0;accent-color:var(--accent)}
+.top{display:flex;align-items:center;gap:14px;height:60px;padding:0 28px;border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{font-family:'Playfair Display',serif;font-weight:800;font-size:20px;color:var(--accent)}
+.sp{flex:1}
+.tg{border:1px solid var(--line);background:var(--raised);color:var(--accent);border-radius:999px;padding:7px 12px;font-weight:700;font-size:12px}
+main{padding:20px 28px 50px;max-width:1320px;margin:0 auto}
+.head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.head h2{margin:0;font-size:24px;font-weight:700;margin-right:auto}
+.sub{font-size:12px;color:var(--txt3)}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:18px;align-items:start}
+.mapa{height:680px;border-radius:16px;border:1px solid var(--line);overflow:hidden;position:relative;background:#1c1b1f}
+#map{position:absolute;inset:0}
+:root[data-theme="dark"] .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.9) saturate(.8)}
+.leaflet-container{font-family:Manrope,system-ui,sans-serif}
+.pin{font-size:26px;line-height:1;filter:drop-shadow(0 2px 3px rgba(0,0,0,.5))}
+.dica{position:absolute;left:12px;bottom:12px;z-index:500;background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:12px;padding:8px 12px;font-size:12px;max-width:62%}
+.topo{position:absolute;left:50%;transform:translateX(-50%);top:12px;z-index:500;background:var(--accent);color:var(--on);border-radius:12px;padding:10px 16px;font-size:13px;font-weight:700;display:none;max-width:70%;text-align:center}
+.res{position:absolute;right:12px;top:12px;z-index:500;background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:14px;padding:12px 14px;min-width:250px;max-width:290px;box-shadow:0 8px 24px var(--shadow)}
+.res b{font-size:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:12px}
+.card h4{margin:0 0 10px;font-size:14px;display:flex;align-items:center;gap:8px}
+.novo{font-size:10px;font-weight:800;letter-spacing:.8px;padding:2px 8px;border-radius:999px;background:var(--accent);color:var(--on)}
+label.l{display:block;font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--txt3);margin:10px 0 5px}
+.seg{display:flex;gap:6px;flex-wrap:wrap}.seg button{flex:1;border:1px solid var(--line);background:none;color:var(--txt2);padding:9px 8px;border-radius:10px;font-weight:700;font-size:12px;line-height:1.25}.seg button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.row{display:flex;gap:8px;align-items:center}
+.btn{border:none;border-radius:10px;padding:10px 14px;font-weight:800;font-size:12px;background:var(--accent);color:var(--on)}
+.btn.ghost{background:none;border:1px solid var(--line);color:var(--txt);font-weight:700}.btn.ghost:hover{background:var(--raised)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:6px;font-size:10px;letter-spacing:.8px;text-transform:uppercase;color:var(--txt3);border-bottom:1px solid var(--line)}
+td{padding:6px;border-bottom:1px solid var(--line);vertical-align:middle}
+td input{padding:7px 8px}
+.sw{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:13px}
+.sw button{width:40px;height:22px;border-radius:999px;border:1px solid var(--line);background:var(--raised);position:relative;padding:0;flex:none}
+.sw button::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--txt3);transition:.15s}
+.sw button.on{background:var(--accent-soft);border-color:var(--accent)}.sw button.on::after{left:20px;background:var(--accent)}
+.ok-t{color:var(--ok)}.err-t{color:var(--err)}.warn-t{color:var(--warn)}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}
+.note{font-size:12.5px;color:var(--txt2);line-height:1.6}.note b{color:var(--txt)}.note ul{margin:6px 0 0;padding-left:18px}
+.x{background:none;border:none;color:var(--err);font-size:17px}
+.toast{position:fixed;right:20px;bottom:20px;background:var(--panel);border:1px solid var(--accent);color:var(--txt);padding:12px 16px;border-radius:12px;display:none;z-index:2000;font-weight:600;max-width:420px}
+@media(max-width:1000px){.layout{grid-template-columns:1fr}.mapa{height:480px}}
+</style>
+</head>
+<body>
+<header class="top"><span class="brand">GiroStock</span><span class="sp"></span><button class="tg" id="tg">☾ / ☀ tema</button></header>
+<main>
+ <div class="head"><h2>Loja virtual › Entrega › Raio de entrega</h2><span class="sub">preview · arraste o pino da loja, ajuste o raio e as faixas, e simule um cliente clicando no mapa</span></div>
+ <div class="layout">
+  <div class="mapa"><div id="map"></div>
+   <div class="topo" id="topo">📍 Não encontramos seu endereço pelo CEP. Toque no mapa para marcar o local da entrega.</div>
+   <div class="dica" id="dica">Clique no mapa para simular o endereço de um cliente</div>
+   <div class="res" id="res" style="display:none"></div></div>
+  <div id="painel"></div>
+ </div>
+</main>
+<div class="toast" id="toast"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const $=s=>document.querySelector(s);
+const brl=v=>(+v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const km=v=>(Math.round(v*10)/10).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+' km';
+const num=s=>{const v=parseFloat(String(s||'').replace(',','.'));return isNaN(v)?0:v};
+function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>e.style.display='none',3500)}
+function haversine(a,b){const R=6371,r=x=>x*Math.PI/180,dl=r(b.lat-a.lat),dn=r(b.lng-a.lng);const h=Math.sin(dl/2)**2+Math.cos(r(a.lat))*Math.cos(r(b.lat))*Math.sin(dn/2)**2;return 2*R*Math.asin(Math.sqrt(h))}
+const deslocar=(p,kmL,kmN)=>({lat:p.lat+kmN/110.57,lng:p.lng+kmL/(111.32*Math.cos(p.lat*Math.PI/180))});
+
+/* ---------- estado ---------- */
+const ST={loja:{lat:-23.5505,lng:-46.6333,end:'Rua das Flores, 120 — Centro, São Paulo'},raio:5,usaFaixas:true,taxaUnica:6,faixas:[{ate:2,taxa:4,tempo:0},{ate:5,taxa:8,tempo:10}],margemPino:500,origem:'cep',cliente:null};
+const CORES=['#5fc48a','#d4ae4a','#f0a05a','#ec7a72','#b07cff'];
+
+/* ---------- mapa ---------- */
+const map=L.map('map').setView([ST.loja.lat,ST.loja.lng],12);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+const pinLoja=L.marker([ST.loja.lat,ST.loja.lng],{draggable:true,icon:L.divIcon({className:'',html:'<div class="pin">🏪</div>',iconSize:[30,30],iconAnchor:[15,28]}),zIndexOffset:900}).addTo(map).bindTooltip('Sua loja (arraste para ajustar)');
+let camadas=L.layerGroup().addTo(map),pinCli=null,linha=null;
+pinLoja.on('dragend',()=>{const p=pinLoja.getLatLng();ST.loja.lat=p.lat;ST.loja.lng=p.lng;ST.loja.end='Posição ajustada no mapa';desenha();painel();avalia()});
+map.on('click',e=>{ST.cliente={lat:e.latlng.lat,lng:e.latlng.lng};avalia()});
+
+function desenha(){
+  camadas.clearLayers();const c=[ST.loja.lat,ST.loja.lng];
+  if(ST.usaFaixas){[...ST.faixas].sort((a,b)=>b.ate-a.ate).forEach(f=>{const i=ST.faixas.indexOf(f);L.circle(c,{radius:f.ate*1000,color:CORES[i%5],weight:2,fillColor:CORES[i%5],fillOpacity:.13}).addTo(camadas).bindTooltip(`até ${km(f.ate)} · ${brl(f.taxa)}`,{sticky:true})})}
+  else L.circle(c,{radius:ST.raio*1000,color:'#d4ae4a',weight:3,fillColor:'#d4ae4a',fillOpacity:.16}).addTo(camadas).bindTooltip(`raio de ${km(ST.raio)}`,{sticky:true});
+  // faixa de "perto do limite": pede confirmação do pino
+  const m=ST.margemPino/1000;if(m>0){L.circle(c,{radius:(ST.raio+m)*1000,color:'#f0a05a',weight:1.5,dashArray:'6 6',fill:false}).addTo(camadas).bindTooltip(`limite + ${ST.margemPino} m`,{sticky:true});if(ST.raio-m>0)L.circle(c,{radius:(ST.raio-m)*1000,color:'#f0a05a',weight:1.5,dashArray:'6 6',fill:false}).addTo(camadas).bindTooltip(`limite − ${ST.margemPino} m`,{sticky:true})}
+  const r=ST.raio+m,sw=deslocar(ST.loja,-r,-r),ne=deslocar(ST.loja,r,r);map.fitBounds([[sw.lat,sw.lng],[ne.lat,ne.lng]],{padding:[30,30]});
+}
+function avalia(){
+  const A=ST.loja,B=ST.cliente;if(!B)return;
+  if(pinCli)map.removeLayer(pinCli);if(linha)map.removeLayer(linha);
+  pinCli=L.marker([B.lat,B.lng],{icon:L.divIcon({className:'',html:'<div class="pin">📍</div>',iconSize:[26,26],iconAnchor:[13,24]})}).addTo(map);
+  linha=L.polyline([[A.lat,A.lng],[B.lat,B.lng]],{color:'#d4ae4a',weight:2,dashArray:'6 6'}).addTo(map);
+  const d=haversine(A,B),m=ST.margemPino/1000;
+  const orig=ST.origem==='cep'?'localizado pelo CEP':'marcado pelo cliente no mapa';
+  let corpo;
+  if(d>ST.raio+m)corpo=`<b class="err-t">✖ Fora da área de entrega</b><div class="sub" style="margin-top:4px">${km(d)} — o raio é ${km(ST.raio)}.</div><div class="sub">O cliente vê o aviso antes de pagar e pode escolher <b>retirada</b>.</div>`;
+  else if(ST.origem==='cep'&&Math.abs(d-ST.raio)<=m)corpo=`<b class="warn-t">⚠ Perto do limite — confirmar o pino</b><div class="sub" style="margin-top:4px">${km(d)} (limite ${km(ST.raio)} ± ${ST.margemPino} m). O site pede ao cliente que <b>marque o local exato no mapa</b> antes de continuar.</div>`;
+  else if(d>ST.raio)corpo=`<b class="err-t">✖ Fora da área de entrega</b><div class="sub" style="margin-top:4px">${km(d)} — o raio é ${km(ST.raio)} (pino confirmado pelo cliente).</div>`;
+  else{const f=ST.usaFaixas?(ST.faixas.find(x=>d<=x.ate)||ST.faixas[ST.faixas.length-1]):null;const taxa=f?f.taxa:ST.taxaUnica,tempo=f?f.tempo:0;
+    corpo=`<b class="ok-t">✔ Entregamos aqui</b><div style="margin-top:4px">Taxa de entrega <b>${brl(taxa)}</b>${tempo?` · +${tempo} min`:''}</div><div class="sub">${f?`faixa até ${km(f.ate)}`:'taxa única'}</div>`}
+  const r=$('#res');r.style.display='block';
+  r.innerHTML=`<div class="sub">Endereço simulado · ${orig}</div><div style="font-size:12px;margin:2px 0 6px">distância em linha reta <b>${km(d)}</b></div>${corpo}`;
+  $('#dica').style.display='none';
+}
+
+/* ---------- painel ---------- */
+function sincroniza(){
+  ST.faixas.sort((a,b)=>a.ate-b.ate);ST.faixas=ST.faixas.filter((f,i)=>f.ate<ST.raio||i===ST.faixas.length-1);
+  if(!ST.faixas.length)ST.faixas=[{ate:ST.raio,taxa:ST.taxaUnica,tempo:0}];ST.faixas[ST.faixas.length-1].ate=ST.raio;
+}
+function painel(){
+  sincroniza();
+  const area=Math.PI*ST.raio*ST.raio;
+  $('#painel').innerHTML=`
+  <div class="card"><h4>Local da loja <span class="novo">NOVO</span></h4>
+   <div class="row"><input id="end" value="${ST.loja.end}" onkeydown="if(event.key==='Enter')busca()"><button class="btn" onclick="busca()">Buscar</button></div>
+   <div class="sub" style="margin-top:6px">📌 ${ST.loja.lat.toFixed(5)}, ${ST.loja.lng.toFixed(5)} · arraste o pino da loja no mapa para ajustar</div></div>
+  <div class="card"><h4>Raio de entrega <span class="novo">NOVO</span></h4>
+   <div class="row"><input type="range" min="1" max="30" step="0.5" value="${ST.raio}" oninput="ST.raio=+this.value;mudRaio()"><div style="width:96px"><input id="rn" value="${String(ST.raio).replace('.',',')}" onchange="ST.raio=Math.min(60,Math.max(.5,num(this.value)));mudRaio(true)"></div><b>km</b></div>
+   <div class="sub" style="margin-top:6px">Área coberta ≈ <b id="area">${area.toLocaleString('pt-BR',{maximumFractionDigits:0})}</b> km² · distância medida em <b>linha reta</b> a partir da loja</div>
+   <div class="sw"><button class="${ST.usaFaixas?'on':''}" onclick="ST.usaFaixas=!ST.usaFaixas;mud()"></button><span>Taxa por <b>faixa de distância</b></span></div>
+   ${ST.usaFaixas?`<table style="margin-top:8px"><thead><tr><th>Até (km)</th><th>Taxa</th><th>+ min</th><th></th></tr></thead><tbody>${ST.faixas.map((f,i)=>{const ult=i===ST.faixas.length-1;return `<tr><td><span class="dot" style="background:${CORES[i%5]}"></span><input style="width:70px;display:inline-block" value="${String(f.ate).replace('.',',')}" ${ult?'readonly title="a última faixa vai até o raio"':''} onchange="ST.faixas[${i}].ate=Math.min(ST.raio-.1,Math.max(.1,num(this.value)));mud()"></td><td><input style="width:78px" value="${f.taxa.toFixed(2).replace('.',',')}" onchange="ST.faixas[${i}].taxa=num(this.value);mud(true)"></td><td><input style="width:56px" value="${f.tempo}" onchange="ST.faixas[${i}].tempo=Math.round(num(this.value));mud(true)"></td><td>${ult?'':`<button class="x" onclick="ST.faixas.splice(${i},1);mud()">×</button>`}</td></tr>`}).join('')}</tbody></table><button class="btn ghost" style="margin-top:8px" onclick="addFaixa()">+ faixa</button>`:`<label class="l">Taxa de entrega (R$)</label><input value="${ST.taxaUnica.toFixed(2).replace('.',',')}" onchange="ST.taxaUnica=num(this.value);mud(true)">`}
+   <label class="l">Perto do limite, pedir para o cliente confirmar o pino</label>
+   <div class="row"><input style="width:100px" value="${ST.margemPino}" onchange="ST.margemPino=Math.max(0,Math.round(num(this.value)));mud()"><span class="sub">metros antes e depois do limite (as linhas tracejadas no mapa)</span></div></div>
+  <div class="card"><h4>Simulador do cliente</h4>
+   <div class="seg"><button class="${ST.origem==='cep'?'on':''}" onclick="ST.origem='cep';$('#topo').style.display='none';$('#dica').textContent='Clique no mapa para simular o endereço de um cliente';$('#dica').style.display='block';avalia()">Endereço localizado<br><span class="sub">pelo CEP</span></button><button class="${ST.origem==='pino'?'on':''}" onclick="ST.origem='pino';$('#topo').style.display='block';$('#dica').style.display='none';avalia()">Não localizado<br><span class="sub">cliente marca o pino</span></button></div>
+   <div class="sub" style="margin-top:8px">Clique no mapa para ver o resultado: distância, se atende e qual taxa.</div></div>
+  <div class="card"><h4>Resumo</h4><div class="note">Raio de <b>${km(ST.raio)}</b> a partir da loja (${Math.round(area)} km²). ${ST.usaFaixas?ST.faixas.map(f=>`até ${km(f.ate)} <b>${brl(f.taxa)}</b>`).join(' · '):`taxa única <b>${brl(ST.taxaUnica)}</b>`}.<br><span class="sub">Fora do raio: o site oferece só <b>retirada</b>.</span></div></div>
+  <div class="card note"><b>Como funciona no site do cliente</b><ul><li>O cliente digita o <b>CEP e o número</b>; o sistema localiza o endereço, mede a <b>distância em linha reta</b> até a loja e mostra a <b>taxa</b> ou o aviso de <b>fora da área</b>.</li><li>Se o endereço <b>não for localizado</b>, ou estiver <b>perto do limite</b>, o site <b>pede para o cliente marcar o pino</b> no mapa (já posicionado onde o sistema achou).</li><li>O servidor <b>sempre confere</b> a distância ao fechar o pedido; o cliente não consegue burlar mexendo na tela.</li></ul>
+  <div style="margin-top:8px"><b>Decisões confirmadas</b></div><ul><li>Distância em <b>linha reta</b>.</li><li>Entrega <b>só por raio</b> (sem misturar com bairros).</li><li>Taxa por <b>faixa de distância</b>.</li><li>Endereço não localizado: <b>cliente marca o pino</b>.</li></ul></div>`;
+}
+function mud(soTexto){painel();desenha();avalia()}
+function mudRaio(final){sincroniza();desenha();const a=$('#area');if(a)a.textContent=(Math.PI*ST.raio*ST.raio).toLocaleString('pt-BR',{maximumFractionDigits:0});const rn=$('#rn');if(rn&&!final)rn.value=String(ST.raio).replace('.',',');if(final)painel();avalia()}
+function addFaixa(){const ult=ST.faixas[ST.faixas.length-2]?ST.faixas[ST.faixas.length-2].ate:0;const novo=Math.round((ult+(ST.raio-ult)/2)*10)/10;ST.faixas.splice(ST.faixas.length-1,0,{ate:novo,taxa:ST.faixas[ST.faixas.length-1].taxa-2>0?ST.faixas[ST.faixas.length-1].taxa-2:3,tempo:0});mud()}
+function busca(){const q=$('#end').value.trim();if(!q)return;fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q='+encodeURIComponent(q)).then(r=>r.json()).then(j=>{if(!j.length){toast('Endereço não encontrado');return}const p=j[0];ST.loja={lat:+p.lat,lng:+p.lon,end:p.display_name.split(',').slice(0,3).join(',')};pinLoja.setLatLng([ST.loja.lat,ST.loja.lng]);ST.cliente=null;if(pinCli){map.removeLayer(pinCli);pinCli=null}if(linha){map.removeLayer(linha);linha=null}$('#res').style.display='none';$('#dica').style.display='block';painel();desenha();toast('Loja posicionada: '+ST.loja.end)}).catch(()=>toast('Busca de endereço indisponível agora'))}
+$('#tg').onclick=()=>{const h=document.documentElement;h.dataset.theme=h.dataset.theme==='dark'?'light':'dark'};
+painel();desenha();
+setTimeout(()=>map.invalidateSize(),300);
+</script>
+</body>
+</html>

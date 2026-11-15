@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GiroStock — Preview Preços por loja e quantidade</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
+<style>
+:root,:root[data-theme="dark"]{--bg:#0f0e10;--panel:#17161a;--raised:#1f1d22;--hover:#25232a;--accent:#d4ae4a;--accent-soft:rgba(212,174,74,.12);--accent-line:rgba(212,174,74,.30);--on:#17120a;--txt:#f2eee6;--txt2:#b4ada2;--txt3:#8f8980;--line:rgba(255,255,255,.08);--ok:#5fc48a;--warn:#f0a05a;--err:#ec7a72;--shadow:rgba(0,0,0,.55)}
+:root[data-theme="light"]{--bg:#f4f1ea;--panel:#fff;--raised:#f8f5ee;--hover:#f1ece0;--accent:#8f6810;--accent-soft:rgba(143,104,16,.10);--accent-line:rgba(143,104,16,.28);--on:#fff;--txt:#231f1a;--txt2:#5d564c;--txt3:#7d766b;--line:rgba(35,31,26,.10);--ok:#1f7a4d;--warn:#b25e12;--err:#b3372f;--shadow:rgba(0,0,0,.2)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font-family:Manrope,system-ui,sans-serif;font-size:14px}
+button{font-family:inherit;cursor:pointer}
+input,select{font-family:inherit;font-size:14px;color:var(--txt);background:var(--raised);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%}
+input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px}
+input[type=checkbox]{width:auto}
+.top{display:flex;align-items:center;gap:14px;height:64px;padding:0 28px;border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{font-family:'Playfair Display',serif;font-weight:800;font-size:20px;color:var(--accent)}
+.top nav{display:flex;gap:4px;flex:1;flex-wrap:wrap;margin-left:8px}
+.top nav a{padding:8px 13px;border-radius:999px;color:var(--txt2);font-size:12px;font-weight:600;cursor:pointer}
+.top nav a:hover{background:var(--raised);color:var(--txt)}
+.top nav a.on{background:var(--accent);color:var(--on);font-weight:700}
+.tg{border:1px solid var(--line);background:var(--raised);color:var(--accent);border-radius:999px;padding:7px 12px;font-weight:700;font-size:12px}
+main{padding:22px 28px 60px;max-width:1240px;margin:0 auto}
+.head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.head h2{margin:0;font-size:24px;font-weight:700;margin-right:auto}
+.sub{font-size:12px;color:var(--txt3)}
+.btn{border:none;border-radius:10px;padding:11px 18px;font-weight:800;font-size:13px;background:var(--accent);color:var(--on);text-transform:uppercase;letter-spacing:.3px}
+.btn.ghost{background:none;border:1px solid var(--line);color:var(--txt);text-transform:none;font-weight:700}
+.btn.ghost:hover{background:var(--raised)}
+.btn.sm{padding:7px 11px;font-size:12px}
+.btn.danger{background:none;border:1px solid var(--err);color:var(--err);text-transform:none;font-weight:700}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px;align-items:start}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:22px 24px}
+.modal h3{margin:0 0 2px;font-size:20px}
+label.l{display:block;font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--txt3);margin:0 0 5px}
+.fg{display:grid;grid-template-columns:repeat(12,1fr);gap:12px;margin-top:14px}
+.c12{grid-column:span 12}.c6{grid-column:span 6}.c4{grid-column:span 4}.c3{grid-column:span 3}.c8{grid-column:span 8}.c2{grid-column:span 2}
+.hint{font-size:11.5px;color:var(--txt3);margin-top:4px}
+.resumo{background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:12px;padding:10px 14px;font-size:13px;color:var(--txt2);margin-top:12px}
+.resumo b{color:var(--txt)}
+.sec{border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-top:16px;background:var(--bg)}
+.sec h4{margin:0;font-size:15px;display:flex;align-items:center;gap:8px}
+.novo{font-size:10px;font-weight:800;letter-spacing:.8px;padding:2px 8px;border-radius:999px;background:var(--accent);color:var(--on)}
+.sw{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:13px}
+.sw button{width:40px;height:22px;border-radius:999px;border:1px solid var(--line);background:var(--raised);position:relative;padding:0;flex:none}
+.sw button::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--txt3);transition:.15s}
+.sw button.on{background:var(--accent-soft);border-color:var(--accent)}.sw button.on::after{left:20px;background:var(--accent)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+.chip{border:1px solid var(--line);background:none;color:var(--txt2);border-radius:999px;padding:8px 14px;font-size:12px;font-weight:700}
+.chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.chip .d{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok);margin-right:6px}.chip .d.off{background:var(--txt3)}
+.tbl{border:1px solid var(--line);border-radius:12px;overflow:auto;margin-top:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:9px 10px;font-size:10px;letter-spacing:.8px;text-transform:uppercase;color:var(--txt3);border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+.tag{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--raised);color:var(--txt2);border:1px solid var(--line)}
+.pill{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;border:1px solid}
+.pill.ok{color:var(--ok);border-color:var(--ok)}.pill.warn{color:var(--warn);border-color:var(--warn)}.pill.err{color:var(--err);border-color:var(--err)}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.box h5{margin:0 0 8px;font-size:14px}
+.box ul{margin:0;padding-left:18px;color:var(--txt2);font-size:12.5px;line-height:1.7}
+.box b{color:var(--txt)}
+.line{display:flex;justify-content:space-between;gap:10px;padding:6px 0;font-size:13px;border-bottom:1px solid var(--line)}.line:last-child{border-bottom:none}
+.ok-t{color:var(--ok)}.err-t{color:var(--err)}.warn-t{color:var(--warn)}.ac{color:var(--accent)}
+.cart{background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:16px}
+.qb{border:1px solid var(--line);background:var(--raised);color:var(--txt);width:34px;height:34px;border-radius:9px;font-size:16px}
+.qn{min-width:56px;text-align:center;padding:7px;border:1px solid var(--line);border-radius:9px;background:var(--raised);font-weight:700}
+.toast{position:fixed;right:20px;bottom:20px;background:var(--panel);border:1px solid var(--accent);color:var(--txt);padding:12px 16px;border-radius:12px;display:none;z-index:99;font-weight:600;max-width:420px}
+.x{background:none;border:none;color:var(--err);font-size:18px}
+@media(max-width:1000px){.layout{grid-template-columns:1fr}.c6,.c4,.c3,.c8,.c2{grid-column:span 12}}
+</style>
+</head>
+<body>
+<header class="top"><span class="brand">GiroStock</span><nav id="nav"></nav><button class="tg" id="tg">☾ / ☀ tema</button></header>
+<main id="main"></main>
+<div class="toast" id="toast"></div>
+<script>
+const $=s=>document.querySelector(s);
+const brl=v=>(+v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const brlf=v=>(+v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL',minimumFractionDigits:2,maximumFractionDigits:4});
+const num=s=>{if(typeof s==='number')return s;const v=parseFloat(String(s||'').replace(/\./g,'').replace(',','.'));return isNaN(v)?0:v};
+const fmt=v=>(+v||0).toFixed(2).replace('.',',');
+function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>e.style.display='none',3200)}
+const TABS=[['cad','1 · Cadastro do produto'],['trf','2 · Transferência (vira insumo)'],['pdv','3 · Como aparece no PDV']];
+let tab='cad';
+
+/* ================= estado ================= */
+const P={nome:'Energético Monster 473ml',cat:'Energéticos',un:'UN',ean:'7898927019153',custo:6.00,venda:12.00,forn:'Distribuidora Souza'};
+let LOJAS=[
+ {id:'d',nome:'Distribuidora',vende:true,preco:9.50,faixas:[{min:6,modo:'unit',val:8.00,rot:'Pack 6',auto:true,ean:'17898927019150'},{min:24,modo:'unit',val:7.20,rot:'Caixa 24',auto:true,ean:''}]},
+ {id:'c',nome:'Casa de show',vende:true,preco:16.00,faixas:[{min:6,modo:'unit',val:15.00,rot:'Balde 6',auto:false,ean:''}]},
+ {id:'l',nome:'Lanchonete',vende:true,preco:null,faixas:[]}
+];
+let porLoja=true,selLoja='d';
+let CONV={ativa:true,insumo:'Óleo de soja (ML)',novo:false,nomeNovo:'',fator:1000,un:'ML',lojas:{d:false,c:false,l:true},modo:'perguntar'};
+const CUSTO_OLEO=7.20; // custo de 1 L de óleo
+let SALDO={d:42,l:0}; // distribuidora em L (produto) / lanchonete em ML (insumo)
+let HIST=[];
+const loja=id=>LOJAS.find(l=>l.id===id);
+const precoLoja=l=>l.preco!=null&&porLoja?l.preco:P.venda;
+function unitDaFaixa(l,f){return f.modo==='unit'?f.val:f.modo==='kit'?f.val/f.min:precoLoja(l)*(1-f.val/100)}
+function kitDaFaixa(l,f){return unitDaFaixa(l,f)*f.min}
+const margem=(p,c)=>p>0?(p-c)/p*100:0;
+
+/* ================= nav ================= */
+function nav(){$('#nav').innerHTML=TABS.map(([k,l])=>`<a class="${tab===k?'on':''}" onclick="go('${k}')">${l}</a>`).join('')}
+function go(k){tab=k;nav();render();window.scrollTo(0,0)}
+function render(){$('#main').innerHTML=tab==='cad'?telaCad():tab==='trf'?telaTrf():telaPdv()}
+
+/* ================= 1. CADASTRO ================= */
+function telaCad(){
+  const l=loja(selLoja);
+  return `<div class="head"><h2>Editar produto</h2><span class="sub">baseado na tela de cadastro atual · tudo clicável · nada é salvo</span></div>
+  <div class="layout"><div class="modal">
+   <h3>Editar produto</h3><div class="sub">PRD-0145 · os dados abaixo são os de hoje; as seções com <span class="novo">NOVO</span> são a proposta</div>
+   <div class="resumo">Aqui ficam os <b>dados do produto</b>. O saldo não é cadastrado aqui: use o <b>ícone de caixa</b> da lista para lançar entradas, transferências e saídas.</div>
+   <div class="fg">
+    <div class="c12"><label class="l">Nome do produto *</label><input value="${P.nome}" oninput="P.nome=this.value"></div>
+    <div class="c6"><label class="l">Categoria *</label><select><option>${P.cat}</option></select></div>
+    <div class="c2"><label class="l">Unidade</label><select onchange="P.un=this.value;render()">${['UN','KG','L','CX'].map(u=>`<option ${P.un===u?'selected':''}>${u}</option>`).join('')}</select></div>
+    <div class="c4"><label class="l">Código de barras / EAN *</label><input value="${P.ean}"></div>
+    <div class="c4"><label class="l">Preço de custo (R$) *</label><input value="${fmt(P.custo)}" oninput="P.custo=num(this.value);atualiza()"><div class="hint">O custo é do produto (igual em todas as lojas).</div></div>
+    <div class="c4"><label class="l">Preço de venda padrão (R$) *</label><input value="${fmt(P.venda)}" oninput="P.venda=num(this.value);atualiza()"><div class="hint" id="mgP">Margem: ${margem(P.venda,P.custo).toFixed(1).replace('.',',')}% · vale para lojas sem preço próprio</div></div>
+    <div class="c4"><label class="l">Fornecedor principal</label><select><option>${P.forn}</option></select></div>
+   </div>
+
+   <div class="sec" id="secPreco">
+    <h4>Preços por loja e por quantidade <span class="novo">NOVO</span></h4>
+    <div class="sub" style="margin-top:4px">Defina um preço diferente em cada loja e <b>descontos por quantidade</b> (pack, fardo, atacado). Quem não for configurado usa o preço padrão acima.</div>
+    <div class="sw"><button class="${porLoja?'on':''}" onclick="porLoja=!porLoja;render()"></button><span>Preço diferente por loja</span></div>
+    ${porLoja?`<div class="chips">${LOJAS.map(x=>`<button class="chip ${selLoja===x.id?'on':''}" onclick="selLoja='${x.id}';render()"><span class="d ${x.vende?'':'off'}"></span>${x.nome}</button>`).join('')}</div>`:''}
+    <div id="lojaEd">${porLoja?lojaEditor(l):lojaEditor(LOJAS[0],true)}</div>
+    <div class="tbl"><table><thead><tr><th>Loja</th><th class="num">Unidade</th><th class="num">Margem</th><th>Descontos por quantidade</th><th></th></tr></thead><tbody>
+     ${(porLoja?LOJAS:[LOJAS[0]]).map(x=>{const p=precoLoja(x);return `<tr><td><b>${porLoja?x.nome:'Todas as lojas'}</b> ${x.vende?'':'<span class="pill err">não vende</span>'}</td><td class="num">${brl(p)}${x.preco==null&&porLoja?' <span class="sub">(padrão)</span>':''}</td><td class="num ${margem(p,P.custo)<10?'warn-t':''}">${margem(p,P.custo).toFixed(1).replace('.',',')}%</td><td>${x.faixas.length?x.faixas.map(f=>`<span class="tag">${f.rot||('a partir de '+f.min)}: ${f.min} un × ${brl(unitDaFaixa(x,f))}</span>`).join(' '):'<span class="sub">sem desconto por quantidade</span>'}</td><td><button class="btn ghost sm" onclick="selLoja='${x.id}';render();document.getElementById('secPreco').scrollIntoView()">editar</button></td></tr>`}).join('')}
+    </tbody></table></div>
+   </div>
+
+   <div class="sec">
+    <h4>Pode virar insumo na transferência <span class="novo">NOVO</span></h4>
+    <div class="sub" style="margin-top:4px">Para produtos vendidos inteiros numa loja e usados <b>por medida</b> em outra (ex.: 1 L de óleo vendido na distribuidora vira insumo em ML na lanchonete).</div>
+    <div class="sw"><button class="${CONV.ativa?'on':''}" onclick="CONV.ativa=!CONV.ativa;render()"></button><span>Este produto pode virar insumo ao ser transferido</span></div>
+    ${CONV.ativa?convEditor():''}
+   </div>
+
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px"><button class="btn ghost">Cancelar</button><button class="btn" onclick="toast('Preview: nada é salvo de verdade')">Salvar produto</button></div>
+  </div>
+  ${lateral([
+   ['Preço por quantidade','<ul><li>Faixas começam em uma <b>quantidade mínima</b> (ex.: 6, 24).</li><li>Você escolhe como informar: <b>preço por unidade</b>, <b>preço do kit fechado</b> ou <b>% de desconto</b>; o sistema mostra os outros dois.</li><li><b>Automático</b>: ao chegar na quantidade, o PDV aplica sozinho. <b>Manual</b>: só quando o operador escolhe o pack.</li><li>Código de barras do pack (opcional): ler o fardo já lança as 6 unidades.</li><li>O estoque baixa <b>unidade por unidade</b> (pack de 6 = 6 do estoque).</li></ul>'],
+   ['Preço por loja','<ul><li>Cada loja tem <b>seu preço</b> e <b>suas faixas</b> (a casa de show pode não ter o mesmo desconto).</li><li>Custo é um só; a <b>margem</b> é calculada por loja.</li><li>"Não vende nesta loja" tira o produto do PDV dela.</li></ul>'],
+   ['Alertas automáticos','<ul><li>Preço abaixo do custo ou margem baixa.</li><li>Faixa mais cara que a unidade, ou quantidades repetidas.</li></ul>'],
+   ['Decisões confirmadas','<ul><li>O desconto vale só para o <b>mesmo produto</b> (pack fechado), sem mistura de produtos.</li><li>Cada faixa escolhe: <b>automática</b> ou <b>só se o operador escolher</b>.</li><li>Vale para <b>todos os clientes</b> (sem tabela por cliente por enquanto).</li><li>O <b>custo é um só</b> (a mercadoria entra na loja central, a Distribuidora); só o preço de venda muda por loja.</li><li>Conversão em insumo: o sistema <b>pergunta</b> ao transferir.</li></ul>']
+  ])}
+  </div>`;
+}
+function lojaEditor(l,geral){
+  const p=precoLoja(l);
+  return `<div style="margin-top:14px">
+   ${geral?'':`<div class="fg" style="margin-top:0"><div class="c4"><label class="l">Preço unitário em ${l.nome} (R$)</label><input value="${l.preco!=null?fmt(l.preco):''}" placeholder="padrão: ${fmt(P.venda)}" oninput="loja('${l.id}').preco=this.value===''?null:num(this.value);atualiza()"><div class="hint" id="mgL">${hintMargem(l)}</div></div>
+   <div class="c4"><label class="l">Vende nesta loja?</label><div class="sw" style="margin-top:8px"><button class="${l.vende?'on':''}" onclick="loja('${l.id}').vende=!loja('${l.id}').vende;render()"></button><span>${l.vende?'Sim':'Não vende aqui'}</span></div></div>
+   <div class="c4"><label class="l">Copiar regras de…</label><select onchange="copiar('${l.id}',this.value)"><option value="">escolha</option>${LOJAS.filter(x=>x.id!==l.id).map(x=>`<option value="${x.id}">${x.nome}</option>`).join('')}</select></div></div>`}
+   <div style="margin-top:14px;display:flex;align-items:center;gap:10px"><b style="font-size:13px">Descontos por quantidade${geral?'':' em '+l.nome}</b><span class="sub">pack / fardo / atacado</span><button class="btn ghost sm" style="margin-left:auto" onclick="addFaixa('${l.id}')">+ faixa</button></div>
+   ${l.faixas.length?`<div class="tbl"><table><thead><tr><th>Nome</th><th>A partir de</th><th>Informar por</th><th>Valor</th><th class="num">Por unidade</th><th class="num">Kit fechado</th><th class="num">Desconto</th><th class="num">Margem</th><th>Aplicação</th><th></th></tr></thead><tbody>
+   ${l.faixas.map((f,i)=>{const u=unitDaFaixa(l,f),k=kitDaFaixa(l,f),d=(1-u/p)*100,m=margem(u,P.custo);return `<tr>
+    <td><input style="width:110px" value="${f.rot||''}" placeholder="Pack ${f.min}" oninput="loja('${l.id}').faixas[${i}].rot=this.value"></td>
+    <td><div style="display:flex;gap:6px;align-items:center"><input style="width:64px" value="${f.min}" oninput="setMin('${l.id}',${i},this.value)"> un</div></td>
+    <td><select style="width:130px" onchange="setModo('${l.id}',${i},this.value)"><option value="unit" ${f.modo==='unit'?'selected':''}>Preço por unidade</option><option value="kit" ${f.modo==='kit'?'selected':''}>Preço do kit</option><option value="pct" ${f.modo==='pct'?'selected':''}>% de desconto</option></select></td>
+    <td><input style="width:90px" value="${f.modo==='pct'?String(f.val).replace('.',','):fmt(f.val)}" oninput="setVal('${l.id}',${i},this.value)"></td>
+    <td class="num" id="fu${l.id}${i}">${brl(u)}</td><td class="num" id="fk${l.id}${i}">${brl(k)}</td>
+    <td class="num ${d<=0?'err-t':'ok-t'}" id="fd${l.id}${i}">${d.toFixed(1).replace('.',',')}%</td>
+    <td class="num ${m<0?'err-t':m<10?'warn-t':''}" id="fm${l.id}${i}">${m.toFixed(1).replace('.',',')}%</td>
+    <td><select style="width:112px" onchange="loja('${l.id}').faixas[${i}].auto=this.value==='1'"><option value="1" ${f.auto?'selected':''}>Automático</option><option value="0" ${!f.auto?'selected':''}>Só se escolher</option></select></td>
+    <td><button class="x" onclick="rmFaixa('${l.id}',${i})" title="remover">×</button></td></tr>
+    <tr><td colspan="10" style="padding:0 10px 8px;border-bottom:1px solid var(--line)"><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap" id="fa${l.id}${i}">${alertasFaixa(l,f)}<span class="sub">EAN do pack (opcional):</span><input style="width:170px" value="${f.ean||''}" placeholder="código do fardo" oninput="loja('${l.id}').faixas[${i}].ean=this.value"></div></td></tr>`}).join('')}
+   </tbody></table></div>`:'<div class="sub" style="margin-top:10px;padding:14px;border:1px dashed var(--line);border-radius:12px">Sem desconto por quantidade. Use <b>+ faixa</b> para vender pack, fardo ou atacado.</div>'}
+  </div>`;
+}
+function hintMargem(l){const p=precoLoja(l);return `Margem: ${margem(p,P.custo).toFixed(1).replace('.',',')}% · lucro ${brl(p-P.custo)} por unidade`}
+function alertasFaixa(l,f){
+  const a=[],p=precoLoja(l),u=unitDaFaixa(l,f);
+  if(u>=p)a.push('<span class="pill err">preço da faixa não é menor que a unidade</span>');
+  if(u<=P.custo)a.push('<span class="pill err">abaixo do custo</span>');
+  else if(margem(u,P.custo)<10)a.push('<span class="pill warn">margem baixa</span>');
+  if(l.faixas.filter(x=>x.min===f.min).length>1)a.push('<span class="pill err">quantidade repetida</span>');
+  if(!a.length)a.push('<span class="pill ok">ok</span>');
+  return a.join(' ');
+}
+function setMin(id,i,v){const l=loja(id);l.faixas[i].min=Math.max(2,parseInt(v)||2);atualiza()}
+function setModo(id,i,m){const l=loja(id),f=l.faixas[i],u=unitDaFaixa(l,f);f.modo=m;f.val=m==='unit'?u:m==='kit'?u*f.min:(1-u/precoLoja(l))*100;f.val=Math.round(f.val*100)/100;render()}
+function setVal(id,i,v){loja(id).faixas[i].val=num(v);atualiza()}
+function addFaixa(id){const l=loja(id);const ult=l.faixas.length?l.faixas[l.faixas.length-1].min:0;const min=ult?ult*2:6;l.faixas.push({min,modo:'pct',val:5,rot:'',auto:true,ean:''});render()}
+function rmFaixa(id,i){loja(id).faixas.splice(i,1);render()}
+function copiar(id,de){if(!de)return;const o=loja(de),l=loja(id);l.preco=o.preco;l.faixas=JSON.parse(JSON.stringify(o.faixas));render();toast('Regras copiadas de '+o.nome)}
+function atualiza(){ // recalcula números sem perder o foco dos campos
+  const mg=$('#mgP');if(mg)mg.textContent=`Margem: ${margem(P.venda,P.custo).toFixed(1).replace('.',',')}% · vale para lojas sem preço próprio`;
+  const l=loja(selLoja),ml=$('#mgL');if(ml)l&&(ml.textContent=hintMargem(l));
+  (porLoja?[l]:[LOJAS[0]]).forEach(x=>x.faixas.forEach((f,i)=>{const p=precoLoja(x),u=unitDaFaixa(x,f),k=kitDaFaixa(x,f),d=(1-u/p)*100,m=margem(u,P.custo);
+    const set=(id,t,c)=>{const e=document.getElementById(id+x.id+i);if(e){e.textContent=t;if(c)e.className='num '+c}};
+    set('fu',brl(u));set('fk',brl(k));set('fd',d.toFixed(1).replace('.',',')+'%',d<=0?'err-t':'ok-t');set('fm',m.toFixed(1).replace('.',',')+'%',m<0?'err-t':m<10?'warn-t':'');
+    const a=document.getElementById('fa'+x.id+i);if(a){const first=a.querySelector('.sub');const rest=a.innerHTML.slice(a.innerHTML.indexOf('<span class="sub">'));a.innerHTML=alertasFaixa(x,f)+' '+rest}}));
+}
+function convEditor(){
+  const custoIns=CUSTO_OLEO/CONV.fator;
+  return `<div class="fg" style="margin-top:12px">
+   <div class="c6"><label class="l">Vira qual insumo? *</label><select onchange="CONV.novo=this.value==='__novo';CONV.insumo=this.value;render()"><option ${CONV.insumo==='Óleo de soja (ML)'&&!CONV.novo?'selected':''}>Óleo de soja (ML)</option><option>Leite integral (ML)</option><option>Farinha de trigo (G)</option><option value="__novo" ${CONV.novo?'selected':''}>+ Criar insumo novo a partir deste produto</option></select></div>
+   ${CONV.novo?`<div class="c4"><label class="l">Nome do insumo</label><input value="${CONV.nomeNovo||P.nome}" oninput="CONV.nomeNovo=this.value"></div>`:''}
+   <div class="c3"><label class="l">1 ${P.un} do produto =</label><div style="display:flex;gap:6px"><input value="${CONV.fator}" oninput="CONV.fator=num(this.value)||1;atualizaConv()"><select style="width:90px" onchange="CONV.un=this.value;atualizaConv()">${['ML','G','L','KG','UN'].map(u=>`<option ${CONV.un===u?'selected':''}>${u}</option>`).join('')}</select></div></div>
+    <div class="c3"><label class="l">Custo do insumo</label><div class="hint" style="margin-top:12px;color:var(--txt)" id="cvCusto">${brlf(custoIns)} por ${CONV.un} <span class="sub">(custo do produto ÷ fator)</span></div></div>
+   <div class="c12"><label class="l">Em quais lojas vira insumo?</label><div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:4px">${LOJAS.map(x=>`<label style="display:flex;gap:6px;align-items:center;font-size:13px"><input type="checkbox" ${CONV.lojas[x.id]?'checked':''} onchange="CONV.lojas['${x.id}']=this.checked;render()"> ${x.nome} ${CONV.lojas[x.id]?'<span class="tag">insumo</span>':'<span class="tag">continua produto</span>'}</label>`).join('')}</div></div>
+   <div class="c6"><label class="l">Ao transferir para essas lojas</label><select onchange="CONV.modo=this.value"><option value="sempre" ${CONV.modo==='sempre'?'selected':''}>Converter sempre (automático)</option><option value="perguntar" ${CONV.modo==='perguntar'?'selected':''}>Perguntar: converter ou manter como produto</option></select></div>
+   <div class="c12"><div class="sub">A ficha técnica das receitas usa o <b>insumo</b> (ex.: 30 ML de óleo por porção). O produto continua sendo vendido inteiro nas lojas em que <b>não</b> converte.</div></div>
+  </div>`;
+}
+function atualizaConv(){const e=$('#cvCusto');if(e)e.innerHTML=`${brlf(CUSTO_OLEO/CONV.fator)} por ${CONV.un} <span class="sub">(custo do produto ÷ fator)</span>`}
+
+/* ================= 2. TRANSFERÊNCIA ================= */
+let TR={de:'d',para:'l',qtd:3,converter:true};
+function telaTrf(){
+  const dest=loja(TR.para),conv=CONV.ativa&&CONV.lojas[TR.para]&&TR.de!==TR.para;
+  const q=TR.qtd||0,insQtd=q*CONV.fator;
+  return `<div class="head"><h2>Estoque do produto · Transferência</h2><span class="sub">exemplo com o <b>Óleo de soja 1 L</b> (a conversão que você configurou na aba 1)</span></div>
+  <div class="layout"><div class="modal">
+   <h3>Óleo de soja Liza 1 L</h3><div class="sub">PRD-0088 · saldo Distribuidora: <b id="sd">${SALDO.d} L</b> · Lanchonete (como insumo): <b id="sl">${SALDO.l.toLocaleString('pt-BR')} ${CONV.un}</b></div>
+   <div class="chips"><button class="chip">Resumo</button><button class="chip">Entrada</button><button class="chip on">Transferência</button><button class="chip">Saída</button><button class="chip">Balanço</button><button class="chip">Histórico</button></div>
+   <div class="fg">
+    <div class="c4"><label class="l">Origem</label><select onchange="TR.de=this.value;render()">${LOJAS.map(x=>`<option value="${x.id}" ${TR.de===x.id?'selected':''}>${x.nome}</option>`).join('')}</select></div>
+    <div class="c4"><label class="l">Destino</label><select onchange="TR.para=this.value;render()">${LOJAS.map(x=>`<option value="${x.id}" ${TR.para===x.id?'selected':''}>${x.nome}</option>`).join('')}</select></div>
+    <div class="c4"><label class="l">Quantidade (L)</label><input value="${TR.qtd}" oninput="TR.qtd=num(this.value);atualizaTr()"></div>
+   </div>
+   <div id="trBox">${trBox(conv,dest,q,insQtd)}</div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px"><button class="btn" onclick="fazTransf()" ${q>0&&q<=SALDO.d&&TR.de!==TR.para?'':'disabled'}>Transferir</button></div>
+   ${HIST.length?`<div class="tbl"><table><thead><tr><th>Quando</th><th>Movimento</th><th class="num">Origem</th><th class="num">Destino</th></tr></thead><tbody>${HIST.map(h=>`<tr><td>${h.t}</td><td>${h.m}</td><td class="num">${h.o}</td><td class="num ok-t">${h.d}</td></tr>`).join('')}</tbody></table></div>`:''}
+  </div>
+  ${lateral([
+   ['Como funciona','<ul><li>Na ficha do produto você marca <b>"pode virar insumo"</b>, escolhe o insumo, o fator (1 L = 1.000 ML) e as lojas.</li><li>Ao transferir para uma dessas lojas, o sistema <b>baixa o produto</b> da origem e <b>soma o insumo</b> no destino, já na medida da receita.</li><li>O <b>custo do insumo</b> vem do custo do produto ÷ fator (média ponderada com o que já existe).</li><li>O histórico registra a conversão; não existe "desconverter" (corrige-se por balanço).</li></ul>'],
+   ['Regras de segurança','<ul><li>Converter só entre lojas diferentes e para quem tem a permissão de estoque.</li><li>Se o destino <b>não</b> está marcado, a transferência é normal (continua produto).</li><li>Se o modo for <b>perguntar</b>, o operador escolhe na hora.</li></ul>']
+  ])}</div>`;
+}
+function trBox(conv,dest,q,insQtd){
+  if(!conv)return `<div class="resumo" style="margin-top:16px">Em <b>${dest.nome}</b> este produto <b>continua como produto</b> (não está marcado para virar insumo${CONV.ativa?'':', ou a opção está desligada no cadastro'}). Transferência comum: ${SALDO.d} → ${SALDO.d-(q||0)} L na origem.</div>`;
+  const opcao=CONV.modo==='perguntar'?`<div class="sw"><button class="${TR.converter?'on':''}" onclick="TR.converter=!TR.converter;render()"></button><span>Converter em insumo neste destino</span></div>`:'';
+  if(CONV.modo==='perguntar'&&!TR.converter)return `<div class="resumo" style="margin-top:16px">${opcao}Transferência como <b>produto</b>: ${SALDO.d} → ${SALDO.d-(q||0)} L; destino recebe ${q||0} L como produto.</div>`;
+  return `<div class="resumo" style="margin-top:16px">${opcao}<b>Conversão em insumo</b> em ${dest.nome}: <b>${CONV.insumo.replace(/ \(.*\)/,'')}</b><div style="margin-top:8px">
+   <div class="line"><span>${loja(TR.de).nome} (produto)</span><b>${SALDO.d} → ${+(SALDO.d-(q||0)).toFixed(3)} L</b></div>
+   <div class="line"><span>${dest.nome} (insumo)</span><b class="ok-t">+ ${insQtd.toLocaleString('pt-BR')} ${CONV.un}</b></div>
+   <div class="line"><span>Saldo do insumo depois</span><b>${SALDO.l.toLocaleString('pt-BR')} → ${(SALDO.l+insQtd).toLocaleString('pt-BR')} ${CONV.un}</b></div>
+   <div class="line"><span>Custo médio do insumo</span><b>${brlf(CUSTO_OLEO/CONV.fator)} / ${CONV.un}</b></div></div></div>`;
+}
+function atualizaTr(){const conv=CONV.ativa&&CONV.lojas[TR.para]&&TR.de!==TR.para,q=TR.qtd||0;$('#trBox').innerHTML=trBox(conv,loja(TR.para),q,q*CONV.fator)}
+function fazTransf(){
+  const q=TR.qtd,conv=CONV.ativa&&CONV.lojas[TR.para]&&(CONV.modo==='sempre'||TR.converter);
+  const antes=SALDO.d;SALDO.d=+(SALDO.d-q).toFixed(3);
+  const ins=q*CONV.fator;if(conv)SALDO.l+=ins;
+  HIST.unshift({t:new Date().toTimeString().slice(0,5),m:conv?'Transferência com conversão em insumo':'Transferência',o:`− ${q} L`,d:conv?`+ ${ins.toLocaleString('pt-BR')} ${CONV.un} (insumo)`:`+ ${q} L`});
+  toast(conv?`Convertido: ${q} L viraram ${ins.toLocaleString('pt-BR')} ${CONV.un} de insumo na ${loja(TR.para).nome}`:'Transferência registrada');render();
+}
+
+/* ================= 3. PDV ================= */
+let PDV={loja:'d',qtd:1,tabela:true};
+function calc(l,q){
+  const base=precoLoja(l);let f=null;
+  [...l.faixas].filter(x=>x.auto&&q>=x.min).sort((a,b)=>b.min-a.min).forEach(x=>{if(!f)f=x});
+  if(!f)return {un:base,total:base*q,faixa:null,eco:0,resto:0};
+  const un=unitDaFaixa(l,f),kits=Math.floor(q/f.min),resto=q-kits*f.min;
+  // regra: a partir da quantidade, todas as unidades pagam o preço da faixa
+  return {un,total:un*q,faixa:f,eco:base*q-un*q,resto};
+}
+function telaPdv(){
+  const l=loja(PDV.loja),r=calc(l,PDV.qtd),base=precoLoja(l);
+  const prox=l.faixas.filter(x=>x.min>PDV.qtd).sort((a,b)=>a.min-b.min)[0];
+  return `<div class="head"><h2>PDV · como o preço aparece</h2><span class="sub">usa as regras que você configurou na aba 1</span></div>
+  <div class="layout"><div class="modal">
+   <div class="fg" style="margin-top:0"><div class="c4"><label class="l">Loja do PDV</label><select onchange="PDV.loja=this.value;render()">${LOJAS.map(x=>`<option value="${x.id}" ${PDV.loja===x.id?'selected':''}>${x.nome}</option>`).join('')}</select></div>
+    <div class="c8"><label class="l">Busca</label><input value="monster" readonly></div></div>
+   <div class="tbl"><table><thead><tr><th>Produto</th><th>Código</th><th>Categoria</th><th class="num">Estoque</th><th class="num">Preço</th></tr></thead><tbody>
+    <tr style="background:var(--accent-soft)"><td><b>${P.nome}</b><div class="sub">${l.faixas.filter(f=>f.auto||true).map(f=>`${f.rot||('a partir de '+f.min)}: ${f.min} × ${brl(unitDaFaixa(l,f))}`).join(' · ')||'sem desconto por quantidade'}</div></td><td>${P.ean}</td><td>${P.cat}</td><td class="num">dá para 84 un.</td><td class="num"><b class="ac">${l.vende?brl(base):'—'}</b></td></tr></tbody></table></div>
+   ${!l.vende?`<div class="resumo" style="margin-top:14px;border-color:var(--err)">Este produto <b>não é vendido</b> em ${l.nome}: não aparece no PDV desta loja.</div>`:`
+   <div class="cart" style="margin-top:16px"><div style="display:flex;align-items:center;gap:10px"><h3 style="margin:0;font-size:18px">Carrinho</h3><span class="sub">${l.nome}</span></div>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap"><div style="flex:1;min-width:180px"><b>${P.nome}</b><div class="sub">${PDV.qtd} UN × ${brl(r.un)}${r.faixa?` · <span class="ok-t">${r.faixa.rot||'desconto por quantidade'} aplicado</span>`:''}</div></div>
+     <button class="qb" onclick="PDV.qtd=Math.max(1,PDV.qtd-1);render()">−</button><span class="qn">${PDV.qtd}</span><button class="qb" onclick="PDV.qtd++;render()">+</button>
+     <b style="min-width:92px;text-align:right">${brl(r.total)}</b></div>
+    <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">${[1,3,6,12,24].map(n=>`<button class="chip ${PDV.qtd===n?'on':''}" onclick="PDV.qtd=${n};render()">${n} un</button>`).join('')}${l.faixas.filter(f=>f.ean).map(f=>`<button class="chip" onclick="PDV.qtd+=${f.min};render();toast('Código do ${f.rot||'pack'} lido: +${f.min} un')">📷 ler EAN do ${f.rot||'pack'}</button>`).join('')}</div>
+    ${r.faixa?`<div class="resumo" style="margin-top:12px"><b>${r.faixa.rot||'Desconto por quantidade'}</b>: cada unidade sai por <b>${brl(r.un)}</b> em vez de ${brl(base)} · <b class="ok-t">economia de ${brl(r.eco)}</b> (${(r.eco/(base*PDV.qtd)*100).toFixed(1).replace('.',',')}%)${PDV.qtd%r.faixa.min?` · <span class="sub">${r.resto} un fora de múltiplo do pack; vale o mesmo preço por unidade</span>`:''}</div>`:prox?`<div class="resumo" style="margin-top:12px;background:var(--raised);border-color:var(--line)">Faltam <b>${prox.min-PDV.qtd}</b> un para o <b>${prox.rot||('pack de '+prox.min)}</b> (${brl(unitDaFaixa(l,prox))} cada, ${brl(kitDaFaixa(l,prox))} o kit). ${prox.auto?'':'<span class="sub">(faixa manual: o operador precisa escolher)</span>'} <button class="btn ghost sm" onclick="PDV.qtd=${prox.min};render()" style="margin-left:6px">adicionar ${prox.min}</button></div>`:''}
+    ${l.faixas.some(f=>!f.auto&&PDV.qtd>=f.min)?`<div class="resumo" style="margin-top:12px;border-color:var(--warn)">Há faixa <b>manual</b> disponível: <button class="btn sm" onclick="toast('Operador escolheu aplicar o pack manual (exemplo)')">Aplicar ${(l.faixas.find(f=>!f.auto&&PDV.qtd>=f.min).rot)||'pack'}</button></div>`:''}
+    <div class="line" style="margin-top:12px;font-size:17px"><b>Total</b><b class="ac">${brl(r.total)}</b></div>
+    <div class="sub">Custo ${brl(P.custo*PDV.qtd)} · lucro ${brl(r.total-P.custo*PDV.qtd)} · margem ${margem(r.total,P.custo*PDV.qtd).toFixed(1).replace('.',',')}%</div></div>`}
+  </div>
+  ${lateral([
+   ['O que muda para o operador','<ul><li>O PDV continua igual; o preço já vem <b>da loja</b> em que ele está.</li><li>Faixa <b>automática</b>: ao chegar na quantidade, o preço do pack aparece sozinho, com a economia.</li><li>Faixa <b>manual</b>: aparece um botão para o operador aplicar.</li><li>Uma dica "faltam N un" incentiva vender o pack.</li><li>Nos relatórios, a venda registra o preço realmente cobrado e o <b>desconto por quantidade</b> (para ver quanto foi dado).</li></ul>'],
+   ['Diferença entre lojas','<ul><li>Troque a loja acima: na <b>Distribuidora</b> o pack de 6 sai por R$ 8,00 cada; na <b>Casa de show</b> o preço é outro e o desconto só começa nos 6 (balde, manual).</li><li>Na <b>Lanchonete</b> vale o preço padrão e não há faixas.</li></ul>']
+  ])}</div>`;
+}
+
+function lateral(blocos){return `<div style="display:flex;flex-direction:column;gap:12px;position:sticky;top:12px">${blocos.map(b=>`<div class="box"><h5>${b[0]}</h5>${b[1]}</div>`).join('')}</div>`}
+$('#tg').onclick=()=>{const h=document.documentElement;h.dataset.theme=h.dataset.theme==='dark'?'light':'dark'};
+nav();render();
+</script>
+</body>
+</html>

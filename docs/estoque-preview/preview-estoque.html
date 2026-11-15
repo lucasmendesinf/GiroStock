@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GiroStock — Preview: Produtos e Estoque separados</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root, :root[data-theme="dark"] {
+    --bg:#0c0b0d; --panel:#17151a; --panel-alt:#201d22; --gold:#cda43f; --gold-light:#e6c766; --red:#7a1420;
+    --ivory:#f4efe4; --muted:#9d968d; --line:rgba(205,164,63,.22); --err:#e08a8a; --ok:#7bd88f; --warn:#e6b75a; --btn-text:#1a1408;
+    --topbar:linear-gradient(180deg,#131114,#0c0b0d);
+  }
+  :root[data-theme="light"] {
+    --bg:#faf8f4; --panel:#fff; --panel-alt:#f6f0e3; --gold:#b9862a; --gold-light:#8a6414; --red:#7a1420;
+    --ivory:#241f1a; --muted:#746a5c; --line:rgba(180,134,42,.35); --err:#b13434; --ok:#2f8f4e; --warn:#a8741a; --btn-text:#1a1408;
+    --topbar:linear-gradient(180deg,#fff,#faf8f4);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Manrope',system-ui,sans-serif;background:var(--bg);color:var(--ivory);font-size:14px}
+  h1,h2,h3{font-family:'Playfair Display',serif;margin:0}
+  button{font-family:inherit;cursor:pointer}
+  input,select{font-family:inherit;font-size:14px;padding:11px 13px;border-radius:10px;border:1.5px solid var(--line);background:var(--panel-alt);color:var(--ivory);width:100%;min-width:0}
+  input:focus,select:focus,button:focus-visible{outline:2px solid var(--gold-light);outline-offset:1px}
+  label{display:flex;flex-direction:column;gap:6px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px}
+
+  .topbar{display:flex;align-items:center;gap:18px;height:72px;padding:0 28px;background:var(--topbar);border-bottom:1px solid var(--line)}
+  .brand{font-family:'Playfair Display',serif;font-weight:800;font-size:20px;color:var(--gold-light)}
+  .nav{display:flex;gap:6px;flex:1;flex-wrap:wrap}
+  .nav span{padding:8px 13px;border-radius:999px;border:1px solid var(--line);font-size:12px;font-weight:600}
+  .nav span.on{background:var(--gold-light);color:var(--bg);border-color:var(--gold-light);font-weight:700}
+  .nav span{cursor:pointer}.nav span:not(.on):hover{border-color:var(--gold-light)}
+  .link{cursor:pointer}.link:hover{color:var(--gold-light);text-decoration:underline}
+  .linha-nota{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:10px;align-items:end;margin-bottom:10px}
+  tbody tr.row-warn td{background:rgba(230,183,90,.10)} tbody tr.row-err td{background:rgba(224,138,138,.12)}
+  tbody tr.row-warn td:first-child{box-shadow:inset 4px 0 0 var(--warn)} tbody tr.row-err td:first-child{box-shadow:inset 4px 0 0 var(--err)}
+  tbody tr.row-ok td:first-child{box-shadow:inset 4px 0 0 var(--ok)}
+  tr.row-warn .qtd{color:var(--warn)} tr.row-err .qtd{color:var(--err)} tr.row-ok .qtd{color:var(--ok)}
+  .legenda{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin:0 0 12px}
+  .legenda i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+  .tema{width:50px;height:26px;border-radius:999px;border:1px solid var(--line);background:var(--panel);padding:2px;display:flex;align-items:center}
+  .tema i{width:20px;height:20px;border-radius:50%;background:linear-gradient(135deg,var(--red),var(--gold));transition:transform .2s}
+  :root[data-theme="light"] .tema i{transform:translateX(24px)}
+
+  main{padding:24px 28px;max-width:1280px;margin:0 auto}
+  .aviso{background:rgba(205,164,63,.12);border:1px dashed var(--gold-light);color:var(--ivory);border-radius:12px;padding:12px 16px;font-size:13px;margin-bottom:18px;line-height:1.5}
+  .aviso b{color:var(--gold-light)}
+  .head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+  .head h2{font-size:24px}
+  .btn{padding:11px 18px;border-radius:10px;border:none;font-weight:800;font-size:12px;text-transform:uppercase;letter-spacing:.4px;background:linear-gradient(90deg,var(--red),var(--gold));color:var(--btn-text)}
+  .btn.sec{background:none;border:1px solid var(--line);color:var(--ivory)}
+  .btn.ghost{background:none;border:1px solid var(--gold-light);color:var(--gold-light)}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+  .toolbar .busca{flex:1;min-width:240px;position:relative}
+  .toolbar select{width:auto;min-width:170px}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;font-size:12px}
+  .chip{padding:5px 12px;border-radius:999px;border:1px solid var(--line);background:none;color:var(--muted);font-weight:700}
+  .chip.on{border-color:var(--gold-light);color:var(--gold-light);background:rgba(205,164,63,.14)}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;padding:12px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);border-bottom:1px solid var(--line);font-weight:700}
+  td{padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:var(--panel-alt)}
+  .num{text-align:right}
+  .foto{width:46px;height:46px;border-radius:10px;border:1px solid var(--line);background:var(--panel-alt);display:grid;place-items:center;color:var(--muted)}
+  .nome{font-weight:700}
+  .sub{font-size:12px;color:var(--muted);margin-top:2px}
+  .preco{font-weight:800;color:var(--gold-light)}
+  .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:800;border:1px solid}
+  .pill.ok{color:var(--ok);border-color:var(--ok)} .pill.warn{color:var(--warn);border-color:var(--warn)} .pill.err{color:var(--err);border-color:var(--err)} .pill.info{color:var(--gold-light);border-color:var(--gold-light)}
+  .acoes{display:flex;gap:6px;justify-content:flex-end;align-items:center}
+  .ico{width:36px;height:36px;border-radius:10px;border:1px solid var(--line);background:none;color:var(--ivory);display:grid;place-items:center;position:relative}
+  .ico:hover{border-color:var(--gold-light)}
+  .ico.estoque{color:var(--ok);border-color:var(--ok)} .ico.estoque.warn{color:var(--warn);border-color:var(--warn)} .ico.estoque.err{color:var(--err);border-color:var(--err)}
+  .ico.destaque::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 6px);right:0;white-space:nowrap;background:var(--gold-light);color:var(--bg);font-size:11px;font-weight:800;padding:4px 9px;border-radius:8px;opacity:0;pointer-events:none;transition:opacity .15s}
+  .ico.destaque:hover::after{opacity:1}
+  svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+  /* modal */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.62);display:none;align-items:flex-start;justify-content:center;padding:28px 16px;overflow-y:auto;z-index:50}
+  .overlay.on{display:flex}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:20px;width:min(980px,100%);padding:26px;display:flex;flex-direction:column;gap:18px}
+  .m-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+  .m-head h3{font-size:22px;color:var(--gold-light)}
+  .x{background:none;border:none;color:var(--muted);font-size:26px;line-height:1}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  .kpi{background:var(--panel-alt);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+  .kpi small{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted)}
+  .kpi b{font-size:20px;font-weight:800;color:var(--gold-light)}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+  .tab{padding:10px 16px;border:1px solid var(--line);border-bottom:none;border-radius:12px 12px 0 0;background:none;color:var(--muted);font-weight:700;font-size:13px}
+  .tab.on{background:var(--gold-light);color:var(--btn-text);border-color:var(--gold-light)}
+  .form{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+  .form .full{grid-column:1/-1}
+  .resumo{background:var(--panel-alt);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:13px;line-height:1.6}
+  .resumo b{color:var(--gold-light)}
+  .erro{color:var(--err);font-size:13px;font-weight:600}
+  .mov{display:flex;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid var(--line);font-size:13px}
+  .mov:last-child{border:none}
+  .t-entrada{color:var(--ok)} .t-saida{color:var(--err)} .t-transf{color:var(--gold-light)} .t-balanco{color:var(--warn)}
+  .sec-title{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:1.4px;font-weight:700;margin-bottom:8px}
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--panel);border:1px solid var(--ok);color:var(--ok);padding:11px 18px;border-radius:12px;font-weight:700;z-index:90;display:none}
+  .toast.on{display:block}
+  @media (max-width:760px){.kpis{grid-template-columns:repeat(2,1fr)}.form{grid-template-columns:1fr}.col-opc{display:none}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand">GiroStock</div>
+  <div class="nav"><span>Início</span><span>PDV</span><span class="on">Produtos</span><span>Entrada por nota</span><span>Insumos</span><span>Fornecedores</span><span>Relatórios</span></div>
+  <button class="tema" id="tema" aria-label="Alternar tema"><i></i></button>
+</div>
+
+<main>
+  <div class="aviso"><b>PREVIEW para validação</b> — nada aqui grava no sistema. Tudo é clicável: o <b>ícone de caixa</b> no fim da linha abre o modal de estoque; o <b>lápis</b> (ou o nome do produto) abre a edição — em produtos controlados por insumos abre a configuração dos insumos; <b>+ Novo produto</b> e <b>Entrada por nota</b> abrem seus formulários; o botão do canto alterna tema claro/escuro. Campos de valor (R$) usam máscara de real: digite <b>123456</b> e vira <b>1.234,56</b>. Os formulários funcionam de verdade dentro deste preview (os saldos mudam na tela) para você sentir o fluxo.</div>
+
+  <div class="head">
+    <h2>Produtos</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn sec" id="btnNota">Entrada por nota</button>
+      <button class="btn" id="btnNovo">+ Novo produto</button>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <div class="busca"><input id="busca" placeholder="Pesquisar por código, descrição ou EAN"></div>
+    <select id="fLoja"><option value="">Todas as lojas</option></select>
+    <select id="fCat"><option value="">Todas as categorias</option><option>Bebidas</option><option>Lanches</option></select>
+  </div>
+  <div class="chips" id="chips">
+    <button class="chip on" data-f="todos">Todos</button>
+    <button class="chip" data-f="baixo">Estoque baixo</button>
+    <button class="chip" data-f="zerado">Sem estoque</button>
+    <button class="chip" data-f="insumos">Controlados por insumos</button>
+  </div>
+
+  <div class="legenda"><span><i style="background:var(--ok)"></i>Estoque ok</span><span><i style="background:var(--warn)"></i>Estoque baixo (abaixo do mínimo da loja)</span><span><i style="background:var(--err)"></i>Sem estoque</span></div>
+  <div class="card">
+    <table>
+      <thead><tr><th style="width:64px"></th><th>Descrição</th><th class="col-opc">Código</th><th class="col-opc">Un.</th><th class="num">Preço</th><th class="num" id="thEstoque">Estoque (todas as lojas)</th><th></th></tr></thead>
+      <tbody id="lista"></tbody>
+    </table>
+  </div>
+</main>
+
+<div class="overlay" id="overlay"><div class="modal" id="modal"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const LOJAS = ['Distribuidora','Lanchonete','Tabacaria','Casa de Eventos','loja2'];
+const FORNECEDORES = ['Distribuidora Exemplo Ltda','Ambev Distribuidora','Souza Cruz','Fornecedor Local JA'];
+const MOTIVOS_SAIDA = ['Perda / quebra','Validade vencida','Uso interno / consumo','Brinde / bonificação','Outro'];
+let seq = 100;
+const produtos = [
+  { id:1, codigo:'PRD-0003', nome:'coca 350ml', ean:'7894900010015', un:'UN', cat:'Bebidas', preco:3.5, custo:1.25, saldos:{Distribuidora:42,Lanchonete:0,Tabacaria:0,'Casa de Eventos':0,loja2:0}, minimos:{Distribuidora:10,Lanchonete:0,Tabacaria:0,'Casa de Eventos':0,loja2:0}, hist:[
+    {t:'entrada',q:50,de:null,para:'Distribuidora',motivo:'Compra — NF 4821',quando:'28/09 09:14'},{t:'saida',q:8,de:'Distribuidora',para:null,motivo:'Venda nº 12',quando:'29/09 18:40'}] },
+  { id:2, codigo:'PRD-0001', nome:'Refrigerante Lata 350ml', ean:'7891000100103', un:'UN', cat:'Bebidas', preco:6, custo:3.5, saldos:{Distribuidora:8,Lanchonete:20,Tabacaria:5,'Casa de Eventos':0,loja2:0}, minimos:{Distribuidora:12,Lanchonete:10,Tabacaria:0,'Casa de Eventos':0,loja2:0}, hist:[
+    {t:'transf',q:20,de:'Distribuidora',para:'Lanchonete',motivo:'Reposição da lanchonete',quando:'30/09 08:02'}] },
+  { id:3, codigo:'PRD-0008', nome:'Cerveja Heineken Long Neck 330ml', ean:'7896045506011', un:'UN', cat:'Bebidas', preco:12, custo:8, saldos:{Distribuidora:120,Lanchonete:24,Tabacaria:0,'Casa de Eventos':60,loja2:0}, minimos:{Distribuidora:48,Lanchonete:12,Tabacaria:0,'Casa de Eventos':24,loja2:0}, hist:[] },
+  { id:4, codigo:'PRD-0010', nome:'Água Mineral sem gás 500ml', ean:'7891910000197', un:'UN', cat:'Bebidas', preco:4, custo:1.6, saldos:{Distribuidora:0,Lanchonete:0,Tabacaria:0,'Casa de Eventos':0,loja2:0}, minimos:{Distribuidora:24,Lanchonete:0,Tabacaria:0,'Casa de Eventos':0,loja2:0}, hist:[
+    {t:'saida',q:6,de:'Distribuidora',para:null,motivo:'Validade vencida',quando:'27/09 11:30'}] },
+  { id:5, codigo:'PRD-0002', nome:'X-Burguer', ean:'7891000100202', un:'UN', cat:'Lanches', preco:18, custo:8, saldos:{}, minimos:{}, hist:[],
+    ficha:[{n:'Pão de hambúrguer',q:1,u:'UN',disp:12},{n:'Carne',q:150,u:'G',disp:4550},{n:'Bacon',q:30,u:'G',disp:0},{n:'Queijo',q:30,u:'G',disp:1760}] },
+];
+
+const $ = (s) => document.querySelector(s);
+/* Dinheiro em reais: digita 123456 -> 1.234,56. Campos de valor usam data-money. */
+const fmtBR = (n) => Number(n).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const lerBR = (t) => { t = String(t||'').trim(); return t==='' ? NaN : Number(t.replace(/\./g,'').replace(',','.')); };
+document.addEventListener('input', (e) => { const el=e.target; if (el.dataset && el.dataset.money!==undefined) { const d=el.value.replace(/\D/g,'').slice(0,12); el.value = d==='' ? '' : fmtBR(Number(d)/100); } }, true);
+document.addEventListener('focusin', (e) => { const el=e.target; if (el.dataset && el.dataset.money!==undefined) setTimeout(()=>el.select(),0); });
+const brl = (v) => 'R$ ' + Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const num = (v) => Number(v).toLocaleString('pt-BR',{maximumFractionDigits:3});
+const total = (p) => Object.values(p.saldos).reduce((a,b)=>a+b,0);
+const abaixoMin = (p) => LOJAS.filter(l => (p.minimos[l]||0) > 0 && (p.saldos[l]||0) < p.minimos[l]);
+const INSUMOS = [
+  {n:'Pão de hambúrguer',u:'UN',disp:12,custo:0.8},{n:'Carne',u:'G',disp:4550,custo:0.045},{n:'Bacon',u:'G',disp:0,custo:0.09},
+  {n:'Queijo',u:'G',disp:1760,custo:0.06},{n:'Presunto',u:'G',disp:760,custo:0.05},{n:'Ovo',u:'UN',disp:0,custo:0.9},
+  {n:'Alface',u:'G',disp:340,custo:0.01},{n:'Tomate',u:'G',disp:340,custo:0.012}
+];
+const insumo = (n) => INSUMOS.find(i => i.n === n);
+const custoFicha = (fl) => fl.reduce((a,i) => a + i.q * ((insumo(i.n)||{}).custo||0), 0);
+const podeVender = (fl) => fl.length ? Math.min(...fl.map(i => Math.floor(((insumo(i.n)||{}).disp||0) / i.q))) : 0;
+function status(p){
+  if (p.ficha) { const m = podeVender(p.ficha); return m===0 ? {cls:'err',txt:'falta insumo'} : m<=5 ? {cls:'warn',txt:'dá para '+m} : {cls:'ok',txt:'dá para '+m}; }
+  if (total(p) === 0) return {cls:'err',txt:'sem estoque'};
+  if (abaixoMin(p).length) return {cls:'warn',txt:'baixo'};
+  return {cls:'ok',txt:'ok'};
+}
+const IC = {
+  box:'<svg viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>',
+  edit:'<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>',
+  img:'<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>'
+};
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(toast.h); toast.h=setTimeout(()=>t.classList.remove('on'),2600); }
+
+/* ---------- LISTA ---------- */
+let filtro = 'todos';
+LOJAS.forEach(l => $('#fLoja').insertAdjacentHTML('beforeend', `<option>${l}</option>`));
+function renderLista(){
+  const busca = $('#busca').value.toLowerCase().trim(), loja = $('#fLoja').value, cat = $('#fCat').value;
+  $('#thEstoque').textContent = loja ? `Estoque (${loja})` : 'Estoque (todas as lojas)';
+  const linhas = produtos.filter(p => {
+    if (busca && !(p.nome.toLowerCase().includes(busca) || p.codigo.toLowerCase().includes(busca) || p.ean.includes(busca))) return false;
+    if (cat && p.cat !== cat) return false;
+    const st = status(p);
+    if (filtro === 'baixo' && st.cls !== 'warn') return false;
+    if (filtro === 'zerado' && st.cls !== 'err') return false;
+    if (filtro === 'insumos' && !p.ficha) return false;
+    return true;
+  });
+  $('#lista').innerHTML = linhas.map(p => {
+    const st = status(p), saldo = loja ? (p.saldos[loja]||0) : total(p);
+    const rcls = "row-"+st.cls;
+    return `<tr class="${rcls}">
+      <td><div class="foto">${IC.img}</div></td>
+      <td><div class="nome link" data-edit="${p.id}" title="Editar produto">${p.nome}</div><div class="sub">${p.cat} · EAN ${p.ean}</div></td>
+      <td class="col-opc">${p.codigo}</td><td class="col-opc">${p.un}</td>
+      <td class="num preco">${brl(p.preco)}</td>
+      <td class="num">${p.ficha ? `<span class="pill info" style="margin-right:6px">por insumos</span><span class="pill ${st.cls}">${st.txt}</span>` : `<b class="qtd">${num(saldo)}</b> <span class="pill ${st.cls}">${st.txt}</span>`}</td>
+      <td><div class="acoes">
+        <button class="ico" data-edit="${p.id}" title="Editar produto" aria-label="Editar produto">${IC.edit}</button>
+        <button class="ico estoque destaque ${st.cls==='ok'||st.cls==='info'?'':st.cls}" data-id="${p.id}" data-tip="${p.ficha?'Controlar insumos':'Tratar estoque'}" aria-label="${p.ficha?'Controlar insumos':'Tratar estoque'}">${IC.box}</button>
+      </div></td></tr>`;
+  }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px">Nenhum produto encontrado.</td></tr>';
+}
+['busca','fLoja','fCat'].forEach(id => $('#'+id).addEventListener('input', renderLista));
+$('#chips').addEventListener('click', e => { const b=e.target.closest('.chip'); if(!b) return; filtro=b.dataset.f; document.querySelectorAll('.chip').forEach(c=>c.classList.toggle('on',c===b)); renderLista(); });
+$('#lista').addEventListener('click', e => { const b=e.target.closest('.estoque'); if(b){ const pr=produtos.find(x=>x.id===+b.dataset.id); return pr.ficha ? abrirForm(pr) : abrirModal(pr.id); } const n=e.target.closest('[data-edit]'); if(n) abrirForm(produtos.find(p=>p.id===+n.dataset.edit)); });
+
+/* ---------- MODAL DE ESTOQUE ---------- */
+let atual = null, aba = 'saldos';
+function abrirModal(id){ atual = produtos.find(p=>p.id===id); aba = atual.ficha ? 'insumos' : 'saldos'; renderModal(); $('#overlay').classList.add('on'); }
+function fechar(){ $('#overlay').classList.remove('on'); renderLista(); }
+$('#overlay').addEventListener('mousedown', e => { if(e.target.id==='overlay') fechar(); });
+document.addEventListener('keydown', e => { if(e.key==='Escape') fechar(); });
+
+function custoMedio(p){ const t=total(p); return p.custo; }
+function renderModal(){
+  const p = atual, st = status(p), t = total(p);
+  const abas = p.ficha
+    ? [['insumos','Insumos da receita'],['hist','Histórico']]
+    : [['saldos','Saldo por loja'],['entrada','Entrada'],['transf','Transferência'],['saida','Saída'],['balanco','Balanço'],['hist','Histórico']];
+  $('#modal').innerHTML = `
+    <div class="m-head"><div>
+      <div class="sub">Tratar estoque</div>
+      <h3>${p.nome}</h3>
+      <div class="sub">${p.codigo} · EAN ${p.ean} · unidade ${p.un}</div></div>
+      <button class="x" onclick="fechar()" aria-label="Fechar">×</button></div>
+    ${p.ficha ? '' : `<div class="kpis">
+      <div class="kpi"><small>Estoque total</small><b>${num(t)} ${p.un}</b></div>
+      <div class="kpi"><small>Custo médio</small><b>${brl(p.custo)}</b></div>
+      <div class="kpi"><small>Valor em estoque</small><b>${brl(t*p.custo)}</b></div>
+      <div class="kpi"><small>Situação</small><b><span class="pill ${st.cls}" style="font-size:13px">${st.txt}</span></b></div></div>`}
+    <div class="tabs">${abas.map(([k,n])=>`<button class="tab ${aba===k?'on':''}" data-aba="${k}">${n}</button>`).join('')}</div>
+    <div id="conteudo"></div>`;
+  $('#modal').querySelectorAll('.tab').forEach(b => b.onclick = () => { aba=b.dataset.aba; renderModal(); });
+  ({saldos:telaSaldos,entrada:telaEntrada,transf:telaTransf,saida:telaSaida,balanco:telaBalanco,hist:telaHist,insumos:telaInsumos})[aba]();
+}
+const opcoesLoja = (sel='', comSaldo=true) => LOJAS.map(l => `<option ${l===sel?'selected':''} value="${l}">${l}${comSaldo?` (saldo ${num(atual.saldos[l]||0)})`:''}</option>`).join('');
+const passo = () => atual.un==='UN'||atual.un==='CX' ? '1' : '0.001';
+function registrar(t,q,de,para,motivo){ atual.hist.unshift({t,q,de,para,motivo,quando:'agora'}); }
+function pronto(msg){ toast(msg); renderModal(); renderLista(); }
+
+function telaSaldos(){
+  $('#conteudo').innerHTML = `<div class="sec-title">Saldo e estoque mínimo em cada loja</div>
+  <div class="card"><table><thead><tr><th>Loja</th><th class="num">Saldo</th><th class="num">Mínimo</th><th>Situação</th><th></th></tr></thead><tbody>
+  ${LOJAS.map(l => { const s=atual.saldos[l]||0, m=atual.minimos[l]||0; const cls = s===0?'err':(m>0&&s<m?'warn':'ok'); const tx = s===0?'sem estoque':(m>0&&s<m?'abaixo do mínimo':'ok');
+    return `<tr><td><b>${l}</b></td><td class="num"><b>${num(s)}</b></td>
+    <td class="num"><input type="number" min="0" value="${m}" data-min="${l}" style="width:90px;text-align:right;padding:7px 9px"></td>
+    <td><span class="pill ${cls}">${tx}</span></td>
+    <td><div class="acoes"><button class="btn ghost" style="padding:7px 12px" data-go="entrada" data-loja="${l}">+ Entrada</button>
+      <button class="btn ghost" style="padding:7px 12px" data-go="transf" data-loja="${l}" ${s?'':'disabled'}>Transferir</button></div></td></tr>`; }).join('')}
+  </tbody></table></div>
+  <div class="sub" style="margin-top:8px">O mínimo gera o alerta de "estoque baixo" na tela Início e nesta lista.</div>`;
+  $('#conteudo').querySelectorAll('[data-min]').forEach(i => i.onchange = () => { atual.minimos[i.dataset.min] = Math.max(0,+i.value||0); toast('Estoque mínimo salvo (preview)'); renderModal(); });
+  $('#conteudo').querySelectorAll('[data-go]').forEach(b => b.onclick = () => { aba=b.dataset.go; presel=b.dataset.loja; renderModal(); });
+}
+let presel = '';
+
+function telaEntrada(){
+  const loja = presel || 'Distribuidora'; presel='';
+  $('#conteudo').innerHTML = `<div class="form">
+    <label>Loja que recebe<select id="e_loja">${opcoesLoja(loja)}</select></label>
+    <label>Quantidade (${atual.un})<input id="e_q" type="number" min="0" step="${passo()}" placeholder="0"></label>
+    <label>Custo unitário desta compra (R$)<input id="e_c" type="text" inputmode="numeric" data-money placeholder="${fmtBR(atual.custo)}"></label>
+    <label>Fornecedor<select id="e_f"><option value="">— não informar —</option>${FORNECEDORES.map(f=>`<option>${f}</option>`).join('')}</select></label>
+    <label>Nota fiscal<input id="e_nf" placeholder="Ex.: 4821"></label>
+    <label>Observação<input id="e_obs" placeholder="Compra, bonificação, devolução..."></label>
+    <div class="full resumo" id="e_res">Informe a quantidade para ver como fica o saldo.</div>
+    <div class="full erro" id="e_err"></div>
+    <div class="full"><button class="btn" id="e_ok">Registrar entrada</button></div></div>`;
+  const calc = () => {
+    const q=+$('#e_q').value, c=$('#e_c').value===''?null:lerBR($('#e_c').value), l=$('#e_loja').value, s=atual.saldos[l]||0;
+    let msg = q>0 ? `Saldo em <b>${l}</b>: ${num(s)} → <b>${num(s+q)} ${atual.un}</b>` : 'Informe a quantidade para ver como fica o saldo.', err='';
+    if (q>0 && c!==null) { const novo=(total(atual)*atual.custo + q*c)/(total(atual)+q); msg += `<br>Custo médio: ${brl(atual.custo)} → <b>${brl(novo)}</b> (média ponderada)`; if (novo>=atual.preco) err='Entrada recusada: o custo médio ficaria maior ou igual ao preço de venda ('+brl(atual.preco)+').'; }
+    if (q>0 && (atual.un==='UN'||atual.un==='CX') && !Number.isInteger(q)) err='Produtos em '+atual.un+' só aceitam quantidade inteira.';
+    $('#e_res').innerHTML=msg; $('#e_err').textContent=err; $('#e_ok').disabled = !(q>0) || !!err;
+  };
+  ['e_q','e_c','e_loja'].forEach(id=>$('#'+id).oninput=calc); calc();
+  $('#e_ok').onclick = () => { const q=+$('#e_q').value, l=$('#e_loja').value, c=$('#e_c').value===''?null:lerBR($('#e_c').value);
+    if (c!==null) atual.custo = (total(atual)*atual.custo + q*c)/(total(atual)+q);
+    atual.saldos[l]=(atual.saldos[l]||0)+q;
+    const nf=$('#e_nf').value.trim(), f=$('#e_f').value;
+    registrar('entrada',q,null,l,[$('#e_obs').value.trim()||'Compra', nf?'NF '+nf:'', f].filter(Boolean).join(' — ')); pronto('Entrada registrada (preview)'); };
+}
+
+function telaTransf(){
+  const origem = presel || LOJAS.find(l=>(atual.saldos[l]||0)>0) || LOJAS[0]; presel='';
+  $('#conteudo').innerHTML = `<div class="form">
+    <label>De (origem)<select id="t_o">${opcoesLoja(origem)}</select></label>
+    <label>Para (destino)<select id="t_d">${opcoesLoja(LOJAS.find(l=>l!==origem))}</select></label>
+    <label>Quantidade (${atual.un})<input id="t_q" type="number" min="0" step="${passo()}" placeholder="0"></label>
+    <label>Motivo<input id="t_m" placeholder="Ex.: reposição da lanchonete"></label>
+    <div class="full resumo" id="t_res"></div><div class="full erro" id="t_err"></div>
+    <div class="full"><button class="btn" id="t_ok">Transferir</button></div></div>`;
+  const calc = () => {
+    const o=$('#t_o').value, d=$('#t_d').value, q=+$('#t_q').value, so=atual.saldos[o]||0, sd=atual.saldos[d]||0; let err='';
+    if (o===d) err='Origem e destino precisam ser lojas diferentes.'; else if (q>so) err=`Saldo insuficiente em ${o} (disponível: ${num(so)}).`;
+    else if (q>0 && (atual.un==='UN'||atual.un==='CX') && !Number.isInteger(q)) err='Produtos em '+atual.un+' só aceitam quantidade inteira.';
+    $('#t_res').innerHTML = `<b>${o}</b>: ${num(so)} → <b>${num(so-(q>0?q:0))}</b> &nbsp;•&nbsp; <b>${d}</b>: ${num(sd)} → <b>${num(sd+(q>0?q:0))}</b>`;
+    $('#t_err').textContent=err; $('#t_ok').disabled = !(q>0) || !!err || $('#t_m').value.trim().length<3;
+  };
+  ['t_o','t_d','t_q','t_m'].forEach(id=>$('#'+id).oninput=calc); calc();
+  $('#t_ok').onclick = () => { const o=$('#t_o').value,d=$('#t_d').value,q=+$('#t_q').value; atual.saldos[o]-=q; atual.saldos[d]=(atual.saldos[d]||0)+q; registrar('transf',q,o,d,$('#t_m').value.trim()); pronto('Transferência registrada (preview)'); };
+}
+
+function telaSaida(){
+  $('#conteudo').innerHTML = `<div class="form">
+    <label>Loja<select id="s_l">${opcoesLoja(LOJAS.find(l=>(atual.saldos[l]||0)>0)||LOJAS[0])}</select></label>
+    <label>Quantidade (${atual.un})<input id="s_q" type="number" min="0" step="${passo()}" placeholder="0"></label>
+    <label>Motivo<select id="s_m">${MOTIVOS_SAIDA.map(m=>`<option>${m}</option>`).join('')}</select></label>
+    <label>Observação<input id="s_o" placeholder="Opcional"></label>
+    <div class="full resumo" id="s_res"></div><div class="full erro" id="s_err"></div>
+    <div class="full"><button class="btn" id="s_ok">Registrar saída</button></div></div>
+    <div class="sub" style="margin-top:8px">Vendas pelo PDV baixam o estoque sozinhas — use esta tela só para perdas, vencimentos e consumo interno.</div>`;
+  const calc = () => { const l=$('#s_l').value, q=+$('#s_q').value, s=atual.saldos[l]||0; let err='';
+    if (q>s) err=`Saldo insuficiente em ${l} (disponível: ${num(s)}).`; else if (q>0 && (atual.un==='UN'||atual.un==='CX') && !Number.isInteger(q)) err='Produtos em '+atual.un+' só aceitam quantidade inteira.';
+    $('#s_res').innerHTML = `Saldo em <b>${l}</b>: ${num(s)} → <b>${num(s-(q>0?q:0))} ${atual.un}</b>` + (q>0?` &nbsp;•&nbsp; custo da perda: <b>${brl(q*atual.custo)}</b>`:'');
+    $('#s_err').textContent=err; $('#s_ok').disabled=!(q>0)||!!err; };
+  ['s_l','s_q'].forEach(id=>$('#'+id).oninput=calc); calc();
+  $('#s_ok').onclick = () => { const l=$('#s_l').value,q=+$('#s_q').value; atual.saldos[l]-=q; registrar('saida',q,l,null,[$('#s_m').value,$('#s_o').value.trim()].filter(Boolean).join(' — ')); pronto('Saída registrada (preview)'); };
+}
+
+function telaBalanco(){
+  $('#conteudo').innerHTML = `<div class="form">
+    <label>Loja<select id="b_l">${opcoesLoja(LOJAS.find(l=>(atual.saldos[l]||0)>0)||LOJAS[0])}</select></label>
+    <label>Contagem física (novo saldo)<input id="b_q" type="number" min="0" step="${passo()}" placeholder="0"></label>
+    <label class="full">Motivo<input id="b_m" placeholder="Ex.: inventário de setembro"></label>
+    <div class="full resumo" id="b_res"></div><div class="full erro" id="b_err"></div>
+    <div class="full" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="b_ok">Aplicar balanço</button><button class="btn sec" id="b_zero">Zerar estoque desta loja</button></div></div>
+    <div class="sub" style="margin-top:8px">O balanço <b>substitui</b> o saldo pela contagem e guarda a diferença no histórico.</div>`;
+  const calc = () => { const l=$('#b_l').value, s=atual.saldos[l]||0, q=$('#b_q').value; const v=+q; let err='';
+    if (q!=='' && (atual.un==='UN'||atual.un==='CX') && !Number.isInteger(v)) err='Produtos em '+atual.un+' só aceitam quantidade inteira.';
+    $('#b_res').innerHTML = q===''?'Informe a contagem física para ver a diferença.':`Saldo em <b>${l}</b>: ${num(s)} → <b>${num(v)} ${atual.un}</b> &nbsp;•&nbsp; diferença: <b>${v-s>=0?'+':''}${num(v-s)}</b>`;
+    $('#b_err').textContent=err; $('#b_ok').disabled = q===''||v<0||!!err||$('#b_m').value.trim().length<3; };
+  ['b_l','b_q','b_m'].forEach(id=>$('#'+id).oninput=calc); calc();
+  $('#b_zero').onclick = () => { $('#b_q').value=0; calc(); $('#b_m').focus(); };
+  $('#b_ok').onclick = () => { const l=$('#b_l').value, v=+$('#b_q').value, s=atual.saldos[l]||0; atual.saldos[l]=v; registrar('balanco',v,l,l,`${$('#b_m').value.trim()} (de ${num(s)} para ${num(v)})`); pronto('Balanço aplicado (preview)'); };
+}
+
+function telaHist(){
+  const nomes={entrada:'Entrada',saida:'Saída',transf:'Transferência',balanco:'Balanço'};
+  $('#conteudo').innerHTML = `<div class="sec-title">Movimentações do produto</div>` + (atual.hist.length ? atual.hist.map(h => `
+    <div class="mov"><div><b class="t-${h.t}">${nomes[h.t]}</b> · ${num(h.q)} ${atual.un}
+      <div class="sub">${h.de?'De '+h.de:''}${h.de&&h.para?' → ':''}${h.para?(h.de?'':'Para ')+h.para:''} · ${h.motivo}</div></div>
+      <div class="sub">${h.quando}</div></div>`).join('') : '<div class="sub">Nenhuma movimentação ainda.</div>');
+}
+
+function telaInsumos(){
+  const max = Math.min(...atual.ficha.map(i => Math.floor(i.disp / i.q)));
+  $('#conteudo').innerHTML = `<div class="resumo" style="margin-bottom:14px"><b>${atual.nome} não tem estoque próprio.</b> Cada venda baixa os insumos abaixo, e a venda é bloqueada quando algum faltar.
+    Hoje dá para vender <b>${max} unidade(s)</b>${max===0?' — falta insumo.':'.'}</div>
+    <div class="card"><table><thead><tr><th>Insumo</th><th class="num">Por unidade</th><th class="num">Disponível</th><th class="num">Dá para</th></tr></thead><tbody>
+    ${atual.ficha.map(i=>{ const d=Math.floor(i.disp/i.q); return `<tr><td>${i.n}</td><td class="num">${num(i.q)} ${i.u}</td><td class="num">${num(i.disp)} ${i.u}</td><td class="num"><span class="pill ${d===0?'err':'ok'}">${d} un.</span></td></tr>`; }).join('')}
+    </tbody></table></div>
+    <div class="sub" style="margin-top:8px">Para repor, use o menu <b>Insumos</b> (entrada, saída, transferência e balanço por loja).</div>`;
+}
+
+
+/* ---------- CADASTRO / EDICAO DO PRODUTO ---------- */
+let fichaTmp = [];
+function htmlFicha(){
+  const livres = INSUMOS.filter(i => !fichaTmp.some(x => x.n === i.n));
+  const max = podeVender(fichaTmp);
+  return `<div class="sec-title">Controle por insumos (receita)</div>
+    <div class="resumo" style="margin-bottom:12px">Este produto <b>não tem estoque próprio</b>: cada venda baixa os insumos abaixo e é bloqueada se algum faltar.
+      ${fichaTmp.length ? `Hoje dá para vender <b>${max} unidade(s)</b>${max===0?' — falta insumo.':'.'}` : 'Adicione ao menos um insumo.'}</div>
+    ${fichaTmp.length ? `<div class="card" style="margin-bottom:12px"><table><thead><tr><th>Insumo</th><th class="num">Qtd por unidade</th><th class="num">Disponível</th><th class="num">Dá para</th><th class="num">Custo</th><th></th></tr></thead><tbody>
+      ${fichaTmp.map((i,k) => { const c = insumo(i.n), d = Math.floor(c.disp / i.q); return `<tr><td><b>${i.n}</b></td>
+        <td class="num"><input type="number" min="0" step="any" data-fq="${k}" value="${i.q}" style="width:84px;text-align:right;padding:7px 9px"> ${c.u}</td>
+        <td class="num">${num(c.disp)} ${c.u}</td><td class="num"><span class="pill ${d===0?'err':d<=5?'warn':'ok'}">${d} un.</span></td>
+        <td class="num">${brl(i.q * c.custo)}</td><td class="num"><button class="btn sec" style="padding:6px 10px" data-fr="${k}" aria-label="Remover insumo">×</button></td></tr>`; }).join('')}
+      <tr><td colspan="4" class="num"><b>Custo dos insumos (vira o custo do produto)</b></td><td class="num"><b style="color:var(--gold-light)">${brl(custoFicha(fichaTmp))}</b></td><td></td></tr>
+      </tbody></table></div>` : ''}
+    <div class="linha-nota" style="grid-template-columns:2fr 1fr auto">
+      <label>Adicionar insumo<select id="fi_n"><option value="">— selecione —</option>${livres.map(i=>`<option value="${i.n}">${i.n} (${num(i.disp)} ${i.u})</option>`).join('')}</select></label>
+      <label>Qtd por unidade<input id="fi_q" type="number" min="0" step="any" placeholder="0"></label>
+      <button class="btn ghost" id="fi_add">+ Adicionar</button></div>
+    <div class="sub">Para repor os insumos use o menu <b>Insumos</b> (entrada, saída, transferência e balanço por loja).</div>`;
+}
+function abrirForm(p){
+  atual = null;
+  const novo = !p;
+  const d = p || { nome:'', cat:'Bebidas', ean:'', un:'UN', preco:'', custo:'' };
+  const temFicha = !!(p && p.ficha);
+  fichaTmp = temFicha ? p.ficha.map(i => ({...i})) : [];
+  $('#modal').innerHTML = `
+    <div class="m-head"><div><div class="sub">${novo?'Novo produto':'Editar produto'}</div><h3>${novo?'Cadastrar produto':d.nome}</h3>${novo?'':`<div class="sub">${p.codigo}${temFicha?' · controlado por insumos':''}</div>`}</div>
+      <button class="x" onclick="fechar()" aria-label="Fechar">×</button></div>
+    <div class="resumo" id="f_aviso"></div>
+    <div class="form">
+      <label class="full">Nome do produto *<input id="f_n" value="${d.nome}" placeholder="Ex.: Cerveja Heineken Long Neck 330ml"></label>
+      <label>Categoria<select id="f_c">${['Bebidas','Lanches','Tabacaria','Outros'].map(c=>`<option ${c===d.cat?'selected':''}>${c}</option>`).join('')}</select></label>
+      <label>Unidade<select id="f_u">${['UN','KG','L','CX'].map(u=>`<option ${u===d.un?'selected':''}>${u}</option>`).join('')}</select></label>
+      <label>Código de barras / EAN *<input id="f_e" value="${d.ean}" placeholder="8 a 14 dígitos"></label>
+      <label>Fornecedor principal<select id="f_f"><option value="">— não informar —</option>${FORNECEDORES.map(x=>`<option>${x}</option>`).join('')}</select></label>
+      <label>Preço de custo (R$) *<input id="f_k" type="text" inputmode="numeric" data-money placeholder="0,00" value="${d.custo===''?'':fmtBR(d.custo)}"></label>
+      <label>Preço de venda (R$) *<input id="f_p" type="text" inputmode="numeric" data-money placeholder="0,00" value="${d.preco===''?'':fmtBR(d.preco)}"></label>
+      ${novo ? `<label class="full" style="flex-direction:row;align-items:center;gap:10px;text-transform:none;letter-spacing:0;font-size:13px;color:var(--ivory)"><input type="checkbox" id="f_ficha" style="width:auto"> Produto controlado por insumos (lanche / receita)</label>` : ''}
+      <div class="full" id="ficha_box"></div>
+      <div class="full erro" id="f_err"></div>
+      <div class="full" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="f_ok">${novo?'Salvar produto':'Salvar alterações'}</button><button class="btn sec" onclick="fechar()">Cancelar</button>${(novo||temFicha)?'':'<button class="btn ghost" id="f_est" style="margin-left:auto">Tratar estoque →</button>'}</div>
+    </div>`;
+  $('#overlay').classList.add('on');
+  const usaFicha = () => novo ? $('#f_ficha').checked : temFicha;
+  function atualizar(){
+    const on = usaFicha();
+    $('#f_aviso').innerHTML = on
+      ? 'Produto controlado por <b>insumos</b>: aqui você define a receita. O custo é calculado pelos insumos e não existe saldo para cadastrar.'
+      : 'Aqui ficam só os <b>dados do produto</b>. O saldo não é cadastrado aqui: depois de salvar, use o <b>ícone de caixa</b> da lista para dar a primeira entrada, transferir ou ajustar estoque.';
+    $('#ficha_box').innerHTML = on ? htmlFicha() : '';
+    $('#f_k').readOnly = on; if (on) $('#f_k').value = fmtBR(custoFicha(fichaTmp));
+    if (!on) return;
+    $('#ficha_box').querySelectorAll('[data-fq]').forEach(i => i.onchange = () => { fichaTmp[+i.dataset.fq].q = Math.max(0.001, +i.value || 0.001); atualizar(); });
+    $('#ficha_box').querySelectorAll('[data-fr]').forEach(b => b.onclick = () => { fichaTmp.splice(+b.dataset.fr, 1); atualizar(); });
+    $('#fi_add').onclick = () => { const n = $('#fi_n').value, q = +$('#fi_q').value; if (!n || !(q > 0)) { $('#f_err').textContent = 'Escolha o insumo e informe a quantidade por unidade.'; return; } $('#f_err').textContent = ''; fichaTmp.push({ n, q, u: insumo(n).u }); atualizar(); };
+  }
+  if (novo) $('#f_ficha').onchange = atualizar;
+  atualizar();
+  if (temFicha) setTimeout(() => $('#ficha_box').scrollIntoView({ block: 'center' }), 50);
+  if (!novo && !temFicha) $('#f_est').onclick = () => abrirModal(p.id);
+  $('#f_ok').onclick = () => {
+    const on = usaFicha(), nome = $('#f_n').value.trim(), ean = $('#f_e').value.replace(/\D/g,''), v = lerBR($('#f_p').value);
+    const k = on ? custoFicha(fichaTmp) : lerBR($('#f_k').value); let err = '';
+    if (nome.length < 3) err = 'O nome precisa ter pelo menos 3 caracteres.';
+    else if (ean.length < 8 || ean.length > 14) err = 'O código de barras deve ter de 8 a 14 dígitos.';
+    else if (on && !fichaTmp.length) err = 'Adicione ao menos um insumo à receita.';
+    else if (!(k > 0)) err = 'Informe o preço de custo (maior que zero).';
+    else if (!(v > k)) err = on ? 'O preço de venda precisa ser maior que o custo dos insumos ('+brl(k)+').' : 'O preço de venda precisa ser maior que o custo.';
+    if (err) { $('#f_err').textContent = err; return; }
+    const dados = { nome, ean, cat:$('#f_c').value, un:$('#f_u').value, custo:k, preco:v };
+    if (novo) produtos.unshift({ id:++seq, codigo:'PRD-'+String(seq).padStart(4,'0'), ...dados, saldos:{}, minimos:{}, hist:[], ...(on ? { ficha: fichaTmp.map(i=>({...i})) } : {}) });
+    else { Object.assign(p, dados); if (on) p.ficha = fichaTmp.map(i=>({...i})); }
+    toast(novo ? (on?'Produto cadastrado (preview) — receita salva':'Produto cadastrado (preview) — agora use o ícone de caixa para lançar o estoque') : 'Produto atualizado (preview)'); fechar();
+  };
+}
+
+/* ---------- ENTRADA POR NOTA (varios produtos) ---------- */
+let linhasNota = [];
+let cabNota = {f:'',nf:'',l:LOJAS[0]};
+function abrirNota(){
+  atual = null; linhasNota = [{pid:'',q:'',c:''}]; cabNota = {f:'',nf:'',l:LOJAS[0]};
+  renderNota(); $('#overlay').classList.add('on');
+}
+function renderNota(){
+  const elegiveis = produtos.filter(p=>!p.ficha);
+  $('#modal').innerHTML = `
+    <div class="m-head"><div><div class="sub">Compra de vários produtos de uma vez</div><h3>Entrada por nota</h3></div><button class="x" onclick="fechar()" aria-label="Fechar">×</button></div>
+    <div class="form">
+      <label>Fornecedor<select id="n_f"><option value="">— selecione —</option>${FORNECEDORES.map(x=>`<option ${x===cabNota.f?'selected':''}>${x}</option>`).join('')}</select></label>
+      <label>Nota fiscal<input id="n_nf" placeholder="Ex.: 4821" value="${cabNota.nf}"></label>
+      <label class="full">Loja que recebe<select id="n_l">${LOJAS.map(l=>`<option ${l===cabNota.l?'selected':''}>${l}</option>`).join('')}</select></label>
+    </div>
+    <div>
+      <div class="sec-title">Produtos da nota</div>
+      ${linhasNota.map((r,i)=>`<div class="linha-nota">
+        <label>Produto<select data-i="${i}" data-k="pid"><option value="">— selecione —</option>${elegiveis.map(p=>`<option value="${p.id}" ${+r.pid===p.id?'selected':''}>${p.nome}</option>`).join('')}</select></label>
+        <label>Quantidade<input type="number" min="0" step="1" data-i="${i}" data-k="q" value="${r.q}"></label>
+        <label>Custo unit. (R$)<input type="text" inputmode="numeric" data-money placeholder="0,00" data-i="${i}" data-k="c" value="${r.c}"></label>
+        <button class="btn sec" data-rm="${i}" ${linhasNota.length===1?'disabled':''} aria-label="Remover linha">×</button></div>`).join('')}
+      <button class="btn ghost" id="n_add">+ Adicionar produto</button>
+    </div>
+    <div class="erro" id="n_err"></div>
+    <div style="display:flex;gap:8px"><button class="btn" id="n_ok">Lançar entrada da nota</button><button class="btn sec" onclick="fechar()">Cancelar</button></div>`;
+  const m = $('#modal');
+  $('#n_f').onchange = () => cabNota.f = $('#n_f').value;
+  $('#n_nf').oninput = () => cabNota.nf = $('#n_nf').value;
+  $('#n_l').onchange = () => cabNota.l = $('#n_l').value;
+  m.querySelectorAll('[data-k]').forEach(el => el.onchange = el.oninput = () => { linhasNota[+el.dataset.i][el.dataset.k] = el.value; });
+  m.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { linhasNota.splice(+b.dataset.rm,1); renderNota(); });
+  $('#n_add').onclick = () => { linhasNota.push({pid:'',q:'',c:''}); renderNota(); };
+  $('#n_ok').onclick = () => {
+    const validas = linhasNota.filter(r=>r.pid && +r.q>0);
+    if (!$('#n_f').value) return void ($('#n_err').textContent='Selecione o fornecedor.');
+    if (!validas.length) return void ($('#n_err').textContent='Informe ao menos um produto com quantidade.');
+    if (validas.some(r=>!Number.isInteger(+r.q) && ['UN','CX'].includes(produtos.find(p=>p.id===+r.pid).un))) return void ($('#n_err').textContent='Produtos em UN/CX só aceitam quantidade inteira.');
+    const loja=$('#n_l').value, nf=$('#n_nf').value.trim(), forn=$('#n_f').value;
+    validas.forEach(r => { const p=produtos.find(x=>x.id===+r.pid), q=+r.q;
+      if (r.c!=='' && lerBR(r.c)>0) p.custo=(total(p)*p.custo+q*lerBR(r.c))/(total(p)+q);
+      p.saldos[loja]=(p.saldos[loja]||0)+q;
+      p.hist.unshift({t:'entrada',q,de:null,para:loja,motivo:['Compra', nf?'NF '+nf:'', forn].filter(Boolean).join(' — '),quando:'agora'}); });
+    toast('Nota lançada: '+validas.length+' produto(s) (preview)'); fechar();
+  };
+}
+
+/* ---------- menu, botoes do topo ---------- */
+$('#btnNovo').onclick = () => abrirForm(null);
+$('#btnNota').onclick = abrirNota;
+document.querySelectorAll('.nav span').forEach(sp => sp.onclick = () => { if (!sp.classList.contains('on')) toast('"'+sp.textContent+'" não faz parte deste preview — só a tela Produtos'); });
+
+/* tema */
+$('#tema').onclick = () => { const r=document.documentElement; r.dataset.theme = r.dataset.theme==='light'?'dark':'light'; };
+renderLista();
+</script>
+</body>
+</html>

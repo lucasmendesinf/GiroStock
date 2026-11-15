@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GiroStock — Preview Pedidos</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
+<style>
+:root,:root[data-theme="dark"]{--bg:#0f0e10;--panel:#17161a;--raised:#1f1d22;--hover:#25232a;--accent:#d4ae4a;--accent-soft:rgba(212,174,74,.12);--accent-line:rgba(212,174,74,.30);--on:#17120a;--txt:#f2eee6;--txt2:#b4ada2;--txt3:#8f8980;--line:rgba(255,255,255,.08);--ok:#5fc48a;--warn:#f0a05a;--err:#ec7a72;--shadow:rgba(0,0,0,.5)}
+:root[data-theme="light"]{--bg:#f4f1ea;--panel:#fff;--raised:#f8f5ee;--hover:#f1ece0;--accent:#8f6810;--accent-soft:rgba(143,104,16,.10);--accent-line:rgba(143,104,16,.28);--on:#fff;--txt:#231f1a;--txt2:#5d564c;--txt3:#7d766b;--line:rgba(35,31,26,.10);--ok:#1f7a4d;--warn:#b25e12;--err:#b3372f;--shadow:rgba(0,0,0,.18)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font-family:Manrope,system-ui,sans-serif;font-size:14px}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit;font-size:14px;color:var(--txt);background:var(--raised);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px}
+.top{display:flex;align-items:center;gap:14px;height:68px;padding:0 28px;border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{font-family:'Playfair Display',serif;font-weight:800;font-size:20px;color:var(--accent)}
+.top nav{display:flex;gap:4px;flex:1;flex-wrap:wrap}
+.top nav a{padding:8px 13px;border-radius:999px;color:var(--txt2);font-size:12px;font-weight:600;text-decoration:none}
+.top nav a:hover{background:var(--raised);color:var(--txt)}
+.top nav a.on{background:var(--accent);color:var(--on);font-weight:700}
+.tg{border:1px solid var(--line);background:var(--raised);color:var(--accent);border-radius:999px;padding:7px 12px;font-weight:700;font-size:12px}
+main{padding:22px 28px 60px}
+.head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.head h2{margin:0;font-size:26px;font-weight:700;margin-right:auto}
+.btn{border:none;border-radius:10px;padding:11px 18px;font-weight:800;font-size:13px;background:var(--accent);color:var(--on);text-transform:uppercase;letter-spacing:.3px}
+.btn.ghost{background:none;border:1px solid var(--line);color:var(--txt);text-transform:none;font-weight:700}
+.btn.ghost:hover{background:var(--raised)}
+.btn.sm{padding:8px 12px;font-size:12px}
+.btn.danger{background:none;border:1px solid var(--err);color:var(--err);text-transform:none}
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;cursor:pointer}
+.kpi small{display:block;color:var(--txt3);font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase}
+.kpi b{font-size:26px;font-weight:800}
+.kpi.hero{background:var(--accent-soft);border-color:var(--accent-line)}
+.kpi.hero b{color:var(--accent)}
+.kpi.pulse b{animation:p 1.2s infinite}
+@keyframes p{50%{opacity:.45}}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.bar input{max-width:260px}
+.chip{border:1px solid var(--line);background:none;color:var(--txt2);border-radius:999px;padding:7px 13px;font-size:12px;font-weight:700}
+.chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-left:auto}
+.seg button{border:none;background:none;color:var(--txt2);padding:8px 14px;font-weight:700;font-size:12px}
+.seg button.on{background:var(--accent);color:var(--on)}
+/* quadro */
+.board{display:grid;grid-template-columns:repeat(5,minmax(210px,1fr));gap:12px;overflow-x:auto;align-items:start}
+.col{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px;min-height:260px}
+.col h4{margin:2px 4px 10px;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--txt2)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--txt3);display:inline-block}
+.dot.novo{background:var(--accent)}.dot.prep{background:var(--warn)}.dot.pronto{background:var(--ok)}.dot.rota{background:none;border:2px solid var(--txt2)}.dot.fim{background:var(--txt3)}
+.cnt{margin-left:auto;background:var(--raised);border-radius:999px;padding:1px 9px;font-size:11px;color:var(--txt2)}
+.ord{background:var(--raised);border:1px solid var(--line);border-left:3px solid transparent;border-radius:12px;padding:11px 12px;margin-bottom:9px;cursor:pointer}
+.ord:hover{background:var(--hover)}
+.ord.late{border-left-color:var(--warn)}
+.ord.ext.novo{border-color:var(--accent-line);box-shadow:0 0 0 2px var(--accent-soft)}
+.ord .r1{display:flex;align-items:center;gap:8px}
+.ord .num{font-weight:800}
+.ord .tm{margin-left:auto;font-size:12px;color:var(--txt3);font-weight:700}
+.ord .tm.late{color:var(--warn)}
+.ord .cli{font-weight:700;margin:6px 0 2px}
+.ord .its{font-size:12px;color:var(--txt2);line-height:1.4}
+.ord .r3{display:flex;align-items:center;gap:6px;margin-top:9px;flex-wrap:wrap}
+.tag{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--panel);color:var(--txt2);border:1px solid var(--line)}
+.tag.ext{border-color:var(--accent-line);color:var(--accent)}
+.tot{margin-left:auto;font-weight:800;color:var(--accent)}
+.pill{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;border:1px solid}
+.pill.ok{color:var(--ok);border-color:var(--ok)}.pill.warn{color:var(--warn);border-color:var(--warn)}.pill.err{color:var(--err);border-color:var(--err)}
+.ord .act{margin-top:9px;display:flex;gap:6px}
+.ord .act .btn{flex:1;padding:8px;font-size:11.5px}
+.vazio{color:var(--txt3);font-size:12px;text-align:center;padding:24px 0}
+/* lista */
+.tbl{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:11px 12px;font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--txt3);border-bottom:1px solid var(--line)}
+td{padding:12px;border-bottom:1px solid var(--line)}
+tbody tr{cursor:pointer}tbody tr:hover{background:var(--raised)}
+/* drawer & modal */
+.ov{position:fixed;inset:0;background:var(--shadow);display:none;z-index:50}
+.ov.show{display:flex}
+.drawer{margin-left:auto;width:min(460px,100%);height:100%;background:var(--panel);border-left:1px solid var(--line);padding:22px;overflow:auto}
+.modal{margin:auto;width:min(720px,94%);max-height:92vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:24px}
+.modal h3,.drawer h3{margin:0 0 14px;font-size:20px}
+.x{float:right;background:none;border:none;color:var(--txt2);font-size:22px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+label{display:block;font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--txt3);margin:12px 0 5px}
+.sec{border-top:1px solid var(--line);margin-top:16px;padding-top:4px}
+.tl{list-style:none;margin:6px 0 0;padding:0}
+.tl li{display:flex;gap:10px;padding:6px 0;color:var(--txt3);font-size:13px}
+.tl li.done{color:var(--txt)}
+.tl li .dot{margin-top:5px}
+.tl li.done .dot{background:var(--ok)}
+.tl li.cur .dot{background:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+.tl li.cur{color:var(--accent);font-weight:700}
+.tl small{margin-left:auto;color:var(--txt3)}
+.line{display:flex;justify-content:space-between;padding:6px 0;font-size:13px}
+.line.t{font-weight:800;font-size:16px;border-top:1px solid var(--line);margin-top:6px;padding-top:10px}
+.line.t b{color:var(--accent)}
+.res{border:1px solid var(--line);border-radius:10px;margin-top:6px;max-height:150px;overflow:auto}
+.res div{padding:8px 12px;display:flex;justify-content:space-between;cursor:pointer}
+.res div:hover{background:var(--raised)}
+.itm{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line)}
+.itm span{flex:1}.itm button{border:1px solid var(--line);background:var(--raised);color:var(--txt);width:26px;height:26px;border-radius:8px}
+.seg2{display:flex;gap:8px}.seg2 button{flex:1;padding:10px;border-radius:10px;border:1px solid var(--line);background:none;color:var(--txt2);font-weight:700}
+.seg2 button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.note{background:var(--panel);border:1px dashed var(--line);border-radius:14px;padding:16px 18px;margin-top:22px;color:var(--txt2);line-height:1.6;font-size:13px}
+.note b{color:var(--txt)}
+.toast{position:fixed;right:20px;bottom:20px;background:var(--panel);border:1px solid var(--accent);color:var(--txt);padding:12px 16px;border-radius:12px;display:none;z-index:99;font-weight:600}
+@media(max-width:900px){.pdvgrid{grid-template-columns:1fr!important}.kpis{grid-template-columns:repeat(2,1fr)}.g2{grid-template-columns:1fr}main{padding:16px}}
+kbd{font-family:inherit;font-size:10.5px;font-weight:700;background:var(--raised);border:1px solid var(--line);border-radius:6px;padding:1px 6px;margin:0 2px;color:var(--txt2)}
+.btn kbd{background:rgba(0,0,0,.15);color:inherit;border-color:currentColor;opacity:.8}
+.atalhos{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:18px;color:var(--txt2);font-size:13px}
+#pdvRes{margin-top:18px;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+#pdvRes table th{padding:14px 12px}
+#pdvRes tr.sel td{background:var(--accent-soft)}
+#pdvRes tr.sel td:first-child{box-shadow:inset 4px 0 0 var(--accent)}
+#pdvRes tr.sem td{opacity:.55}
+.pdvmsg{color:var(--txt2);font-size:18px;padding:6px 0 18px}
+.qb{border:1px solid var(--line);background:var(--raised);color:var(--txt);width:34px;height:34px;border-radius:9px;font-size:16px}
+.qn{min-width:64px;text-align:center;padding:7px;border:1px solid var(--line);border-radius:9px;background:var(--raised);font-weight:700}
+</style>
+</head>
+<body>
+<header class="top">
+  <span class="brand">GiroStock</span>
+  <nav><a>Início</a><a>PDV</a><a class="on">Pedidos</a><a>Produtos & Estoque</a><a>Caixa</a><a>Relatórios</a><a>Usuários</a></nav>
+  <button class="tg" id="tg">☾ / ☀ tema</button>
+</header>
+<main id="pgPed">
+  <div class="head">
+    <h2>Pedidos</h2>
+    <select id="loja" style="width:auto"><option>Lanchonete</option></select>
+    <button class="btn ghost sm" id="simIfood">⚡ Simular iFood (etapa futura)</button>
+    <button class="btn" id="novo">+ Novo pedido</button>
+  </div>
+  <div class="kpis" id="kpis"></div>
+  <div class="bar">
+    <button class="chip on" data-o="todas">Todas as origens</button>
+    <button class="chip" data-o="Balcão">Balcão</button>
+    <button class="chip" data-o="Telefone">Telefone</button>
+    <button class="chip" data-o="WhatsApp">WhatsApp</button>
+    <button class="chip" data-o="iFood" title="Etapa futura">iFood · futuro</button>
+    <button class="chip" data-o="99Food" title="Etapa futura">99Food · futuro</button>
+    <input id="q" placeholder="Buscar por nº, cliente ou telefone">
+    <div class="seg"><button class="on" data-v="quadro">Quadro</button><button data-v="lista">Lista</button></div>
+  </div>
+  <div id="view"></div>
+
+  <div class="note">
+    <b>Regras (atualizadas):</b><br>
+    • <b>Estoque reservado ao criar o pedido</b>: saldo disponível = saldo − reservado. Um novo pedido não consegue consumir o que já está reservado. <b>Cancelar</b> libera a reserva; <b>Finalizar</b> converte a reserva em baixa definitiva (produtos com ficha técnica reservam/baixam os insumos).<br>
+    • <b>Origem escolhida no PDV</b>: ao gerar um pedido pelo PDV da lanchonete, o operador escolhe <b>Balcão, Telefone ou WhatsApp</b> (a venda direta continua igual, com baixa imediata).<br>
+    • <b>iFood e 99Food</b>: etapa posterior. Quando existirem, o pedido entra sozinho em "Novo" já com a origem preenchida e com Aceitar/Recusar.<br>
+    • Status: <b>Novo → Em preparo → Pronto → Saiu p/ entrega → Finalizado</b> (retirada pula a entrega). Caixa: só entra quando Finalizado e pago.
+  </div>
+</main>
+
+<div id="pgPdv" style="display:none">
+  <header class="top" style="height:68px">
+    <span class="brand">GiroStock</span><span style="color:var(--txt2);font-size:13px">Administrador</span>
+    <span style="flex:1"></span><button class="tg">✦</button><button class="btn ghost sm" onclick="pagina('ped')">Sair do PDV</button><button class="btn ghost sm">Sair</button>
+  </header>
+  <main style="padding:22px 28px">
+    <div class="head" style="margin-bottom:18px">
+      <select style="width:auto"><option>Calos Roque — Lanchonete</option></select>
+      <span style="color:var(--txt2);font-size:13px;margin-right:auto">Caixa aberto às 12:38</span>
+      <button class="btn ghost sm">Sangria/Suprimento <kbd>F4</kbd></button>
+      <button class="btn ghost sm">Fechar caixa <kbd>F8</kbd></button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 380px;gap:22px;align-items:start" class="pdvgrid">
+      <div>
+        <input id="pdvQ" autocomplete="off" placeholder="Código de barras ou nome do produto  ·  3*código para quantidade  ·  * lista todos" style="font-size:17px;padding:16px 18px;border:1.5px solid var(--accent);border-radius:14px">
+        <div id="pdvRes"></div>
+        <div class="atalhos"><span><kbd>Enter</kbd> adiciona</span><span><kbd>↑</kbd><kbd>↓</kbd> percorre a lista</span><span><kbd>3*</kbd> quantidade</span><span><kbd>*</kbd> lista todos os produtos</span><span><kbd>Del</kbd> tira o último</span><span><kbd>F2</kbd> pagamento</span><span><kbd>F6</kbd> cancelar venda</span></div>
+      </div>
+      <div class="col" style="min-height:0;padding:20px;border-radius:16px">
+        <div style="display:flex;align-items:center;margin-bottom:10px"><h3 style="margin:0;font-size:22px;font-weight:700" id="pdvTit">Carrinho</h3><button class="btn danger sm" style="margin-left:auto;border-radius:999px" id="pdvCanc" onclick="cart=[];pdvRender()">Cancelar venda</button></div>
+        <div id="pdvCart"></div>
+        <div id="pdvCliWrap" style="display:none;margin-top:12px">
+          <label style="margin-top:0">Cliente (opcional) — digite o telefone</label>
+          <input id="pdvTel" inputmode="numeric" autocomplete="off" placeholder="(00) 00000-0000" oninput="pdvBuscaCli(this.value)">
+          <div id="pdvCliRes"></div>
+          <div class="sub" style="margin-top:8px;line-height:1.7">Para testar, clique: <span class="chip" onclick="pdvTesteTel('11988771020')">Ana Souza</span> <span class="chip" onclick="pdvTesteTel('11977663344')">Carlos Lima</span> <span class="chip" onclick="pdvTesteTel('11944332211')">Pedro Henrique</span> <span class="chip" onclick="pdvTesteTel('11999990000')">número novo</span></div>
+        </div>
+        <div id="pdvTipo" class="seg2" style="margin:12px 0 0"><button id="tVenda" class="on" onclick="pdvTipo('venda')">Venda</button><button id="tPed" onclick="pdvTipo('pedido')">Pedido</button></div>
+        <div id="pdvOrg"></div>
+        <div style="display:flex;align-items:flex-end;justify-content:space-between;margin:18px 0 12px;border-top:1px solid var(--line);padding-top:14px"><span style="color:var(--txt2);letter-spacing:1px;font-size:13px">TOTAL</span><b id="pdvTot" style="font-family:'Playfair Display',serif;font-size:34px;color:var(--accent)">R$ 0,00</b></div>
+        <button class="btn" style="width:100%;padding:18px;font-size:15px" id="pdvGo" onclick="pdvConfirma()">Finalizar venda <kbd>F2</kbd></button>
+      </div>
+    </div>
+  </main>
+</div>
+<div class="ov" id="ovD"><div class="drawer" id="drawer"></div></div>
+<div class="ov" id="ovM"><div class="modal" id="modal"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $=s=>document.querySelector(s);
+const brl=v=>v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const ST=[['novo','Novo'],['prep','Em preparo'],['pronto','Pronto'],['rota','Saiu p/ entrega'],['fim','Finalizado']];
+const NOME=Object.fromEntries(ST);
+const CAT=[['X-Tudo',24,6],['X-Bacon',20,8],['X-Salada',16,10],['Hot Dog Completo',14,12],['Batata Frita G',18,9],['Coca-Cola Lata',6,40],['Suco Natural 500ml',9,15],['Milkshake',15,5]];
+const reservado=nm=>orders.filter(o=>o.st!=='fim').reduce((s,o)=>s+o.itens.filter(i=>i[0]===nm).reduce((a,i)=>a+i[1],0),0);
+const disp=c=>c[2]-reservado(c[0]);
+const MOTO=['Marcos','Rafael','Diego'];
+let n=1048;
+let orders=[
+ {id:1042,orig:'Telefone',cli:'Ana Souza',tel:'(11) 98877-1020',tipo:'Entrega',end:'Rua das Flores, 120 — Centro',taxa:5,itens:[['X-Tudo',2,24],['Coca-Cola Lata',2,6]],pag:'Pagar na entrega (dinheiro)',pago:false,st:'prep',min:18,obs:'Sem cebola em um dos lanches.'},
+ {id:1043,orig:'WhatsApp',cli:'Carlos Lima',tel:'(11) 97766-3344',tipo:'Retirada',end:'',taxa:0,itens:[['X-Bacon',1,20],['Batata Frita G',1,18]],pag:'Pix (pago)',pago:true,st:'pronto',min:27,obs:'Vem buscar às 20h.'},
+ {id:1044,orig:'iFood',ext:true,cli:'Juliana M.',tel:'iFood #4471',tipo:'Entrega',end:'Av. Brasil, 890 ap 31',taxa:7,itens:[['Hot Dog Completo',2,14],['Suco Natural 500ml',1,9]],pag:'Pago no app',pago:true,st:'novo',min:2,obs:''},
+ {id:1045,orig:'Balcão',cli:'Mesa/Balcão',tel:'',tipo:'Retirada',end:'',taxa:0,itens:[['X-Salada',1,16],['Coca-Cola Lata',1,6]],pag:'Cartão (pago)',pago:true,st:'prep',min:6,obs:''},
+ {id:1046,orig:'99Food',ext:true,cli:'Pedro H.',tel:'99Food #8823',tipo:'Entrega',end:'Rua XV, 45',taxa:6,itens:[['Milkshake',2,15],['Batata Frita G',1,18]],pag:'Pago no app',pago:true,st:'rota',min:31,moto:'Marcos',obs:''},
+ {id:1041,orig:'Telefone',cli:'Marta Reis',tel:'(11) 95544-8899',tipo:'Entrega',end:'Rua Verde, 12',taxa:5,itens:[['X-Tudo',1,24]],pag:'Pix (pago)',pago:true,st:'fim',min:55,moto:'Rafael',obs:''},
+ {id:1040,orig:'Balcão',cli:'Balcão',tel:'',tipo:'Retirada',end:'',taxa:0,itens:[['Hot Dog Completo',1,14]],pag:'Dinheiro (pago)',pago:true,st:'fim',min:70,obs:''}
+];
+let view='quadro',orig='todas',busca='';
+const total=o=>o.itens.reduce((s,i)=>s+i[1]*i[2],0)+o.taxa;
+const late=o=>(o.st==='novo'||o.st==='prep')&&o.min>25;
+const prox=o=>({novo:'prep',prep:'pronto',pronto:o.tipo==='Entrega'?'rota':'fim',rota:'fim'})[o.st];
+const acaoTxt=o=>o.st==='novo'?(o.ext?'Aceitar':'Iniciar preparo'):o.st==='prep'?'Marcar pronto':o.st==='pronto'?(o.tipo==='Entrega'?'Saiu p/ entrega':'Entregue ao cliente'):o.st==='rota'?'Entregue ao cliente':'';
+function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>e.style.display='none',2600)}
+function filt(){return orders.filter(o=>(orig==='todas'||o.orig===orig)&&(!busca||(o.id+o.cli+o.tel).toLowerCase().includes(busca)))}
+function card(o){
+  const its=o.itens.map(i=>i[1]+'× '+i[0]).join(' · ');
+  const a=acaoTxt(o);
+  return `<div class="ord ${late(o)?'late':''} ${o.ext?'ext':''} ${o.st}" onclick="abrir(${o.id})">
+   <div class="r1"><span class="num">#${o.id}</span><span class="tag ${o.ext?'ext':''}">${o.orig}</span><span class="tm ${late(o)?'late':''}">${o.min} min</span></div>
+   <div class="cli">${o.cli}</div><div class="its">${its}</div>
+   <div class="r3"><span class="tag">${o.tipo==='Entrega'?'🛵 Entrega':'🛍 Retirada'}</span><span class="pill ${o.pago?'ok':'warn'}">${o.pago?'Pago':'Receber'}</span>${o.st!=='fim'?'<span class="tag">🔒 Reservado</span>':''}<span class="tot">${brl(total(o))}</span></div>
+   ${o.moto&&o.st==='rota'?`<div class="its" style="margin-top:6px">Entregador: <b>${o.moto}</b></div>`:''}
+   ${a?`<div class="act" onclick="event.stopPropagation()">${o.st==='novo'&&o.ext?`<button class="btn danger sm" onclick="recusar(${o.id})">Recusar</button>`:''}<button class="btn sm" onclick="avancar(${o.id})">${a}</button></div>`:''}
+  </div>`}
+function render(){
+  const all=orders, f=filt();
+  const c=s=>all.filter(o=>o.st===s).length;
+  const lt=all.filter(late).length;
+  $('#kpis').innerHTML=`
+   <div class="kpi hero ${c('novo')?'pulse':''}" onclick="document.querySelector('.col')?.scrollIntoView()"><small>Novos</small><b>${c('novo')}</b></div>
+   <div class="kpi"><small>Em preparo</small><b>${c('prep')}</b></div>
+   <div class="kpi"><small>Prontos p/ retirar/entregar</small><b>${c('pronto')}</b></div>
+   <div class="kpi"><small>Em entrega</small><b>${c('rota')}</b></div>
+   <div class="kpi"><small>Finalizados hoje</small><b>${c('fim')}</b>${lt?`<span class="pill warn" style="margin-left:6px">${lt} atrasado${lt>1?'s':''}</span>`:''}</div>`;
+  if(view==='quadro'){
+    $('#view').innerHTML='<div class="board">'+ST.map(([k,l])=>{
+      const L=f.filter(o=>o.st===k);
+      return `<div class="col"><h4><span class="dot ${k}"></span>${l}<span class="cnt">${L.length}</span></h4>${L.map(card).join('')||'<div class="vazio">Nenhum pedido</div>'}</div>`}).join('')+'</div>';
+  }else{
+    $('#view').innerHTML=`<div class="tbl"><table><thead><tr><th>Nº</th><th>Origem</th><th>Cliente</th><th>Tipo</th><th>Status</th><th>Pagamento</th><th>Tempo</th><th style="text-align:right">Total</th></tr></thead><tbody>${
+     f.map(o=>`<tr onclick="abrir(${o.id})"><td><b>#${o.id}</b></td><td><span class="tag ${o.ext?'ext':''}">${o.orig}</span></td><td>${o.cli}</td><td>${o.tipo}</td><td><span class="dot ${o.st}"></span> ${NOME[o.st]}</td><td><span class="pill ${o.pago?'ok':'warn'}">${o.pago?'Pago':'Receber'}</span></td><td style="color:${late(o)?'var(--warn)':'var(--txt3)'}">${o.min} min</td><td style="text-align:right;font-weight:800;color:var(--accent)">${brl(total(o))}</td></tr>`).join('')}</tbody></table></div>`;
+  }
+}
+function avancar(id){
+  const o=orders.find(x=>x.id===id);const p=prox(o);
+  if(p==='rota'&&!o.moto){o.moto=MOTO[0]}
+  o.st=p;o.min=Math.max(o.min,1);
+  if(p==='fim'&&!o.pago){o.pago=true}
+  toast(`Pedido #${o.id} → ${NOME[p]}`+(p==='fim'?' · reserva convertida em baixa definitiva do estoque':''));
+  render();if($('#ovD').classList.contains('show'))abrir(id);
+}
+function recusar(id){orders=orders.filter(o=>o.id!==id);toast('Pedido recusado');render()}
+function cancelar(id){const o=orders.find(x=>x.id===id);orders=orders.filter(x=>x.id!==id);fechar();toast(`Pedido #${id} cancelado · reserva liberada, estoque disponível novamente`);render()}
+function abrir(id){
+  const o=orders.find(x=>x.id===id);
+  const fluxo=o.tipo==='Entrega'?ST:ST.filter(s=>s[0]!=='rota');
+  const idx=fluxo.findIndex(s=>s[0]===o.st);
+  const a=acaoTxt(o);
+  $('#drawer').innerHTML=`<button class="x" onclick="fechar()">×</button>
+   <h3>Pedido #${o.id} <span class="tag ${o.ext?'ext':''}" style="vertical-align:middle">${o.orig}</span></h3>
+   <div style="color:var(--txt2)">${o.cli}${o.tel?' · '+o.tel:''}</div>
+   ${o.tipo==='Entrega'?`<div style="color:var(--txt2);margin-top:4px">🛵 ${o.end}</div>`:'<div style="color:var(--txt2);margin-top:4px">🛍 Retirada no balcão</div>'}
+   ${o.obs?`<div class="note" style="margin:12px 0 0;padding:10px 12px"><b>Obs.:</b> ${o.obs}</div>`:''}
+   <div class="sec"><label>Andamento</label><ul class="tl">${fluxo.map(([k,l],i)=>`<li class="${i<idx?'done':i===idx?'cur':''}"><span class="dot"></span>${k==='fim'&&o.tipo!=='Entrega'?'Entregue ao cliente':l}${i===idx?`<small>há ${o.min} min</small>`:''}</li>`).join('')}</ul></div>
+   ${o.tipo==='Entrega'&&(o.st==='pronto'||o.st==='rota')?`<label>Entregador</label><select onchange="orders.find(x=>x.id===${o.id}).moto=this.value">${MOTO.map(m=>`<option ${o.moto===m?'selected':''}>${m}</option>`).join('')}</select>`:''}
+   <div class="sec"><label>Itens</label>${o.itens.map(i=>`<div class="line"><span>${i[1]}× ${i[0]}</span><span>${brl(i[1]*i[2])}</span></div>`).join('')}
+    ${o.taxa?`<div class="line"><span>Taxa de entrega</span><span>${brl(o.taxa)}</span></div>`:''}
+    <div class="line t"><span>Total</span><b>${brl(total(o))}</b></div>
+    <div class="line"><span>Estoque</span><span class="tag">${o.st==='fim'?'Baixa definitiva':'🔒 Reservado até finalizar'}</span></div>
+    <div class="line"><span>${o.pag}</span><span class="pill ${o.pago?'ok':'warn'}">${o.pago?'Pago':'A receber'}</span></div></div>
+   <div style="display:flex;gap:8px;margin-top:18px;flex-wrap:wrap">
+    ${a?`<button class="btn" style="flex:1" onclick="avancar(${o.id})">${a}</button>`:''}
+    <button class="btn ghost" onclick="toast('Enviando para a impressora da cozinha…')">🖨 Imprimir</button>
+    ${o.st!=='fim'?`<button class="btn danger" onclick="cancelar(${o.id})">Cancelar</button>`:''}
+   </div>`;
+  $('#ovD').classList.add('show');
+}
+function fechar(){$('#ovD').classList.remove('show');$('#ovM').classList.remove('show')}
+$('#ovD').onclick=e=>{if(e.target.id==='ovD')fechar()};
+$('#ovM').onclick=e=>{if(e.target.id==='ovM')fechar()};
+
+let novo,cart=[],tipoPdv='venda',pdvOrig='Balcão',pdvSel=0,pdvObs='',pdvLista=[];
+const COD=nm=>'PRD-'+String(CAT.findIndex(c=>c[0]===nm)+2).padStart(4,'0');
+const CATG=nm=>/Coca|Suco|Milk/.test(nm)?'Bebidas':/Batata/.test(nm)?'Porções':'Lanches';
+const PREP=nm=>/^X-|Hot Dog|Milkshake|Batata/.test(nm);
+const dispPdv=c=>(tipoPdv==='pedido'||PREP(c[0]))?disp(c):c[2];
+function pagina(p){document.querySelector('header.top').style.display=p==='pdv'?'none':'';$('#pgPed').style.display=p==='ped'?'':'none';$('#pgPdv').style.display=p==='pdv'?'':'none';document.querySelectorAll('.top nav a').forEach(a=>a.classList.toggle('on',a.dataset.p===p));if(p==='pdv'){pdvRender();setTimeout(()=>$('#pdvQ').focus(),50)}else render()}
+function pdvTipo(t){if(cart.some(i=>PREP(i[0])))t='pedido';tipoPdv=t;$('#tVenda').classList.toggle('on',t==='venda');$('#tPed').classList.toggle('on',t==='pedido');pdvRender()}
+function pdvBusca(){
+  let q=$('#pdvQ').value.trim().toLowerCase();let qtd=1;const m=q.match(/^(\d+)\*(.*)$/);if(m){qtd=+m[1];q=m[2].trim()}
+  if(q==='*'||(m&&!q))pdvLista=CAT.slice();else if(!q)pdvLista=[];else pdvLista=CAT.filter(c=>c[0].toLowerCase().includes(q)||COD(c[0]).toLowerCase().includes(q));
+  pdvSel=Math.min(pdvSel,Math.max(0,pdvLista.length-1));pdvQtd=qtd;pdvRender();
+}
+let pdvQtd=1;
+function pdvAdd(nm,qtd){qtd=qtd||1;const c=CAT.find(x=>x[0]===nm);const e=cart.find(i=>i[0]===nm);if((e?e[1]:0)+qtd>dispPdv(c)){toast('Sem estoque disponível de '+nm);return}if(e)e[1]+=qtd;else cart.push([c[0],qtd,c[1]]);$('#pdvQ').value='';pdvLista=[];pdvQtd=1;pdvRender()}
+function pdvQt(k,d){const c=CAT.find(x=>x[0]===cart[k][0]);if(d>0&&cart[k][1]+1>dispPdv(c)){toast('Sem estoque disponível de '+c[0]);return}cart[k][1]+=d;if(cart[k][1]<1)cart.splice(k,1);pdvRender()}
+function pdvRender(){
+  const forca=cart.some(i=>PREP(i[0]));
+  if(forca)tipoPdv='pedido';else if(!cart.length)tipoPdv='venda';
+  $('#pdvTipo').style.display=forca?'none':'';
+  $('#tVenda').classList.toggle('on',tipoPdv==='venda');$('#tPed').classList.toggle('on',tipoPdv==='pedido');
+  const r=$('#pdvRes');
+  if(!pdvLista.length)r.style.display='none';else{r.style.display='';
+    r.innerHTML='<table><thead><tr><th style="width:40px"></th><th>Produto</th><th>Código</th><th>Categoria</th><th style="text-align:right">Estoque</th><th style="text-align:right">Preço</th></tr></thead><tbody>'+pdvLista.map((c,i)=>{const d=dispPdv(c);const f=/^X-/.test(c[0]);return '<tr class="'+(i===pdvSel?'sel':'')+(d<=0?' sem':'')+'" onclick="pdvAdd(\''+c[0]+'\','+pdvQtd+')"><td>'+(i===pdvSel?'▶':'')+'</td><td style="font-size:16px;font-weight:600">'+c[0]+'</td><td>'+COD(c[0])+'</td><td>'+CATG(c[0])+'</td><td style="text-align:right;color:'+(d<=0?'var(--err)':'var(--txt2)')+'">'+(d>0?'dá para '+d+' un.':'sem estoque'+(f?': falta Tomate':''))+'</td><td style="text-align:right;font-weight:800;color:var(--accent);font-size:16px">'+brl(c[1])+'</td></tr>'}).join('')+'</tbody></table>';}
+  $('#pdvTit').innerHTML=cart.length?'Carrinho <span style="font-weight:400;color:var(--txt2)">('+cart.reduce((s,i)=>s+i[1],0)+' item)</span>':'Carrinho';
+  $('#pdvCanc').style.display=cart.length?'':'none';
+  $('#pdvCliWrap').style.display=forca?'':'none';if(!forca&&($('#pdvTel').value||pdvCliSel))limpaCli();
+  $('#pdvCart').innerHTML=cart.length?cart.map((i,k)=>'<div style="padding:8px 0"><div style="display:flex;justify-content:space-between"><b>'+i[0]+'</b><span style="font-size:12px;color:var(--txt2)">1 UN × '+brl(i[2])+'</span></div><div style="display:flex;align-items:center;gap:8px;margin-top:8px"><button class="qb" onclick="pdvQt('+k+',-1)">−</button><span class="qn">'+i[1]+'</span><button class="qb" onclick="pdvQt('+k+',1)">+</button><b style="margin-left:auto">'+brl(i[1]*i[2])+'</b><button class="qb" style="color:var(--err)" onclick="pdvQt('+k+',-99)">×</button></div></div>').join('')+'<input id="pdvObs" placeholder="Observação do pedido (ex.: sem milho, sem cebola)" value="'+pdvObs.replace(/"/g,'&quot;')+'" oninput="pdvObs=this.value" style="margin-top:12px">':'<div class="pdvmsg">Passe um produto no leitor ou digite o nome.</div>';
+  $('#pdvOrg').innerHTML=tipoPdv==='pedido'?(forca?'<div class="note" style="margin:12px 0 0;padding:10px 12px;font-size:12px"><b>Produto com preparo (insumos).</b> Este carrinho só pode virar <b>pedido</b>: a cozinha recebe, o estoque dos insumos é reservado.</div>':'')+'<label>Origem do pedido</label><div class="seg2">'+['Balcão','Telefone','WhatsApp'].map(o=>'<button class="'+(pdvOrig===o?'on':'')+'" onclick="pdvOrig=\''+o+'\';pdvRender()">'+o+'</button>').join('')+'</div>'+(pdvOrig==='Balcão'?'<input id="pdvNome" placeholder="Nome para chamar (opcional)" style="margin-top:10px"><div style="color:var(--txt3);font-size:12px;margin-top:8px"><b>Pedido rápido:</b> sem dados do cliente. F2 fecha o pedido, reserva o estoque e imprime a comanda.</div>':'<div style="color:var(--txt3);font-size:12px;margin-top:8px">Pede o telefone para localizar o cliente cadastrado (ou cadastrar um novo). O estoque é reservado ao gerar o pedido.</div>'):'';
+  $('#pdvTot').textContent=brl(cart.reduce((s,i)=>s+i[1]*i[2],0));
+  $('#pdvGo').innerHTML=(tipoPdv==='pedido'?(pdvOrig==='Balcão'?'Gerar pedido rápido':'Gerar pedido'):'Finalizar venda')+' <kbd>F2</kbd>';
+  $('#pdvGo').disabled=false;
+}
+function pdvConfirma(){
+  if(!cart.length){toast('Carrinho vazio');return}
+  if(tipoPdv==='venda'){cart.forEach(i=>{CAT.find(c=>c[0]===i[0])[2]-=i[1]});cart=[];pdvObs='';const vc=pdvCliSel;if(vc){vc.pedidos++;vc.ultimo=0}toast('Venda registrada · estoque baixado na hora'+(vc?' · vinculada a '+vc.nome:''));limpaCli();pdvRender();return}
+  if(pdvOrig==='Balcão'){criarRapido();return}
+  novo={orig:pdvOrig,tipo:'Retirada',itens:cart.map(i=>i.slice()),taxa:0,doPdv:true};desenhaPedido({tel:$('#pdvTel').value,cli:pdvCliSel?pdvCliSel.nome:'',end:''});$('#ovM').classList.add('show');
+}
+const CLIENTES=[{nome:'Ana Souza',tel:'11988771020',end:['Rua das Flores, 120 — Centro','Av. Paulista, 1000 — Trabalho'],pedidos:14,ultimo:3},{nome:'Carlos Lima',tel:'11977663344',end:['Av. Brasil, 890 ap 31'],pedidos:9,ultimo:8},{nome:'Pedro Henrique',tel:'11944332211',end:['Rua XV, 45'],pedidos:21,ultimo:1},{nome:'Marta Reis',tel:'11955448899',end:['Rua Verde, 12'],pedidos:2,ultimo:41}];
+const dig=t=>(t||'').replace(/\D/g,'');
+const fmtTel=d=>d.length>=11?'('+d.slice(0,2)+') '+d.slice(2,7)+'-'+d.slice(7,11):d;
+function desenhaPedido(keep){
+  const v=keep||{};const sub=novo.itens.reduce((s,i)=>s+i[1]*i[2],0);
+  $('#modal').innerHTML='<button class="x" onclick="fechar()">×</button><h3>Gerar pedido <span class="tag" style="vertical-align:middle">'+novo.orig+'</span></h3>'+
+  '<div class="g2"><div><label>Telefone / WhatsApp (localiza o cliente)</label><input id="nTel" inputmode="numeric" autocomplete="off" placeholder="(00) 00000-0000" value="'+(v.tel||'')+'" oninput="buscaCli(this.value)"></div><div><label>Nome do cliente</label><input id="nCli" placeholder="Nome" value="'+(v.cli||'')+'"></div></div>'+
+  '<div id="cliBox"></div>'+
+  '<label>Tipo</label><div class="seg2"><button class="'+(novo.tipo==='Retirada'?'on':'')+'" onclick="trocaP(\'Retirada\')">🛍 Retirada</button><button class="'+(novo.tipo==='Entrega'?'on':'')+'" onclick="trocaP(\'Entrega\')">🛵 Entrega</button></div>'+
+  (novo.tipo==='Entrega'?'<div class="g2"><div><label>Endereço</label><input id="nEnd" placeholder="Rua, nº, bairro" value="'+(v.end||'')+'"><div id="endChips" style="margin-top:6px"></div></div><div><label>Taxa de entrega (R$)</label><input id="nTaxa" value="5,00" oninput="novo.taxa=parseFloat(this.value.replace(\',\',\'.\'))||0;totP()"></div></div>':'')+
+  '<label>Pagamento</label><select id="nPag"><option>Pagar na retirada/entrega (dinheiro)</option><option>Pagar na retirada/entrega (cartão)</option><option>Pix (já pago)</option></select>'+
+  '<div class="sec"><label>Itens (estoque reservado ao confirmar)</label>'+novo.itens.map(i=>'<div class="line"><span>'+i[1]+'× '+i[0]+'</span><span>'+brl(i[1]*i[2])+'</span></div>').join('')+(pdvObs?'<div class="line"><span style="color:var(--txt3)">Obs.: '+pdvObs+'</span></div>':'')+'<div class="line t" id="nTot"><span>Total</span><b>'+brl(sub+novo.taxa)+'</b></div></div>'+
+  '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px"><button class="btn ghost" onclick="fechar()">Voltar</button><button class="btn" onclick="criarP()">Gerar pedido</button></div>';
+  buscaCli(v.tel||'',true);
+}
+function buscaCli(val,silent){
+  const d=dig(val);const box=$('#cliBox');
+  const exato=d.length>=10?CLIENTES.find(c=>c.tel===d):null;
+  novo.cli=exato||null;novo.cad=true;
+  if(exato){
+    if(!silent||!$('#nCli').value)$('#nCli').value=exato.nome;
+    if($('#nEnd')&&!$('#nEnd').value)$('#nEnd').value=exato.end[0];
+    box.innerHTML='<div class="note" style="margin:10px 0 0;padding:10px 12px;border-style:solid;border-color:var(--ok)"><b style="color:var(--ok)">✔ Cliente encontrado:</b> <b>'+exato.nome+'</b> · '+exato.pedidos+' pedidos · último há '+exato.ultimo+' dia'+(exato.ultimo!==1?'s':'')+'<div style="font-size:12px;margin-top:2px">O nome e o endereço foram preenchidos do cadastro. O pedido será vinculado a ele.</div></div>';
+    if($('#endChips'))$('#endChips').innerHTML=exato.end.map(e=>'<button class="chip" onclick="document.getElementById(\'nEnd\').value=this.textContent">'+e+'</button>').join(' ');
+  }else if(d.length>=4&&d.length<10){
+    const sug=CLIENTES.filter(c=>c.tel.includes(d)).slice(0,3);
+    box.innerHTML=sug.length?'<div style="margin-top:8px" class="sub">Clientes com esse número:</div>'+sug.map(c=>'<div class="row" style="cursor:pointer" onclick="document.getElementById(\'nTel\').value=fmtTel(\''+c.tel+'\');buscaCli(fmtTel(\''+c.tel+'\'))"><div class="gr"><b>'+c.nome+'</b> <span class="sub">'+fmtTel(c.tel)+'</span></div></div>').join(''):'';
+  }else if(d.length>=10){
+    box.innerHTML='<div class="note" style="margin:10px 0 0;padding:10px 12px;border-style:solid;border-color:var(--accent-line)"><b>Cliente novo.</b> Telefone não cadastrado: será criado com o nome e o endereço deste pedido.<label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:12.5px;color:var(--txt2);margin:8px 0 0"><input type="checkbox" id="nCad" checked style="width:auto" onchange="novo.cad=this.checked"> Cadastrar este cliente</label></div>';
+  }else{
+    box.innerHTML='<div class="sub" style="margin-top:6px">Sem telefone? Pode deixar em branco: o pedido sai sem cadastro de cliente.</div>';
+  }
+}
+function snapP(){return{tel:$('#nTel')?.value,cli:$('#nCli')?.value,end:$('#nEnd')?.value}}
+function trocaP(t){const s=snapP();novo.tipo=t;novo.taxa=t==='Entrega'?5:0;desenhaPedido(s)}
+function totP(){const sub=novo.itens.reduce((s,i)=>s+i[1]*i[2],0);$('#nTot').innerHTML='<span>Total</span><b>'+brl(sub+novo.taxa)+'</b>'}
+function criarP(){
+  const pag=$('#nPag').value;const d=dig($('#nTel').value);let msg='';
+  const nome=$('#nCli').value.trim();
+  if(novo.cli){novo.cli.pedidos++;novo.cli.ultimo=0;msg=' · vinculado a '+novo.cli.nome}
+  else if(d.length>=10&&novo.cad!==false){CLIENTES.push({nome:nome||'Cliente',tel:d,end:[$('#nEnd')?.value||''].filter(Boolean),pedidos:1,ultimo:0});msg=' · cliente novo cadastrado'}
+  orders.unshift({id:++n,orig:novo.orig,cli:nome||(novo.cli?novo.cli.nome:'Cliente'),tel:fmtTel(d),tipo:novo.tipo,end:$('#nEnd')?.value||'',taxa:novo.tipo==='Entrega'?novo.taxa:0,itens:novo.itens,pag,pago:pag.includes('já pago'),st:'novo',min:0,obs:pdvObs});
+  const o=orders[0];fechar();cart=[];pdvObs='';limpaCli();pdvRender();toast('Pedido #'+n+' gerado · estoque reservado'+msg);mostraComanda(o);
+}
+/* pedido rápido (balcão): sem dados do cliente, só fecha e gera a comanda */
+function criarRapido(){
+  const nome=($('#pdvNome')?.value||'').trim();
+  const vc=pdvCliSel;if(vc){vc.pedidos++;vc.ultimo=0}
+  orders.unshift({id:++n,orig:'Balcão',cli:nome||(vc?vc.nome:'Balcão'),tel:vc?fmtTel(vc.tel):'',tipo:'Retirada',end:'',taxa:0,itens:cart.map(i=>i.slice()),pag:'Pagar no balcão ao retirar',pago:false,st:'novo',min:0,obs:pdvObs});
+  const o=orders[0];cart=[];pdvObs='';limpaCli();pdvRender();toast('Pedido #'+n+' gerado · estoque reservado'+(vc?' · vinculado a '+vc.nome:''));mostraComanda(o);
+}
+function mostraComanda(o){
+  const t=o.itens.reduce((s,i)=>s+i[1]*i[2],0)+o.taxa;
+  $('#modal').innerHTML='<button class="x" onclick="fechar()">×</button><h3>Comanda gerada</h3><div class="sub">Impressão para a cozinha e via do cliente</div>'+
+  '<div class="msg" style="margin-top:14px;font-family:monospace;font-size:13px;background:#fff;color:#111;border-radius:8px;max-width:300px;margin-left:auto;margin-right:auto"><div style="text-align:center;font-weight:800;font-size:15px">JA CONVENIÊNCIA — LANCHONETE</div><div style="text-align:center;font-size:30px;font-weight:800;margin:6px 0">PEDIDO #'+o.id+'</div><div style="text-align:center">'+o.orig+(o.cli&&o.cli!=='Balcão'?' · '+o.cli:'')+'</div><div style="text-align:center;font-size:11px;margin-bottom:6px">'+new Date().toLocaleString('pt-BR')+'</div>--------------------------------\n'+o.itens.map(i=>i[1]+'x '+i[0]).join('\n')+(o.obs?'\n\nOBS: '+o.obs:'')+'\n--------------------------------\nTOTAL '+brl(t)+'\n'+(o.pago?'PAGO':'A PAGAR NA RETIRADA')+'</div>'+
+  '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px"><button class="btn ghost" onclick="fechar();pagina(\'ped\')">Ver em Pedidos</button><button class="btn" onclick="toast(\'Enviado para a impressora\');fechar()">🖨 Imprimir e continuar vendendo</button></div>';
+  $('#ovM').classList.add('show');
+}
+let pdvCliSel=null;
+function limpaCli(){pdvCliSel=null;const t=$('#pdvTel');if(t)t.value='';const r=$('#pdvCliRes');if(r)r.innerHTML=''}
+function pdvTesteTel(d){$('#pdvTel').value=fmtTel(d);pdvBuscaCli($('#pdvTel').value)}
+function pdvBuscaCli(val){
+  const d=dig(val),box=$('#pdvCliRes');
+  const ex=d.length>=10?CLIENTES.find(c=>c.tel===d):null;pdvCliSel=ex||null;
+  if(ex){box.innerHTML='<div class="note" style="margin:8px 0 0;padding:10px 12px;border-style:solid;border-color:var(--ok)"><b style="color:var(--ok)">✔ Cliente cadastrado</b><div style="margin-top:4px"><b>'+ex.nome+'</b> · '+fmtTel(ex.tel)+'</div><div class="sub" style="margin-top:2px">🏠 '+ex.end.join(' · ')+'</div><div class="sub">'+ex.pedidos+' pedidos · último há '+ex.ultimo+' dia'+(ex.ultimo!==1?'s':'')+'</div><div style="font-size:12px;margin-top:6px;color:var(--txt2)">'+(tipoPdv==='pedido'?'Nome e endereço serão preenchidos no pedido.':'A venda será vinculada a este cliente.')+'</div></div>'}
+  else if(d.length>=4&&d.length<10){const sug=CLIENTES.filter(c=>c.tel.includes(d)).slice(0,3);box.innerHTML=sug.length?sug.map(c=>'<div class="row" style="cursor:pointer" onclick="pdvTesteTel(\''+c.tel+'\')"><div class="gr"><b>'+c.nome+'</b> <span class="sub">'+fmtTel(c.tel)+'</span></div></div>').join(''):'<div class="sub" style="margin-top:6px">Nenhum cliente com esse trecho.</div>'}
+  else if(d.length>=10){box.innerHTML='<div class="note" style="margin:8px 0 0;padding:10px 12px;border-style:solid;border-color:var(--accent-line)"><b>Cliente novo.</b> Não há cadastro com este telefone; será criado ao gerar o pedido, com o nome e endereço informados.</div>'}
+  else box.innerHTML='';
+}
+$('#pdvQ').addEventListener('input',pdvBusca);
+document.addEventListener('keydown',e=>{
+  if($('#pgPdv').style.display==='none')return;
+  if($('#ovM').classList.contains('show')){if(e.key==='Escape')fechar();return}
+  if(e.key==='Escape'){pagina('ped');return}
+  if(e.key==='F2'){e.preventDefault();pdvConfirma()}
+  else if(e.key==='F6'){e.preventDefault();cart=[];pdvRender()}
+  else if(e.key==='ArrowDown'){e.preventDefault();pdvSel=Math.min(pdvSel+1,pdvLista.length-1);pdvRender()}
+  else if(e.key==='ArrowUp'){e.preventDefault();pdvSel=Math.max(pdvSel-1,0);pdvRender()}
+  else if(e.key==='Enter'&&pdvLista[pdvSel]){e.preventDefault();pdvAdd(pdvLista[pdvSel][0],pdvQtd)}
+  else if(e.key==='Delete'&&!$('#pdvQ').value&&cart.length){cart.pop();pdvRender()}
+});
+document.querySelectorAll('.top nav a').forEach(a=>{a.dataset.p=a.textContent==='PDV'?'pdv':a.textContent==='Pedidos'?'ped':'x';a.onclick=()=>{if(a.dataset.p!=='x')pagina(a.dataset.p)}});
+function novoPedido(){
+  novo={orig:'Telefone',tipo:'Retirada',itens:[],taxa:0};
+  desenhaModal();$('#ovM').classList.add('show');
+}
+function desenhaModal(keep){
+  const sub=novo.itens.reduce((s,i)=>s+i[1]*i[2],0);
+  const v=keep||{};
+  $('#modal').innerHTML=`<button class="x" onclick="fechar()">×</button><h3>Novo pedido <span class="tag" style="vertical-align:middle">gerado no PDV</span></h3>
+   <div class="g2"><div><label>Origem</label><select id="nOrig" onchange="novo.orig=this.value">${['Telefone','WhatsApp','Balcão'].map(x=>`<option ${novo.orig===x?'selected':''}>${x}</option>`).join('')}</select></div>
+   <div><label>Telefone</label><input id="nTel" placeholder="(00) 00000-0000" value="${v.tel||''}"></div></div>
+   <label>Nome do cliente</label><input id="nCli" placeholder="Nome" value="${v.cli||''}">
+   <label>Tipo</label><div class="seg2"><button class="${novo.tipo==='Retirada'?'on':''}" onclick="troca('Retirada')">🛍 Retirada</button><button class="${novo.tipo==='Entrega'?'on':''}" onclick="troca('Entrega')">🛵 Entrega</button></div>
+   ${novo.tipo==='Entrega'?`<div class="g2"><div><label>Endereço</label><input id="nEnd" placeholder="Rua, nº, bairro" value="${v.end||''}"></div><div><label>Taxa de entrega (R$)</label><input id="nTaxa" value="5,00" oninput="novo.taxa=parseFloat(this.value.replace(',','.'))||0;atualizaTot()"></div></div>`:''}
+   <div class="sec"><label>Adicionar produto</label><input id="nBusca" placeholder="Buscar por nome ou código…" oninput="busc(this.value)"><div class="res" id="nRes" style="display:none"></div>
+    <div id="nIt">${novo.itens.map((i,k)=>`<div class="itm"><span>${i[0]}</span><button onclick="qt(${k},-1)">−</button><b>${i[1]}</b><button onclick="qt(${k},1)">+</button><span style="flex:0 0 80px;text-align:right">${brl(i[1]*i[2])}</span></div>`).join('')||'<div class="vazio">Nenhum item</div>'}</div></div>
+   <label>Observação</label><textarea id="nObs" rows="2" placeholder="Ex.: sem cebola, troco para R$ 50"></textarea>
+   <div class="g2"><div><label>Pagamento</label><select id="nPag"><option>Pagar na retirada/entrega (dinheiro)</option><option>Pagar na retirada/entrega (cartão)</option><option>Pix (já pago)</option></select></div>
+   <div style="align-self:end"><div class="line t" id="nTot"><span>Total</span><b>${brl(sub+(novo.tipo==='Entrega'?novo.taxa||5:0))}</b></div></div></div>
+   <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px"><button class="btn ghost" onclick="fechar()">Cancelar</button><button class="btn" onclick="criar()">Criar pedido</button></div>`;
+  if(novo.tipo==='Entrega'&&!novo.taxa)novo.taxa=5;
+}
+function snap(){return{tel:$('#nTel')?.value,cli:$('#nCli')?.value,end:$('#nEnd')?.value}}
+function troca(t){const s=snap();novo.tipo=t;novo.taxa=t==='Entrega'?5:0;desenhaModal(s)}
+function busc(q){
+  const r=$('#nRes');q=q.toLowerCase();
+  if(!q){r.style.display='none';return}
+  r.style.display='block';
+  r.innerHTML=CAT.filter(c=>c[0].toLowerCase().includes(q)).map(c=>{const d=disp(c);return `<div ${d>0?`onclick="add('${c[0]}')"`:'style="opacity:.5;cursor:not-allowed"'}><span>${c[0]} <small style="color:${d<=2?'var(--warn)':'var(--txt3)'}">· disponível ${d} (reservado ${reservado(c[0])})</small></span><b>${brl(c[1])}</b></div>`}).join('')||'<div>Sem resultados</div>';
+}
+function add(nm){const s=snap();const c=CAT.find(x=>x[0]===nm);const e=novo.itens.find(i=>i[0]===nm);if((e?e[1]:0)+1>disp(c)){toast('Sem estoque disponível de '+nm);desenhaModal(s);return}if(e)e[1]++;else novo.itens.push([c[0],1,c[1]]);desenhaModal(s)}
+function qt(k,d){const s=snap();const c=CAT.find(x=>x[0]===novo.itens[k][0]);if(d>0&&novo.itens[k][1]+1>disp(c)){toast('Sem estoque disponível de '+c[0]);return}novo.itens[k][1]+=d;if(novo.itens[k][1]<1)novo.itens.splice(k,1);desenhaModal(s)}
+function atualizaTot(){const sub=novo.itens.reduce((s,i)=>s+i[1]*i[2],0);$('#nTot').innerHTML=`<span>Total</span><b>${brl(sub+novo.taxa)}</b>`}
+function criar(){
+  if(!novo.itens.length){toast('Adicione ao menos um item');return}
+  const pag=$('#nPag').value;
+  orders.unshift({id:++n,orig:$('#nOrig').value,cli:$('#nCli').value||'Cliente',tel:$('#nTel').value,tipo:novo.tipo,end:$('#nEnd')?.value||'',taxa:novo.tipo==='Entrega'?novo.taxa:0,itens:novo.itens,pag,pago:pag.includes('já pago'),st:'novo',min:0,obs:$('#nObs').value});
+  fechar();cart=[];toast(`Pedido #${n} criado · estoque reservado`);pagina('ped');
+}
+$('#novo').onclick=novoPedido;
+$('#simIfood').onclick=()=>{
+  orders.unshift({id:++n,orig:'iFood',ext:true,cli:['Fernanda P.','Lucas R.','Bianca T.'][n%3],tel:'iFood #'+(4400+n),tipo:'Entrega',end:'Rua Nova, '+(n%90+10),taxa:7,itens:[['X-Tudo',1,24],['Coca-Cola Lata',1,6]],pag:'Pago no app',pago:true,st:'novo',min:0,obs:''});
+  toast('🔔 Novo pedido do iFood!');render();
+};
+document.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{document.querySelectorAll('.chip').forEach(x=>x.classList.remove('on'));b.classList.add('on');orig=b.dataset.o;render()});
+document.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.seg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');view=b.dataset.v;render()});
+$('#q').oninput=e=>{busca=e.target.value.toLowerCase();render()};
+$('#tg').onclick=()=>{const h=document.documentElement;h.dataset.theme=h.dataset.theme==='dark'?'light':'dark'};
+setInterval(()=>{orders.forEach(o=>{if(o.st!=='fim')o.min++});if(!$('.ov.show'))render()},60000);
+render();
+</script>
+</body>
+</html>

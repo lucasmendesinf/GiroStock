@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GiroStock — Preview Combo: código, custos e preço sugerido</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
+<style>
+:root,:root[data-theme="dark"]{--bg:#0f0e10;--panel:#17161a;--raised:#1f1d22;--hover:#25232a;--accent:#d4ae4a;--accent-soft:rgba(212,174,74,.12);--accent-line:rgba(212,174,74,.30);--on:#17120a;--txt:#f2eee6;--txt2:#b4ada2;--txt3:#8f8980;--line:rgba(255,255,255,.08);--ok:#5fc48a;--warn:#f0a05a;--err:#ec7a72;--shadow:rgba(0,0,0,.55)}
+:root[data-theme="light"]{--bg:#f4f1ea;--panel:#fff;--raised:#f8f5ee;--hover:#f1ece0;--accent:#8f6810;--accent-soft:rgba(143,104,16,.10);--accent-line:rgba(143,104,16,.28);--on:#fff;--txt:#231f1a;--txt2:#5d564c;--txt3:#7d766b;--line:rgba(35,31,26,.10);--ok:#1f7a4d;--warn:#b25e12;--err:#b3372f;--shadow:rgba(0,0,0,.2)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font-family:Manrope,system-ui,sans-serif;font-size:14px}
+button{font-family:inherit;cursor:pointer}
+input,select{font-family:inherit;font-size:14px;color:var(--txt);background:var(--raised);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%}
+input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px}
+.top{display:flex;align-items:center;gap:14px;height:60px;padding:0 28px;border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{font-family:'Playfair Display',serif;font-weight:800;font-size:20px;color:var(--accent)}
+.sp{flex:1}
+.tg{border:1px solid var(--line);background:var(--raised);color:var(--accent);border-radius:999px;padding:7px 12px;font-weight:700;font-size:12px}
+main{padding:22px 28px 60px;max-width:1220px;margin:0 auto}
+.head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.head h2{margin:0;font-size:24px;font-weight:700;margin-right:auto}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}.seg button{border:none;background:none;color:var(--txt2);padding:9px 14px;font-weight:700;font-size:12px}.seg button.on{background:var(--accent);color:var(--on)}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:20px;align-items:start}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:22px 24px}
+.modal h3{margin:0 0 2px;font-size:20px}
+.sub{font-size:12px;color:var(--txt3)}
+label.l{display:block;font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--txt3);margin:0 0 5px}
+.fg{display:grid;grid-template-columns:repeat(12,1fr);gap:12px;margin-top:14px}
+.c12{grid-column:span 12}.c6{grid-column:span 6}.c4{grid-column:span 4}.c3{grid-column:span 3}.c8{grid-column:span 8}.c2{grid-column:span 2}
+.hint{font-size:11.5px;color:var(--txt3);margin-top:4px;line-height:1.45}
+.resumo{background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:12px;padding:10px 14px;font-size:13px;color:var(--txt2);margin-top:12px}.resumo b{color:var(--txt)}
+.sec{border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-top:16px;background:var(--bg)}
+.sec h4{margin:0;font-size:15px;display:flex;align-items:center;gap:8px}
+.novo{font-size:10px;font-weight:800;letter-spacing:.8px;padding:2px 8px;border-radius:999px;background:var(--accent);color:var(--on)}
+.btn{border:none;border-radius:10px;padding:11px 18px;font-weight:800;font-size:13px;background:var(--accent);color:var(--on);text-transform:uppercase;letter-spacing:.3px}
+.btn.ghost{background:none;border:1px solid var(--line);color:var(--txt);text-transform:none;font-weight:700}.btn.ghost:hover{background:var(--raised)}
+.btn.sm{padding:7px 11px;font-size:12px}
+.tbl{border:1px solid var(--line);border-radius:12px;overflow:auto;margin-top:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:9px 10px;font-size:10px;letter-spacing:.8px;text-transform:uppercase;color:var(--txt3);border-bottom:1px solid var(--line);white-space:nowrap;background:var(--panel)}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+tfoot td{font-weight:800;background:var(--panel)}
+.tag{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--raised);color:var(--txt2);border:1px solid var(--line)}
+.pill{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;border:1px solid}
+.pill.ok{color:var(--ok);border-color:var(--ok)}.pill.warn{color:var(--warn);border-color:var(--warn)}.pill.err{color:var(--err);border-color:var(--err)}
+.ok-t{color:var(--ok)}.err-t{color:var(--err)}.warn-t{color:var(--warn)}.ac{color:var(--accent)}
+.x{background:none;border:none;color:var(--err);font-size:18px}
+.code{display:flex;gap:8px;align-items:center}
+.code input{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:16px;letter-spacing:2px}
+.lock{opacity:.7}
+.pick{position:relative;margin-top:12px}
+.drop{position:absolute;left:0;right:0;top:100%;z-index:10;background:var(--panel);border:1px solid var(--line);border-radius:12px;margin-top:4px;max-height:240px;overflow:auto;box-shadow:0 10px 30px var(--shadow);display:none}
+.drop.on{display:block}
+.drop div{display:flex;justify-content:space-between;gap:10px;padding:10px 12px;cursor:pointer;border-bottom:1px solid var(--line)}.drop div:hover{background:var(--raised)}
+.preco{display:grid;grid-template-columns:repeat(12,1fr);gap:12px;margin-top:14px}
+.big{font-size:30px;font-weight:800}
+.barra{height:10px;border-radius:999px;background:var(--raised);overflow:hidden;margin-top:8px}.barra i{display:block;height:100%;border-radius:999px;transition:.15s}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.stat small{display:block;font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--txt3)}
+.stat b{font-size:20px}
+.sw{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:13px}
+.sw button{width:40px;height:22px;border-radius:999px;border:1px solid var(--line);background:var(--raised);position:relative;padding:0;flex:none}
+.sw button::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--txt3);transition:.15s}
+.sw button.on{background:var(--accent-soft);border-color:var(--accent)}.sw button.on::after{left:20px;background:var(--accent)}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.box h5{margin:0 0 8px;font-size:14px}.box ul{margin:0;padding-left:18px;color:var(--txt2);font-size:12.5px;line-height:1.7}.box b{color:var(--txt)}
+.line{display:flex;justify-content:space-between;gap:10px;padding:6px 0;font-size:13px;border-bottom:1px solid var(--line)}.line:last-child{border-bottom:none}
+.toast{position:fixed;right:20px;bottom:20px;background:var(--panel);border:1px solid var(--accent);color:var(--txt);padding:12px 16px;border-radius:12px;display:none;z-index:99;font-weight:600;max-width:420px}
+@media(max-width:1000px){.layout{grid-template-columns:1fr}.c6,.c4,.c3,.c8,.c2{grid-column:span 12}}
+</style>
+</head>
+<body>
+<header class="top"><span class="brand">GiroStock</span><span class="sp"></span><button class="tg" id="tg">☾ / ☀ tema</button></header>
+<main>
+ <div class="head"><h2>Cadastrar produto · Combo</h2>
+  <div class="seg"><button id="mNovo" class="on" onclick="modo('novo')">Novo cadastro</button><button id="mEdit" onclick="modo('edit')">Editando (já salvo)</button></div></div>
+ <div class="layout"><div class="modal" id="form"></div><div id="lateral"></div></div>
+</main>
+<div class="toast" id="toast"></div>
+<script>
+const $=s=>document.querySelector(s);
+const brl=v=>(+v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const pc=v=>(Math.round(v*10)/10).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
+const num=s=>{if(typeof s==='number')return s;const v=parseFloat(String(s||'').replace(/\./g,'').replace(',','.'));return isNaN(v)?0:v};
+const fmt=v=>(+v||0).toFixed(2).replace('.',',');
+function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>e.style.display='none',3600)}
+
+/* produtos de exemplo (cadastro de hoje) */
+const PROD=[
+ {id:1,cod:'PRD-0014',nome:'Energético Monster 473ml',custo:6.00,venda:9.50,ean:'7898927019153'},
+ {id:2,cod:'PRD-0021',nome:'Batata Frita Grande',custo:9.80,venda:32.00,ean:'7891000100201',lanche:true},
+ {id:3,cod:'PRD-0033',nome:'Classic Burger',custo:11.40,venda:29.90,ean:'7891000100332',lanche:true},
+ {id:4,cod:'PRD-0007',nome:'Refrigerante Lata 350ml',custo:3.10,venda:7.00,ean:'7894900011517'},
+ {id:5,cod:'PRD-0045',nome:'Onion Rings',custo:7.50,venda:26.00,ean:'7891000100455',lanche:true},
+ {id:6,cod:'PRD-0052',nome:'Cerveja Heineken Long Neck',custo:5.20,venda:12.00,ean:'7896045104482'}
+];
+/* ---- código do combo: EAN-13 interno (prefixo 2 = uso da própria loja), dígito verificador válido ---- */
+function ean13(){let d='2';for(let i=0;i<11;i++)d+=Math.floor(Math.random()*10);let s=0;for(let i=0;i<12;i++)s+=(+d[i])*(i%2?3:1);return d+((10-s%10)%10)}
+function eanValido(c){c=c.replace(/\D/g,'');if(c.length!==13)return c.length>=8&&c.length<=14;let s=0;for(let i=0;i<12;i++)s+=(+c[i])*(i%2?3:1);return (10-s%10)%10===+c[12]}
+
+let M='novo';
+let COMBO={nome:'Combo Burgo Família',codigo:ean13(),itens:[{id:3,q:2},{id:2,q:1},{id:5,q:1},{id:4,q:2}]};
+let PR={auto:true,margem:30,preco:0,arred:true,aberto:false};
+const prod=id=>PROD.find(p=>p.id===id);
+const custoTotal=()=>COMBO.itens.reduce((s,i)=>s+prod(i.id).custo*i.q,0);
+const avulsoTotal=()=>COMBO.itens.reduce((s,i)=>s+prod(i.id).venda*i.q,0);
+function sugerido(){const c=custoTotal(),m=PR.margem/100;if(c<=0||m>=1)return 0;let p=c/(1-m);if(PR.arred){const bruto=p;p=Math.floor(p)+0.90;if(p<bruto-0.0001)p+=1} /* menor valor terminado em ,90 que seja >= ao sugerido */return Math.round(p*100)/100}
+function sincroniza(){if(PR.auto)PR.preco=sugerido()}
+function margemReal(){return PR.preco>0?(PR.preco-custoTotal())/PR.preco*100:0}
+
+function modo(m){M=m;$('#mNovo').classList.toggle('on',m==='novo');$('#mEdit').classList.toggle('on',m==='edit');render()}
+function novoCodigo(){COMBO.codigo=ean13();render()}
+
+function render(){sincroniza();
+  const c=custoTotal();
+  $('#form').innerHTML=`<h3>${M==='novo'?'Cadastrar produto':'Editar produto'}</h3><div class="sub">${M==='novo'?'Novo produto · o código PRD é gerado ao salvar.':'PRD-0149 · combo já cadastrado'}</div>
+  <div class="resumo">Combo: <b>feito de outros produtos</b>, sem estoque próprio. Cada venda baixa os produtos abaixo. O custo é a soma dos produtos do combo.</div>
+  <div class="fg">
+   <div class="c12"><label class="l">Nome do produto *</label><input value="${COMBO.nome}" oninput="COMBO.nome=this.value"></div>
+   <div class="c4"><label class="l">Categoria *</label><select><option>Combos</option></select></div>
+   <div class="c2"><label class="l">Unidade</label><select><option>UN</option></select></div>
+   <div class="c6"><label class="l">Código de barras do combo *</label>
+    ${M==='novo'?`<div class="code"><input id="cod" value="${COMBO.codigo}" oninput="COMBO.codigo=this.value.replace(/\\D/g,'');valida()" inputmode="numeric"><button class="btn ghost sm" type="button" onclick="novoCodigo()">↻ Gerar outro</button></div><div class="hint" id="codH"></div>`
+    :`<div class="code lock"><input value="${COMBO.codigo}" readonly><span class="tag">🔒 fixo</span></div><div class="hint">O código é gerado <b>só no cadastro</b> e não muda ao editar. Para trocar, apague e digite outro manualmente.</div><button class="btn ghost sm" style="margin-top:6px" onclick="toast('Editar manualmente (exemplo)')">Trocar manualmente</button>`}</div>
+  </div>
+
+  <div class="sec"><h4>Produtos do combo <span class="novo">NOVO</span></h4>
+   <div class="sub" style="margin-top:4px">Cada produto mantém o <b>seu próprio código</b>. Aqui você vê <b>quanto cada um custa e vale separadamente</b>.</div>
+   <div class="tbl"><table><thead><tr><th>Produto</th><th>Código</th><th class="num" style="width:78px">Qtd.</th><th class="num">Custo unit.</th><th class="num">Custo (qtd × unit.)</th><th class="num">Preço avulso unit.</th><th class="num">Preço avulso (qtd ×)</th><th class="num">Margem avulso</th><th></th></tr></thead><tbody>
+   ${COMBO.itens.map((i,k)=>{const p=prod(i.id);return `<tr><td><b>${p.nome}</b>${p.lanche?' <span class="tag">lanche (insumos)</span>':''}</td><td class="sub">${p.cod}<div>${p.ean}</div></td><td class="num"><input style="width:64px;text-align:right" value="${i.q}" inputmode="decimal" onchange="setQ(${k},this.value)"></td><td class="num">${brl(p.custo)}</td><td class="num"><b>${brl(p.custo*i.q)}</b></td><td class="num">${brl(p.venda)}</td><td class="num">${brl(p.venda*i.q)}</td><td class="num ok-t">${pc((p.venda-p.custo)/p.venda*100)}</td><td><button class="x" onclick="rm(${k})" title="remover">×</button></td></tr>`}).join('')}
+   </tbody><tfoot><tr><td colspan="4" class="num">Total dos produtos</td><td class="num ac" id="tCusto">${brl(c)}</td><td></td><td class="num" id="tAvulso">${brl(avulsoTotal())}</td><td class="num ok-t">${pc(avulsoTotal()?(avulsoTotal()-c)/avulsoTotal()*100:0)}</td><td></td></tr></tfoot></table></div>
+   <div class="pick"><label class="l">Adicionar produto ao combo</label><input id="q" placeholder="Buscar produto (nome, código ou código de barras)" oninput="busca()" onfocus="busca()"><div class="drop" id="drop"></div></div>
+  </div>
+
+  <div class="sec"><h4>Preço do combo <span class="novo">NOVO</span></h4>
+   <div class="sub" style="margin-top:4px">O sistema sugere o preço a partir do custo e da margem desejada. Você pode mexer no valor e ver a margem ao vivo.</div>
+   <div class="preco">
+    <div class="c3" style="grid-column:span 3"><label class="l">Margem desejada (%)</label><input id="mg" value="${String(PR.margem).replace('.',',')}" inputmode="decimal" oninput="PR.margem=Math.min(95,num(this.value));if(PR.auto)atualiza();else atualizaSug()"><div class="hint">Padrão 30%, sobre o preço de venda.</div></div>
+    <div class="c3" style="grid-column:span 3"><label class="l">Preço sugerido</label><div class="big ac" id="sug">${brl(sugerido())}</div><div class="hint">custo ÷ (1 − margem)</div></div>
+    <div class="c3" style="grid-column:span 3"><label class="l">Preço de venda do combo (R$) *</label><input id="pv" value="${fmt(PR.preco)}" inputmode="decimal" oninput="PR.auto=false;PR.preco=num(this.value);atualiza(true)"><div class="hint" id="pvH"></div></div>
+    <div class="c3" style="grid-column:span 3;align-self:end"><button class="btn ghost sm" onclick="PR.auto=true;render()" id="btSug">Usar o sugerido</button><div class="sw" style="margin-top:8px"><button class="${PR.arred?'on':''}" onclick="PR.arred=!PR.arred;render()"></button><span>Terminar em ,90</span></div></div>
+   </div>
+   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px" id="stats"></div>
+   <div class="barra"><i id="bar"></i></div>
+   <div class="sub" id="barTxt" style="margin-top:6px"></div>
+  </div>
+
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px"><button class="btn ghost">Cancelar</button><button class="btn" onclick="salvar()">Salvar produto</button></div>`;
+  atualiza();valida();lateral();
+}
+function valida(){const h=$('#codH');if(!h)return;const c=COMBO.codigo;h.innerHTML=eanValido(c)?`<span class="ok-t">✔ Código válido</span> · gerado automaticamente (EAN-13 interno, começa com 2). Pode digitar outro se preferir.`:`<span class="err-t">Código inválido: use 8 a 14 dígitos (EAN-13 confere o dígito verificador).</span>`}
+function atualizaSug(){$('#sug').textContent=brl(sugerido())}
+function atualiza(manual){
+  sincroniza();const c=custoTotal(),p=PR.preco,l=p-c,mr=margemReal(),mk=c>0?l/c*100:0,av=avulsoTotal(),desc=av>0?(av-p)/av*100:0;
+  if(!manual&&$('#pv'))$('#pv').value=fmt(p);
+  atualizaSug();
+  const alvo=PR.margem-0.05; // tolerância: o preço sugerido é arredondado em centavos
+  const cor=p<=c?'var(--err)':mr<15?'var(--err)':mr<alvo?'var(--warn)':'var(--ok)';
+  $('#stats').innerHTML=`<div class="stat"><small>Custo do combo</small><b>${brl(c)}</b></div>
+   <div class="stat"><small>Lucro por combo</small><b style="color:${l>0?'var(--ok)':'var(--err)'}">${brl(l)}</b></div>
+   <div class="stat"><small>Margem (sobre a venda)</small><b style="color:${cor}">${p>0?pc(mr):'—'}</b><div class="sub">markup sobre o custo: ${c>0&&p>0?pc(mk):'—'}</div></div>
+   <div class="stat"><small>Desconto sobre o avulso</small><b>${p>0&&av>0?pc(desc):'—'}</b><div class="sub">avulso somado: ${brl(av)}</div></div>`;
+  $('#bar').style.width=Math.max(0,Math.min(100,mr/60*100))+'%';$('#bar').style.background=cor;
+  $('#barTxt').innerHTML=p<=c?`<span class="err-t">⚠ O preço está <b>abaixo ou igual ao custo</b>: o combo dá prejuízo.</span>`:mr<alvo?`Margem abaixo dos <b>${String(PR.margem).replace('.',',')}%</b> desejados — faltam ${brl(sugerido()-p)} para chegar lá.`:`<span class="ok-t">Margem dentro (ou acima) da sugerida.</span>`;
+  $('#pvH').innerHTML=PR.auto?'<span class="ok-t">acompanha o sugerido</span> — se mexer, deixa de acompanhar':'<span class="warn-t">valor manual</span> · sugerido: '+brl(sugerido());
+  const bt=$('#btSug');if(bt)bt.disabled=PR.auto
+}
+function setQ(k,v){const q=num(v);if(q>0)COMBO.itens[k].q=q;render()}
+function rm(k){COMBO.itens.splice(k,1);render()}
+function busca(){const t=($('#q').value||'').toLowerCase();const l=PROD.filter(p=>!COMBO.itens.some(i=>i.id===p.id)&&(p.nome+p.cod+p.ean).toLowerCase().includes(t));
+  const d=$('#drop');d.classList.add('on');d.innerHTML=l.map(p=>`<div onmousedown="add(${p.id})"><span><b>${p.nome}</b> <span class="sub">${p.cod}</span></span><span class="sub">custo ${brl(p.custo)} · venda ${brl(p.venda)}</span></div>`).join('')||'<div class="sub">Nenhum produto</div>'}
+document.addEventListener('click',e=>{if(!e.target.closest('.pick')){const d=$('#drop');d&&d.classList.remove('on')}});
+function add(id){COMBO.itens.push({id,q:1});toast('Adicionado: '+prod(id).nome+' · custo '+brl(prod(id).custo));render()}
+function salvar(){if(!eanValido(COMBO.codigo)&&M==='novo'){toast('Corrija o código de barras');return}if(PR.preco<=custoTotal()){toast('O preço de venda precisa ser maior que o custo ('+brl(custoTotal())+')');return}toast(`Combo salvo · PRD-0149 · código ${COMBO.codigo} · ${brl(PR.preco)} (margem ${pc(margemReal())})`)}
+function lateral(){$('#lateral').innerHTML=`<div style="display:flex;flex-direction:column;gap:12px;position:sticky;top:12px">
+ <div class="box"><h5>Código do combo</h5><ul><li>Gerado <b>automaticamente só ao criar o combo</b>: <b>EAN-13 interno</b> (começa com 2, reservado a uso da loja), com dígito verificador válido para o leitor.</li><li><b>Único na empresa</b> (nunca repete outro produto ou pack).</li><li>Você pode <b>gerar outro</b> ou digitar o seu; antes de salvar, o sistema confere.</li><li>Depois de salvo <b>não muda</b>.</li><li>Os produtos dentro do combo <b>continuam com seus códigos</b>; o combo tem o dele à parte.</li></ul></div>
+ <div class="box"><h5>Custos e preço</h5><ul><li>Para cada produto: <b>custo unitário</b>, custo × quantidade, <b>preço avulso</b> e margem dele.</li><li><b>Preço sugerido</b> = custo total ÷ (1 − 30%). A margem é sobre o preço de venda, <b>igual à tela atual</b>; o markup sobre o custo aparece ao lado.</li><li>Mexeu no preço: a <b>margem % e o lucro</b> mudam na hora, com alerta de prejuízo.</li><li>Mostra também o <b>desconto do combo</b> em relação à soma dos preços avulsos.</li><li>Enquanto o preço for o sugerido, ele <b>acompanha</b> as mudanças de produtos e quantidades.</li></ul></div>
+ <div class="box"><h5>Decisões confirmadas</h5><ul><li>A margem é <b>sobre o preço de venda</b> (preço = custo ÷ (1 − margem)).</li><li>O preço sugerido <b>termina em ,90 por padrão</b> (dá para desligar).</li><li>A <b>margem padrão (30%)</b> e o ",90" são <b>configurados pela empresa</b> em <b>Dados da empresa › Combos</b>; no cadastro do combo o valor só vem preenchido e pode ser mudado na hora.</li></ul></div>
+ <div class="box"><h5>Dados da empresa › Combos</h5><div class="line"><span>Margem padrão dos combos</span><b>30 %</b></div><div class="line"><span>Terminar o preço sugerido em ,90</span><b>Sim</b></div><div class="sub" style="margin-top:6px">(Quem tem permissão de configurações edita. Vale para os combos novos.)</div></div></div>`}
+$('#tg').onclick=()=>{const h=document.documentElement;h.dataset.theme=h.dataset.theme==='dark'?'light':'dark'};
+render();
+</script>
+</body>
+</html>

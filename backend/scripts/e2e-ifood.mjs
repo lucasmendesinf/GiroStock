@@ -200,6 +200,48 @@ check('complemento desativado: pausado no iFood', !!(await ate(async () => (((aw
 await api('PATCH', `/complements/${bac.rows[0].id}`, { ativo: true }, A);
 await api('POST', `/orders/${o10.id}/cancel`, { motivo: 'Item indisponível', codigo_motivo: '503' }, A);
 
+console.log('\n# 6b. Cardápio: enviar produtos do GiroStock ao iFood; vínculo pelo nome; modo teste');
+const card0 = await api('GET', `/integracoes/${INTEG}/cardapio`, null, A);
+const lr0 = card0.j.produtos && card0.j.produtos.find((p) => p.id === REFRI.id);
+check('lista do cardápio: produtos com o código PDV (código iFood do refri = REFRI-LATA) e o preço da loja', card0.s === 200 && lr0 && lr0.codigo === 'REFRI-LATA' && lr0.preco > 0, lr0);
+const env1 = await api('POST', `/integracoes/${INTEG}/cardapio/enviar`, { product_ids: [REFRI.id, XB.id] }, A);
+const simCard = async () => ((await sim('GET', '/_sim/cardapio')).j['sim-loja-1'] || { itens: {}, categorias: [] });
+const sc1 = await simCard();
+check('enviar ao iFood: 2 itens criados no cardápio com o código PDV, preço e categoria', env1.s === 200 && env1.j.enviados === 2 && sc1.itens['REFRI-LATA'] && sc1.itens['PRD-0002'] && sc1.itens['REFRI-LATA'].preco === lr0.preco && sc1.categorias.length >= 1, [env1.j, sc1]);
+const idAntes = sc1.itens['REFRI-LATA'].itemId;
+const env2 = await api('POST', `/integracoes/${INTEG}/cardapio/enviar`, { product_ids: [REFRI.id] }, A);
+const sc2 = await simCard();
+check('reenviar atualiza o mesmo item (mesmo id, sem duplicar categoria)', env2.j.enviados === 1 && sc2.itens['REFRI-LATA'].itemId === idAntes && sc2.categorias.length === sc1.categorias.length, sc2);
+check('enviar marca "Vender no iFood" no produto', (await prod.query(`SELECT vende_ifood FROM products WHERE id = $1`, [REFRI.id])).rows[0].vende_ifood === true);
+const precoNovo = Number((lr0.preco + 1).toFixed(2));
+await prod.query(`UPDATE products SET preco_venda = $2 WHERE id = $1`, [REFRI.id, precoNovo]); // preço novo no cadastro
+check('mudou o preço no GiroStock: atualiza sozinho no iFood (próximo ciclo)', !!(await ate(async () => ((await simCard()).itens['REFRI-LATA'] || {}).preco === precoNovo)), (await simCard()).itens['REFRI-LATA']);
+const card1 = (await api('GET', `/integracoes/${INTEG}/cardapio`, null, A)).j.produtos.find((p) => p.id === REFRI.id);
+check('tela mostra o produto no iFood com o preço em dia', card1.no_ifood && card1.preco_no_ifood === precoNovo && !card1.desatualizado, card1);
+// pedido de TESTE do iFood com o item do cardapio enviado: chega com o codigo PDV e entra direto
+const pcard = await sim('POST', '/_sim/pedidos', { itens: [{ nome: 'Refri lata', codigo: 'REFRI-LATA', quantidade: 1, preco: precoNovo }] });
+check('pedido com item do cardápio enviado entra direto (sem vincular) e o aceite automático confirma', !!(await pedidoDoIfood(pcard.j.id)) && !!(await ate(async () => (await acoes()).some((x) => x.acao === 'confirm' && x.pedido === pcard.j.id))));
+// item sem codigo e com id novo a cada pedido (como os pedidos de teste): vincula uma vez, o nome fica lembrado
+const pn1 = await sim('POST', '/_sim/pedidos', { itens: [{ nome: 'Coca Teste 350', quantidade: 1, preco: 6 }] });
+const pend1 = await ate(async () => (await prod.query(`SELECT id, situacao FROM pedidos_externos WHERE externo_id = $1`, [pn1.j.id])).rows[0]);
+check('item sem código e sem vínculo: aguardando vínculo', pend1 && pend1.situacao === 'aguardando_vinculo', pend1);
+const chaveN = (await prod.query(`SELECT payload FROM pedidos_externos WHERE id = $1`, [pend1.id])).rows[0].payload.items[0].id;
+const vinc = await api('POST', `/integracoes/pedidos/${pend1.id}/vincular`, { itens: [{ chave: `id:${chaveN}`, product_id: REFRI.id }] }, A);
+check('vincular uma vez', vinc.s === 200 && vinc.j.situacao === 'importado', vinc.j);
+const pn2 = await sim('POST', '/_sim/pedidos', { itens: [{ nome: 'Coca  teste 350', quantidade: 2, preco: 6 }] });
+check('próximo pedido com o mesmo item (id novo, mesmo nome): entra direto pelo nome lembrado', !!(await pedidoDoIfood(pn2.j.id)));
+// modo teste: qualquer item desconhecido usa o produto padrao de teste
+check('produto de teste inválido -> 400', (await api('PATCH', `/integracoes/${INTEG}`, { produto_teste_id: '00000000-0000-4000-8000-000000000000' }, A)).s === 400);
+check('liga o modo teste com o produto padrão (X-Burguer)', (await api('PATCH', `/integracoes/${INTEG}`, { modo_teste: true, produto_teste_id: XB.id }, A)).s === 200);
+const pt = await sim('POST', '/_sim/pedidos', { itens: [{ nome: `Item aleatorio ${Date.now()}`, quantidade: 1, preco: 10 }] });
+const dpt = await pedidoDoIfood(pt.j.id);
+check('modo teste: item aleatório entra como o produto de teste e o pedido é aceito sozinho', !!dpt && !!(await ate(async () => (await acoes()).some((x) => x.acao === 'confirm' && x.pedido === pt.j.id))));
+const lista2 = (await api('GET', '/integracoes', null, A)).j.integracoes.find((i) => i.id === INTEG);
+check('a conexão mostra modo teste e o produto de teste', lista2.modo_teste === true && lista2.produto_teste_id === XB.id, lista2);
+await api('PATCH', `/integracoes/${INTEG}`, { modo_teste: false }, A);
+const pt2 = await sim('POST', '/_sim/pedidos', { itens: [{ nome: `Outro aleatorio ${Date.now()}`, quantidade: 1, preco: 10 }] });
+check('modo teste desligado: item desconhecido volta a pedir vínculo', (await ate(async () => (await prod.query(`SELECT situacao FROM pedidos_externos WHERE externo_id = $1`, [pt2.j.id])).rows[0]) || {}).situacao === 'aguardando_vinculo');
+
 console.log('\n# 7. Modulo desligado para de receber; token renovado sozinho; desconectar');
 await api('PATCH', `/master/empresas/${empresa}`, { recursos: { delivery_apps: null } }, MAS);
 check('modulo desligado: /integracoes -> 403', (await api('GET', '/integracoes', null, A)).s === 403);
@@ -216,6 +258,12 @@ check('token vencido e renovado sozinho (refresh)', sinc.s === 200 && depois.acc
 check('desconectar', (await api('DELETE', `/integracoes/${INTEG}`, null, A)).s === 204);
 const off = (await prod.query(`SELECT status, access_token_cript, refresh_token_cript FROM integracoes_delivery WHERE id = $1`, [INTEG])).rows[0];
 check('desconectado apaga os tokens', off.status === 'desconectado' && off.access_token_cript === null && off.refresh_token_cript === null, off);
+const re = await api('POST', '/integracoes/ifood/conectar', { location_id: L.Lanchonete }, A);
+check('conectar de novo depois de desconectar: reaproveita a conexao e gera novo codigo', re.s === 201 && re.j.id === INTEG && !!re.j.codigo, re);
+const rePortal = await api('GET', `/_sim/autorizar?userCode=${re.j.codigo}`, null, null, SIM);
+const reFim = await api('POST', `/integracoes/${INTEG}/concluir`, { codigo: rePortal.j.authorizationCode }, A);
+check('reconectado', reFim.s === 200 && reFim.j.status === 'conectado', reFim);
+await api('DELETE', `/integracoes/${INTEG}`, null, A);
 await api('PATCH', `/master/empresas/${empresa}`, { recursos: { delivery_apps: null } }, MAS);
 
 await prod.end();

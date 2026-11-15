@@ -22,7 +22,7 @@ const db = pool.producao;
 const configuracoes = requireArea('Configuracoes');
 const pedidos = requireArea('Pedidos');
 
-const STATUS_PUBLICO = 'id, location_id, plataforma, status, merchant_id, merchant_nome, aceite_automatico, codigo_vinculo, codigo_vinculo_expira_em, lojas_disponiveis, ultimo_polling_em, ultimo_erro, ultimo_erro_em, criado_em';
+const STATUS_PUBLICO = 'id, location_id, plataforma, status, merchant_id, merchant_nome, aceite_automatico, modo_teste, produto_teste_id, cardapio_enviado_em, codigo_vinculo, codigo_vinculo_expira_em, lojas_disponiveis, ultimo_polling_em, ultimo_erro, ultimo_erro_em, criado_em';
 
 // ---------- conexoes por loja ----------
 router.get('/integracoes', configuracoes, async (req, res) => {
@@ -50,8 +50,19 @@ router.post('/integracoes/:id/loja', configuracoes, async (req, res) => {
 router.patch('/integracoes/:id', configuracoes, async (req, res) => {
   await comum.integracao(req.params.id, req.user.tenantId);
   const b = req.body || {};
-  if (typeof b.aceite_automatico !== 'boolean') throw new HttpError(400, 'nada para alterar');
-  await db.query(`UPDATE integracoes_delivery SET aceite_automatico = $2, atualizado_em = now() WHERE id = $1`, [req.params.id, b.aceite_automatico]);
+  if (typeof b.aceite_automatico !== 'boolean' && typeof b.modo_teste !== 'boolean' && b.produto_teste_id === undefined) throw new HttpError(400, 'nada para alterar');
+  // produto padrao de teste: precisa ser um produto ativo da empresa (null = nenhum)
+  if (b.produto_teste_id !== undefined && b.produto_teste_id !== null) {
+    if (!isUuid(b.produto_teste_id) || !(await db.query(`SELECT 1 FROM products WHERE id = $1 AND tenant_id = $2 AND ativo`, [b.produto_teste_id, req.user.tenantId])).rows.length) {
+      throw new HttpError(400, 'produto de teste inválido');
+    }
+  }
+  await db.query(
+    `UPDATE integracoes_delivery SET aceite_automatico = COALESCE($2, aceite_automatico), modo_teste = COALESCE($3, modo_teste),
+       produto_teste_id = CASE WHEN $4 THEN $5::uuid ELSE produto_teste_id END, atualizado_em = now() WHERE id = $1`,
+    [req.params.id, typeof b.aceite_automatico === 'boolean' ? b.aceite_automatico : null, typeof b.modo_teste === 'boolean' ? b.modo_teste : null,
+      b.produto_teste_id !== undefined, b.produto_teste_id || null]
+  );
   res.json({ ok: true });
 });
 
@@ -95,6 +106,17 @@ router.post('/integracoes/:id/disponibilidade/enviar', configuracoes, async (req
     if (err.status && err.status < 600 && err.corpo !== undefined) throw new HttpError(502, `o iFood não aceitou a atualização do cardápio: ${err.message}`);
     throw err;
   }
+});
+
+// ---------- cardapio do iFood: enviar os produtos do GiroStock ----------
+router.get('/integracoes/:id/cardapio', configuracoes, async (req, res) => {
+  const integ = await integracaoIfood(req);
+  res.json({ produtos: await ifood.listaCardapio(integ), enviado_em: integ.cardapio_enviado_em });
+});
+router.post('/integracoes/:id/cardapio/enviar', configuracoes, async (req, res) => {
+  const integ = await integracaoIfood(req);
+  const ids = Array.isArray((req.body || {}).product_ids) ? req.body.product_ids.filter(isUuid).slice(0, 500) : null;
+  res.json(await ifood.enviarCardapio(req.user, integ, ids));
 });
 
 // ---------- pedidos das plataformas que precisam de atencao ----------

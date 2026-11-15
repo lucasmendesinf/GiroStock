@@ -22,6 +22,11 @@ const CAMINHOS = {
   // Catalogo v2: status (AVAILABLE/UNAVAILABLE) de itens e complementos em lote pelo codigo PDV (externalCode).
   // A CONFIRMAR NA HOMOLOGACAO: o caminho e o formato do corpo (lista de { externalCode, status }).
   disponibilidade: (merchantId) => `/catalog/v2.0/merchants/${encodeURIComponent(merchantId)}/products/status`,
+  // Catalog API v2 (developer.ifood.com.br > Catalog > Endpoints)
+  catalogos: (m) => `/catalog/v2.0/merchants/${encodeURIComponent(m)}/catalogs`,
+  categorias: (m) => `/catalog/v2.0/merchants/${encodeURIComponent(m)}/categories`,
+  itens: (m) => `/catalog/v2.0/merchants/${encodeURIComponent(m)}/items`,
+  precos: (m) => `/catalog/v2.0/merchants/${encodeURIComponent(m)}/products/price`,
 };
 
 function mensagemDe(corpo) {
@@ -108,12 +113,47 @@ async function responderDisputa(token, disputaId, aceitar, motivo) {
 // ---------- cardapio: pausar / reativar pelo codigo PDV ----------
 async function alterarDisponibilidade(token, merchantId, itens) {
   if (itens.length === 0) return null;
-  const r = await chamar('PATCH', CAMINHOS.disponibilidade(merchantId), { token, json: itens.map((i) => ({ externalCode: i.codigo, status: i.status })) });
+  const r = await chamar('PATCH', CAMINHOS.disponibilidade(merchantId), {
+    token, json: itens.map((i) => ({ externalCode: i.codigo, status: i.status, resources: [i.tipo === 'complemento' ? 'OPTION' : 'ITEM'] })),
+  });
   return r.corpo; // pode trazer um batchId (processamento assincrono no iFood)
 }
 
+// ---------- cardapio: enviar produtos (Catalog API v2) ----------
+async function catalogos(token, merchantId) {
+  const r = await chamar('GET', CAMINHOS.catalogos(merchantId), { token });
+  return Array.isArray(r.corpo) ? r.corpo : [];
+}
+// Categorias com os itens (include_items=true): devolve tambem os itens ja no iFood por codigo PDV.
+async function categorias(token, merchantId) {
+  const r = await chamar('GET', `${CAMINHOS.categorias(merchantId)}?include_items=true`, { token });
+  const lista = Array.isArray(r.corpo) ? r.corpo : (r.corpo && Array.isArray(r.corpo.categories) ? r.corpo.categories : []);
+  return lista.map((c) => ({
+    id: c.id, nome: c.name, status: c.status,
+    itens: (Array.isArray(c.items) ? c.items : []).map((i) => ({
+      id: i.id, codigo: i.externalCode ? String(i.externalCode).toUpperCase() : null,
+      produtoId: i.productId || (i.product && i.product.id) || (Array.isArray(i.products) && i.products[0] ? i.products[0].id : null),
+    })),
+  }));
+}
+async function criarCategoria(token, merchantId, nome) {
+  const r = await chamar('POST', CAMINHOS.categorias(merchantId), { token, json: { name: nome, status: 'AVAILABLE', template: 'DEFAULT' } });
+  return r.corpo; // { id, name, status, template }
+}
+// Cria ou substitui o item inteiro (idempotente pelos ids). corpo = { item, products, optionGroups, options }
+async function salvarItem(token, merchantId, corpo) {
+  const r = await chamar('PUT', CAMINHOS.itens(merchantId), { token, json: corpo });
+  return r.corpo;
+}
+// Precos em lote pelo codigo PDV: [{ codigo, preco }]
+async function alterarPrecos(token, merchantId, itens) {
+  if (itens.length === 0) return null;
+  const r = await chamar('PATCH', CAMINHOS.precos(merchantId), { token, json: itens.map((i) => ({ externalCode: i.codigo, price: { value: i.preco }, resources: ['ITEM'] })) });
+  return r.corpo;
+}
+
 module.exports = {
-  alterarDisponibilidade,
+  alterarDisponibilidade, catalogos, categorias, criarCategoria, salvarItem, alterarPrecos,
   configurado, gerarCodigoVinculo, tokenPorCodigo, renovarToken, lojas, eventos, confirmarRecebimento, pedido,
   confirmar, iniciarPreparo, prontoParaRetirada, despachar, motivosCancelamento, solicitarCancelamento, responderDisputa, CAMINHOS,
 };

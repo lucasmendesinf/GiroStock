@@ -11,6 +11,8 @@
 //  - Faixa "kit" (pack fechado, ex.: 12 un por R$ 50,00): cada pack fechado sai pelo valor do pack e o que sobra sai pelo
 //    preco normal da unidade (13 = 1 pack + 1 avulsa; 24 = 2 packs). Varios packs: do maior para o menor. Se a regra de
 //    atacado de outra faixa ficar mais barata, vale a mais barata. O valor do pack e cobrado exato (sem exigir divisao).
+//  - Loja com "preco por quantidade" desligado (locations.aplica_preco_quantidade = false, ex.: lanchonete, casa de eventos):
+//    nenhuma faixa vale la (pack nem atacado); o EAN do pack ainda lanca a quantidade, pelo preco da unidade.
 //  - Dinheiro sempre em centavos inteiros.
 const { HttpError } = require('../utils/http');
 const { isUuid } = require('../utils/tenant');
@@ -123,6 +125,13 @@ function rotuloDoCalculo(c) {
 
 // ---------- leitura em lote (venda, pedido, busca) ----------
 
+// A loja aplica preco por quantidade (pack/atacado)? Loja inexistente ou sem a coluna: sim (comportamento de antes).
+async function aplicaPrecoQuantidade(db, tenantId, locationId) {
+  if (!locationId) return true;
+  const r = (await db.query(`SELECT aplica_preco_quantidade FROM locations WHERE id = $1 AND tenant_id = $2`, [locationId, tenantId])).rows[0];
+  return !r || r.aplica_preco_quantidade !== false;
+}
+
 // Faixas e precos da loja para varios produtos. Devolve { precos: Map(product_id -> { preco_cent|null, vende }), faixas: Map(product_id -> [...]) }.
 async function carregarRegras(db, tenantId, locationId, productIds) {
   const precos = new Map();
@@ -133,6 +142,7 @@ async function carregarRegras(db, tenantId, locationId, productIds) {
     [tenantId, locationId, productIds]
   );
   for (const r of pr.rows) precos.set(r.product_id, { preco_cent: r.preco_venda === null ? null : cent(r.preco_venda), vende: r.vende });
+  if (!(await aplicaPrecoQuantidade(db, tenantId, locationId))) return { precos, faixas };
   const fx = await db.query(
     `SELECT id, product_id, location_id, rotulo, quantidade_minima, preco_unitario, modo_cadastro, valor_cadastro, automatica, ean_pack
        FROM produto_faixas WHERE tenant_id = $1 AND ativo AND product_id = ANY($2::uuid[]) AND (location_id = $3 OR location_id IS NULL)
@@ -268,7 +278,10 @@ async function buscarPorEanPack(db, tenantId, locationId, ean) {
   if (rows.length === 0) return null;
   const regra = (await carregarRegras(db, tenantId, locationId, [rows[0].product_id])).faixas.get(rows[0].product_id) || [];
   const faixa = regra.find((f) => f.id === rows[0].id);
-  return faixa ? { product_id: rows[0].product_id, faixa } : null;
+  if (faixa) return { product_id: rows[0].product_id, faixa };
+  // loja sem preco por quantidade: o codigo do fardo ainda lanca a quantidade do pack (pelo preco da unidade)
+  const f = (await db.query(`SELECT id, quantidade_minima FROM produto_faixas WHERE id = $1`, [rows[0].id])).rows[0];
+  return f && !(await aplicaPrecoQuantidade(db, tenantId, locationId)) ? { product_id: rows[0].product_id, faixa: { id: null, quantidade_minima: f.quantidade_minima } } : null;
 }
 
 module.exports = {

@@ -324,6 +324,24 @@ const finPk = await api('POST', `/orders/${pedPk.j.id}/status`, { para: 'finaliz
 const vendaPk = finPk.j.sale_id ? (await db.query('SELECT total FROM sales WHERE id = $1', [finPk.j.sale_id])).rows[0] : null;
 check('ao finalizar o pedido, a venda mantém 55,00 exatos', vendaPk && num(vendaPk.total) === 55, [finPk.s, finPk.j, vendaPk]);
 
+console.log('\n# Preço por quantidade ligado/desligado por loja');
+const lojasAntes = (await api('GET', '/locations', null, E.token)).j;
+check('lojas vêm com o preço por quantidade ligado (padrão)', lojasAntes.every((l) => l.aplica_preco_quantidade === true), lojasAntes.map((l) => l.aplica_preco_quantidade));
+const desl = await api('PATCH', `/locations/${L2}`, { aplica_preco_quantidade: false }, E.token);
+check('desliga na Casa de show', desl.s === 200 && desl.j.aplica_preco_quantidade === false, desl.j);
+check('Casa de show: 12 un saem pelo preço da unidade (60,00), sem pack', num((await venda(T2, [{ product_id: CERV.id, quantidade: 12 }])).j.total) === 60);
+check('Casa de show: atacado também não vale (6 un do Monster = 6 × 9,50... sem faixa)', (await venda(T2, [{ product_id: MONSTER.id, quantidade: 6 }])).j.total !== undefined && (await itensDb((await venda(T2, [{ product_id: MONSTER.id, quantidade: 6 }])).j.id))[0].faixa_rotulo === null);
+check('Distribuidora continua com o pack: 12 un = 50,00', num((await venda(T1, [{ product_id: CERV.id, quantidade: 12 }])).j.total) === 50);
+const bShow = (await busca(E.token, `terminal_id=${T2}&q=Cerveja Lata Pack E2E`)).j[0];
+check('busca do PDV na Casa de show não traz faixas', bShow && bShow.faixas.length === 0, bShow && bShow.faixas);
+const eanCerv = (await db.query(`SELECT ean_pack FROM produto_faixas WHERE product_id = $1 AND ativo`, [CERV.id])).rows[0].ean_pack;
+const lidoShow = (await busca(E.token, `terminal_id=${T2}&barcode=${eanCerv}`)).j;
+check('ler o código do fardo na Casa de show ainda lança 12 un (pelo preço da unidade)', lidoShow.length === 1 && lidoShow[0].quantidade_pack === 12 && !lidoShow[0].faixa_pack_id, lidoShow);
+const pedShow = await api('POST', '/orders', { location_id: L2, tipo: 'retirada', itens: [{ product_id: CERV.id, quantidade: 12 }] }, E.token);
+check('pedido/garçom na Casa de show: 12 un = 60,00', pedShow.s === 201 && num(pedShow.j.total) === 60, pedShow.j);
+await api('PATCH', `/locations/${L2}`, { aplica_preco_quantidade: true }, E.token);
+check('religa: volta a valer o pack na Casa de show', num((await venda(T2, [{ product_id: CERV.id, quantidade: 12 }])).j.total) === 50);
+
 console.log(`\n${pass} ok, ${fail} falha(s)`);
 await db.end();
 process.exit(fail ? 1 : 0);

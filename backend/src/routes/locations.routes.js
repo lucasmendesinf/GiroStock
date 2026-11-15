@@ -12,7 +12,7 @@ const router = express.Router();
 
 router.get('/locations', async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT l.id, l.nome, l.ativo, l.usa_comanda, l.usa_pedidos, l.cupom_config, l.taxa_servico_pct, l.garcom_recebe, l.garcom_formas, l.terminal_comandas_id,
+    `SELECT l.id, l.nome, l.ativo, l.usa_comanda, l.usa_pedidos, l.aplica_preco_quantidade, l.cupom_config, l.taxa_servico_pct, l.garcom_recebe, l.garcom_formas, l.terminal_comandas_id,
             (SELECT COUNT(*)::int FROM terminals t WHERE t.location_id = l.id AND t.tenant_id = l.tenant_id) AS terminal_count
      FROM locations l WHERE l.tenant_id = $1 ORDER BY l.ativo DESC, l.nome`,
     [req.user.tenantId]
@@ -35,9 +35,10 @@ router.post('/locations', requireArea('Configuracoes'), async (req, res) => {
 // saldo de produtos/insumos nem caixa aberto (transfira o estoque antes).
 router.patch('/locations/:id', requireArea('Configuracoes'), async (req, res) => {
   const body = req.body || {};
-  const atual = await getOwned(pool, 'locations', req.params.id, req.user.tenantId, { columns: 'id, nome, ativo, usa_comanda, usa_pedidos, cupom_config' });
+  const atual = await getOwned(pool, 'locations', req.params.id, req.user.tenantId, { columns: 'id, nome, ativo, usa_comanda, usa_pedidos, aplica_preco_quantidade, cupom_config' });
   const usaComanda = body.usa_comanda !== undefined ? !!body.usa_comanda : atual.usa_comanda;
   const usaPedidos = body.usa_pedidos !== undefined ? !!body.usa_pedidos : atual.usa_pedidos;
+  const precoQtd = body.aplica_preco_quantidade !== undefined ? !!body.aplica_preco_quantidade : atual.aplica_preco_quantidade;
   const cupomConfig = body.cupom_config !== undefined ? configEfetiva(body.cupom_config) : atual.cupom_config;
   const nome = body.nome !== undefined ? String(body.nome).trim() : atual.nome;
   if (!nome) throw new HttpError(400, 'nome é obrigatório');
@@ -66,8 +67,9 @@ router.patch('/locations/:id', requireArea('Configuracoes'), async (req, res) =>
   try {
     await client.query('BEGIN');
     const { rows } = await client.query(
-      `UPDATE locations SET nome = $1, ativo = $2, usa_comanda = $5, cupom_config = $6, usa_pedidos = $7 WHERE id = $3 AND tenant_id = $4 RETURNING id, nome, ativo, usa_comanda, usa_pedidos, cupom_config`,
-      [nome, ativo, req.params.id, req.user.tenantId, usaComanda, cupomConfig ? JSON.stringify(cupomConfig) : null, usaPedidos]
+      `UPDATE locations SET nome = $1, ativo = $2, usa_comanda = $5, cupom_config = $6, usa_pedidos = $7, aplica_preco_quantidade = $8 WHERE id = $3 AND tenant_id = $4
+       RETURNING id, nome, ativo, usa_comanda, usa_pedidos, aplica_preco_quantidade, cupom_config`,
+      [nome, ativo, req.params.id, req.user.tenantId, usaComanda, cupomConfig ? JSON.stringify(cupomConfig) : null, usaPedidos, precoQtd]
     );
     if (atual.ativo && !ativo) {
       await client.query(`UPDATE terminals SET ativo = false WHERE location_id = $1 AND tenant_id = $2`, [req.params.id, req.user.tenantId]);
@@ -78,7 +80,7 @@ router.patch('/locations/:id', requireArea('Configuracoes'), async (req, res) =>
       acao: 'editar',
       recurso: 'locations',
       recursoId: req.params.id,
-      detalhes: { antes: { nome: atual.nome, ativo: atual.ativo, usa_comanda: atual.usa_comanda }, depois: { nome: rows[0].nome, ativo: rows[0].ativo, usa_comanda: rows[0].usa_comanda, usa_pedidos: rows[0].usa_pedidos } },
+      detalhes: { antes: { nome: atual.nome, ativo: atual.ativo, usa_comanda: atual.usa_comanda }, depois: { nome: rows[0].nome, ativo: rows[0].ativo, usa_comanda: rows[0].usa_comanda, usa_pedidos: rows[0].usa_pedidos, aplica_preco_quantidade: rows[0].aplica_preco_quantidade } },
     });
     await client.query('COMMIT');
     res.json({ ...rows[0], cupom_config: configEfetiva(rows[0].cupom_config) });

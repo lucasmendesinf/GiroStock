@@ -70,6 +70,12 @@ export default function Locations() {
     executar(() => api.patch(`/locations/${l.id}`, { usa_pedidos: !l.usa_pedidos }),
       l.usa_pedidos ? 'Pedidos desligados nesta loja.' : 'Pedidos ligados nesta loja: aparecem no menu Pedidos e no PDV.');
   }
+  function alternarPrecoQtd(l) {
+    const liga = l.aplica_preco_quantidade === false;
+    executar(() => api.patch(`/locations/${l.id}`, { aplica_preco_quantidade: liga }),
+      liga ? 'Preço por quantidade ligado nesta loja: pack fechado e atacado valem aqui.' : 'Preço por quantidade desligado nesta loja: tudo sai pelo preço da unidade (inclusive no garçom).');
+  }
+
 
   function alternarComanda(l) {
     executar(() => api.patch(`/locations/${l.id}`, { usa_comanda: !l.usa_comanda }),
@@ -163,6 +169,11 @@ export default function Locations() {
                 <input type="checkbox" checked={!!l.usa_comanda} onChange={() => alternarComanda(l)} /> Usar número de pedido (comanda) — recomeça do 1 quando o caixa abre num novo turno
               </label>
               <button className="btn-link" onClick={() => setConfigurando(l)}>Configurar cupom e comanda</button>
+            </div>
+            <div className="loja-config-linha">
+              <label className="check">
+                <input type="checkbox" checked={l.aplica_preco_quantidade !== false} onChange={() => alternarPrecoQtd(l)} /> Aplicar preço por quantidade (pack fechado / atacado) nesta loja — desmarque onde o preço é sempre o da unidade (ex.: lanchonete, eventos com garçom)
+              </label>
             </div>
             {moduloPedidos && <div className="loja-config-linha">
               <label className="check">

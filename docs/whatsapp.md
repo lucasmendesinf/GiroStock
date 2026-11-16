@@ -97,6 +97,18 @@ cada X horas por cliente (padrão 12 h), para não atrapalhar a conversa com a e
 É uma mensagem de texto dentro da conversa aberta pelo cliente (janela de 24 h), sem modelo e sem custo de campanha.
 O código de login do delivery continua por **SMS** (mais barato que o WhatsApp).
 
+## Campanhas automáticas (etapa 4)
+
+Em **WhatsApp → Campanhas com cupom → Automáticas (todo dia)**, duas automações, cada uma ligada/desligada com o seu cupom
+(%, R$ ou frete grátis, validade e pedido mínimo) e o horário (a partir das X h, horário de Brasília):
+- **Cliente sumido**: quem completou X dias sem pedir (padrão 30; pega até X+6 dias para não perder ninguém se o servidor
+  ficar fora um dia) recebe "Volte com cupom" — uma vez a cada sumiço (depois de um novo pedido, pode receber de novo).
+- **Aniversariante do dia**: quem faz aniversário hoje (data do cadastro do cliente) recebe "Aniversário com cupom", uma vez por ano.
+
+Mesmas regras das campanhas manuais: só quem aceitou mensagens, 7 dias entre campanhas, cupom individual, modelo aprovado
+pela Meta. Cada dia vira uma campanha na lista ("Automática: …"), com entregues, lidas e cupons usados. **Enviar hoje agora**
+roda na hora (só para quem ainda não recebeu).
+
 ## Testes
 
 Servidor de testes: `WHATSAPP_SIMULADOR=1`, `WHATSAPP_GRAPH_URL=http://localhost:4994` e as variáveis acima com qualquer valor
@@ -105,4 +117,4 @@ Servidor de testes: `WHATSAPP_SIMULADOR=1`, `WHATSAPP_GRAPH_URL=http://localhost
 
 ## Próximas etapas
 
-4. Campanha automática (ex.: todo dia, quem completou 30 dias sem pedir recebe o cupom; aniversariante no dia).
+- (sem pendências desta lista)

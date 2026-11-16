@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import { useConfirm, useToast } from '../context/UiContext.jsx';
 import { Field, Modal, Vazio } from './ui.jsx';
 import { brl, dataHora } from '../utils/format';
+import AutomacoesWhatsapp from './AutomacoesWhatsapp.jsx';
 
 // Campanhas do WhatsApp (API oficial, modelos de marketing): manda um cupom individual para um segmento de clientes
 // (em risco, inativos, aniversariantes...). So recebe quem aceitou mensagens; quem responde SAIR sai da lista sozinho.
@@ -46,6 +47,8 @@ export default function CampanhasWhatsApp({ inicial }) {
           Modelos de marketing: {aprovados} de {dados.modelos.length} aprovados pela Meta. Os demais aparecem para escolha assim que forem aprovados (normalmente em minutos; clique em "Atualizar modelos").
         </div>
       )}
+      {dados.conectado && <AutomacoesWhatsapp />}
+      <h4 style={{ margin: '14px 0 6px' }}>Campanhas enviadas</h4>
       {dados.campanhas.length === 0 ? <Vazio>Nenhuma campanha enviada ainda.</Vazio> : (
         <div className="tabela-wrap">
           <table className="tabela-cartoes">

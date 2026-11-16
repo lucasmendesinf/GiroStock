@@ -4,6 +4,7 @@ const pool = require('../db/pool');
 const { requireArea, requireModulo } = require('../middleware/permissions');
 const { logAudit } = require('../utils/audit');
 const { isUuid } = require('../utils/tenant');
+const { HttpError } = require('../utils/http');
 const wa = require('../integracoes/whatsapp');
 const campanhas = require('../integracoes/whatsappCampanhas');
 
@@ -59,6 +60,15 @@ router.get('/whatsapp/campanhas', clientes, async (req, res) => {
 });
 router.post('/whatsapp/campanhas/previa', clientes, async (req, res) => { res.json(await campanhas.previa(req.user, req.body || {})); });
 router.post('/whatsapp/campanhas', clientes, async (req, res) => { res.status(201).json(await campanhas.criar(req.user, req.body || {})); });
+// campanhas automaticas (cliente sumido, aniversariante)
+router.get('/whatsapp/automacoes', clientes, async (req, res) => { res.json(await campanhas.listaAutomacoes(req.user.tenantId)); });
+router.put('/whatsapp/automacoes/:tipo', clientes, async (req, res) => { res.json(await campanhas.salvarAutomacao(req.user, req.params.tipo, req.body || {})); });
+// "Enviar hoje agora": roda a automacao ja (sem esperar o horario); manda so para quem ainda nao recebeu
+router.post('/whatsapp/automacoes/:tipo/rodar', clientes, async (req, res) => {
+  const feitas = await campanhas.rodarAutomacoes({ forcar: true, tenantId: req.user.tenantId, tipo: req.params.tipo });
+  if (!feitas.length) throw new HttpError(409, 'ligue a automação antes de enviar');
+  res.json(feitas[0]);
+});
 router.get('/whatsapp/campanhas/:id', clientes, async (req, res) => { res.json(await campanhas.detalhe(req.user.tenantId, req.params.id)); });
 router.post('/whatsapp/campanhas/:id/cancelar', clientes, async (req, res) => { res.json(await campanhas.cancelar(req.user, req.params.id)); });
 

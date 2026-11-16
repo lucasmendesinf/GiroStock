@@ -2068,3 +2068,8 @@ table.tabela-cartoes tr.nf-linha-pendente td:first-child { box-shadow: inset 4px
 .rel-divisao-item i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
 .rel-cruz tfoot td { border-top: 2px solid var(--line); }
 .rel-cruz-barra { min-width: 110px; }
+
+/* WhatsApp: campanhas automaticas */
+.wa-auto-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.wa-auto-item { border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.wa-auto-item.on { border-color: #25d366; }

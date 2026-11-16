@@ -139,7 +139,7 @@ async function previa(user, b) {
 }
 
 // Cria a campanha: um cupom por cliente + as mensagens na fila (o envio sai aos poucos em enviarFila).
-async function criar(user, b) {
+async function criar(user, b, opcoes = {}) {
   const conta = await contaPronta(user.tenantId);
   const d = lerCampanha(b);
   if ((conta.modelos || {})[d.modelo.nome] !== 'APPROVED') throw new HttpError(409, `o modelo "${d.modelo.titulo}" ainda não foi aprovado pela Meta: aguarde e clique em "Atualizar modelos"`);
@@ -152,10 +152,10 @@ async function criar(user, b) {
   try {
     await client.query('BEGIN');
     const camp = (await client.query(
-      `INSERT INTO whatsapp_campanhas (tenant_id, nome, segmento, modelo, oferta, cupom_tipo, cupom_valor, cupom_pedido_minimo, cupom_validade_dias, cupom_prefixo, total, criado_por)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
+      `INSERT INTO whatsapp_campanhas (tenant_id, nome, segmento, modelo, oferta, cupom_tipo, cupom_valor, cupom_pedido_minimo, cupom_validade_dias, cupom_prefixo, total, criado_por, automacao_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
       [user.tenantId, d.nome, d.segmento, d.modelo.chave, d.oferta, d.cupom ? d.cupom.tipo : null, d.cupom ? d.cupom.valor : null,
-        d.cupom ? d.cupom.pedido_minimo : 0, d.cupom ? d.cupom.validade_dias : null, d.cupom ? d.cupom.prefixo : null, aptos.length, user.id]
+        d.cupom ? d.cupom.pedido_minimo : 0, d.cupom ? d.cupom.validade_dias : null, d.cupom ? d.cupom.prefixo : null, aptos.length, user.id || null, opcoes.automacaoId || null]
     )).rows[0];
     for (const cli of aptos) {
       let cupomId = null;
@@ -299,6 +299,112 @@ function iniciarEnvio() {
   const seg = Number(process.env.WHATSAPP_CAMPANHA_SEGUNDOS) || 5;
   const t = setInterval(() => { enviarFila().catch((err) => console.error('whatsapp campanha', err.message)); }, seg * 1000);
   if (t.unref) t.unref();
+  const t2 = setInterval(() => { rodarAutomacoes().catch((err) => console.error('whatsapp automação', err.message)); }, 60 * 1000);
+  if (t2.unref) t2.unref();
 }
 
-module.exports = { modelos, previa, criar, cancelar, lista, detalhe, enviarFila, iniciarEnvio, textoDesconto, DIAS_ENTRE_CAMPANHAS };
+// ---------- campanhas automaticas (todo dia, no horario escolhido) ----------
+// sumido: cliente que completou X dias sem pedir (ate X+6, para nao perder ninguem se o servidor ficar fora um dia) e que
+// ainda nao recebeu esta automacao desde o ultimo pedido. aniversario: aniversario hoje e nao recebeu nos ultimos 300 dias.
+const TIPOS_AUTO = { sumido: { modelo: 'volta', nome: 'Automática: cliente sumido' }, aniversario: { modelo: 'aniversario', nome: 'Automática: aniversariante do dia' } };
+const PADRAO_AUTO = { ativo: false, dias: 30, hora: 10, cupom_tipo: 'percentual', cupom_valor: 10, cupom_validade_dias: 7, cupom_pedido_minimo: 0 };
+const hojeSP = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+const horaSP = () => Number(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', hour: 'numeric', hour12: false })) % 24;
+
+async function listaAutomacoes(tenantId) {
+  const rows = (await pool.query(
+    `SELECT a.*, a.ultimo_dia::text AS ultimo_dia,
+            (SELECT count(*)::int FROM whatsapp_mensagens m JOIN whatsapp_campanhas c ON c.id = m.campanha_id WHERE c.automacao_id = a.id AND m.situacao IN ('enviada', 'entregue', 'lida')) AS enviadas,
+            (SELECT count(*)::int FROM orders o JOIN lv_cupons cp ON cp.id = o.cupom_id JOIN whatsapp_campanhas c ON c.id = cp.campanha_id WHERE c.automacao_id = a.id AND o.status <> 'cancelado') AS cupons_usados
+     FROM whatsapp_automacoes a WHERE a.tenant_id = $1`, [tenantId]
+  )).rows;
+  return Object.keys(TIPOS_AUTO).map((tipo) => {
+    const a = rows.find((r) => r.tipo === tipo);
+    return a
+      ? { tipo, id: a.id, ativo: a.ativo, dias: a.dias, hora: a.hora, cupom_tipo: a.cupom_tipo, cupom_valor: Number(a.cupom_valor), cupom_validade_dias: a.cupom_validade_dias,
+        cupom_pedido_minimo: Number(a.cupom_pedido_minimo), ultimo_dia: a.ultimo_dia, ultimo_total: a.ultimo_total, ultimo_motivo: a.ultimo_motivo, enviadas: a.enviadas, cupons_usados: a.cupons_usados }
+      : { tipo, id: null, ...PADRAO_AUTO, ultimo_dia: null, ultimo_total: null, ultimo_motivo: null, enviadas: 0, cupons_usados: 0 };
+  });
+}
+
+async function salvarAutomacao(user, tipo, b = {}) {
+  if (!TIPOS_AUTO[tipo]) throw new HttpError(404, 'automação inexistente');
+  const atual = (await listaAutomacoes(user.tenantId)).find((a) => a.tipo === tipo);
+  const v = { ...atual, ...b };
+  const ativo = !!v.ativo;
+  const dias = Math.floor(Number(v.dias));
+  if (tipo === 'sumido' && !(dias >= 7 && dias <= 365)) throw new HttpError(400, 'dias sem pedir: de 7 a 365');
+  const hora = Math.floor(Number(v.hora));
+  if (!(hora >= 7 && hora <= 21)) throw new HttpError(400, 'horário do envio: das 7 às 21 h');
+  // valida o cupom com a mesma regra da campanha manual
+  const cupom = lerCampanha({ modelo: TIPOS_AUTO[tipo].modelo, customer_ids: [user.tenantId], cupom: { tipo: v.cupom_tipo, valor: v.cupom_valor, validade_dias: v.cupom_validade_dias, pedido_minimo: v.cupom_pedido_minimo } }).cupom;
+  if (ativo) await contaPronta(user.tenantId);
+  await pool.query(
+    `INSERT INTO whatsapp_automacoes (tenant_id, tipo, ativo, dias, hora, cupom_tipo, cupom_valor, cupom_validade_dias, cupom_pedido_minimo)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     ON CONFLICT (tenant_id, tipo) DO UPDATE SET ativo = $3, dias = $4, hora = $5, cupom_tipo = $6, cupom_valor = $7, cupom_validade_dias = $8, cupom_pedido_minimo = $9, atualizado_em = now()`,
+    [user.tenantId, tipo, ativo, tipo === 'sumido' ? dias : 30, hora, cupom.tipo, cupom.valor, cupom.validade_dias, cupom.pedido_minimo]
+  );
+  await logAudit(pool, { tenantId: user.tenantId, usuarioId: user.id, acao: 'whatsapp_automacao_salvar', recurso: 'whatsapp_automacoes', recursoId: null, detalhes: { tipo, ativo, dias, hora, cupom } });
+  return listaAutomacoes(user.tenantId);
+}
+
+// Clientes da automacao hoje (antes das regras de consentimento/7 dias, que a campanha aplica).
+async function alvosDaAutomacao(a) {
+  const { clientesDaCampanha } = require('../routes/customers.routes');
+  const todos = await clientesDaCampanha(a.tenant_id, {});
+  if (a.tipo === 'aniversario') {
+    const hoje = hojeSP();
+    const ddmm = `${hoje.slice(8, 10)}/${hoje.slice(5, 7)}`;
+    const ja = new Set((await pool.query(
+      `SELECT m.customer_id FROM whatsapp_mensagens m JOIN whatsapp_campanhas c ON c.id = m.campanha_id WHERE c.automacao_id = $1 AND m.criado_em > now() - interval '300 days'`, [a.id]
+    )).rows.map((r) => r.customer_id));
+    return todos.filter((c) => c.aniversario === ddmm && !ja.has(c.id));
+  }
+  const ultimo = new Map((await pool.query(
+    `SELECT m.customer_id, MAX(m.criado_em) AS em FROM whatsapp_mensagens m JOIN whatsapp_campanhas c ON c.id = m.campanha_id WHERE c.automacao_id = $1 GROUP BY 1`, [a.id]
+  )).rows.map((r) => [r.customer_id, new Date(r.em).getTime()]));
+  return todos.filter((c) => c.dias_ultimo !== null && c.dias_ultimo >= a.dias && c.dias_ultimo <= a.dias + 6
+    && !(ultimo.has(c.id) && c.ultimo_pedido_em && ultimo.get(c.id) > new Date(c.ultimo_pedido_em).getTime()));
+}
+
+// Roda as automacoes do dia (uma vez por dia cada, a partir do horario escolhido). Chamado a cada minuto.
+async function rodarAutomacoes({ forcar = false, tenantId = null, tipo = null } = {}) {
+  const hoje = hojeSP();
+  const params = [hoje];
+  let filtro = '';
+  if (tenantId) { params.push(tenantId); filtro += ` AND a.tenant_id = $${params.length}`; }
+  if (tipo) { params.push(tipo); filtro += ` AND a.tipo = $${params.length}`; }
+  // reserva o dia (cada automacao roda uma vez so, mesmo com mais de um servidor)
+  const devidas = (await pool.query(
+    `UPDATE whatsapp_automacoes a SET ultimo_dia = $1::date, ultimo_total = 0, ultimo_motivo = 'rodando'
+     WHERE a.ativo AND (${forcar ? 'true' : 'a.ultimo_dia IS NULL OR a.ultimo_dia < $1::date'})${forcar ? '' : ` AND a.hora <= ${horaSP()}`}${filtro}
+     RETURNING a.*`, params
+  )).rows;
+  const feitas = [];
+  for (const a of devidas) {
+    let total = 0;
+    let motivo = null;
+    try {
+      if (!(await wa.moduloLigado(a.tenant_id))) throw new HttpError(409, 'módulo WhatsApp desligado');
+      const alvos = await alvosDaAutomacao(a);
+      if (!alvos.length) motivo = 'ninguém para receber hoje';
+      else {
+        const r = await criar({ tenantId: a.tenant_id, id: null }, {
+          nome: `${TIPOS_AUTO[a.tipo].nome} · ${hoje.split('-').reverse().join('/')}`, modelo: TIPOS_AUTO[a.tipo].modelo, customer_ids: alvos.map((c) => c.id),
+          cupom: { tipo: a.cupom_tipo, valor: Number(a.cupom_valor), validade_dias: a.cupom_validade_dias, pedido_minimo: Number(a.cupom_pedido_minimo) },
+        }, { automacaoId: a.id });
+        total = r.total;
+      }
+    } catch (err) {
+      motivo = /nenhum cliente pode receber/.test(err.message)
+        ? 'ninguém para receber hoje (os do dia não aceitam mensagens, não têm celular ou receberam campanha nos últimos 7 dias)'
+        : String(err.message).slice(0, 300);
+    }
+    await pool.query(`UPDATE whatsapp_automacoes SET ultimo_total = $2, ultimo_motivo = $3 WHERE id = $1`, [a.id, total, motivo]);
+    feitas.push({ tipo: a.tipo, tenant_id: a.tenant_id, total, motivo });
+  }
+  return feitas;
+}
+
+module.exports = { listaAutomacoes, salvarAutomacao, rodarAutomacoes, alvosDaAutomacao, modelos, previa, criar, cancelar, lista, detalhe, enviarFila, iniciarEnvio, textoDesconto, DIAS_ENTRE_CAMPANHAS };

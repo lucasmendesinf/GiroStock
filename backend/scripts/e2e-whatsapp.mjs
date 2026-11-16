@@ -229,6 +229,42 @@ await sim('/__sim/receber', { from: '5541955558888', texto: 'Oi', phone_number_i
 await espera(1500);
 check('desligada: não responde', !(await paraTel('5541955558888')).length);
 
+console.log('\n# 5d. Campanhas automáticas (cliente sumido e aniversariante)');
+const clienteCom = async (nome, tel, aceita, diasAtras, aniversario = null) => {
+  const id = (await db.query(`INSERT INTO customers (tenant_id, nome, telefone, aceita_mensagens, consentimento_em, aniversario) VALUES ($1, $2, $3, $4, CASE WHEN $4 THEN now() END, $5) RETURNING id`, [E.id, nome, tel, aceita, aniversario])).rows[0].id;
+  if (diasAtras !== null) {
+    await db.query(`INSERT INTO orders (tenant_id, location_id, numero, origem, cliente_nome, tipo, status, customer_id, criado_em, finalizado_em)
+      VALUES ($1, $2, $3, 'whatsapp', $4, 'retirada', 'finalizado', $5, now() - ($6 || ' days')::interval, now() - ($6 || ' days')::interval)`, [E.id, L, 98000 + Math.floor(Math.random() * 1000), nome, id, String(diasAtras)]);
+  }
+  return id;
+};
+const hojeSP = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+await clienteCom('Sumido Sim', '41966610001', true, 31);
+await clienteCom('Recente Nao', '41966610002', true, 10);
+await clienteCom('Sem Consentimento', '41966610003', false, 31);
+await clienteCom('Aniversariante', '41966610004', true, null, `${hojeSP.slice(8, 10)}/${hojeSP.slice(5, 7)}`);
+const au0 = await api('GET', '/whatsapp/automacoes', null, E.token);
+check('automações: cliente sumido e aniversariante, desligadas por padrão', au0.s === 200 && au0.j.length === 2 && au0.j.every((a) => a.ativo === false) && au0.j.find((a) => a.tipo === 'sumido').dias === 30, au0.j);
+check('dias sem pedir fora do limite -> 400', (await api('PUT', '/whatsapp/automacoes/sumido', { ativo: true, dias: 3 }, E.token)).s === 400);
+check('horário fora do limite -> 400', (await api('PUT', '/whatsapp/automacoes/sumido', { ativo: true, hora: 23 }, E.token)).s === 400);
+check('rodar automação desligada -> 409', (await api('POST', '/whatsapp/automacoes/sumido/rodar', {}, E.token)).s === 409);
+const au1 = await api('PUT', '/whatsapp/automacoes/sumido', { ativo: true, dias: 30, hora: 10, cupom_tipo: 'percentual', cupom_valor: 15, cupom_validade_dias: 5 }, E.token);
+check('liga "cliente sumido há 30 dias" com cupom de 15%', au1.s === 200 && au1.j.find((a) => a.tipo === 'sumido').ativo === true && au1.j.find((a) => a.tipo === 'sumido').cupom_valor === 15, au1.j);
+const ro1 = await api('POST', '/whatsapp/automacoes/sumido/rodar', {}, E.token);
+check('roda: só o cliente que sumiu há 30+ dias e aceitou mensagens recebe', ro1.s === 200 && ro1.j.total === 1, ro1.j);
+const msgS = await aguardar(async () => (await paraTel('5541966610001')).find((m) => m.modelo === 'girostock_cupom_volta'));
+check('mensagem "volte com cupom" com 15% e código próprio', msgS && msgS.params[2] === '15% de desconto' && /^VOLTA-/.test(msgS.params[3]), msgS);
+check('recente e sem consentimento não recebem', !(await paraTel('5541966610002')).length && !(await paraTel('5541966610003')).length);
+const ro2 = await api('POST', '/whatsapp/automacoes/sumido/rodar', {}, E.token);
+check('rodar de novo: quem já recebeu desde o último pedido não recebe outra vez', ro2.s === 200 && ro2.j.total === 0 && /ninguém/.test(ro2.j.motivo), ro2.j);
+await api('PUT', '/whatsapp/automacoes/aniversario', { ativo: true, cupom_tipo: 'valor', cupom_valor: 10 }, E.token);
+const ro3 = await api('POST', '/whatsapp/automacoes/aniversario/rodar', {}, E.token);
+const msgA = await aguardar(async () => (await paraTel('5541966610004')).find((m) => m.modelo === 'girostock_cupom_aniversario'));
+check('aniversariante do dia recebe o cupom de aniversário (R$ 10)', ro3.j.total === 1 && msgA && msgA.params[2] === 'R$ 10,00 de desconto', [ro3.j, msgA]);
+const au2 = (await api('GET', '/whatsapp/automacoes', null, E.token)).j;
+check('a tela mostra quando rodou, quantos recebeu e o total enviado', au2.find((a) => a.tipo === 'aniversario').ultimo_total === 1 && au2.find((a) => a.tipo === 'aniversario').ultimo_dia === hojeSP && au2.find((a) => a.tipo === 'sumido').enviadas >= 1, au2);
+check('a campanha automática aparece na lista de campanhas', (await api('GET', '/whatsapp/campanhas', null, E.token)).j.campanhas.some((c) => /Automática: aniversariante/.test(c.nome)));
+
 console.log('\n# 6. Permissões, isolamento e desconectar');
 const emailCx = `e2e.wa.caixa.${SUF}@girostock.local`; const sCx = rnd();
 await api('POST', '/users', { nome: 'Caixa', email: emailCx, senha: sCx, perfil: 'Caixa/Operador', location_id: L }, E.token);

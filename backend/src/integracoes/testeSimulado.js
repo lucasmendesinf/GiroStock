@@ -59,6 +59,7 @@ async function cicloTeste() {
       if (tem.wa) {
         await require('./whatsapp').varrer();
         await require('./whatsappCampanhas').enviarFila();
+        await require('./whatsappCampanhas').rodarAutomacoes();
       }
     });
   } catch (err) {

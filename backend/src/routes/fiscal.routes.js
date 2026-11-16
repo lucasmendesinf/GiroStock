@@ -7,6 +7,7 @@ const { logAudit } = require('../utils/audit');
 const { getOwnedLocation, isUuid } = require('../utils/tenant');
 const { filtroLocais, assertLocationAccess } = require('../utils/access');
 const { filtroPeriodo } = require('../utils/query');
+const { criarZip } = require('../utils/zip');
 const { HttpError } = require('../utils/http');
 const fiscal = require('../services/fiscal');
 
@@ -242,6 +243,53 @@ router.get('/fiscal/notas', requireArea('Vendas'), async (req, res) => {
   where += filtroPeriodo('n.emitida_em', req.query, params);
   const { rows } = await pool.query(`${fiscal.SELECT_NOTA} WHERE ${where} ORDER BY n.emitida_em DESC LIMIT 500`, params);
   res.json(rows.map((r) => ({ ...r, valor: Number(r.valor), teste: r.ambiente === 'homologacao' })));
+});
+
+// Lote do mes para o contador: um ZIP com os XML das notas (autorizadas, canceladas, em contingencia e as NF-e de devolucao),
+// separados por CNPJ e situacao, mais um resumo.csv. Producao por padrao (as de homologacao nao tem valor fiscal).
+router.get('/fiscal/xml-lote', requireArea('Vendas'), async (req, res) => {
+  const mes = String(req.query.mes || '');
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) throw new HttpError(400, 'escolha o mês (AAAA-MM)');
+  const ambiente = req.query.ambiente === 'homologacao' ? 'homologacao' : 'producao';
+  const [ano, m] = mes.split('-').map(Number);
+  const inicio = `${mes}-01`;
+  const fim = new Date(Date.UTC(ano, m, 0)).toISOString().slice(0, 10); // ultimo dia do mes
+  const params = [req.user.tenantId, ambiente];
+  let where = `n.tenant_id = $1 AND n.ambiente = $2 AND n.situacao IN ('autorizada', 'cancelada', 'contingencia') AND n.xml IS NOT NULL`;
+  const locais = filtroLocais(req.user, isUuid(req.query.location_id) ? req.query.location_id : null);
+  if (locais) { params.push(locais); where += ` AND n.location_id = ANY($${params.length}::uuid[])`; }
+  where += filtroPeriodo('n.emitida_em', { data_inicio: inicio, data_fim: fim }, params);
+  const { rows } = await pool.query(
+    `SELECT n.id, n.modelo, n.cnpj, n.serie, n.numero, n.chave, n.situacao, n.protocolo, n.valor, n.xml, n.emitida_em, n.autorizada_em, n.cancelada_em,
+            n.cancel_protocolo, n.cancel_justificativa, n.finalidade, n.cpf, l.nome AS loja, ref.chave AS ref_chave
+     FROM notas_fiscais n JOIN locations l ON l.id = n.location_id LEFT JOIN notas_fiscais ref ON ref.id = n.nota_referenciada_id
+     WHERE ${where} ORDER BY n.cnpj, n.modelo, n.serie, n.numero`, params
+  );
+  if (rows.length === 0) throw new HttpError(404, `nenhuma nota ${ambiente === 'producao' ? '' : 'de homologação '}emitida em ${mes.slice(5)}/${mes.slice(0, 4)}`);
+  const PASTA = { autorizada: 'autorizadas', cancelada: 'canceladas', contingencia: 'contingencia-sem-autorizacao' };
+  const dataBR = (d) => (d ? new Date(d).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '');
+  const csv = (v) => { const t = String(v === null || v === undefined ? '' : v); return /[;"\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+  const arquivos = rows.map((n) => ({
+    nome: `${n.cnpj}/${n.modelo === 55 ? 'nfe-devolucao' : 'nfce'}/${PASTA[n.situacao]}/${n.chave || `${n.serie}-${n.numero}`}-${n.modelo === 55 ? 'nfe' : 'nfce'}.xml`,
+    conteudo: n.xml,
+  }));
+  const linhas = [['CNPJ', 'Loja', 'Modelo', 'Série', 'Número', 'Chave', 'Situação', 'Emitida em', 'Autorizada em', 'Protocolo', 'Valor', 'CPF do consumidor', 'Cancelada em', 'Protocolo do cancelamento', 'Justificativa', 'Nota devolvida (chave)']
+    .join(';')];
+  for (const n of rows) {
+    linhas.push([n.cnpj, n.loja, n.modelo === 55 ? '55 (NF-e devolução)' : '65 (NFC-e)', n.serie, n.numero, n.chave, n.situacao, dataBR(n.emitida_em), dataBR(n.autorizada_em), n.protocolo,
+      Number(n.valor).toFixed(2).replace('.', ','), n.cpf, dataBR(n.cancelada_em), n.cancel_protocolo, n.cancel_justificativa, n.ref_chave].map(csv).join(';'));
+  }
+  const soma = (sit) => rows.filter((n) => n.situacao === sit && n.modelo === 65).reduce((t, n) => t + Number(n.valor), 0);
+  linhas.push('');
+  linhas.push(`Total NFC-e autorizadas;${soma('autorizada').toFixed(2).replace('.', ',')}`);
+  linhas.push(`Total NFC-e canceladas;${soma('cancelada').toFixed(2).replace('.', ',')}`);
+  if (rows.some((n) => n.situacao === 'contingencia')) linhas.push('Atenção: há notas em contingência ainda não autorizadas pela SEFAZ (pasta contingencia-sem-autorizacao)');
+  arquivos.push({ nome: 'resumo.csv', conteudo: `\ufeff${linhas.join('\r\n')}\r\n` });
+  const zip = criarZip(arquivos);
+  await logAudit(pool, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'fiscal_xml_lote', recurso: 'notas_fiscais', recursoId: null, detalhes: { mes, ambiente, notas: rows.length } });
+  res.set('Content-Type', 'application/zip');
+  res.set('Content-Disposition', `attachment; filename="xml-notas-${mes}${ambiente === 'homologacao' ? '-homologacao' : ''}.zip"`);
+  res.send(zip);
 });
 
 router.get('/fiscal/notas/:id', requireArea('Vendas'), async (req, res) => {

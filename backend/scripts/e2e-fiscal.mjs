@@ -213,6 +213,24 @@ await api('PATCH', `/master/empresas/${F.id}`, { recursos: { nota_fiscal: true }
 check('outra empresa não vê nem cancela a nota (404)', (await api('GET', `/fiscal/notas/${n1.j.id}`, null, F.token)).s === 404 && (await api('POST', `/fiscal/notas/${n1.j.id}/cancelar`, { justificativa: 'Cliente desistiu da compra no caixa' }, F.token)).s === 404);
 check('outra empresa não emite nota de venda alheia (404)', (await api('POST', '/fiscal/nfce', { sale_id: v1.id }, F.token)).s === 404);
 
+// lote de XML do mes para o contador (ZIP)
+const mesAtual = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }).slice(0, 7);
+const baixarLote = async (q, tok = E.token) => { const r = await fetch(`${B}/api/fiscal/xml-lote?${q}`, { headers: { authorization: 'Bearer ' + tok } }); return { s: r.status, h: r.headers, buf: Buffer.from(await r.arrayBuffer()) }; };
+check('lote do mês: mês inválido -> 400', (await baixarLote('mes=2026-13')).s === 400);
+check('lote de um mês sem notas -> 404 com explicação', (await baixarLote('mes=2020-01')).s === 404);
+const lote = await baixarLote(`mes=${mesAtual}&ambiente=homologacao`);
+const zipDir = path.join(tmp, 'lote');
+fs.mkdirSync(zipDir, { recursive: true });
+fs.writeFileSync(path.join(zipDir, 'lote.zip'), lote.buf);
+const un = spawnSync('python3', ['-c', `import zipfile,sys,json;z=zipfile.ZipFile(sys.argv[1]);print(json.dumps({"ok":z.testzip() is None,"nomes":z.namelist(),"resumo":z.read("resumo.csv").decode("utf-8-sig")}))`, path.join(zipDir, 'lote.zip')], { encoding: 'utf8' });
+let conteudo = null; try { conteudo = JSON.parse(un.stdout); } catch { conteudo = { erro: un.stderr }; }
+const qtdNotas = Number((await prod.query(`SELECT count(*) AS n FROM notas_fiscais WHERE tenant_id = $1 AND ambiente = 'homologacao' AND situacao IN ('autorizada','cancelada','contingencia') AND xml IS NOT NULL`, [E.id])).rows[0].n);
+check('lote do mês: ZIP válido com um XML por nota (autorizadas e canceladas em pastas) e o resumo.csv',
+  lote.s === 200 && /zip/.test(lote.h.get('content-type')) && conteudo.ok && conteudo.nomes.filter((n) => n.endsWith('.xml')).length === qtdNotas
+  && conteudo.nomes.some((n) => /\/nfce\/autorizadas\/.+-nfce\.xml$/.test(n)) && conteudo.nomes.some((n) => /\/canceladas\//.test(n)) && conteudo.nomes.includes('resumo.csv'), { s: lote.s, conteudo, qtdNotas });
+check('resumo.csv: cabeçalho, notas e totais de autorizadas e canceladas', conteudo.resumo && /^CNPJ;Loja;Modelo/.test(conteudo.resumo) && /Total NFC-e autorizadas;/.test(conteudo.resumo) && /Total NFC-e canceladas;/.test(conteudo.resumo), conteudo.resumo && conteudo.resumo.slice(0, 300));
+check('outra empresa não baixa o lote de quem não é dela (404: sem notas)', (await baixarLote(`mes=${mesAtual}&ambiente=homologacao`, F.token)).s === 404);
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`\n${pass} ok, ${fail} falha(s)`);
 await prod.end();

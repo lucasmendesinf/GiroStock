@@ -58,8 +58,14 @@ por nota. Quem monta, assina e envia a nota é o motor PHP em `backend/fiscal/mo
 - Testes: `FISCAL_SIMULADOR=1` monta, assina e valida a nota de verdade mas não envia à SEFAZ;
   `npm run test:e2e:fiscal` (71 checagens).
 
+## XML do mês para o contador
+
+Em **Nota fiscal → Notas emitidas → 📦 XML do mês (contador)**: escolha o mês (o padrão é o mês que fechou) e baixe um
+`.zip` com o XML de cada nota, separado por CNPJ e situação (`nfce/autorizadas`, `nfce/canceladas`,
+`nfe-devolucao/...`, e `contingencia-sem-autorizacao` se houver), e um `resumo.csv` (abre no Excel) com número, chave,
+valor, protocolos, cancelamentos e os totais. Notas reais (produção) por padrão; as de teste só se escolher.
+
 ## Ainda não faz (próximas etapas)
 
 - NF-e modelo 55 de venda (para CNPJ; a de devolução já existe), inutilização de números pulados, carta de correção.
-- Exportação do lote de XML do mês para o contador (hoje: XML nota a nota).
 - Reforma tributária (IBS/CBS): ainda não obrigatória para o Simples Nacional.

@@ -66,6 +66,37 @@ async function baixar(rota, nome, toast, abrir = false) {
   } catch (err) { toast.erro(err); }
 }
 
+// Lote do mes para o contador: um ZIP com todos os XML (autorizadas, canceladas, devolucoes) e um resumo.csv.
+function LoteXmlModal({ onClose }) {
+  const toast = useToast();
+  const hoje = new Date();
+  const anterior = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
+  const mesPadrao = `${anterior.getFullYear()}-${String(anterior.getMonth() + 1).padStart(2, '0')}`; // o contador pede o mes que fechou
+  const [mes, setMes] = useState(mesPadrao);
+  const [ambiente, setAmbiente] = useState('producao');
+  const [baixando, setBaixando] = useState(false);
+  async function baixarLote() {
+    setBaixando(true);
+    await baixar(`/fiscal/xml-lote?mes=${mes}&ambiente=${ambiente}`, `xml-notas-${mes}${ambiente === 'homologacao' ? '-homologacao' : ''}.zip`, toast);
+    setBaixando(false);
+  }
+  return (
+    <Modal titulo="XML do mês para o contador" subtitulo="Um arquivo .zip com o XML de cada nota do mês e um resumo em planilha." onClose={onClose}>
+      <div className="form-stack">
+        <Field label="Mês"><input type="month" value={mes} onChange={(e) => setMes(e.target.value)} max={`${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`} /></Field>
+        <Field label="Notas">
+          <select value={ambiente} onChange={(e) => setAmbiente(e.target.value)}>
+            <option value="producao">Notas reais (produção)</option>
+            <option value="homologacao">Notas de teste (homologação, sem valor fiscal)</option>
+          </select>
+        </Field>
+        <p className="form-hint" style={{ margin: 0 }}>Vão as notas <b>autorizadas</b>, as <b>canceladas</b> (com o protocolo do cancelamento no resumo) e as <b>NF-e de devolução</b>, separadas por CNPJ e situação. Notas em contingência ainda não autorizadas ficam numa pasta à parte.</p>
+        <div className="modal-actions"><button type="button" onClick={onClose}>Fechar</button><button type="button" className="btn-primario" disabled={!mes || baixando} onClick={baixarLote}>{baixando ? 'Gerando…' : 'Baixar .zip'}</button></div>
+      </div>
+    </Modal>
+  );
+}
+
 function AbaNotas({ inicioDevolucao }) {
   const toast = useToast();
   const { user } = useAuth();
@@ -78,6 +109,7 @@ function AbaNotas({ inicioDevolucao }) {
   const [cancelando, setCancelando] = useState(null);
   const [devolvendo, setDevolvendo] = useState(null);
   const [ocupado, setOcupado] = useState(null);
+  const [lote, setLote] = useState(false);
   const carregar = useCallback(async () => {
     const q = new URLSearchParams();
     if (soDevolucao) q.set('pendencia', 'devolucao');
@@ -131,8 +163,10 @@ function AbaNotas({ inicioDevolucao }) {
           </>
         )}
         <span className="toolbar-espaco" />
+        <button type="button" className="btn-link" onClick={() => setLote(true)}>📦 XML do mês (contador)</button>
         <button type="button" className="btn-link" onClick={carregar}>Atualizar</button>
       </div>
+      {lote && <LoteXmlModal onClose={() => setLote(false)} />}
       {soDevolucao && <p className="muted">Vendas canceladas cuja nota a SEFAZ não deixou cancelar (fora do prazo). Para regularizar, gere a NF-e de devolução: uma nota de entrada que devolve os itens e referencia a nota da venda. Confira com o seu contador.</p>}
       {!soDevolucao && atencao > 0 && <p className="muted">⚠ {atencao} nota(s) precisam de atenção: em contingência (o sistema envia sozinho quando a SEFAZ responder) ou rejeitadas (corrija o motivo e clique em “Reenviar”).</p>}
       {!lista ? <p className="muted">Carregando…</p> : lista.length === 0 ? (

@@ -208,6 +208,27 @@ await api('POST', '/users', { nome: 'Caixa0', email: emailCx0, senha: sCx0, perf
 const CX0 = (await login(emailCx0, sCx0)).j.token;
 check('caixa (sem a área Clientes) não cria campanha (403)', (await api('POST', '/whatsapp/campanhas', base, CX0)).s === 403);
 
+console.log('\n# 5c. Resposta automática com o link do cardápio');
+const r0 = await api('GET', '/whatsapp/resposta', null, E.token);
+check('resposta automática começa desligada, com texto padrão', r0.s === 200 && r0.j.ativo === false && r0.j.padrao === true && /\{link\}/.test(r0.j.texto), r0.j);
+check('ligar sem endereço do cardápio (loja virtual sem endereço) -> 400', (await api('PUT', '/whatsapp/resposta', { ativo: true }, E.token)).s === 400);
+check('texto sem {link} -> 400', (await api('PUT', '/whatsapp/resposta', { texto: 'Olá!' }, E.token)).s === 400);
+check('endereço inválido -> 400', (await api('PUT', '/whatsapp/resposta', { link: 'cardapio' }, E.token)).s === 400);
+const r1 = await api('PUT', '/whatsapp/resposta', { ativo: true, link: 'https://cardapio.exemplo.com.br', intervalo_horas: 12 }, E.token);
+check('liga a resposta automática com o endereço do cardápio', r1.s === 200 && r1.j.ativo && r1.j.link === 'https://cardapio.exemplo.com.br' && /cardapio\.exemplo\.com\.br/.test(r1.j.exemplo) && /J&A Conveniência/.test(r1.j.exemplo), r1.j);
+const TELR = '5541955557777';
+await sim('/__sim/receber', { from: TELR, texto: 'Oi, boa noite', phone_number_id: '2220001' });
+const resp = await aguardar(async () => (await paraTel(TELR)).find((m) => /cardapio\.exemplo\.com\.br/.test(m.texto || '')));
+check('cliente manda "oi": recebe o link do cardápio', !!resp, await paraTel(TELR));
+await sim('/__sim/receber', { from: TELR, texto: 'quero um x-salada', phone_number_id: '2220001' });
+await espera(1500);
+check('segunda mensagem do mesmo cliente no intervalo: não responde de novo', (await paraTel(TELR)).filter((m) => /cardapio/.test(m.texto || '')).length === 1);
+check('resposta registrada no histórico', (await db.query(`SELECT count(*)::int AS n FROM whatsapp_mensagens WHERE tenant_id = $1 AND evento = 'resposta_auto' AND telefone = $2`, [E.id, TELR])).rows[0].n === 1);
+await api('PUT', '/whatsapp/resposta', { ativo: false }, E.token);
+await sim('/__sim/receber', { from: '5541955558888', texto: 'Oi', phone_number_id: '2220001' });
+await espera(1500);
+check('desligada: não responde', !(await paraTel('5541955558888')).length);
+
 console.log('\n# 6. Permissões, isolamento e desconectar');
 const emailCx = `e2e.wa.caixa.${SUF}@girostock.local`; const sCx = rnd();
 await api('POST', '/users', { nome: 'Caixa', email: emailCx, senha: sCx, perfil: 'Caixa/Operador', location_id: L }, E.token);

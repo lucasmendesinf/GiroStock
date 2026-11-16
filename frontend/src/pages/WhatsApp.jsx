@@ -7,6 +7,7 @@ import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import CampanhasWhatsApp from '../components/CampanhasWhatsApp.jsx';
 import CaixaWhatsappTeste from '../components/CaixaWhatsappTeste.jsx';
+import RespostaAutomatica from '../components/RespostaAutomatica.jsx';
 
 // WhatsApp (API oficial da Meta): conectar o numero da empresa (cadastro incorporado da Meta; com a coexistencia o numero
 // continua no WhatsApp Business do celular), escolher os avisos do pedido, testar e ver o historico das mensagens.
@@ -186,6 +187,7 @@ export default function WhatsApp() {
             </div>
           </div>
 
+          <RespostaAutomatica />
           {user && user.modoTeste && <CaixaWhatsappTeste />}
           {podeCampanha && <CampanhasWhatsApp inicial={state && state.campanha ? { segmento: state.campanha } : null} />}
 

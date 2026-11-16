@@ -89,6 +89,14 @@ mensagem → Criar campanha com cupom**.
 - Regras da Meta: a mensagem de marketing é mais cara que a de utilidade; a Meta pode não entregar marketing para quem
   já recebeu muitas mensagens de empresas (aparece como falha com o motivo); número novo começa com limite diário menor.
 
+## Resposta automática com o cardápio (etapa 3)
+
+Menu **WhatsApp → Resposta automática com o cardápio**: quando o cliente manda mensagem, recebe na hora o link do
+cardápio digital (o endereço da loja virtual — domínio próprio ou subdomínio — ou um endereço digitado). No máximo uma vez a
+cada X horas por cliente (padrão 12 h), para não atrapalhar a conversa com a equipe no WhatsApp Business do celular.
+É uma mensagem de texto dentro da conversa aberta pelo cliente (janela de 24 h), sem modelo e sem custo de campanha.
+O código de login do delivery continua por **SMS** (mais barato que o WhatsApp).
+
 ## Testes
 
 Servidor de testes: `WHATSAPP_SIMULADOR=1`, `WHATSAPP_GRAPH_URL=http://localhost:4994` e as variáveis acima com qualquer valor
@@ -97,5 +105,4 @@ Servidor de testes: `WHATSAPP_SIMULADOR=1`, `WHATSAPP_GRAPH_URL=http://localhost
 
 ## Próximas etapas
 
-3. Receber mensagens: resposta automática com o link do cardápio digital; código de acesso da loja virtual pelo WhatsApp.
 4. Campanha automática (ex.: todo dia, quem completou 30 dias sem pedir recebe o cupom; aniversariante no dia).

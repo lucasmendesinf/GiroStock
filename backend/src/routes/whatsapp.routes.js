@@ -35,6 +35,14 @@ router.post('/whatsapp/modelos/conferir', requireArea('Configuracoes'), async (r
   res.json(wa.publica(await wa.contaDa(pool, req.user.tenantId)));
 });
 
+// Resposta automatica com o link do cardapio
+router.get('/whatsapp/resposta', requireArea('Configuracoes'), async (req, res) => { res.json(await wa.respostaPublica(req.user.tenantId)); });
+router.put('/whatsapp/resposta', requireArea('Configuracoes'), async (req, res) => {
+  const r = await wa.salvarResposta(req.user, req.body || {});
+  await logAudit(pool, { tenantId: req.user.tenantId, usuarioId: req.user.id, acao: 'whatsapp_resposta_auto', recurso: 'whatsapp_contas', recursoId: null, detalhes: { ativo: r.ativo, intervalo_horas: r.intervalo_horas } });
+  res.json(r);
+});
+
 router.post('/whatsapp/teste', requireArea('Configuracoes'), async (req, res) => {
   res.json(await wa.enviarTeste(req.user, (req.body || {}).telefone));
 });

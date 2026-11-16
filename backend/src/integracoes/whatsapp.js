@@ -367,6 +367,85 @@ function chaveTelefone(t) {
   if (d.length < 10) return null;
   return `${d.slice(0, 2)}:${d.slice(-8)}`;
 }
+// Mensagem do cliente: SAIR tira o consentimento; qualquer outra pode ganhar a resposta automatica com o link do cardapio.
+async function receberMensagem(phoneNumberId, de, texto) {
+  if (PEDIDO_SAIR.test(String(texto || '').trim())) return { sair: true, ...(await descadastrar(phoneNumberId, de)) };
+  return { sair: false, resposta: await responderAutomatico(phoneNumberId, de) };
+}
+
+const TEXTO_RESPOSTA_PADRAO = 'Olá! 👋 Obrigado por falar com a {loja}. Faça o seu pedido pelo nosso cardápio digital: {link}\nSe preferir, é só responder aqui que a nossa equipe atende você.';
+
+// Endereco do cardapio: o digitado na configuracao ou o da loja virtual (dominio proprio > subdominio da plataforma).
+async function linkDoCardapio(tenantId, conta) {
+  if (conta && conta.resposta_link) return conta.resposta_link;
+  const lv = (await pool.query(`SELECT id, subdominio FROM lv_lojas WHERE tenant_id = $1`, [tenantId])).rows[0];
+  if (!lv) return null;
+  const dom = (await pool.query(`SELECT dominio FROM lv_dominios WHERE loja_id = $1 ORDER BY criado_em LIMIT 1`, [lv.id])).rows[0];
+  if (dom) return `https://${dom.dominio}`;
+  const base = String(process.env.LOJA_DOMINIO_BASE || '').trim().toLowerCase().replace(/^\*\./, '');
+  if (lv.subdominio && base) return `https://${lv.subdominio}.${base}`;
+  return null;
+}
+function textoResposta(conta, link) {
+  return String(conta.resposta_texto || TEXTO_RESPOSTA_PADRAO).replace(/\{loja\}/g, conta.nome_verificado || 'nossa loja').replace(/\{link\}/g, link || '').slice(0, 1000);
+}
+
+async function responderAutomatico(phoneNumberId, de) {
+  const c = phoneNumberId ? (await pool.query(`SELECT * FROM whatsapp_contas WHERE phone_number_id = $1 AND status = 'conectado'`, [String(phoneNumberId)])).rows[0] : null;
+  if (!c || !c.resposta_auto) return { enviada: false, motivo: 'resposta automática desligada' };
+  if (!(await moduloLigado(c.tenant_id))) return { enviada: false, motivo: 'módulo desligado' };
+  const tel = String(de || '').replace(/\D/g, '');
+  const recente = (await pool.query(
+    `SELECT 1 FROM whatsapp_mensagens WHERE tenant_id = $1 AND telefone = $2 AND evento = 'resposta_auto' AND situacao <> 'falhou'
+       AND criado_em > now() - ($3 || ' hours')::interval LIMIT 1`, [c.tenant_id, tel, String(c.resposta_intervalo_horas)]
+  )).rows.length;
+  if (recente) return { enviada: false, motivo: `já respondido nas últimas ${c.resposta_intervalo_horas} h` };
+  const link = await linkDoCardapio(c.tenant_id, c);
+  if (!link) return { enviada: false, motivo: 'sem o endereço do cardápio' };
+  // reserva antes de enviar (duas mensagens seguidas do cliente nao geram duas respostas)
+  const reserva = await registrar(c.tenant_id, { evento: 'resposta_auto', telefone: tel, situacao: 'enviada', motivo: 'enviando' });
+  try {
+    const r = await graph('POST', `/${c.phone_number_id}/messages`, {
+      token: decifrar(c.token_cript),
+      json: { messaging_product: 'whatsapp', recipient_type: 'individual', to: tel, type: 'text', text: { body: textoResposta(c, link), preview_url: true } },
+    });
+    await pool.query(`UPDATE whatsapp_mensagens SET wamid = $2, motivo = NULL, atualizado_em = now() WHERE id = $1`, [reserva, r.messages && r.messages[0] ? r.messages[0].id : null]);
+    return { enviada: true };
+  } catch (err) {
+    await pool.query(`UPDATE whatsapp_mensagens SET situacao = 'falhou', motivo = $2, atualizado_em = now() WHERE id = $1`, [reserva, String(err.message).slice(0, 500)]);
+    await marcarErroConta(c.tenant_id, err);
+    return { enviada: false, motivo: err.message };
+  }
+}
+
+// Configuracao da resposta automatica (tela WhatsApp).
+async function salvarResposta(user, b = {}) {
+  const c = await contaDa(pool, user.tenantId);
+  if (!c) throw new HttpError(409, 'conecte o WhatsApp primeiro');
+  const texto = b.texto === undefined ? c.resposta_texto : String(b.texto || '').trim().slice(0, 1000) || null;
+  if (texto && !texto.includes('{link}')) throw new HttpError(400, 'a mensagem precisa ter {link} (onde entra o endereço do cardápio)');
+  let link = b.link === undefined ? c.resposta_link : String(b.link || '').trim() || null;
+  if (link && !/^https?:\/\/[^\s]+\.[^\s]{2,}$/i.test(link)) throw new HttpError(400, 'endereço do cardápio inválido (ex.: https://minhaloja.com.br)');
+  const horas = b.intervalo_horas === undefined ? c.resposta_intervalo_horas : Math.floor(Number(b.intervalo_horas));
+  if (!(horas >= 1 && horas <= 168)) throw new HttpError(400, 'intervalo de 1 a 168 horas');
+  const ativo = typeof b.ativo === 'boolean' ? b.ativo : c.resposta_auto;
+  if (ativo && !(await linkDoCardapio(user.tenantId, { resposta_link: link }))) throw new HttpError(400, 'informe o endereço do cardápio (a loja virtual ainda não tem endereço)');
+  await pool.query(
+    `UPDATE whatsapp_contas SET resposta_auto = $2, resposta_texto = $3, resposta_link = $4, resposta_intervalo_horas = $5, atualizado_em = now() WHERE tenant_id = $1`,
+    [user.tenantId, ativo, texto, link, horas]
+  );
+  return respostaPublica(user.tenantId);
+}
+async function respostaPublica(tenantId) {
+  const c = await contaDa(pool, tenantId);
+  if (!c) return null;
+  const link = await linkDoCardapio(tenantId, c);
+  return {
+    ativo: c.resposta_auto, texto: c.resposta_texto || TEXTO_RESPOSTA_PADRAO, padrao: !c.resposta_texto, link_digitado: c.resposta_link,
+    link, intervalo_horas: c.resposta_intervalo_horas, exemplo: link ? textoResposta(c, link) : null,
+  };
+}
+
 async function descadastrar(phoneNumberId, de) {
   const c = phoneNumberId ? (await pool.query(`SELECT * FROM whatsapp_contas WHERE phone_number_id = $1 AND status = 'conectado'`, [String(phoneNumberId)])).rows[0] : null;
   if (!c) return { removidos: 0 };
@@ -422,9 +501,8 @@ async function receberWebhook(bruto, assinatura) {
     for (const ch of ent.changes || []) {
       for (const msg of (ch.value && ch.value.messages) || []) {
         const texto = (msg.text && msg.text.body) || (msg.button && msg.button.text) || (msg.interactive && msg.interactive.button_reply && msg.interactive.button_reply.title) || '';
-        if (PEDIDO_SAIR.test(texto.trim()) && msg.from) {
-          try { await descadastrar((ch.value.metadata || {}).phone_number_id, msg.from); } catch (err) { console.error('whatsapp sair', err.message); }
-        }
+        if (!msg.from) continue;
+        try { await receberMensagem((ch.value.metadata || {}).phone_number_id, msg.from, texto); } catch (err) { console.error('whatsapp mensagem recebida', err.message); }
       }
       n += await aplicarStatus((ch.value && ch.value.statuses) || []);
     }
@@ -433,6 +511,6 @@ async function receberWebhook(bruto, assinatura) {
 }
 
 module.exports = {
-  aplicarStatus, MODELOS, MODELOS_MARKETING, TODOS_MODELOS, EVENTOS, graph, enviarModelo, registrar, marcarErroConta, moduloLigado, garantirModelosMarketing, descadastrar, chaveTelefone, telefoneWhatsapp, contaDa, publica, conectar, desconectar, salvarAvisos, conferirModelos, enviarTeste,
+  aplicarStatus, receberMensagem, responderAutomatico, salvarResposta, respostaPublica, linkDoCardapio, MODELOS, MODELOS_MARKETING, TODOS_MODELOS, EVENTOS, graph, enviarModelo, registrar, marcarErroConta, moduloLigado, garantirModelosMarketing, descadastrar, chaveTelefone, telefoneWhatsapp, contaDa, publica, conectar, desconectar, salvarAvisos, conferirModelos, enviarTeste,
   varrer, iniciarVarredura, receberWebhook, assinaturaValida, eventoDoStatus, meta, disponivel, simulador,
 };

@@ -126,10 +126,9 @@ async function responderWhatsapp(user, b = {}) {
   if (!texto) throw new HttpError(400, 'escreva a resposta do cliente');
   const wa = require('./whatsapp');
   const de = tel.length <= 11 ? `55${tel}` : tel;
-  // o mesmo caminho do webhook da Meta (so trata SAIR e parecidos; outras respostas ficam sem acao)
-  const sair = /^(sair|parar|pare|stop|cancelar|descadastrar|parar promo[cç][oõ]es|n[aã]o quero (mais )?receber)[.!]*$/i.test(texto);
-  const r = sair ? await wa.descadastrar(c.phone_number_id, de) : { removidos: 0 };
-  return { ok: true, sair, clientes_descadastrados: r.removidos };
+  // o mesmo caminho do webhook da Meta: SAIR tira o consentimento; outra mensagem pode ganhar a resposta automatica
+  const r = await wa.receberMensagem(c.phone_number_id, de, texto);
+  return { ok: true, sair: r.sair, clientes_descadastrados: r.removidos || 0, resposta: r.resposta || null };
 }
 
 module.exports = { conectarIfood, gerarPedido, acaoCliente, avancarEntregador, caixaWhatsapp, responderWhatsapp, pontoDaLoja };

@@ -17,12 +17,10 @@ const modoTeste = require('./modoTeste');
 const { NEUTRAS: NEUTRAS_COPIA } = require('./copiaProducao');
 
 const pipeline = promisify(stream.pipeline);
-// Alem dos valores neutros da copia completa: nada de WhatsApp real nem certificado/CSC fiscal no teste do suporte
-// (nenhuma nota sai com o CNPJ do cliente; a loja fica em homologacao e sem certificado).
+// Alem dos valores neutros da copia completa (que ja tiram certificado/CSC fiscal): nada de WhatsApp real no teste do suporte.
 const NEUTRAS = {
   ...NEUTRAS_COPIA,
   whatsapp_contas: { token_cript: "''", status: "'desconectado'" },
-  fiscal_lojas: { ambiente: "'homologacao'", cert_cript: 'NULL', cert_senha_cript: 'NULL', csc_prod_cript: 'NULL', csc_homolog_cript: 'NULL' },
 };
 const LOCK_CHAVE = 727002; // advisory lock por empresa (727001 e o da copia completa)
 

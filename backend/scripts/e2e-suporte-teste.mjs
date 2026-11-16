@@ -79,6 +79,14 @@ await prod.query(`UPDATE stock_movements SET criado_em = now() - interval '40 da
 const vendasProd = await n(prod, `SELECT count(*) AS n FROM sales WHERE tenant_id = $1`, [EMP]);
 const saldoProd = async () => Number((await prod.query(`SELECT COALESCE(sum(saldo), 0) AS q FROM stock_balances WHERE product_id = $1`, [prodA.id])).rows[0].q);
 const saldo0 = await saldoProd();
+// Nota fiscal na PRODUCAO: loja em ambiente de producao, sem certificado (la a emissao e recusada).
+await api('PATCH', `/master/empresas/${EMP}`, { recursos: { nota_fiscal: true } }, MAS);
+const cfgFiscal = await api('PUT', `/fiscal/lojas/${loja.id}`, { cnpj: '11.222.333/0001-81', ie: '9012345678', razao_social: 'EMPRESA ST LTDA', nome_fantasia: 'Empresa ST', logradouro: 'Rua Teste', numero: '1', bairro: 'Centro', cod_municipio: '4106902', municipio: 'Curitiba', uf: 'PR', cep: '81470-075', telefone: '(41) 99999-0000', ambiente: 'producao', modo_pdv: 'perguntar' }, ADM);
+check('produção: loja fiscal em ambiente de PRODUÇÃO', cfgFiscal.s === 200 && cfgFiscal.j.ambiente === 'producao', cfgFiscal);
+await api('POST', '/fiscal/perfis', { nome: 'Mercadoria (padrão)', cfop: '5102', csosn: '102', padrao: true }, ADM);
+await api('PUT', `/fiscal/produtos/${prodA.id}`, { ncm: '22021000' }, ADM);
+const nfProd = await api('POST', '/fiscal/nfce', { sale_id: v2.j.id }, ADM);
+check('produção sem certificado: nota recusada (400)', nfProd.s === 400, nfProd);
 
 // ---------- 1. Iniciar o teste ----------
 console.log('\n# 1. Testar sem gravar (a partir do suporte)');
@@ -115,6 +123,14 @@ check('venda no teste (mesmo com suporte somente leitura) -> 201', vt.s === 201,
 const et = await api('POST', `/products/${prodA.id}/stock-adjustment`, { location_id: loja.id, novo_saldo: 999, motivo: 'teste e2e do suporte' }, TT);
 check('ajuste de estoque no teste (saldo 999)', [200, 201].includes(et.s), et);
 check('banco de teste: saldo 999', Number((await teste.query(`SELECT saldo FROM stock_balances WHERE product_id = $1 AND location_id = $2`, [prodA.id, loja.id])).rows[0]?.saldo) === 999);
+const nfTeste = await api('POST', '/fiscal/nfce', { sale_id: vt.j.id }, TT);
+check('nota no teste: NOTA DE TESTE (homologação), autorizada pelo simulador, mesmo com a loja em produção', nfTeste.s === 201 && nfTeste.j.situacao === 'autorizada' && nfTeste.j.teste === true && nfTeste.j.ambiente === 'homologacao', nfTeste);
+const xmlTeste = await (await fetch(`${B}/api/fiscal/notas/${nfTeste.j.id}/xml`, { headers: { authorization: 'Bearer ' + TT } })).text();
+check('XML da nota de teste: tpAmb 2 e "SEM VALOR FISCAL"', xmlTeste.includes('<tpAmb>2</tpAmb>') && xmlTeste.includes('SEM VALOR FISCAL'));
+check('produção: nenhuma nota fiscal gravada', await n(prod, `SELECT count(*) AS n FROM notas_fiscais WHERE tenant_id = $1`, [EMP]) === 0);
+const lojaTeste = (await api('GET', '/fiscal/lojas', null, TT)).j;
+const lt = lojaTeste.lojas.find((l) => l.location_id === loja.id);
+check('no teste a loja aparece em homologação, pronta, com certificado de teste', lojaTeste.simulador === true && lt.ambiente === 'homologacao' && lt.pronta === true && lt.teste === true, lojaTeste);
 check('produção: mesma quantidade de vendas', await n(prod, `SELECT count(*) AS n FROM sales WHERE tenant_id = $1`, [EMP]) === vendasProd);
 check('produção: estoque intacto', (await saldoProd()) === saldo0, { antes: saldo0, depois: await saldoProd() });
 check('banco de teste: a venda nova está lá', await n(teste, `SELECT count(*) AS n FROM sales WHERE tenant_id = $1`, [EMP]) === vendasProd);

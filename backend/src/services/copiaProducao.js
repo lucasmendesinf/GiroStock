@@ -24,6 +24,8 @@ const NEUTRAS = {
   // Loja virtual: no teste nao ha chave da API nem conta do Mercado Pago ou do Melhor Envio (o site e os pagamentos reais ficam so na producao).
   lv_lojas: { api_chave_hash: 'NULL', api_chave_prefixo: 'NULL', mp_access_token_cript: 'NULL', mp_webhook_secret_cript: 'NULL', mp_public_key: 'NULL', me_token_cript: 'NULL', envio_ativo: 'false', publicada: 'false' },
   lv_contas: { senha_hash: "'-'", reset_codigo_hash: 'NULL', cpf: 'NULL' },
+  // Nota fiscal: certificado e CSC reais nunca vao para o teste (la a nota e sempre a de teste, em homologacao, sem envio a SEFAZ).
+  fiscal_lojas: { ambiente: "'homologacao'", cert_cript: 'NULL', cert_senha_cript: 'NULL', csc_prod_cript: 'NULL', csc_homolog_cript: 'NULL' },
 };
 
 // Tabelas de negocio do schema public, ordenadas pelas chaves estrangeiras (pais antes dos filhos).

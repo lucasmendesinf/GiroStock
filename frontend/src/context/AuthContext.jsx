@@ -70,9 +70,39 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('girostock_master_user');
   }, []);
 
+  // ---- "Testar sem gravar" (dentro do suporte): guarda o token de suporte e troca pelo do teste ----
+  const testarSemGravar = useCallback(async () => {
+    const r = await api.post('/master/suporte/testar');
+    localStorage.setItem('girostock_suporte_token', localStorage.getItem('girostock_token'));
+    localStorage.setItem('girostock_suporte_user', localStorage.getItem('girostock_user') || '');
+    localStorage.setItem('girostock_token', r.token);
+    const u = await api.get('/auth/me');
+    updateStoredUser(u);
+    setUser(u);
+    return u;
+  }, []);
+
+  // Encerra o teste (a copia e apagada no servidor) e volta ao suporte com o token guardado.
+  const encerrarTesteSuporte = useCallback(async () => {
+    try { await api.post('/master/suporte/testar/encerrar'); } catch { /* ja encerrado: volta ao suporte mesmo assim */ }
+    const tokenSuporte = localStorage.getItem('girostock_suporte_token');
+    if (tokenSuporte) {
+      localStorage.setItem('girostock_token', tokenSuporte);
+      localStorage.setItem('girostock_user', localStorage.getItem('girostock_suporte_user') || '');
+    }
+    localStorage.removeItem('girostock_suporte_token');
+    localStorage.removeItem('girostock_suporte_user');
+    const u = await api.get('/auth/me');
+    updateStoredUser(u);
+    setUser(u);
+    return u;
+  }, []);
+
   // ---- Admin da Calutec: o admin abre o GiroStock com um token (suporte ou modo teste) em /entrar-admin ----
   const entrarComToken = useCallback(async (token) => {
     localStorage.removeItem('girostock_master_token');
+    localStorage.removeItem('girostock_suporte_token');
+    localStorage.removeItem('girostock_suporte_user');
     localStorage.removeItem('girostock_master_user');
     localStorage.setItem('girostock_token', token);
     const u = await api.get('/auth/me');
@@ -111,7 +141,7 @@ export function AuthProvider({ children }) {
   }, [logout]);
 
   return (
-    <AuthContext.Provider value={{ user, login, concluirLogin, entrarSuporte, encerrarSuporte, voltarAoMasterLocal, logout, alternarModoTeste, recarregarUsuario, entrarComToken }}>
+    <AuthContext.Provider value={{ user, login, concluirLogin, entrarSuporte, encerrarSuporte, voltarAoMasterLocal, testarSemGravar, encerrarTesteSuporte, logout, alternarModoTeste, recarregarUsuario, entrarComToken }}>
       {children}
     </AuthContext.Provider>
   );

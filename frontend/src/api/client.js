@@ -22,7 +22,16 @@ async function request(path, { method = 'GET', body, token: tokenExplicito } = {
   if (!res.ok) {
     // Sessao expirada/usuario desativado: volta para o login.
     // Sessao de suporte vencida/encerrada: volta ao painel Master com o token guardado (em vez de cair no login).
-    if (res.status === 401 && token && !tokenExplicito && data && data.suporteEncerrado && voltarAoAdmin('A sessão de suporte foi encerrada.')) {
+    if (res.status === 401 && token && !tokenExplicito && data && data.suporteTesteEncerrado && localStorage.getItem('girostock_suporte_token')) {
+      // "Testar sem gravar" acabou (encerrado, 2 h parado ou suporte encerrado): volta ao token de suporte guardado.
+      // Se o suporte tambem acabou, a proxima chamada cai no fluxo de suporte encerrado abaixo.
+      localStorage.setItem('girostock_token', localStorage.getItem('girostock_suporte_token'));
+      localStorage.setItem('girostock_user', localStorage.getItem('girostock_suporte_user') || '');
+      localStorage.removeItem('girostock_suporte_token');
+      localStorage.removeItem('girostock_suporte_user');
+      try { sessionStorage.setItem('girostock_aviso_teste', data.erro || 'O teste foi encerrado.'); } catch { /* sem armazenamento */ }
+      window.location.assign('/');
+    } else if (res.status === 401 && token && !tokenExplicito && data && data.suporteEncerrado && voltarAoAdmin('A sessão de suporte foi encerrada.')) {
       // Sessao de suporte aberta pelo admin da Calutec: volta para o admin.
     } else if (res.status === 401 && token && !tokenExplicito && data && data.suporteEncerrado && localStorage.getItem('girostock_master_token')) {
       localStorage.setItem('girostock_token', localStorage.getItem('girostock_master_token'));
@@ -91,6 +100,8 @@ export function updateStoredUser(usuario) {
 export function clearSession() {
   localStorage.removeItem('girostock_token');
   localStorage.removeItem('girostock_user');
+  localStorage.removeItem('girostock_suporte_token');
+  localStorage.removeItem('girostock_suporte_user');
 }
 
 export function getCurrentUser() {

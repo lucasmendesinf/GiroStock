@@ -11,6 +11,8 @@ const LEITURA = ['GET', 'HEAD', 'OPTIONS'];
 
 const LIBERADAS = [
   { metodo: 'POST', re: /^\/master\/suporte\/encerrar$/ },
+  // "Testar sem gravar": copia a empresa para o banco de teste (as gravacoes do teste nunca chegam a producao).
+  { metodo: 'POST', re: /^\/master\/suporte\/testar$/ },
 ];
 
 const BLOQUEADAS_SEMPRE = [

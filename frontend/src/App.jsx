@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Routes, Route, Navigate, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext.jsx';
 import { useToast } from './context/UiContext.jsx';
@@ -94,6 +94,7 @@ function FaixaTeste() {
   const { user, alternarModoTeste } = useAuth();
   const toast = useToast();
   if (!user || !user.modoTeste) return null;
+  if (user.suporteTeste) return <FaixaTesteSuporte />;
   async function voltar() {
     try { await alternarModoTeste(false); window.location.assign('/'); } catch (err) { toast.erro(err); }
   }
@@ -101,6 +102,34 @@ function FaixaTeste() {
     <div className="faixa-teste" role="alert">
       <span>MODO TESTE — nada aqui afeta a produção</span>
       <button type="button" onClick={voltar}>Voltar à produção</button>
+    </div>
+  );
+}
+
+// "Testar sem gravar" do suporte: faixa laranja com o tempo do suporte e a volta ao suporte (a copia e apagada).
+function FaixaTesteSuporte() {
+  const { user, encerrarTesteSuporte } = useAuth();
+  const toast = useToast();
+  const fim = new Date(user.suporteTeste.expiraEm).getTime();
+  const [restante, setRestante] = useState(fim - Date.now());
+  const [saindo, setSaindo] = useState(false);
+  const voltar = useCallback(async () => {
+    setSaindo(true);
+    try { await encerrarTesteSuporte(); window.location.assign('/inicio'); } catch (err) { toast.erro(err); setSaindo(false); }
+  }, [encerrarTesteSuporte, toast]);
+  useEffect(() => {
+    const t = setInterval(() => {
+      const r = fim - Date.now();
+      setRestante(r);
+      if (r <= 0) { clearInterval(t); voltar(); }
+    }, 1000);
+    return () => clearInterval(t);
+  }, [fim, voltar]);
+  const s = Math.max(0, Math.floor(restante / 1000));
+  return (
+    <div className="faixa-teste" role="alert">
+      <span>MODO TESTE — nada aqui é gravado na conta do cliente · <b>{user.suporteTeste.empresa}</b> · suporte expira em <b>{String(Math.floor(s / 60)).padStart(2, '0')}:{String(s % 60).padStart(2, '0')}</b></span>
+      <button type="button" onClick={voltar} disabled={saindo}>{saindo ? 'Apagando a cópia…' : 'Encerrar teste e voltar ao suporte'}</button>
     </div>
   );
 }
@@ -196,9 +225,9 @@ function Layout({ children }) {
                   <button type="button" onClick={() => { setContaAberta(false); setModoTesteAberto(true); }}>Modo teste</button>
                 )}
                 {!user?.master && <button type="button" onClick={() => { setContaAberta(false); setEmpresaAberta(true); }}>Dados da empresa</button>}
-                {!user?.suporte && <button type="button" onClick={() => { setContaAberta(false); setAlterandoEmail(true); }}>Alterar meu e-mail</button>}
-                {!user?.suporte && <button type="button" onClick={() => { setContaAberta(false); setTrocandoSenha(true); }}>Alterar minha senha</button>}
-                {!user?.suporte && <button type="button" onClick={() => { setContaAberta(false); setSegurancaAberta(true); }}>Verificação em duas etapas</button>}
+                {!user?.suporte && !user?.suporteTeste && <button type="button" onClick={() => { setContaAberta(false); setAlterandoEmail(true); }}>Alterar meu e-mail</button>}
+                {!user?.suporte && !user?.suporteTeste && <button type="button" onClick={() => { setContaAberta(false); setTrocandoSenha(true); }}>Alterar minha senha</button>}
+                {!user?.suporte && !user?.suporteTeste && <button type="button" onClick={() => { setContaAberta(false); setSegurancaAberta(true); }}>Verificação em duas etapas</button>}
                 <button type="button" onClick={sair}>Sair</button>
               </div>
             )}

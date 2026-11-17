@@ -3,6 +3,7 @@ const { assertLocationAccess } = require('../utils/access');
 const { logAudit } = require('../utils/audit');
 const { isQuantidadeValidaParaUnidade } = require('../utils/validators');
 const { HttpError } = require('../utils/http');
+const lotes = require('./lotes');
 const { reservadosDaLoja } = require('../utils/reservas');
 const precos = require('./precos');
 const {
@@ -276,15 +277,17 @@ async function registrarVenda(client, user, dados) {
     );
   }
 
+  const peps = await lotes.usaPeps(client, user.tenantId);
   for (let k = 0; k < linhasComPreco.length; k++) {
     const item = linhasComPreco[k];
     const consumo = consumoPorLinha[k];
+    let ajustePeps = 0; // PEPS: diferenca entre o custo dos lotes consumidos e o custo atual dos produtos (ja somado em item.custo_unitario)
     // Observacao: itens com preparo (consomem insumos) ou com complementos; e os de plataforma.
     const guardaObs = consumo.insumos.size > 0 || item.complementos.length > 0 || comp.combos.has(item.product_id) || dados.precos_informados;
     const saleItem = await client.query(
       `INSERT INTO sale_items (tenant_id, sale_id, product_id, quantidade, preco_unitario, custo_unitario, subtotal, observacao, complementos, garcom_id, preco_tabela, faixa_rotulo)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
-      [user.tenantId, saleId, item.product_id, item.quantidade, item.preco_unitario, item.custo_unitario, item.subtotal,
+      [user.tenantId, saleId, item.product_id, item.quantidade, item.preco_unitario, peps ? item.custo_unitario : Number(Number(item.custo_unitario).toFixed(2)), item.subtotal,
         guardaObs && item.observacao ? item.observacao : null, item.complementos.length ? JSON.stringify(item.complementos) : null, item.garcom_id,
         item.preco_tabela, item.faixa_rotulo]
     );
@@ -294,11 +297,20 @@ async function registrarVenda(client, user, dados) {
         `UPDATE stock_balances SET saldo = saldo - $1 WHERE product_id = $2 AND location_id = $3 AND tenant_id = $4`,
         [q, productId, locationId, user.tenantId]
       );
+      let custoMov = null;
+      if (peps) {
+        const b = await lotes.baixar(client, { tenantId: user.tenantId, productId, locationId, qtd: q });
+        ajustePeps += b.custoTotal - b.referencia;
+        custoMov = b.custoUnitario;
+      }
       await client.query(
-        `INSERT INTO stock_movements (tenant_id, product_id, tipo, quantidade, location_origem_id, location_destino_id, motivo, usuario_id, sale_id)
-         VALUES ($1, $2, 'saida', $3, $4, NULL, $5, $6, $7)`,
-        [user.tenantId, productId, q, locationId, productId === item.product_id ? `Venda nº ${numero}` : `Venda nº ${numero} (${productMap.get(item.product_id).nome})`, user.id, saleId]
+        `INSERT INTO stock_movements (tenant_id, product_id, tipo, quantidade, location_origem_id, location_destino_id, motivo, usuario_id, sale_id, custo_unitario)
+         VALUES ($1, $2, 'saida', $3, $4, NULL, $5, $6, $7, $8)`,
+        [user.tenantId, productId, q, locationId, productId === item.product_id ? `Venda nº ${numero}` : `Venda nº ${numero} (${productMap.get(item.product_id).nome})`, user.id, saleId, custoMov]
       );
+    }
+    if (peps && Math.abs(ajustePeps) > 0.00005) {
+      await client.query(`UPDATE sale_items SET custo_unitario = custo_unitario + $1 WHERE id = $2`, [Number((ajustePeps / item.quantidade).toFixed(4)), saleItem.rows[0].id]);
     }
     // Insumos (ficha tecnica do lanche, dos componentes do combo e dos adicionais), ligados ao item da venda.
     for (const [ingredientId, consumido] of consumo.insumos) {

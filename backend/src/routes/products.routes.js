@@ -12,6 +12,7 @@ const { HttpError } = require('../utils/http');
 const precos = require('../services/precos');
 const precosCadastro = require('../services/precosCadastro');
 const conversao = require('../services/conversao');
+const lotes = require('../services/lotes');
 const { gerarCodigoBarrasInterno } = require('../services/codigoBarras');
 
 const router = express.Router();
@@ -541,6 +542,7 @@ router.post('/products', requireArea('Estoque'), async (req, res) => {
            VALUES ($1, $2, 'entrada', $3, NULL, $4, 'Estoque inicial no cadastro do produto', $5, $6, $7)`,
           [req.user.tenantId, product.id, saldoInicial, location_id, req.user.id, fornecedores.principal, custo]
         );
+        if (await lotes.usaPeps(client, req.user.tenantId)) await lotes.entrar(client, { tenantId: req.user.tenantId, productId: product.id, locationId: location_id, qtd: saldoInicial, custo, origem: 'saldo_inicial' });
       }
     }
 

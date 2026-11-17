@@ -8,7 +8,7 @@ const { HttpError } = require('../utils/http');
 // Dados de contato da PROPRIA empresa (e-mail, telefone, responsavel). Informativos: nao alteram nenhuma regra do sistema.
 const router = express.Router();
 
-const COLUNAS = 'id, nome, documento, email_contato, telefone, responsavel, combo_margem_pct, combo_preco_final_90';
+const COLUNAS = 'id, nome, documento, email_contato, telefone, responsavel, combo_margem_pct, combo_preco_final_90, metodo_custo';
 
 const saida = (r) => ({ ...r, combo_margem_pct: Number(r.combo_margem_pct) });
 

@@ -2,6 +2,7 @@
 // carga (deposito -> setor, pode ter reforco), perdas durante o evento (classificadas), fechamento com contagem
 // (diferenca vira perda/sobra) e devolucao da sobra ao deposito. Todo movimento leva o evento (stock_movements.evento_id).
 const { HttpError } = require('../utils/http');
+const lotes = require('./lotes');
 const { getOwnedLocation, isUuid } = require('../utils/tenant');
 const { isQuantidadeValidaParaUnidade } = require('../utils/validators');
 const { eventoDaEmpresa } = require('./eventos');
@@ -41,6 +42,8 @@ async function saldo(client, tenantId, productId, locationId, travar = true) {
 
 // Um movimento do evento: atualiza os saldos e grava o historico.
 async function mover(client, user, e, p, { tipo, qtd, origem = null, destino = null, motivo, perdaTipo = null }) {
+  const peps = await lotes.usaPeps(client, user.tenantId);
+  let custoMov = p.preco_custo;
   if (origem) {
     const s = await saldo(client, user.tenantId, p.id, origem);
     if (s < qtd - 1e-9) throw new HttpError(400, `saldo insuficiente de "${p.nome}" (disponível: ${s}, solicitado: ${qtd})`);
@@ -50,10 +53,15 @@ async function mover(client, user, e, p, { tipo, qtd, origem = null, destino = n
     await saldo(client, user.tenantId, p.id, destino);
     await client.query(`UPDATE stock_balances SET saldo = saldo + $1 WHERE product_id = $2 AND location_id = $3 AND tenant_id = $4`, [qtd, p.id, destino, user.tenantId]);
   }
+  if (peps) {
+    if (origem && destino) custoMov = (await lotes.transferir(client, { tenantId: user.tenantId, productId: p.id, origemId: origem, destinoId: destino, qtd })).custoUnitario;
+    else if (origem) custoMov = (await lotes.baixar(client, { tenantId: user.tenantId, productId: p.id, locationId: origem, qtd })).custoUnitario;
+    else if (destino) await lotes.entrar(client, { tenantId: user.tenantId, productId: p.id, locationId: destino, qtd, custo: Number(p.preco_custo), origem: 'sobra' });
+  }
   await client.query(
     `INSERT INTO stock_movements (tenant_id, product_id, tipo, quantidade, location_origem_id, location_destino_id, motivo, usuario_id, custo_unitario, evento_id, perda_tipo)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-    [user.tenantId, p.id, tipo, qtd, origem, destino, motivo, user.id, p.preco_custo, e.id, perdaTipo]
+    [user.tenantId, p.id, tipo, qtd, origem, destino, motivo, user.id, custoMov, e.id, perdaTipo]
   );
 }
 

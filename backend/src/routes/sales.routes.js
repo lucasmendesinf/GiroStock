@@ -6,6 +6,7 @@ const { getOwned, isUuid } = require('../utils/tenant');
 const { assertLocationAccess, filtroLocais, canCancelSales } = require('../utils/access');
 const { isQuantidadeValidaParaUnidade } = require('../utils/validators');
 const { HttpError } = require('../utils/http');
+const lotes = require('../services/lotes');
 const { configEfetiva } = require('../utils/cupom');
 const { registrarVenda } = require('../services/vendas');
 const { estornarRecebimentosDaVenda } = require('../services/recebimentos');
@@ -86,14 +87,19 @@ router.post('/sales/:id/cancel', requireArea('Vendas'), async (req, res) => {
 
     // Produtos com estoque proprio: estorna exatamente as saidas feitas pela venda.
     const saidas = await client.query(
-      `SELECT product_id, location_origem_id, SUM(quantidade) AS quantidade
+      `SELECT product_id, location_origem_id, SUM(quantidade) AS quantidade, SUM(quantidade * custo_unitario) / NULLIF(SUM(quantidade) FILTER (WHERE custo_unitario IS NOT NULL), 0) AS custo
        FROM stock_movements
        WHERE sale_id = $1 AND tenant_id = $2 AND tipo = 'saida'
        GROUP BY product_id, location_origem_id
        ORDER BY product_id`,
       [sale.id, req.user.tenantId]
     );
+    const peps = await lotes.usaPeps(client, req.user.tenantId);
     for (const saida of saidas.rows) {
+      if (peps) {
+        const custo = saida.custo !== null ? Number(saida.custo) : Number((await client.query(`SELECT preco_custo FROM products WHERE id = $1`, [saida.product_id])).rows[0].preco_custo);
+        await lotes.entrar(client, { tenantId: req.user.tenantId, productId: saida.product_id, locationId: saida.location_origem_id, qtd: saida.quantidade, custo, data: await lotes.dataDoLoteComCusto(client, req.user.tenantId, saida.product_id, saida.location_origem_id, custo, sale.criado_em || null), origem: 'estorno' });
+      }
       await client.query(
         `INSERT INTO stock_balances (product_id, location_id, tenant_id, saldo) VALUES ($1, $2, $3, 0)
          ON CONFLICT (product_id, location_id) DO NOTHING`,

@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const express = require('express');
+const lotes = require('../services/lotes');
 const { requireArea, normalizarOverrides } = require('../middleware/permissions');
 const { HttpError } = require('../utils/http');
 const { logAudit } = require('../utils/audit');
@@ -97,6 +98,7 @@ router.get('/master/empresas/:id', async (req, res) => {
     plano: e.plano, plano_nome: e.plano_nome, criado_em: e.criado_em,
     cliente_2fa: usuarios.rows.some((u) => u.ativo && u.totp_ativo),
     contato: (await db.query(`SELECT email_contato, telefone, responsavel FROM tenants WHERE id = $1`, [req.params.id])).rows[0],
+    metodo_custo: (await db.query(`SELECT metodo_custo FROM tenants WHERE id = $1`, [req.params.id])).rows[0].metodo_custo,
     limites: ['lojas', 'usuarios', 'pdvs'].map((k) => ({ chave: k, limite: ef.limites[k], usado: usados[k], origem: ef.origem[k] })),
     // Modulos liberados (valor efetivo), de onde vem cada um (plano ou liberacao da empresa) e o que o plano daria sozinho.
     recursos: { ...ef.recursos, origem: Object.fromEntries(CHAVES.map((k) => [k, ef.origem[k]])) },
@@ -136,6 +138,8 @@ router.post('/master/empresas', async (req, res) => {
     const conflito = conflitoDeDependencia(Object.fromEntries(CHAVES.map((k) => [k, typeof recursos[k] === 'boolean' ? recursos[k] : plano_[k]])));
     if (conflito) throw new HttpError(400, conflito);
   }
+  const metodoCusto = b.metodo_custo === undefined ? 'medio' : String(b.metodo_custo);
+  if (!['medio', 'peps'].includes(metodoCusto)) throw new HttpError(400, 'método de custo inválido (medio ou peps)');
   const adm = b.admin || {};
   if (!String(adm.nome || '').trim()) throw new HttpError(400, 'informe o nome do administrador');
   const senha = adm.senha ? String(adm.senha) : gerarSenha();
@@ -146,6 +150,7 @@ router.post('/master/empresas', async (req, res) => {
     const vipPadrao = await config.obter('vip_limite_padrao'); // valor inicial; cada empresa mantem o seu depois
     const t = await client.query(`INSERT INTO tenants (nome, documento, plano, clientes_vip_limite, recursos) VALUES ($1, $2, $3, $4, $5) RETURNING id, nome, documento, plano, status, criado_em`, [nome, documento, plano.codigo, vipPadrao, recursos ? JSON.stringify(recursos) : null]);
     const empresa = t.rows[0];
+    if (metodoCusto !== 'medio') await client.query(`UPDATE tenants SET metodo_custo = $2 WHERE id = $1`, [empresa.id, metodoCusto]);
     await client.query(`INSERT INTO locations (tenant_id, nome) VALUES ($1, $2)`, [empresa.id, String(b.loja_nome || '').trim() || 'Loja única']);
     const administrador = await criarUsuario(client, {
       tenantId: empresa.id, nome: String(adm.nome).trim(), email: String(adm.email || '').trim(), senha, perfil: 'Administrador',
@@ -212,7 +217,14 @@ router.patch('/master/empresas/:id', async (req, res) => {
     const r = validarRecursos(entrada);
     add('recursos', r ? JSON.stringify(r) : null); mudou.recursos = r;
   }
-  if (sets.length === 0) throw new HttpError(400, 'nada para alterar');
+  // Metodo de custo do estoque: custo medio ou PEPS. Ao trocar, o estoque atual vira lotes (PEPS) ou os lotes saem (medio); vendas passadas nao mudam.
+  let metodoNovo = null;
+  if (b.metodo_custo !== undefined) {
+    if (!['medio', 'peps'].includes(b.metodo_custo)) throw new HttpError(400, 'método de custo inválido (medio ou peps)');
+    const atual = (await db.query(`SELECT metodo_custo FROM tenants WHERE id = $1`, [emp.id])).rows[0].metodo_custo;
+    if (atual !== b.metodo_custo) { metodoNovo = b.metodo_custo; mudou.metodo_custo = { de: atual, para: metodoNovo }; }
+  }
+  if (sets.length === 0 && !metodoNovo) throw new HttpError(400, 'nada para alterar');
   if (b.recursos !== undefined || b.plano !== undefined) {
     // Confere o resultado (plano novo + liberacoes da empresa): modulo ligado sem a dependencia e recusado com explicacao.
     const planoCodigo = b.plano !== undefined ? b.plano : (await dadosDaEmpresa(db, emp.id)).plano;
@@ -224,7 +236,11 @@ router.patch('/master/empresas/:id', async (req, res) => {
     if (conflito) throw new HttpError(400, conflito);
   }
   params.push(emp.id);
-  await db.query(`UPDATE tenants SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
+  if (sets.length > 0) await db.query(`UPDATE tenants SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
+  if (metodoNovo) {
+    const cl = await db.connect();
+    try { await cl.query('BEGIN'); await lotes.trocarMetodo(cl, emp.id, metodoNovo); await cl.query('COMMIT'); } catch (err) { await cl.query('ROLLBACK'); throw err; } finally { cl.release(); }
+  }
   await logAudit(db, { tenantId: emp.id, usuarioId: req.user.id, acao: 'master_alterar_empresa', recurso: 'tenants', recursoId: emp.id, detalhes: mudou });
   res.json({ ok: true });
 });

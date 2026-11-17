@@ -8,6 +8,7 @@ const { isQuantidadeValidaParaUnidade } = require('../utils/validators');
 const { HttpError } = require('../utils/http');
 const { filtroPeriodo, paginacao } = require('../utils/query');
 const conversao = require('../services/conversao');
+const lotes = require('../services/lotes');
 
 const router = express.Router();
 
@@ -126,6 +127,7 @@ async function aplicarMovimento(client, user, mov) {
     [productId, user.tenantId]
   );
   const atual = travado.rows[0];
+  const peps = await lotes.usaPeps(client, user.tenantId); // metodo de custo da empresa: PEPS (lotes) ou custo medio
 
   if (destinoProduto) await ensureBalanceRow(client, user.tenantId, productId, destinoProduto);
   const saldos = await lockBalances(client, user.tenantId, productId, [origemId, destinoProduto].filter(Boolean));
@@ -142,7 +144,8 @@ async function aplicarMovimento(client, user, mov) {
     // Custo medio ponderado: (saldo atual x custo atual + entrada x custo da entrada) / saldo final.
     const saldoTotal = Math.max(0, Number(atual.saldo_total));
     const custoAtual = Number(atual.preco_custo);
-    custoMedio = Number(((saldoTotal * custoAtual + qtd * custoUnitario) / (saldoTotal + qtd)).toFixed(2));
+    // PEPS: o custo do produto passa a ser o da ultima entrada (reposicao); o custo da venda vem dos lotes. Custo medio: media ponderada.
+    custoMedio = peps ? Number(Number(custoUnitario).toFixed(2)) : Number(((saldoTotal * custoAtual + qtd * custoUnitario) / (saldoTotal + qtd)).toFixed(2));
     const precoVenda = Number(atual.preco_venda);
     if (custoMedio >= precoVenda) {
       throw new HttpError(400,
@@ -176,12 +179,20 @@ async function aplicarMovimento(client, user, mov) {
     }
   }
 
+  // PEPS: entrada = novo lote; saida/transferencia consomem o lote mais antigo da loja de origem (a transferencia leva custo e data ao destino).
+  let custoMov = custoUnitario;
+  if (peps) {
+    if (tipo === 'entrada') await lotes.entrar(client, { tenantId: user.tenantId, productId, locationId: destinoId, qtd, custo: custoUnitario !== null ? custoUnitario : Number(atual.preco_custo) });
+    else if (tipo === 'saida' || conv) custoMov = (await lotes.baixar(client, { tenantId: user.tenantId, productId, locationId: origemId, qtd })).custoUnitario;
+    else custoMov = (await lotes.transferir(client, { tenantId: user.tenantId, productId, origemId, destinoId, qtd })).custoUnitario;
+  }
+
   const { rows } = await client.query(
     `INSERT INTO stock_movements (tenant_id, product_id, tipo, quantidade, location_origem_id, location_destino_id, motivo, usuario_id,
                                   supplier_id, custo_unitario, documento_fiscal, conversao_ingredient_id, conversao_quantidade)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING id, product_id, tipo, quantidade, location_origem_id, location_destino_id, motivo, supplier_id, custo_unitario, documento_fiscal, criado_em`,
-    [user.tenantId, productId, tipo, qtd, origemId, destinoId, motivo, user.id, supplierId, custoUnitario, documentoFiscal,
+    [user.tenantId, productId, tipo, qtd, origemId, destinoId, motivo, user.id, supplierId, custoMov, documentoFiscal,
       conv ? conv.ingredient_id : null, conv ? Number((qtd * conv.fator).toFixed(3)) : null]
   );
   // Transferencia com conversao: soma no insumo do destino (mesma transacao) e liga os dois lados pelo id do movimento.
@@ -278,6 +289,11 @@ router.post('/products/:id/stock-adjustment', requireArea('Estoque'), async (req
       `UPDATE stock_balances SET saldo = $1 WHERE product_id = $2 AND location_id = $3 AND tenant_id = $4`,
       [novoSaldo, product.id, location_id, req.user.tenantId]
     );
+    // PEPS: contagem a mais entra como lote (custo do ultimo lote); a menos consome do mais antigo.
+    if (await lotes.usaPeps(client, req.user.tenantId)) {
+      if (diferenca > 0) await lotes.entrar(client, { tenantId: req.user.tenantId, productId: product.id, locationId: location_id, qtd: diferenca, custo: await lotes.custoDoUltimoLote(client, req.user.tenantId, product.id, location_id), origem: 'balanco' });
+      else await lotes.baixar(client, { tenantId: req.user.tenantId, productId: product.id, locationId: location_id, qtd: -diferenca });
+    }
     const { rows } = await client.query(
       `INSERT INTO stock_movements (tenant_id, product_id, tipo, quantidade, location_origem_id, location_destino_id, motivo, usuario_id,
                                     saldo_anterior, saldo_novo)

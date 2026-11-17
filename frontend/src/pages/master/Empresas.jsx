@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api/client';
-import { useToast } from '../../context/UiContext.jsx';
+import { useConfirm, useToast } from '../../context/UiContext.jsx';
 import { Modal } from '../../components/ui.jsx';
 import { baixarArquivo, gerarSenha, quando } from './util.js';
 import SenhaUnicaModal from './SenhaUnicaModal.jsx';
@@ -14,6 +14,7 @@ const NOME_LIMITE = { lojas: 'Lojas', usuarios: 'Usuários', pdvs: 'PDVs' };
 
 export default function Empresas() {
   const toast = useToast();
+  const confirmar = useConfirm();
   const [dados, setDados] = useState(null);
   const [busca, setBusca] = useState('');
   const [ficha, setFicha] = useState(null);
@@ -75,6 +76,14 @@ export default function Empresas() {
   }
   async function voltarAoPlano(chave) {
     try { await api.patch(`/master/empresas/${ficha.id}`, { recursos: { [chave]: null } }); await atualizarFicha(ficha.id); toast.sucesso('O módulo volta a seguir o plano'); } catch (err) { toast.erro(err); }
+  }
+  async function trocarMetodo(metodo) {
+    if (metodo === ficha.metodo_custo) return;
+    const txt = metodo === 'peps'
+      ? 'O estoque atual de cada produto e loja vira um lote ao custo atual, e as próximas baixas e o CMV passam a sair do lote mais antigo.'
+      : 'Os lotes deixam de ser usados: o custo volta a ser a média ponderada das entradas.';
+    if (!(await confirmar({ titulo: `Trocar o método de custo para ${metodo === 'peps' ? 'PEPS' : 'custo médio'}?`, mensagem: `${txt} As vendas já feitas não mudam.`, confirmar: 'Trocar' }))) return;
+    try { await api.patch(`/master/empresas/${ficha.id}`, { metodo_custo: metodo }); toast.sucesso('Método de custo alterado'); await atualizarFicha(ficha.id); } catch (err) { toast.erro(err); }
   }
   async function trocarPlano(plano) {
     try { await api.patch(`/master/empresas/${ficha.id}`, { plano }); toast.sucesso('Plano alterado'); await atualizarFicha(ficha.id); } catch (err) { toast.erro(err); }
@@ -140,6 +149,14 @@ export default function Empresas() {
                 {(planos || [{ codigo: ficha.plano, nome: ficha.plano_nome }]).map((p) => <option key={p.codigo} value={p.codigo}>{p.nome}</option>)}
               </select>
               {ficha.status === 'suspensa' && ficha.suspenso_motivo && <span className="cl-sub" style={{ margin: 0 }}>· {ficha.suspenso_motivo}</span>}
+            </div>
+
+            <div className="ped-sec"><span className="ped-rotulo">Método de custo do estoque</span>
+              <select value={ficha.metodo_custo || 'medio'} onChange={(e) => trocarMetodo(e.target.value)} aria-label="Método de custo do estoque" style={{ width: 'auto' }}>
+                <option value="medio">Custo médio ponderado</option>
+                <option value="peps">PEPS (primeiro que entra, primeiro que sai)</option>
+              </select>
+              <p className="cl-sub" style={{ margin: '6px 0 0' }}>Vale para a baixa do estoque e o CMV dos relatórios desta empresa.</p>
             </div>
 
             <div className="ped-sec"><span className="ped-rotulo">Lojas</span>
@@ -236,7 +253,7 @@ function SuspenderModal({ empresa, onClose, onFeito }) {
 function NovaEmpresaModal({ onClose, onCriada }) {
   const toast = useToast();
   const [passo, setPasso] = useState(1);
-  const [f, setF] = useState({ nome: '', documento: '', plano: 'basico', loja_nome: 'Loja única', admin_nome: '', admin_email: '', senha: gerarSenha() });
+  const [f, setF] = useState({ nome: '', documento: '', plano: 'basico', metodo_custo: 'medio', loja_nome: 'Loja única', admin_nome: '', admin_email: '', senha: gerarSenha() });
   const [salvando, setSalvando] = useState(false);
   const catalogo = useCatalogoModulos();
   const planos = usePlanos();
@@ -264,7 +281,7 @@ function NovaEmpresaModal({ onClose, onCriada }) {
     setSalvando(true);
     try {
       const resp = await api.post('/master/empresas', {
-        nome: f.nome, documento: f.documento, plano: f.plano, loja_nome: f.loja_nome, recursos: diferencas(),
+        nome: f.nome, documento: f.documento, plano: f.plano, metodo_custo: f.metodo_custo, loja_nome: f.loja_nome, recursos: diferencas(),
         admin: { nome: f.admin_nome, email: f.admin_email, senha: f.senha },
       });
       onCriada(resp);
@@ -284,6 +301,13 @@ function NovaEmpresaModal({ onClose, onCriada }) {
             </label>
             <label className="field"><span className="field-label">Primeira loja</span><input value={f.loja_nome} onChange={mudar('loja_nome')} /></label>
           </div>
+          <label className="field"><span className="field-label">Método de custo do estoque</span>
+            <select value={f.metodo_custo} onChange={mudar('metodo_custo')}>
+              <option value="medio">Custo médio ponderado</option>
+              <option value="peps">PEPS (primeiro que entra, primeiro que sai)</option>
+            </select>
+            <small className="cl-sub">Define como a baixa de estoque e o custo da mercadoria vendida (CMV) são calculados. Pode ser trocado depois na ficha da empresa.</small>
+          </label>
           <div className="ped-sec" style={{ marginTop: 4 }}><span className="ped-rotulo">Módulos que o cliente vai usar</span>
             <p className="cl-sub" style={{ margin: '0 0 6px' }}>Começa igual ao plano escolhido; o que você mudar aqui vale só para esta empresa.</p>
             {mods && <ListaModulos catalogo={catalogo} valores={mods} onAlternar={(k, v) => setMods(alternarModulo(catalogo, mods, k, v).valores)}

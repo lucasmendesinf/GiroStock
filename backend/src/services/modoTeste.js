@@ -42,6 +42,9 @@ async function garantirBancoTeste() {
       copiado_por UUID,
       contagens JSONB
     )`);
+  // Copias antigas podem ter trazido o certificado/CSC reais: no teste a nota e sempre a de teste, entao eles saem daqui.
+  await teste.query(`UPDATE fiscal_lojas SET ambiente = 'homologacao', cert_cript = NULL, cert_senha_cript = NULL, csc_prod_cript = NULL, csc_homolog_cript = NULL
+                      WHERE cert_cript IS NOT NULL OR cert_senha_cript IS NOT NULL OR csc_prod_cript IS NOT NULL OR csc_homolog_cript IS NOT NULL OR ambiente <> 'homologacao'`);
 }
 
 async function ultimaCopia() {

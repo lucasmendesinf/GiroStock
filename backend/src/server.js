@@ -10,6 +10,7 @@ const port = process.env.PORT || 3000;
 monitoramento.iniciarLimpezaDiaria();
 backup.iniciarAgendador();
 suporte.iniciarVarredura();
+require('./services/suporteTeste').iniciarVarredura(); // "Testar sem gravar" do suporte: apaga as copias de testes encerrados/parados (a cada 60 s)
 ifood.iniciarPolling(); // pedidos do iFood a cada 30 s (so com IFOOD_CLIENT_ID/IFOOD_CLIENT_SECRET configurados)
 lojaVirtual.iniciarVarredura(); // loja virtual: confere Pix/cartão pendentes e cancela os não pagos no prazo (a cada 60 s)
 require('./services/codigoLogin').validarInicializacao().catch((err) => console.error('login por código (cardápio): não foi possível ler a configuração', err.message)); // login por codigo da loja

@@ -9,6 +9,7 @@ const { logAudit } = require('../utils/audit');
 const config = require('../services/config');
 const { HttpError } = require('../utils/http');
 const modoTeste = require('../services/modoTeste');
+const suporteTeste = require('../services/suporteTeste');
 const { validarNovoEmail } = require('../services/usuarios');
 const { dadosDaEmpresa, efetivos, aplicarRecursos } = require('../utils/limites');
 
@@ -176,6 +177,10 @@ router.get('/me', authRequired, async (req, res) => {
     // Sessao de suporte: o front ve o Master como Administrador da empresa acessada (mais o estado do suporte).
     Object.assign(rows[0], { perfil: 'Administrador', location_id: null, location_nome: null, empresa_nome: req.user.suporte.empresaNome, extras: [], permissoes: null });
   }
+  if (req.user.suporteTeste) {
+    // "Testar sem gravar" do suporte: Administrador da empresa atendida, no banco de teste.
+    Object.assign(rows[0], { perfil: 'Administrador', location_id: null, location_nome: null, empresa_nome: req.user.suporteTeste.empresaNome, extras: [], permissoes: null });
+  }
   if (req.user.modoTeste) {
     if (req.user.master) {
       const emp = await pool.query(`SELECT id, nome FROM tenants WHERE id = $1`, [req.user.empresaTeste]);
@@ -183,7 +188,7 @@ router.get('/me', authRequired, async (req, res) => {
     }
   }
   const manut = await config.obter('manutencao');
-  res.json({ ...dadosDoUsuario(rows[0]), adminUrl: req.user.master ? adminUrl() : null, suporte: req.user.suporte ? { ativo: true, empresa: req.user.suporte.empresaNome, empresaId: req.user.suporte.empresaId, edicao: req.user.suporte.edicao, expiraEm: req.user.suporte.expiraEm } : null, parametros: await config.parametrosPublicos(), manutencao: manut.ativo && !req.user.master ? { ativo: true, mensagem: manut.mensagem || '' } : null });
+  res.json({ ...dadosDoUsuario(rows[0]), adminUrl: req.user.master ? adminUrl() : null, suporte: req.user.suporte ? { ativo: true, empresa: req.user.suporte.empresaNome, empresaId: req.user.suporte.empresaId, edicao: req.user.suporte.edicao, expiraEm: req.user.suporte.expiraEm } : null, suporteTeste: req.user.suporteTeste ? { ativo: true, empresa: req.user.suporteTeste.empresaNome, expiraEm: req.user.suporteTeste.expiraEm, dias: suporteTeste.DIAS, paradoMin: suporteTeste.PARADO_MIN } : null, parametros: await config.parametrosPublicos(), manutencao: manut.ativo && !req.user.master ? { ativo: true, mensagem: manut.mensagem || '' } : null });
 });
 
 // Troca da propria senha (exige a senha atual).

@@ -40,7 +40,8 @@ router.get('/fiscal/lojas', requireArea('Configuracoes'), async (req, res) => {
     const c = await fiscal.configDaLoja(pool, req.user.tenantId, l.id);
     out.push({ ...fiscal.publica(c, l), pendencias: c ? fiscal.pendencias(c) : [] });
   }
-  res.json({ lojas: out, simulador: process.env.FISCAL_SIMULADOR === '1' });
+  // modo teste: a nota e sempre a de teste (simulador), sem envio a SEFAZ
+  res.json({ lojas: out, simulador: process.env.FISCAL_SIMULADOR === '1' || !!req.user.modoTeste, modo_teste: !!req.user.modoTeste });
 });
 
 router.put('/fiscal/lojas/:id', requireArea('Configuracoes'), async (req, res) => {

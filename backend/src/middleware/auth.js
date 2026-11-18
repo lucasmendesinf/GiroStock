@@ -5,6 +5,7 @@ const modoTeste = require('../services/modoTeste');
 const { marcarAcesso } = require('../services/monitoramento');
 const config = require('../services/config');
 const suporte = require('../services/suporte');
+const suporteTeste = require('../services/suporteTeste');
 const contextoSuporte = require('../utils/contextoSuporte');
 const { verificar: verificarSuporte } = require('../config/suporteBloqueios');
 const { dadosDaEmpresa, efetivos, aplicarRecursos } = require('../utils/limites');
@@ -99,8 +100,20 @@ async function authRequired(req, res, next) {
 
   if (payload.modo !== 'teste') return next();
 
-  // ---- Modo teste: a permissao e revalidada a cada requisicao (retirada = volta para producao) ----
-  if (!areasProd.ModoTeste) {
+  // ---- "Testar sem gravar" do suporte: vale enquanto o teste e a sessao de suporte estiverem abertos (conferido no banco) ----
+  let testeSuporte = null;
+  if (payload.suporteTeste) {
+    if (!master) return res.status(401).json({ erro: 'Teste do suporte inválido' });
+    try {
+      testeSuporte = await suporteTeste.validar(payload.suporteTeste, user, dadosDaEmpresa);
+    } catch (err) {
+      return res.status(err.status || 401).json({ erro: err.message, suporteTesteEncerrado: true, suporteAtivo: !!err.suporteAtivo });
+    }
+    if (payload.empresaTeste !== testeSuporte.teste.tenant_id) return res.status(401).json({ erro: 'Teste do suporte inválido' });
+    const bloqueioTeste = suporteTeste.bloqueio(req.method, req.originalUrl.split('?')[0].replace(/^\/api/, ''));
+    if (bloqueioTeste) return res.status(403).json({ erro: bloqueioTeste });
+  } else if (!areasProd.ModoTeste) {
+    // ---- Modo teste: a permissao e revalidada a cada requisicao (retirada = volta para producao) ----
     return res.status(403).json({ erro: 'Seu usuário não tem mais acesso ao modo teste', modoTesteRevogado: true });
   }
   if (!pool.testeConfigurado()) {
@@ -124,6 +137,14 @@ async function authRequired(req, res, next) {
     const empTeste = await dadosDaEmpresa(prod, payload.empresaTeste);
     req.user.modulos = empTeste ? efetivos(empTeste).recursos : null;
     req.user.areas = aplicarRecursos({ ...MATRIX.Administrador, ModoTeste: true, Master: true }, req.user.modulos);
+    if (testeSuporte) {
+      // Teste do suporte: Administrador da empresa (edicao completa, mas so no banco de teste), sem painel Master.
+      req.user.areas = aplicarRecursos({ ...MATRIX.Administrador, ModoTeste: false, Master: false }, req.user.modulos);
+      req.user.suporteTeste = {
+        id: testeSuporte.teste.id, sessaoId: testeSuporte.sessao.id, empresaNome: testeSuporte.empresa.nome,
+        expiraEm: testeSuporte.sessao.expira_em, criadoEm: testeSuporte.teste.criado_em, edicaoSuporte: testeSuporte.sessao.edicao,
+      };
+    }
   }
   return pool.executarEmTeste(() => next());
 }

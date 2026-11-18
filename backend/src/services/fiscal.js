@@ -20,7 +20,9 @@ const COD_UF = { RO: 11, AC: 12, AM: 13, RR: 14, PA: 15, AP: 16, TO: 17, MA: 21,
 const T_PAG = { dinheiro: '01', cartao_credito: '03', cartao_debito: '04', pix: '17', online: '99' };
 
 // ---------- motor (PHP) ----------
-function chamarMotor(entrada, { timeoutMs = 90000 } = {}) {
+function chamarMotor(entradaOriginal, { timeoutMs = 90000 } = {}) {
+  // MODO TESTE: a nota e sempre a de teste (simulador do motor). Nada e enviado a SEFAZ, seja qual for a configuracao da loja.
+  const entrada = pool.emTeste() ? { ...entradaOriginal, simulador: true } : entradaOriginal;
   return new Promise((resolve, reject) => {
     const php = process.env.FISCAL_PHP || 'php';
     const p = spawn(php, ['motor.php'], { cwd: DIR_MOTOR, env: { ...process.env } });
@@ -63,7 +65,10 @@ const texto = (v, max) => String(v === undefined || v === null ? '' : v).trim().
 
 // ---------- configuracao por loja ----------
 async function configDaLoja(db, tenantId, locationId) {
-  return (await db.query(`SELECT * FROM fiscal_lojas WHERE location_id = $1 AND tenant_id = $2`, [locationId, tenantId])).rows[0] || null;
+  const c = (await db.query(`SELECT * FROM fiscal_lojas WHERE location_id = $1 AND tenant_id = $2`, [locationId, tenantId])).rows[0] || null;
+  // Modo teste: a loja sempre emite em homologacao ("sem valor fiscal"), com certificado de teste (veja configMotor).
+  if (c && pool.emTeste()) return { ...c, ambiente: 'homologacao', teste: true };
+  return c;
 }
 
 // O que a tela mostra (sem segredos).
@@ -73,7 +78,9 @@ function publica(c, loja) {
     location_id: c.location_id, location_nome: loja.nome, configurada: true, ambiente: c.ambiente, modo_pdv: c.modo_pdv,
     cnpj: c.cnpj, ie: c.ie, razao_social: c.razao_social, nome_fantasia: c.nome_fantasia, crt: c.crt, logradouro: c.logradouro, numero: c.numero,
     complemento: c.complemento, bairro: c.bairro, cod_municipio: c.cod_municipio, municipio: c.municipio, uf: c.uf, cep: c.cep, telefone: c.telefone,
-    serie_nfce: c.serie_nfce, serie_nfe: c.serie_nfe, certificado: c.cert_cript ? { titular: c.cert_titular, validade: c.cert_validade } : null,
+    serie_nfce: c.serie_nfce, serie_nfe: c.serie_nfe,
+    certificado: c.teste ? { titular: 'Certificado de teste (modo teste: nota sem valor fiscal, não vai para a SEFAZ)', validade: null } : c.cert_cript ? { titular: c.cert_titular, validade: c.cert_validade } : null,
+    teste: !!c.teste,
     csc_homologacao: !!c.csc_homolog_cript, csc_homolog_id: c.csc_homolog_id, csc_producao: !!c.csc_prod_cript, csc_prod_id: c.csc_prod_id,
     pronta: prontaPara(c),
   };
@@ -82,6 +89,7 @@ function publica(c, loja) {
 function pendencias(c) {
   const p = [];
   if (!c) return ['configure os dados fiscais da loja'];
+  if (c.teste) return p; // modo teste: certificado e CSC de teste (o cliente nao precisa ter enviado os dele)
   if (!c.cert_cript) p.push('envie o certificado digital A1 (.pfx)');
   else if (c.cert_validade && new Date(c.cert_validade) < new Date()) p.push('o certificado digital está vencido');
   if (c.ambiente === 'homologacao' && !c.csc_homolog_cript) p.push('informe o CSC de homologação (teste)');
@@ -162,8 +170,10 @@ function configMotor(c, modelo = 65) {
   return {
     modelo: String(modelo), tpAmb: hom ? 2 : 1, razao: c.razao_social, fantasia: c.nome_fantasia, cnpj: c.cnpj, ie: c.ie, crt: c.crt, uf: c.uf, cUF: COD_UF[c.uf],
     endereco: { xLgr: c.logradouro, nro: c.numero, xCpl: c.complemento, xBairro: c.bairro, cMun: c.cod_municipio, xMun: c.municipio, CEP: c.cep, fone: c.telefone },
-    csc: decifrar(hom ? c.csc_homolog_cript : c.csc_prod_cript), cscId: (hom ? c.csc_homolog_id : c.csc_prod_id) || '000001',
-    pfx_b64: decifrar(c.cert_cript), senha: decifrar(c.cert_senha_cript),
+    ...(pool.emTeste() || c.teste
+      // Modo teste: nunca o certificado nem o CSC reais do cliente.
+      ? { tpAmb: 2, csc: 'GIROSTOCKTESTE0000000000000000000000', cscId: '000001', certificado_teste: true, pfx_b64: null, senha: null }
+      : { csc: decifrar(hom ? c.csc_homolog_cript : c.csc_prod_cript), cscId: (hom ? c.csc_homolog_id : c.csc_prod_id) || '000001', pfx_b64: decifrar(c.cert_cript), senha: decifrar(c.cert_senha_cript) }),
     respTec: process.env.FISCAL_RESP_TEC_CNPJ ? { CNPJ: digitos(process.env.FISCAL_RESP_TEC_CNPJ), xContato: process.env.FISCAL_RESP_TEC_CONTATO || 'Suporte', email: process.env.FISCAL_RESP_TEC_EMAIL || '', fone: process.env.FISCAL_RESP_TEC_FONE || '' } : null,
   };
 }

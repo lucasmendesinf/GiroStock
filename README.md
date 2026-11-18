@@ -107,6 +107,21 @@ Com `ADMIN_URL` definido:
 
 Sem `ADMIN_URL`, tudo funciona como antes, com o painel Master dentro do GiroStock. Por isso dá para publicar esta versão antes do admin estar no ar.
 
+### "Testar sem gravar" (dentro do suporte)
+
+Na faixa vermelha do suporte há o botão **🧪 Testar sem gravar** (precisa do banco de teste, `DATABASE_URL_TESTE`):
+
+- Copia **só a empresa atendida** para o banco de teste: cadastros, estoque e saldos atuais e os **últimos 30 dias** de movimento (vendas, pedidos, caixas, movimentações, notas). O que está aberto (caixa, comanda, pedido em andamento, conta a pagar) vem sempre. Auditoria e histórico antigo não são copiados.
+- Integrações ficam desligadas: sem tokens do iFood/99Food/WhatsApp/Mercado Pago. A nota fiscal é sempre a **nota de teste** (veja abaixo).
+- O Master entra como Administrador da empresa, com edição completa, mesmo se o suporte for somente leitura: tudo vai para o banco de teste. Faixa laranja "MODO TESTE — nada aqui é gravado na conta do cliente". Painel Master, senha e 2FA ficam bloqueados.
+- A cópia é **apagada** ao clicar em "Encerrar teste e voltar ao suporte", quando o suporte acaba (botão ou 30 minutos) ou depois de **2 horas parado**. Uma varredura a cada minuto (e na inicialização) apaga o que tiver ficado para trás. Controle em `suporte_testes` (produção); início e fim ficam na auditoria.
+- Efeito colateral: os dados da própria empresa no modo teste comum são substituídos pela cópia (e apagados no fim).
+- Teste automatizado: `npm run test:e2e:suporte-teste`.
+
+### Nota fiscal no modo teste (comum e do suporte)
+
+No modo teste a nota é **sempre a de teste**, seja qual for a configuração da loja: ambiente de homologação ("SEM VALOR FISCAL", tpAmb 2), certificado autoassinado gerado pelo motor e CSC de teste. O motor roda no modo simulador: monta e assina a nota, mas **nunca envia nada à SEFAZ** (emissão, cancelamento, devolução e "testar comunicação"). O certificado e o CSC reais do cliente não vão para o banco de teste (a cópia os apaga, e cópias antigas são limpas ao ativar o modo teste).
+
 ## Módulos por plano e por empresa (painel Master)
 
 Cada cliente usa só os módulos (segmentos) que contratou. O Master define isso no **plano** (Configurações → Planos) e pode ajustar empresa por empresa (Empresas → ficha → Módulos liberados), inclusive já na criação da empresa.

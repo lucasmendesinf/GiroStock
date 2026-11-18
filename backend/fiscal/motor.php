@@ -46,6 +46,23 @@ function textoNota($t, int $max): string
 const HOMOLOG_ITEM = 'NOTA FISCAL EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL';
 const HOMOLOG_DEST = 'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL';
 
+// Certificado A1 autoassinado (1 por CNPJ, guardado na pasta temporaria): serve para montar e assinar a nota de teste.
+// Nao vale na SEFAZ (e o modo teste nunca envia nada para la).
+function certificadoTeste(string $cnpj): array
+{
+    $cnpj = preg_replace('/\D/', '', $cnpj) ?: '00000000000000';
+    $arq = rtrim(sys_get_temp_dir(), '/') . '/girostock-cert-teste-' . $cnpj . '.pfx';
+    $senha = 'teste';
+    if (is_file($arq) && filemtime($arq) > time() - 86400 * 30) return [file_get_contents($arq), $senha];
+    $chave = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+    $csr = openssl_csr_new(['commonName' => 'EMPRESA TESTE GIROSTOCK:' . $cnpj, 'countryName' => 'BR', 'organizationName' => 'ICP-Brasil'], $chave, ['digest_alg' => 'sha256']);
+    $crt = openssl_csr_sign($csr, null, $chave, 365, ['digest_alg' => 'sha256']);
+    $pfx = '';
+    if (!openssl_pkcs12_export($crt, $pfx, $chave, $senha)) throw new RuntimeException('não foi possível gerar o certificado de teste');
+    @file_put_contents($arq, $pfx);
+    return [$pfx, $senha];
+}
+
 function ferramentas(array $c): Tools
 {
     $cfg = [
@@ -67,7 +84,13 @@ function ferramentas(array $c): Tools
         sort($pls);
         if ($pls) $cfg['schemes'] = basename(end($pls));
     }
-    $cert = Certificate::readPfx(base64_decode($c['pfx_b64']), $c['senha']);
+    // Modo teste do GiroStock: nunca usa o certificado do cliente; usa um autoassinado gerado aqui (so monta/assina, nao envia).
+    if (!empty($c['certificado_teste'])) {
+        [$pfx, $senha] = certificadoTeste((string) $c['cnpj']);
+        $cert = Certificate::readPfx($pfx, $senha);
+    } else {
+        $cert = Certificate::readPfx(base64_decode($c['pfx_b64']), $c['senha']);
+    }
     $tools = new Tools(json_encode($cfg), $cert);
     $tools->model((string) ($c['modelo'] ?? '65'));
     return $tools;
